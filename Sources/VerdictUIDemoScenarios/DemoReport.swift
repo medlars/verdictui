@@ -74,11 +74,21 @@ public enum DemoReport {
     /// is valid JSON rather than valid-JSON-per-line, and a reader watching the
     /// demo sees where the run starts and ends.
     ///
-    /// - Throws: an encoding failure, or anything ``verdicts()`` throws.
-    public static func renderJSON() async throws -> String {
+    /// - Parameter deadline: forwarded to ``verdicts(deadline:)``. Present for
+    ///   the same reason it is there — this is the function the executable
+    ///   actually calls, so a seam that stopped at `verdicts` would leave the
+    ///   shipped path's failure branch reachable only by waiting out a real
+    ///   timeout.
+    ///
+    /// - Throws: an encoding failure, or anything ``verdicts(deadline:)``
+    ///   throws. Nothing is returned partially: a throw here means no document,
+    ///   not a truncated one.
+    public static func renderJSON(
+        deadline: TimeInterval = OracleHost.defaultDeadline
+    ) async throws -> String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        let data = try encoder.encode(try await verdicts())
+        let data = try encoder.encode(try await verdicts(deadline: deadline))
         // The encoder produces UTF-8 by contract, so the only way this fails is
         // a bug in Foundation; an empty string would be a silent one.
         guard let json = String(data: data, encoding: .utf8) else {

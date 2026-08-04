@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import shutil
 import subprocess
@@ -234,6 +235,65 @@ class VerdictUIPM(PmBase):
             "detail": (r.stdout.strip() or "clean")[:500],
         }
 
+    def stage_demo(self) -> dict:
+        """Run the demo executable and parse its stdout as one JSON document.
+
+        `stage_build` compiles this target but never launches it, so a crash on
+        launch, a broken `@MainActor` async entry, or stdout wired to the wrong
+        stream all survive a green build and a green test run. CI has run this
+        since the post-Wave-2 pass; without the same stage here a local Grade A
+        means less than a CI pass, which is the wrong way round for a
+        pre-push gate.
+        """
+        if shutil.which("swift") is None:
+            return {"passed": False, "detail": "swift not installed — demo cannot be run"}
+        r = subprocess.run(  # noqa: S603 — fixed argv built from constants
+            ["swift", "run", "VerdictUIDemo", *SWIFT_STRICT_FLAGS],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=TIMEOUT_SWIFT_BUILD,
+        )
+        if r.returncode != 0:
+            return {"passed": False, "detail": (r.stderr.strip() or "no stderr")[:300]}
+        try:
+            verdicts = json.loads(r.stdout)
+        except json.JSONDecodeError as e:
+            return {"passed": False, "detail": f"stdout is not valid JSON: {e}"}
+        # An empty array parses cleanly and would otherwise read as success; the
+        # catalog is non-empty by construction, so zero verdicts means the run
+        # swallowed something.
+        if not isinstance(verdicts, list) or not verdicts:
+            return {
+                "passed": False,
+                "detail": f"expected a non-empty array, got {verdicts!r}"[:300],
+            }
+        return {"passed": True, "detail": f"{len(verdicts)} verdicts, valid JSON"}
+
+    def stage_mutation_targets(self) -> dict:
+        """Every mutation in `scripts/mutation-check.py` still names real source.
+
+        The full mutation run rebuilds once per mutation and is too slow for a
+        pre-push gate, but the half that rots is the catalog: a renamed test or
+        a reworded guard leaves a mutation pointing at nothing, and
+        `swift test --filter` exits 0 having run zero tests. This is the cheap
+        half — no build, no test, just "does the target text still exist
+        exactly once".
+        """
+        script = PROJECT_ROOT / "scripts" / "mutation-check.py"
+        if not script.exists():
+            return {"passed": False, "detail": "mutation-check.py not found"}
+        r = subprocess.run(  # noqa: S603 — fixed argv built from constants
+            [sys.executable, str(script), "--verify-targets"],
+            capture_output=True,
+            text=True,
+            timeout=TIMEOUT_STANDARD,
+        )
+        return {
+            "passed": r.returncode == 0,
+            "detail": (r.stdout.strip() or r.stderr.strip() or "no output")[:300],
+        }
+
     def stage_codewatch(self) -> dict:
         try:
             from pm_base_pm_stages import (  # type: ignore  # noqa: PLC0415 — deferred shared-libs import (skip sentinel pattern)
@@ -282,6 +342,8 @@ class VerdictUIPM(PmBase):
             ("stage_todo_review", self.stage_todo_review),
             ("stage_last20", self.stage_last20),
             ("stage_test_alongside", self.stage_test_alongside),
+            ("stage_demo", self.stage_demo),
+            ("stage_mutation_targets", self.stage_mutation_targets),
             ("stage_lint", self.stage_lint),
             ("stage_codewatch", self.stage_codewatch),
             ("stage_issuewatch", self.stage_issuewatch),
