@@ -1,0 +1,157 @@
+name: Check Pinned GitHub Actions for Updates
+
+on:
+  schedule:
+    # Run weekly on Mondays at 2 AM UTC
+    - cron: '0 2 * * 1'
+  workflow_dispatch:
+
+jobs:
+  check-pinned-actions:
+    name: Check Pinned Actions for Updates
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: '3.14.2'
+          check-latest: false
+
+      - name: Check for action updates
+        id: check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3.14 << 'EOF'
+          import json
+          import os
+          import re
+          import urllib.request
+          import urllib.error
+          from pathlib import Path
+          from typing import Dict, List, Tuple
+
+          def extract_pinned_actions(workflow_file: Path) -> List[Tuple[str, str, str]]:
+              """Extract pinned actions from workflow file.
+
+              Returns: List of (action_name, current_sha, line_number)
+              """
+              actions = []
+              content = workflow_file.read_text()
+
+              # Pattern: uses: action/name@sha or uses: action/name@tag
+              pattern = r'uses:\s*([^\s@]+)@([a-f0-9]{40}|v?\d+\.\d+\.\d+|master|main)'
+
+              for match in re.finditer(pattern, content):
+                  action = match.group(1)
+                  version = match.group(2)
+                  line_num = content[:match.start()].count('\n') + 1
+
+                  # Only track SHA pins (40 char hex)
+                  if len(version) == 40 and all(c in '0123456789abcdef' for c in version.lower()):
+                      actions.append((action, version, line_num))
+
+              return actions
+
+          def get_latest_version(action: str, token: str) -> Dict:
+              """Get latest version info for an action using GitHub API."""
+              try:
+                  # Use GitHub API to get latest release/tag
+                  url = f"https://api.github.com/repos/{action}/releases/latest"
+                  req = urllib.request.Request(url)
+                  req.add_header('Authorization', f'token {token}')
+                  req.add_header('Accept', 'application/vnd.github.v3+json')
+
+                  with urllib.request.urlopen(req, timeout=10) as response:
+                      release = json.loads(response.read().decode())
+                      return {
+                          'tag': release.get('tag_name', ''),
+                          'sha': release.get('target_commitish', ''),
+                          'published': release.get('published_at', '')
+                      }
+              except urllib.error.HTTPError as e:
+                  if e.code == 404:
+                      print(f"Info: {action} has no releases (may use tags)")
+                  else:
+                      print(f"Warning: Could not check {action}: HTTP {e.code}")
+              except Exception as e:
+                  print(f"Warning: Could not check {action}: {e}")
+
+              return None
+
+          # Find all workflow files
+          workflow_dir = Path('.github/workflows')
+          all_actions = []
+
+          for workflow_file in workflow_dir.glob('*.yml'):
+              actions = extract_pinned_actions(workflow_file)
+              for action, sha, line_num in actions:
+                  all_actions.append({
+                      'file': str(workflow_file),
+                      'action': action,
+                      'current_sha': sha,
+                      'line': line_num
+                  })
+
+          print(f"Found {len(all_actions)} pinned actions (SHA format)")
+
+          # Check for updates (simplified - just report what we found)
+          updates_needed = []
+          token = os.environ.get('GITHUB_TOKEN', '')
+
+          for action_info in all_actions:
+              latest = get_latest_version(action_info['action'], token)
+              if latest:
+                  # Compare SHA or tag
+                  if latest.get('sha') and latest['sha'] != action_info['current_sha']:
+                      updates_needed.append({
+                          **action_info,
+                          'latest_sha': latest['sha'],
+                          'latest_tag': latest.get('tag', ''),
+                          'published': latest.get('published', '')
+                      })
+
+          # Output results
+          # Write outputs to GITHUB_OUTPUT file
+          github_output = os.environ.get('GITHUB_OUTPUT', '')
+
+          if updates_needed:
+              print("Found actions that may need updates:")
+              for update in updates_needed:
+                  print(f"  {update['action']} in {update['file']}:{update['line']}")
+                  print(f"    Current: {update['current_sha'][:8]}")
+                  print(f"    Latest: {update['latest_sha'][:8]} ({update.get('latest_tag', 'N/A')})")
+
+              # Set output for next step
+              with open('/tmp/updates.json', 'w') as f:
+                  json.dump(updates_needed, f)
+
+              if github_output:
+                  with open(github_output, 'a') as f:
+                      f.write(f"updates_found=true\n")
+                      f.write(f"count={len(updates_needed)}\n")
+          else:
+              print("All pinned actions are up to date (or could not check)")
+              if github_output:
+                  with open(github_output, 'a') as f:
+                      f.write("updates_found=false\n")
+                      f.write("count=0\n")
+          EOF
+
+      - name: Create issue for action updates
+        if: steps.check.outputs.updates_found == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          UPDATES_FILE: /tmp/updates.json
+        run: node .github/scripts/create-actions-update-issue.cjs

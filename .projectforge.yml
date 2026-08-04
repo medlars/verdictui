@@ -1,0 +1,59 @@
+# ProjectForge manifest — managed by /project-forge v2
+schema_version: 2
+name: VerdictUI
+slug: verdictui
+type: swift
+description: "SwiftUI verification engine — replaces the screenshot-wait-click-confirm cycle with in-process instrumentation, virtual-clock settling, and atomic act-and-observe verdicts"
+created: 2026-08-04
+created_by_skill_version: 2
+owner: medlars@gmail.com
+threat_model_required: false
+recommended_model: opus
+
+floor:
+  generated:
+    - CLAUDE.md
+    - no.md
+    - .env.example
+    - TODO.md
+    - README.md
+    - .gitignore
+    - docs/goals.md
+    - docs/roadmap.md
+    - docs/FILE_REGISTRY.md
+    - docs/slo.md
+    - docs/ship-readiness.md
+    - docs/runbook.md
+    - docs/integrations.md
+    - docs/signing.md
+    - docs/implementation-plan.md
+    - contracts/validate-contracts.py
+    - contracts/README.md
+    - contracts/external-services.md
+    - .decisions/INDEX.md
+    - logs/.gitkeep
+    - pm-baselines.json
+    - scripts/verdictui-pm.py
+    - scripts/dev.sh
+    - scripts/floor-check.py
+    - CHANGELOG.md
+    - Package.swift
+  skills:
+    dev: ~/.claude/skills/verdictui/
+    audit: ~/.claude/skills/verdictui-audit/
+  registrations:
+    ceo: done            # via pm-registry.json (PM_REGISTRY auto-loads from it)
+    iterm2: done
+    hub_claude: done     # Skill Workflow row in shared/projects-hub.md
+    memory: deferred     # no fleet MEMORY.md surface exists as of 2026-08-04
+    pm_registry_json: done
+    project_registry_md: done
+    model_gate: done
+
+verification:
+  last_grade: ~
+  last_run: ~
+  last_floor_check: ~
+
+deferred:
+  - memory pointer: no fleet-level MEMORY.md exists; registration surface retired — re-add if the surface returns
