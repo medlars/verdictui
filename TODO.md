@@ -4,6 +4,23 @@
 <!-- none -->
 
 ## P1 — High Priority
+- [x] (2026-08-04) (P1) CEO/stage_build: swift build FAIL: ming: Verdict.Timing(evaluateMs: elapsed.milliseconds)
+    |                                          
+- [x] (2026-08-04) (P1) CEO/stage_build: swift build FAIL: o' in call
+135 |             findings.append(contentsOf: rule.evaluate(root, context: context))
+136 | 
+- [x] (2026-08-04) (P1) CEO/stage_build: swift build FAIL: eed' in call
+ 56 |     }
+ 57 | 
+ 58 |     private func runProperty(seed: UInt64, probed: Bool, iterati
+- [x] (2026-08-04) (P1) CEO/stage_build: swift build FAIL: eed' in call
+ 56 |     }
+ 57 | 
+ 58 |     private func runProperty(seed: UInt64, probed: Bool, iterati
+- [x] (2026-08-04) (P1) CEO/stage_build: swift build FAIL:    removals = context.removals
+    |         `- error: cannot assign to value: 'removals' is a 'let' c
+- [x] (2026-08-04) (P1) CEO/stage_build: swift build FAIL:            SemanticNode(id: "b", role: "button", frame: Rect(x: 0, y: 0, width: 60, height: 40)),
+   |
 - [x] (2026-08-04) (P1) CEO/stage_lint: [1m[91mF821 [0m[1mUndefined name `shutil`[0m
    [1m[94m-->[0m scripts/floor-check.py:99:8
     [1m[94m|[0m

@@ -135,18 +135,33 @@ public enum RuleEngine {
     /// Evaluate `rules` against `root` and return the verdict.
     ///
     /// Findings are ordered by rule, then by the rule's own traversal order, so
-    /// the output is byte-stable for a given tree — a prerequisite for baselines
-    /// and for diffing verdicts between runs. Rules named in
-    /// ``LintContext/disabledRules`` are not evaluated at all.
+    /// the evidence is byte-stable for a given tree — a prerequisite for baselines
+    /// and for diffing verdicts between runs. `timestamp` and
+    /// ``Verdict/Timing/evaluateMs`` are wall-clock facts and therefore the only
+    /// parts of the result that vary between identical runs.
+    ///
+    /// Rules named in ``LintContext/disabledRules`` are not evaluated at all.
+    ///
+    /// - Parameter tree: whether to embed `root` in the verdict. Off by default:
+    ///   the tree dwarfs the findings, and the MCP surface pays per token.
     public static func run(
         rules: [any LintRule],
         on root: SemanticNode,
-        context: LintContext
+        context: LintContext,
+        includeTree: Bool = false
     ) -> Verdict {
         var findings: [Finding] = []
-        for rule in rules where !context.disabledRules.contains(type(of: rule).id) {
-            findings.append(contentsOf: rule.evaluate(root, context: context))
+        let clock = ContinuousClock()
+        let elapsed = clock.measure {
+            for rule in rules where !context.disabledRules.contains(type(of: rule).id) {
+                findings.append(contentsOf: rule.evaluate(root, context: context))
+            }
         }
-        return Verdict(scenario: context.scenario, findings: findings)
+        return Verdict(
+            scenario: context.scenario,
+            findings: findings,
+            tree: includeTree ? root : nil,
+            timing: Verdict.Timing(evaluateMs: elapsed.milliseconds)
+        )
     }
 }
