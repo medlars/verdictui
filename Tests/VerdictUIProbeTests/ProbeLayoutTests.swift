@@ -173,6 +173,134 @@ private func alignmentTestRoot<Content: View>(
     .environment(\.probeRecorder, recorder)
 }
 
+// MARK: - Observing the bounds SwiftUI hands a Layout
+
+/// One `bounds` a `Layout` was handed, tagged with the callback that received it.
+private struct BoundsObservation {
+    enum Phase: String {
+        /// `explicitAlignment(of:in:proposal:subviews:cache:)`.
+        case guideEvaluation
+        /// `placeSubviews(in:proposal:subviews:cache:)`.
+        case placement
+    }
+
+    var phase: Phase
+    var bounds: CGRect
+
+    var hasZeroOrigin: Bool { bounds.origin == .zero }
+
+    var description: String {
+        "\(phase.rawValue) origin=(\(bounds.origin.x), \(bounds.origin.y)) "
+            + "size=(\(bounds.size.width), \(bounds.size.height))"
+    }
+}
+
+@MainActor
+private final class BoundsObservationLog {
+    private(set) var observations: [BoundsObservation] = []
+
+    func record(_ observation: BoundsObservation) { observations.append(observation) }
+
+    func observations(in phase: BoundsObservation.Phase) -> [BoundsObservation] {
+        observations.filter { $0.phase == phase }
+    }
+}
+
+/// Mirrors ``ProbeLayout``'s forwarding shape for one purpose: to observe which
+/// `bounds` SwiftUI hands a `Layout` in each phase of a pass.
+///
+/// A mirror rather than the real type because the bounds a `Layout` receives is
+/// an argument, not an output — ``ProbeRecorder`` records negotiations and
+/// placements, and adding a guide-evaluation record to the shipping API to
+/// support one test would be a worse trade than duplicating nine lines here. Its
+/// structure is deliberately identical to the code under discussion: same two
+/// callbacks, same placement at `bounds.origin`.
+private struct GuideBoundsObserver: Layout {
+    typealias Cache = Void
+
+    let log: BoundsObservationLog
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) -> CGSize {
+        subviews.first?.sizeThatFits(proposal) ?? .zero
+    }
+
+    func placeSubviews(
+        in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Void
+    ) {
+        record(.placement, bounds)
+        for subview in subviews {
+            subview.place(at: bounds.origin, anchor: .topLeading, proposal: proposal)
+        }
+    }
+
+    func explicitAlignment(
+        of guide: HorizontalAlignment, in bounds: CGRect, proposal: ProposedViewSize,
+        subviews: Subviews, cache: inout Void
+    ) -> CGFloat? {
+        record(.guideEvaluation, bounds)
+        return subviews.first?.dimensions(in: proposal)[explicit: guide]
+    }
+
+    func explicitAlignment(
+        of guide: VerticalAlignment, in bounds: CGRect, proposal: ProposedViewSize,
+        subviews: Subviews, cache: inout Void
+    ) -> CGFloat? {
+        record(.guideEvaluation, bounds)
+        return subviews.first?.dimensions(in: proposal)[explicit: guide]
+    }
+
+    private func record(_ phase: BoundsObservation.Phase, _ bounds: CGRect) {
+        let observation = BoundsObservation(phase: phase, bounds: bounds)
+        MainActor.assumeIsolated { log.record(observation) }
+    }
+}
+
+/// A parent that allocates its child a region offset from its own origin *and*
+/// reads the child's alignment guides while itself holding a nonzero-origin
+/// `bounds` — the construction most likely to make a nested layout's guide
+/// evaluation happen in an offset space, if that is possible at all.
+private struct OffsetParentLayout: Layout {
+    typealias Cache = Void
+
+    let inset: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) -> CGSize {
+        let inner = subviews.first?.sizeThatFits(proposal) ?? .zero
+        return CGSize(width: inner.width + inset * 2, height: inner.height + inset * 2)
+    }
+
+    func placeSubviews(
+        in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Void
+    ) {
+        for subview in subviews {
+            let dimensions = subview.dimensions(in: proposal)
+            _ = dimensions[HorizontalAlignment.leading]
+            _ = dimensions[VerticalAlignment.bottom]
+            subview.place(
+                at: CGPoint(x: bounds.minX + inset, y: bounds.minY + inset),
+                anchor: .topLeading,
+                proposal: proposal
+            )
+        }
+    }
+}
+
+private enum CustomLeadingID: AlignmentID {
+    static func defaultValue(in context: ViewDimensions) -> CGFloat { context.width / 4 }
+}
+
+private enum CustomTopID: AlignmentID {
+    static func defaultValue(in context: ViewDimensions) -> CGFloat { context.height / 4 }
+}
+
+extension HorizontalAlignment {
+    fileprivate static let customLeading = HorizontalAlignment(CustomLeadingID.self)
+}
+
+extension VerticalAlignment {
+    fileprivate static let customTop = VerticalAlignment(CustomTopID.self)
+}
+
 // MARK: - Tests
 
 final class ProbeLayoutTests: XCTestCase {
@@ -548,6 +676,121 @@ final class ProbeLayoutTests: XCTestCase {
             defaultSink.didRead
         }) else { return }
         XCTAssertNil(defaultSink.seen, "the environment default must be nil, not a shared sink")
+    }
+
+    /// Pins the assumption that lets ``ProbeLayout`` forward a guide value
+    /// untranslated: a `Layout` is asked for its alignment guides in its *own*
+    /// unoffset space, never in an offset one.
+    ///
+    /// This is the half of the fix that no frame comparison can reach.
+    /// `ProbeLayout.explicitAlignment` returns the child's guide value as-is; that
+    /// is correct only if the `bounds` it is handed is always origin-zero, because
+    /// a nonzero origin would mean the value owed the caller a translation. A
+    /// translation term added "just in case" is the worse option — under this
+    /// assumption it is unreachable arithmetic that no test can falsify, which is
+    /// how a wrong adjustment survives review.
+    ///
+    /// So the assumption is measured instead of assumed, across shapes that all
+    /// displace the layout: a stack alignment, a custom parent that both offsets
+    /// its child's region and reads its guides while holding a nonzero-origin
+    /// bounds itself, padding, a five-deep nest of custom layouts, a text-baseline
+    /// stack, and a custom `AlignmentID`. Two things are asserted together —
+    /// every guide evaluation gets a zero origin, and some placement in the same
+    /// shapes does not. The second half is what keeps the first from being
+    /// vacuous: it proves these constructions really do move the layout, so the
+    /// zero origins describe guide evaluation rather than a set of shapes that
+    /// happened to sit at the origin.
+    ///
+    /// If a future SwiftUI ever hands a nonzero origin to `explicitAlignment`,
+    /// this test fails and ``ProbeLayout`` must start translating by
+    /// `bounds.origin`. It observes a mirror layout, not `ProbeLayout` itself, so
+    /// it constrains SwiftUI's contract rather than our conformance — the
+    /// conformance is held by the frame-equality tests above.
+    @MainActor
+    func testAlignmentGuidesAreEvaluatedInTheLayoutsOwnUnoffsetSpace() {
+        let log = BoundsObservationLog()
+        let leaf = Color.red.frame(width: 40, height: 20)
+            .alignmentGuide(.leading) { dimensions in dimensions.width / 2 }
+            .alignmentGuide(.bottom) { dimensions in dimensions.height / 2 }
+
+        func observe<Content: View>(_ shape: Content) {
+            let host = HeadlessHost(shape)
+            _ = host.pump(until: "a recorded layout callback", isReady: {
+                !log.observations.isEmpty
+            })
+        }
+
+        observe(
+            ZStack(alignment: .topLeading) {
+                Color.clear.frame(width: 200, height: 100)
+                GuideBoundsObserver(log: log) { leaf }
+            }
+            .frame(width: 200, height: 100)
+        )
+        observe(
+            ZStack(alignment: .bottomTrailing) {
+                Color.clear.frame(width: 200, height: 100)
+                OffsetParentLayout(inset: 25) { GuideBoundsObserver(log: log) { leaf } }
+            }
+            .frame(width: 200, height: 100)
+        )
+        observe(
+            ZStack(alignment: .topLeading) {
+                Color.clear.frame(width: 200, height: 100)
+                GuideBoundsObserver(log: log) { leaf }
+                    .padding(EdgeInsets(top: 13, leading: 17, bottom: 3, trailing: 5))
+            }
+            .frame(width: 200, height: 100)
+        )
+        observe(
+            ZStack(alignment: .topLeading) {
+                Color.clear.frame(width: 200, height: 100)
+                OffsetParentLayout(inset: 7) {
+                    GuideBoundsObserver(log: log) {
+                        OffsetParentLayout(inset: 5) { GuideBoundsObserver(log: log) { leaf } }
+                    }
+                }
+            }
+            .frame(width: 200, height: 100)
+        )
+        observe(
+            HStack(alignment: .firstTextBaseline) {
+                Text("tall").font(.largeTitle)
+                GuideBoundsObserver(log: log) { Text("small").font(.caption) }
+            }
+            .frame(width: 200, height: 100)
+        )
+        observe(
+            ZStack(alignment: Alignment(horizontal: .customLeading, vertical: .customTop)) {
+                Color.clear.frame(width: 200, height: 100)
+                GuideBoundsObserver(log: log) { leaf }
+            }
+            .frame(width: 200, height: 100)
+        )
+
+        let guideEvaluations = log.observations(in: .guideEvaluation)
+        let placements = log.observations(in: .placement)
+
+        XCTAssertFalse(
+            guideEvaluations.isEmpty,
+            "no guide was evaluated at all, so this test asserts nothing — the "
+                + "shapes stopped asking their children for alignment guides"
+        )
+        let offsetGuideEvaluations = guideEvaluations.filter { !$0.hasZeroOrigin }
+        XCTAssertEqual(
+            offsetGuideEvaluations.count,
+            0,
+            "a Layout was asked for an alignment guide in an offset space: "
+                + "\(offsetGuideEvaluations.map(\.description)). ProbeLayout forwards "
+                + "the child's guide value untranslated on the assumption that this "
+                + "never happens; if it now does, it must translate by bounds.origin."
+        )
+        XCTAssertFalse(
+            placements.filter { !$0.hasZeroOrigin }.isEmpty,
+            "every placement in these shapes was at the origin, so the zero origins "
+                + "above prove nothing about guide evaluation — the shapes are no "
+                + "longer displacing the observed layout"
+        )
     }
 
     // MARK: - Helpers
