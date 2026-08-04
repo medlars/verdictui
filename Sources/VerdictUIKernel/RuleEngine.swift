@@ -110,7 +110,7 @@ public struct LintContext: Sendable {
         return Finding(
             rule: ruleID,
             severity: severity(for: ruleID, default: defaultSeverity),
-            nodeID: node.id.isEmpty ? node.structuralPath : node.id,
+            nodeID: node.evidenceLabel,
             message: message,
             suggestion: suggestion
         )
@@ -119,6 +119,19 @@ public struct LintContext: Sendable {
 
 /// Runs a rule set over a tree and packages the findings as a ``Verdict``.
 public enum RuleEngine {
+    /// The Wave 1 rule library, in evaluation order.
+    ///
+    /// ``DuplicateProbeIDRule`` runs first because an id collision undermines the
+    /// evidence every other rule produces about the same tree.
+    public static let standardRules: [any LintRule] = [
+        DuplicateProbeIDRule(),
+        ZeroSizeRule(),
+        SiblingOverlapRule(),
+        OffscreenRule(),
+        TruncationRule(),
+        TapTargetRule(),
+    ]
+
     /// Evaluate `rules` against `root` and return the verdict.
     ///
     /// Findings are ordered by rule, then by the rule's own traversal order, so

@@ -280,6 +280,10 @@ public struct SemanticNode: Equatable, Sendable {
         return ""
     }
 
+    /// How a finding refers to this node: the probe `id`, or the structural path
+    /// when the node was never probed. Evidence must always point somewhere.
+    var evidenceLabel: String { id.isEmpty ? structuralPath : id }
+
     /// Every node in the subtree, self first, children in layout order (preorder).
     public func flattened() -> [SemanticNode] {
         var result: [SemanticNode] = []
@@ -366,6 +370,12 @@ extension SemanticNode: Codable {
             try container.encode(children, forKey: .children)
         }
     }
+}
+
+extension Double {
+    /// Point measurement rendered for finding messages: `44`, `212.5`.
+    /// Whole numbers lose their `.0` so a message reads "28 x 28 pt".
+    var pointsDescription: String { AttributeValue.format(self) }
 }
 
 /// Platform-pure size (CoreGraphics-free, see `no.md` #5).
