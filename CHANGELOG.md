@@ -49,6 +49,29 @@
   - Swift tests 157 → 248; every task implemented in an isolated git worktree with
     scope-checked diffs, and every guard mutation-verified with byte-identical
     restores.
+  - **Post-wave review pass** (three reviewers reading the closed wave cold; 248 →
+    261 tests):
+    - `TextMetrics` withheld its derived line counts only for `\n`, so a bare CR,
+      CRLF, NEL or U+2028/2029 slipped through and both counts came out silently
+      wrong for multi-line text. Now keyed on `Character.isNewline`.
+    - A thrown `OracleHostError` left the demo executable through the runtime's
+      unhandled-error trap — SIGABRT, exit 134, nothing readable on stderr. Now
+      exit 1 with the scenario named, and stdout is one complete JSON document or
+      empty, never partial (`no.md` entry 9).
+    - A probe id starting with `@` collided with the identity namespace reserved
+      for unprobed nodes, silently degrading `TreeDiff` to positional matching
+      with no finding to show for it. Refused up front.
+    - Nesting `verdictRoot` hands the outer collector the inner root's viewport;
+      documented as unsupported rather than left to look correct.
+    - The environment pins moved to a shared `View.verdictPinnedEnvironment()`
+      and are applied by the test hosts too, which had been measuring glyph
+      widths against the machine's own locale and type size.
+    - A measurement filter in `assembledTree` was deleted: mutation testing
+      showed no test could see it, and the reason was that it changed no output.
+      It read like a guard against stale data while guarding nothing.
+    - CI now runs the demo executable, which it previously only compiled.
+    - `scripts/mutation-check.py` records the 11 mutations behind these guards;
+      a compile failure or a trap counts as inconclusive, never as coverage.
 - Wave 1: the verdict engine. `VerdictUIKernel` now owns the whole path from a probed
   tree to a machine-readable verdict, and stays platform-pure while doing it.
   - **Semantic tree**: `Role` vocabulary mirroring SwiftUI's accessibility roles,
