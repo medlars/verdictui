@@ -51,9 +51,9 @@ floor:
     model_gate: done
 
 verification:
-  last_grade: ~
-  last_run: ~
-  last_floor_check: ~
+  last_grade: "A (100.0)"
+  last_run: 2026-08-04
+  last_floor_check: 2026-08-04  # 0 gaps
 
 deferred:
   - memory pointer: no fleet-level MEMORY.md exists; registration surface retired — re-add if the surface returns
