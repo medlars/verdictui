@@ -4,6 +4,51 @@
 
 ### 2026-08-04
 
+- Wave 2: probe runtime + oracle harness. Any SwiftUI view wrapped in a probe scenario
+  now renders **headless** — no window, no window server — and yields a `SemanticNode`
+  tree with real layout-engine frames. Screenshots become optional here.
+  - **Pre-wave spike** (recorded in `docs/implementation-plan.md`): windowless
+    `NSHostingView` proven to need no window server, verified against a sandbox
+    profile that denies every windowserver mach-lookup *and* a positive control
+    that fails under the same profile. The whole 248-test suite also passes under
+    that denial.
+  - **`ProbeLayout`**: byte-transparent `Layout` wrapper recording size negotiation
+    (proposal, returned size, placement) plus unconstrained-intrinsic and
+    width-constrained-ideal measurements into a `@MainActor ProbeRecorder`.
+    Explicit alignment guides are forwarded (CIS-39FB61BC): declared
+    `.alignmentGuide` values were silently dropped; an empirical 20-shape battery
+    showed guide evaluation always happens in the layout's own unoffset space, so
+    the forwarding is untranslated, with a canary test watching that assumption.
+  - **Probe pipeline**: `.verdictProbe(id:role:text:attributes:)` emits
+    `ProbeRecord`s in the named `verdict-root` coordinate space;
+    `.verdictRoot(into: VerdictTreeSink)` assembles the `SemanticNode` tree —
+    frame-containment nesting, layout-order siblings, probe ids winning over
+    structural paths, and `TextMetrics` attached only where a real measurement
+    matches the rendered frame (never guessed).
+  - **`OracleHost`**: windowless harness with a pinned deterministic environment
+    (displayScale 1, en_US, Gregorian/UTC, light scheme, medium type, LTR),
+    `fittingSize` or explicit-viewport sizing behind a 4096 pt clamp exposed as
+    `wasClamped`, and a reusable `LayoutSettle` pump (two agreeing checks, hard
+    deadline) that throws `settleTimedOut` rather than fabricating an empty tree.
+    `accessibilityReduceMotion` is documented as uninjectable (get-only key path).
+  - **`VerdictScenario` + `ScenarioState`**: the scenario protocol; state is
+    deliberately minimal until Wave 3 actions and Wave 5 sweeps land.
+  - **Demo catalog** (`VerdictUIDemoScenarios` + `VerdictUIDemo` executable): five
+    planted defects each caught by exactly the intended rule (`truncation`,
+    `sibling-overlap`, `offscreen`, `tap-target`, plus a toggle-driven Wave 3
+    fixture) and a non-trivial clean scenario guarding against false positives.
+    The executable prints one verdict JSON per scenario.
+  - **End-to-end proof**: integration tests pin every planted finding (rule,
+    severity, node, count) from a table the tests own; 10 fresh hosts × 2
+    scenarios produce byte-identical encoded trees; a staged-layout determinism
+    arm fails if the settle logic weakens (found because the exit gate's own 10×
+    test could not distinguish "identical" from "identically wrong").
+  - **SLO 1 baseline recorded**: warm `OracleHost.currentTree()` on the demo app —
+    p50 5.99 ms, p95 6.60 ms (n=120), ~7.6× inside the 50 ms exit-gate bar,
+    enforced by `OraclePerformanceTests`.
+  - Swift tests 157 → 248; every task implemented in an isolated git worktree with
+    scope-checked diffs, and every guard mutation-verified with byte-identical
+    restores.
 - Wave 1: the verdict engine. `VerdictUIKernel` now owns the whole path from a probed
   tree to a machine-readable verdict, and stays platform-pure while doing it.
   - **Semantic tree**: `Role` vocabulary mirroring SwiftUI's accessibility roles,

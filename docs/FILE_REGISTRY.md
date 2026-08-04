@@ -7,7 +7,7 @@
 
 | File | Purpose | Status | Added |
 |------|---------|--------|-------|
-| `Package.swift` | SPM manifest — kernel + probe targets, strict concurrency | Active | 2026-08-04 |
+| `Package.swift` | SPM manifest — kernel, probe, demo-scenarios, demo executable targets, strict concurrency | Active | 2026-08-04 |
 | `Sources/VerdictUIKernel/SemanticNode.swift` | Semantic tree: `Role`, `AttributeValue`, `TextMetrics`, `SemanticNode`, `Rect`/`Size` geometry | Active | 2026-08-04 |
 | `Sources/VerdictUIKernel/TreeDiff.swift` | `NodePath`, `TreeDelta` and its four categories, `TreeDiff.compute`/`apply` | Active | 2026-08-04 |
 | `Sources/VerdictUIKernel/RuleEngine.swift` | `LintRule` protocol, `LintContext` (viewport, minimums, suppression), `RuleEngine.run` | Active | 2026-08-04 |
@@ -19,7 +19,20 @@
 | `Sources/VerdictUIKernel/Rules/TapTargetRule.swift` | Rule `tap-target` — interactive node below the platform hit minimum | Active | 2026-08-04 |
 | `Sources/VerdictUIKernel/Verdict.swift` | `Verdict` envelope (status/findings/tree/delta/timing) + `Finding`, custom `Codable` | Active | 2026-08-04 |
 | `Sources/VerdictUIKernel/SchemaVersion.swift` | Wire-format version and the major/minor compatibility contract | Active | 2026-08-04 |
-| `Sources/VerdictUIProbe/VerdictProbe.swift` | `.verdictProbe(id:)` modifier + VerdictFramesKey preference | Active | 2026-08-04 |
+| `Sources/VerdictUIProbe/VerdictProbe.swift` | `.verdictProbe(id:role:text:attributes:)` emitting `ProbeRecord`s in the `verdict-root` space, `.verdictRoot(into:)` + `VerdictTreeSink` tree delivery | Active | 2026-08-04 |
+| `Sources/VerdictUIProbe/ProbeLayout.swift` | Byte-transparent `Layout` wrapper recording size negotiation + intrinsic/ideal measurements into `ProbeRecorder`; forwards explicit alignment guides | Active | 2026-08-04 |
+| `Sources/VerdictUIProbe/TreeAssembly.swift` | Pure tree building: frame-containment nesting, layout-order siblings, honest `TextMetrics` attachment | Active | 2026-08-04 |
+| `Sources/VerdictUIProbe/Scenario.swift` | `VerdictScenario` protocol + `ScenarioState` (Wave 3/5 injection point, deliberately minimal) | Active | 2026-08-04 |
+| `Sources/VerdictUIProbe/OracleHost.swift` | Windowless `NSHostingView` harness: pinned deterministic environment, `LayoutSettle` pump primitive, size clamp with `wasClamped`, `currentTree()` | Active | 2026-08-04 |
+| `Sources/VerdictUIDemoScenarios/DemoScenarios.swift` | `DemoScenarioEntry` catalog — type-erased host construction, stable names, recommended viewports | Active | 2026-08-04 |
+| `Sources/VerdictUIDemoScenarios/DemoReport.swift` | Testable core of the demo executable — verdicts + JSON rendering for the whole catalog | Active | 2026-08-04 |
+| `Sources/VerdictUIDemoScenarios/TruncatingLabelScenario.swift` | Planted defect: one-line label denied its width → `truncation` | Active | 2026-08-04 |
+| `Sources/VerdictUIDemoScenarios/OverlappingBadgesScenario.swift` | Planted defect: intersecting sibling badges, no layering → `sibling-overlap` | Active | 2026-08-04 |
+| `Sources/VerdictUIDemoScenarios/OffscreenButtonScenario.swift` | Planted defect: button offset past the viewport → `offscreen` | Active | 2026-08-04 |
+| `Sources/VerdictUIDemoScenarios/UndersizedTapTargetScenario.swift` | Planted defect: 18×18 button below the 28×28 macOS minimum → `tap-target` | Active | 2026-08-04 |
+| `Sources/VerdictUIDemoScenarios/ToggleLayoutScenario.swift` | Toggle-driven layout change, clean in both states — Wave 3 action-injection fixture | Active | 2026-08-04 |
+| `Sources/VerdictUIDemoScenarios/CleanSettingsScenario.swift` | False-positive guard: non-trivial clean layout incl. a declared-layering ZStack overlap | Active | 2026-08-04 |
+| `Sources/VerdictUIDemo/main.swift` | Thin executable: prints one verdict JSON per demo scenario | Active | 2026-08-04 |
 | `Tests/VerdictUIKernelTests/SemanticNodeTests.swift` | Roles, attributes, structural paths, node Codable | Active | 2026-08-04 |
 | `Tests/VerdictUIKernelTests/TreeDiffTests.swift` | Diff categories, path encoding, apply/replay | Active | 2026-08-04 |
 | `Tests/VerdictUIKernelTests/TreeDiffPropertyTests.swift` | Property test: random mutations must replay exactly | Active | 2026-08-04 |
@@ -31,7 +44,18 @@
 | `Tests/VerdictUIKernelTests/SchemaCompatibilityTests.swift` | Decoder refuses a foreign schema major, accepts a newer minor | Active | 2026-08-04 |
 | `Tests/VerdictUIKernelTests/ContractFixtureTests.swift` | Generates and pins `contracts/fixtures/` to the real encoder output | Active | 2026-08-04 |
 | `Tests/VerdictUIKernelTests/KernelDocumentationTests.swift` | Pins `docs/kernel.md` to the code: messages, severities, thresholds, role table | Active | 2026-08-04 |
-| `Tests/VerdictUIProbeTests/VerdictUIProbeTests.swift` | Probe: preference-key merge + modifier smoke tests | Active | 2026-08-04 |
+| `Tests/VerdictUIProbeTests/VerdictUIProbeTests.swift` | Rendered probe tests: root-space frames, tree delivery, TextMetrics, first probe→kernel handshake | Active | 2026-08-04 |
+| `Tests/VerdictUIProbeTests/ProbeLayoutTests.swift` | Transparency (size, placement, alignment guides incl. the zero-origin canary), recording, intrinsic/ideal measurements | Active | 2026-08-04 |
+| `Tests/VerdictUIProbeTests/TreeAssemblyTests.swift` | Pure assembly: containment nesting, sibling order, root synthesis, honest metrics | Active | 2026-08-04 |
+| `Tests/VerdictUIProbeTests/ScenarioTests.swift` | `VerdictScenario`/`ScenarioState` contract | Active | 2026-08-04 |
+| `Tests/VerdictUIProbeTests/OracleHostTests.swift` | Harness: settle primitive, deterministic env pins, clamp, deadline failure surface | Active | 2026-08-04 |
+| `Tests/VerdictUIProbeTests/DemoIntegrationTests.swift` | End-to-end proof: every planted defect caught by exactly the right rule; 10× determinism; staged-layout settle arm | Active | 2026-08-04 |
+| `Tests/VerdictUIProbeTests/OraclePerformanceTests.swift` | SLO 1 baseline: warm `currentTree()` p95 < 50 ms gate + cold-construction guard | Active | 2026-08-04 |
+| `Tests/VerdictUIDemoScenariosTests/DemoScenarioCatalogTests.swift` | Catalog: pinned count, unique stable names, lookup, viewports | Active | 2026-08-04 |
+| `Tests/VerdictUIDemoScenariosTests/DemoScenarioRenderingTests.swift` | Every scenario settles unclamped; declared probe ids ≡ rendered probe ids | Active | 2026-08-04 |
+| `Tests/VerdictUIDemoScenariosTests/CleanSettingsScenarioTests.swift` | Zero findings + the exonerated overlap is real (and fires when undeclared) | Active | 2026-08-04 |
+| `Tests/VerdictUIDemoScenariosTests/ToggleLayoutScenarioTests.swift` | Both toggle states render clean under the same name | Active | 2026-08-04 |
+| `Tests/VerdictUIDemoScenariosTests/DemoReportTests.swift` | Executable core: one verdict per scenario in catalog order, valid JSON | Active | 2026-08-04 |
 | `Tests/test_verdictui_pm.py` | Python tests for PM stages, floor-check, and the contract validator | Active | 2026-08-04 |
 | `Tests/test_kernel_symbol_audit.py` | Python tests for the kernel public-surface audit | Active | 2026-08-04 |
 | `Tests/__init__.py` | Python package marker for pytest collection | Active | 2026-08-04 |
