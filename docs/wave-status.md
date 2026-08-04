@@ -10,11 +10,29 @@
 
 | Field | Value |
 |-------|-------|
-| Current wave | **Wave 1 — Kernel: the verdict engine — COMPLETE** (exit gate green, evidence below) |
-| Wave task in progress | none — Wave 1 Tasks 1–6 all closed |
-| Next action | Start **Wave 2 — the layout probe** (`docs/implementation-plan.md`, `## Wave 2`). The kernel contract is frozen: Wave 2 fills `textMetrics` and `structuralPath` from a real SwiftUI layout pass rather than changing their shape |
-| Last session ended | 2026-08-04 10:55 |
-| Health at last session end | PM quick Grade A (100.0), all 14 stages PASS, `swift build` clean under `-warnings-as-errors`, 157 Swift tests (155 kernel) + 75 Python tests green, kernel purity intact, 0 open P0/P1 CIS |
+| Current wave | **Wave 2 — Probe runtime + oracle harness — COMPLETE** (exit gate green, evidence below) |
+| Wave task in progress | none — Wave 2 Tasks 1–6 all closed, CIS-39FB61BC fixed |
+| Next action | Start **Wave 3 — settle engine** (`docs/implementation-plan.md`, `## Wave 3`). Reuse `LayoutSettle` (the pump primitive OracleHost factored out for exactly this); `ToggleLayoutScenario(isExpanded:)` is the ready-made action-injection fixture; note `accessibilityReduceMotion` is NOT injectable (get-only key path) — Wave 3's animation control needs its own mechanism |
+| Last session ended | 2026-08-04 (Wave 2 close) |
+| Health at last session end | PM quick Grade A (100.0) all stages PASS, 248 Swift + 75 Python tests green from clean under `-warnings-as-errors`, whole suite green under a window-server-denying sandbox, SLO 1 baseline p95 6.60 ms, kernel untouched and platform-pure, 0 open P0/P1 CIS for VerdictUI |
+
+## Wave 2 task checklist (from implementation-plan.md)
+
+- [x] Pre-wave spike — windowless `NSHostingView` yields real layout frames with **no window server**: byte-identical frames under a mach-lookup-denying sandbox whose non-vacuity a positive control proves (control's real `NSWindow` gets windowNumber 5945 normally, 0 + exit 1 sandboxed). Finding recorded in the plan (commit 06a2333) |
+- [x] Task 1 — `ProbeLayout` transparent Layout + `ProbeRecorder` + environment key — commit 9314301
+- [x] Task 2 — `VerdictProbe` rewrite (`ProbeRecord`, `verdict-root` space) + `TreeAssembly` + `.verdictRoot(into:)`/`VerdictTreeSink` — commit d0a359b |
+- [x] CIS-39FB61BC — explicit alignment guides forwarded; unfalsifiable `bounds.origin` translation removed after a 20-shape empirical battery (119 guide evaluations, all zero-origin), zero-origin canary test added — commits 9a1f872, 3df13ed |
+- [x] Tasks 3+4 — `OracleHost` (pinned env, `LayoutSettle`, clamp + `wasClamped`, `settleTimedOut`) + `VerdictScenario`/`ScenarioState` — commit 64f8f54 |
+- [x] Task 5 — demo catalog: 5 planted defects + clean scenario + `VerdictUIDemo` executable (JSON per scenario) — commit e7e5037 |
+- [x] Task 6 — integration proof + SLO 1 baseline — commit 0dd9aea |
+
+### Wave 2 exit gate (all verified from clean, real exit codes)
+
+- [x] All demo-scenario planted bugs caught by the correct rule — `testEveryPlantedDefectIsCaughtByExactlyTheRightRule` pins rule/severity/node/count from a test-owned table; verified to catch a silently disabled kernel rule (orchestrator mutation: `OffscreenRule` guard → 2 named failures)
+- [x] Determinism test green — 10 fresh hosts × 2 scenarios byte-identical; PLUS a staged-layout arm added when the 10× test alone proved insensitive to a weakened settle
+- [x] **No window server dependency** — full 248-test suite passes under `sandbox-exec` denying all windowserver/CARenderServer mach-lookups (`SANDBOXED_TEST_EXIT=0`; profile proven non-vacuous by the spike's control)
+- [x] `OracleHost.currentTree()` p95 < 50 ms — **p50 5.99 ms, p95 6.60 ms, n=120** (`SLO1-BASELINE` line, enforced by `OraclePerformanceTests`)
+- [x] PM quick Grade A (100.0); FILE_REGISTRY + CHANGELOG updated
 
 ## Wave 1 task checklist (from implementation-plan.md)
 
@@ -39,14 +57,21 @@
 |------|-----------|----------|
 | Wave 0 — Scaffold | 2026-08-04 | Grade A PM, floor 0 gaps, CI green, 6 Swift + 19 Python tests, all scaffold CIS issues closed |
 | Wave 1 — Kernel: the verdict engine | 2026-08-04 | Grade A PM (14/14 stages), 157 Swift + 75 Python tests, 214 public kernel symbols with 0 doc/test gaps, contract gate green, kernel platform-pure |
+| Wave 2 — Probe runtime + oracle harness | 2026-08-04 | Grade A PM, 248 Swift + 75 Python tests from clean, suite green under window-server denial, all planted bugs caught by the right rules, 10× determinism, SLO 1 baseline p95 6.60 ms |
 
-## Known gaps carried into Wave 2
+## Known gaps carried into Wave 3
 
-- PM-plumbing test gaps are filed as P2 CIS (`stage_test`, `stage_todo_review`, `stage_codewatch`, `stage_issuewatch`, `stage_capabilitywatch`, `stage_cis_health`, `stage_ai_artifacts`, `stage_last20`, `stage_test_alongside`, `_swift_runner`, `floor-check._check_todo_tracking`). They are thin delegations to shared-libs; deliberately not covered in Wave 1 because the wave's subject is the kernel, and a test that asserts "we call shared-libs" pins an implementation detail rather than a behaviour.
+- `accessibilityReduceMotion` is **not injectable** (`EnvironmentValues` key path is get-only), so it is documented as unpinned rather than faked. Demo scenarios deliberately don't animate. Wave 3's animation control (`settlePolicy`, `Transaction(animation: nil)`) is the real mechanism and must not assume the reduce-motion pin exists.
+- `ProbeRecord` carries no z-index: `.zIndex()` never reaches `SemanticNode.zIndex`, so declared layering is only expressible through a probe role of `zstack` (how `CleanSettingsScenario` does it). When a later wave teaches the probe to report z-index, that scenario starts passing for two reasons instead of one.
+- `isVisible` is always `true` from the probe — opacity/clipping are not observable from the layout pass (documented in TreeAssembly). Wave 4 macro work or the Wave 8 witness closes this.
+- `.frame(idealWidth: .infinity)`-shaped content crashes SwiftUI (signal 6) inside a headless `fittingSize` measurement — the clamp cannot save you from a crash inside AppKit; avoid the shape in scenarios (noted in OracleHost docs).
+- Degenerate `fittingSize` branches (non-finite/NaN/negative) are covered at clamp-arithmetic level only; no real view shape produced them (large-but-finite 6000 pt was producible and is covered end-to-end).
+- PM-plumbing P2 CIS from Wave 1 (thin shared-libs delegations) remain open by design.
 - `docs/runbook.md` start/stop commands wait on the Wave 6 daemon (CIS-BE05E561); the second SLO waits on Wave 8 (CIS-61F66A61); domain registration is an owner action (CIS-B424D1B0).
 
 ## Session log (newest first, keep last ~10)
 
+- **2026-08-04 (Wave 2 close)** — **Wave 2 executed subagent-driven and closed.** (a) Pre-wave spike settled the wave's load-bearing assumption before any production code: windowless `NSHostingView` yields glyph-real frames with no window server, proven with a sandbox denial profile AND a positive control that fails under it — a denial that denies nothing proves nothing. (b) Five implementer subagents (Tasks 1, 2, 3+4, 5, 6) each ran in an isolated git worktree with an explicit only-modify scope line, per-task clean-build verification, and independent orchestrator mutations on axes the implementers hadn't covered. Two of those independent mutations found real gaps: a placement-offset mutation Task 1's suite caught (good), and a `bounds.origin` translation in the alignment-guide fix that NO test could falsify — resolved by measurement (119 guide evaluations across 20 hosting shapes, all zero-origin), deleting the term, and adding a canary test that fails if SwiftUI ever evaluates guides in an offset space. (c) One defect found and fixed mid-wave (CIS-39FB61BC): `ProbeLayout` dropped explicit `.alignmentGuide` values; the reported "centred in ZStack" diagnosis was half wrong — default guides were never broken. (d) Task 6's specified 10× determinism test proved unable to distinguish "identical" from "identically wrong" when the settle was weakened (all demo layouts resolve in the constructor pass); a staged-layout arm with pinned settled geometry now kills that mutation. **Lesson worth keeping: a determinism gate that only compares runs to each other cannot see a deterministic bug — pin at least one expectation to arithmetic the test owns.** Exit gate: 248 Swift + 75 Python tests from clean, zero warnings, suite green under window-server denial (SANDBOXED_TEST_EXIT=0), SLO 1 baseline p50 5.99 / p95 6.60 ms (n=120), PM Grade A (100.0). Kernel untouched: contract gate 4 PASS, symbol audit 214 clean, purity intact.
 - **2026-08-04 11:35** — **Wave 1 exit gate independently re-verified**, and one hole closed. Re-ran every gate from a `swift package clean` rather than trusting the closing report: zero warnings under `-warnings-as-errors`, 156 Swift tests, 75 Python tests, contract gate green on 4 checks, symbol audit clean on 214 symbols — all matching what was claimed, each with a real exit code rather than a piped one. Then spot-checked the strongest claim, that `docs/kernel.md` "cannot drift into confident inaccuracy", by mutating the tap-target row from `28` to `32`: all nine documentation tests still passed, because the threshold test searched the *whole document* for "28" and the number also appears in the prose and the quoted finding message. So the authoritative table could say anything. Fixed in `273ccd8` (CIS-6C683AA4): thresholds are now read row-scoped through `tableRows`, as the role table already was, and a new test whitelists every backticked `` `N` × `N` pt `` dimension on the page against what `LintContext` actually installs, which closes the prose half that no test covered. Mutation-verified both directions with byte-identical restores. Swift tests 156 → 157. **Lesson worth keeping: a documentation gate that greps the whole file proves the number exists somewhere, not that the sentence claiming it is true.**
 
 - **2026-08-04 10:55** — **Wave 1 closed.** Finished Task 5's verification half and all of Task 6. (a) Built `scripts/kernel-symbol-audit.py` so the "every public symbol documented and tested" gate is mechanical rather than eyeballed; it found real gaps, which were filled — including tightening `SchemaVersion.major(of:)` to reject `"1.2.3"`-shaped strings its own doc comment already promised to reject, and making `Role`/`NodePath` refuse empty values on both encode and decode so the Swift types and `verdict-schema.json` agree in both directions (CIS-16944A45). (b) `validate-contracts.py` went from "the schema parses" to three fail-closed checks: schema integrity, agreement between the schema and `SchemaVersion.current`, and a round-trip of encoder-generated fixtures. `jsonschema` was rejected deliberately — this repo is never pip-installed (ADR 2026-003), so the import would make validation conditional on the host, and a validator that skips its work still prints PASS; instead the implemented draft-2020-12 subset is paired with an unsupported-keyword guard that fails the run if the schema outgrows it. (c) The fixtures are generated by `ContractFixtureTests`, never hand-edited, because a stale fixture validates happily while proving nothing. (d) `docs/kernel.md` is pinned to the code by `KernelDocumentationTests`: every quoted finding message, severity, threshold, and role-table cell is produced by running the real rule. Every guard added this session was mutation-verified — removing it fails a named test, and each source was restored byte-identically. Python tests 19 → 75; Swift 108 → 156. Grade A.
