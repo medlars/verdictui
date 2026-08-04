@@ -72,6 +72,37 @@
     - CI now runs the demo executable, which it previously only compiled.
     - `scripts/mutation-check.py` records the 11 mutations behind these guards;
       a compile failure or a trap counts as inconclusive, never as coverage.
+  - **Second review pass — the harness that judges the guards.** The findings
+    above were verified by `scripts/mutation-check.py`, so an audit of the
+    fixes had to audit it too. It was deciding "covered" from a nonzero exit
+    code alone:
+    - It never ran the named test on unmutated source first. A test that was
+      already red fails with the mutation applied as well, so every mutation
+      aimed at it reported NOTICED — coverage claimed on a red witness. A green
+      baseline is now a precondition.
+    - `swift test --filter` exits **0** having executed zero tests when the
+      name matches nothing, so a renamed test read as "uncovered guard" rather
+      than "this catalog is stale". Both runs assert a nonzero executed count,
+      and stale names are reported as inconclusive.
+    - Its own new tests caught a third: `check` still assembled its own
+      `swift test` argv instead of calling the extracted helper, so the
+      baseline and mutated runs went through different code paths.
+    - `Tests/test_mutation_check.py` (42 tests) pins all three lying modes.
+      `--verify-targets` is the cheap half — no build, just "does each target
+      still resolve to exactly one site" — and PM runs it every pass.
+  - **Pipeline parity.** PM never ran the demo executable that CI has run since
+    the first pass, so a local Grade A meant strictly less than a CI pass;
+    `stage_demo` and `stage_mutations` close that. Also: `__doc__.splitlines()`
+    crashed under `python -OO` (CIS-3BA814D7), `git_is_clean()` used
+    `git diff --quiet` and saw neither staged nor untracked files, and
+    `renderJSON` did not forward the `deadline` seam, leaving the function
+    `main.swift` actually calls unreachable on its failure branch.
+  - **`ProbeLayout.measure`** loses its `union ?? .zero` fallback. SwiftUI
+    elides empty content before a custom `Layout` is instantiated — verified
+    against both `EmptyView` and an empty `ForEach`, neither of which records a
+    measurement at all — so no probe can wrap zero subviews. It is now a
+    reduction seeded with `.zero`, making the unreachable case an identity
+    element rather than a branch no test can enter (`no.md` entry 10).
 - Wave 1: the verdict engine. `VerdictUIKernel` now owns the whole path from a probed
   tree to a machine-readable verdict, and stays platform-pure while doing it.
   - **Semantic tree**: `Role` vocabulary mirroring SwiftUI's accessibility roles,
