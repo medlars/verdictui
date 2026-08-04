@@ -278,6 +278,78 @@ final class ProbeLayoutTests: XCTestCase {
     }
 
     @MainActor
+    func testWidthConstrainedMeasurementReportsTheHeightWrappingWouldNeed() throws {
+        // The measurement that separates truncation from clipping: the text is
+        // given a height that fits roughly one line, so its answer under the real
+        // proposal says nothing about how much it wanted. Only the
+        // width-constrained, height-unconstrained query does.
+        let recorder = ProbeRecorder()
+        let host = HeadlessHost(
+            probeTestRoot(recorder: recorder) {
+                Text("Cancel the pending subscription renewal for this account")
+                    .probeLayout(id: "paragraph")
+                    .frame(width: 100, height: 18)
+            }
+        )
+        guard host.pump(until: "a measurement for probe 'paragraph'", isReady: {
+            recorder.latestMeasurement(for: "paragraph") != nil
+        }) else { return }
+
+        let measurement = try XCTUnwrap(recorder.latestMeasurement(for: "paragraph"))
+        XCTAssertGreaterThan(
+            measurement.idealSizeAtProposedWidth.height,
+            measurement.returnedSize.height,
+            "at 100 pt wide this text needs several lines; the ideal height must exceed "
+                + "the height the 18 pt frame allowed"
+        )
+        XCTAssertGreaterThan(
+            measurement.idealSizeAtProposedWidth.height,
+            measurement.intrinsicSize.height,
+            "the unconstrained measurement is one line, so wrapping at 100 pt must be taller"
+        )
+        XCTAssertLessThanOrEqual(
+            measurement.idealSizeAtProposedWidth.width,
+            100.5,
+            "the ideal measurement must stay inside the proposed 100 pt width — only the "
+                + "height is opened up. (It need not equal the constrained width: text "
+                + "reports the width its chosen line breaks actually use, and opening the "
+                + "height changes where those breaks fall.)"
+        )
+        XCTAssertGreaterThanOrEqual(
+            measurement.idealSizeAtProposedWidth.height / measurement.intrinsicSize.height,
+            2,
+            "this text cannot fit in fewer than two lines at 100 pt"
+        )
+    }
+
+    @MainActor
+    func testWidthUnconstrainedProposalMakesTheIdealMeasurementTheIntrinsicOne() throws {
+        // Control for the test above: with the width left open there is nothing
+        // extra to learn, and the third measurement must simply agree with the
+        // unconstrained one rather than quietly reporting something else.
+        let recorder = ProbeRecorder()
+        let host = HeadlessHost(
+            probeTestRoot(recorder: recorder) {
+                Text("Renew")
+                    .probeLayout(id: "short")
+                    .fixedSize()
+            }
+        )
+        guard host.pump(until: "a measurement for probe 'short'", isReady: {
+            recorder.latestMeasurement(for: "short") != nil
+        }) else { return }
+
+        let measurement = try XCTUnwrap(recorder.latestMeasurement(for: "short"))
+        XCTAssertGreaterThan(measurement.intrinsicSize.height, 0, "text measured as zero height")
+        XCTAssertEqual(
+            measurement.idealSizeAtProposedWidth.height,
+            measurement.intrinsicSize.height,
+            accuracy: 0.5,
+            "one line either way, so the two heights must agree"
+        )
+    }
+
+    @MainActor
     func testTwoProbesRecordUnderTheirOwnIDsWithoutCrossContamination() throws {
         let recorder = ProbeRecorder()
         let host = HeadlessHost(

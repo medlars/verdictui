@@ -94,12 +94,33 @@ public struct ProbeMeasurement: Equatable, Sendable {
     /// The size the child returned under ``ProbeProposal/unspecified``: its ideal
     /// size. `intrinsicSize.width` is `TextMetrics.intrinsicWidth` for text.
     public var intrinsicSize: Size
+    /// The size the child returned when offered ``proposal``'s width with the
+    /// height left open: the space the content needs to render *fully* at the
+    /// width it was actually given.
+    ///
+    /// This is the measurement that separates truncation from wrapping. Under the
+    /// real proposal a `Text` clipped by its frame height reports the height it
+    /// was allowed, which says nothing about how much it wanted; the
+    /// unconstrained measurement reports one line, because an unconstrained width
+    /// never wraps. Only a width-constrained, height-unconstrained query says how
+    /// many lines the text would take at this width — which is
+    /// `TextMetrics.idealLineCount`, and therefore whether lines were lost.
+    ///
+    /// When ``proposal`` left width open too, this equals ``intrinsicSize``.
+    public var idealSizeAtProposedWidth: Size
 
-    public init(probeID: String, proposal: ProbeProposal, returnedSize: Size, intrinsicSize: Size) {
+    public init(
+        probeID: String,
+        proposal: ProbeProposal,
+        returnedSize: Size,
+        intrinsicSize: Size,
+        idealSizeAtProposedWidth: Size
+    ) {
         self.probeID = probeID
         self.proposal = proposal
         self.returnedSize = returnedSize
         self.intrinsicSize = intrinsicSize
+        self.idealSizeAtProposedWidth = idealSizeAtProposedWidth
     }
 }
 
@@ -272,12 +293,14 @@ extension Rect {
 /// `ProbeLayoutTests.testProbeLayoutDoesNotChangeTheRenderedFrame` holds the
 /// line: it compares a hosted view's resolved frame with and without the wrapper.
 ///
-/// Beyond forwarding, the probe performs one extra query per size negotiation:
-/// it measures the child again under `ProposedViewSize.unspecified` and records
-/// that as ``ProbeMeasurement/intrinsicSize``. That measurement cannot influence
-/// layout — `LayoutSubview.sizeThatFits` is a question, not a command, and its
-/// answer is discarded after being recorded — and it is the only way to learn the
-/// width a `Text` wanted before the frame it was given clipped it.
+/// Beyond forwarding, the probe performs two extra queries per size negotiation:
+/// it measures the child again under `ProposedViewSize.unspecified`
+/// (``ProbeMeasurement/intrinsicSize``) and once more at the proposed width with
+/// the height left open (``ProbeMeasurement/idealSizeAtProposedWidth``). Neither
+/// can influence layout — `LayoutSubview.sizeThatFits` is a question, not a
+/// command, and the answers are discarded after being recorded — and together
+/// they are the only way to learn the width a `Text` wanted before its frame
+/// clipped it and how many lines it would have taken at the width it got.
 ///
 /// ### Why `MainActor.assumeIsolated` is sound here
 ///
@@ -327,11 +350,16 @@ public struct ProbeLayout: Layout {
         let resolved = Self.measure(subviews, proposal: proposal)
         if let recorder {
             let intrinsic = Self.measure(subviews, proposal: .unspecified)
+            let idealAtWidth = Self.measure(
+                subviews,
+                proposal: ProposedViewSize(width: proposal.width, height: nil)
+            )
             let measurement = ProbeMeasurement(
                 probeID: probeID,
                 proposal: ProbeProposal(proposal),
                 returnedSize: Size(resolved),
-                intrinsicSize: Size(intrinsic)
+                intrinsicSize: Size(intrinsic),
+                idealSizeAtProposedWidth: Size(idealAtWidth)
             )
             MainActor.assumeIsolated { recorder.record(measurement) }
         }
