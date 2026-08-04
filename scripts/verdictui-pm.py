@@ -123,6 +123,29 @@ class VerdictUIPM(PmBase):
             return {"passed": False, "detail": r.stdout[:300]}
         return {"passed": True, "detail": "floor checks pass"}
 
+    def stage_contracts(self) -> dict:
+        """Verdict wire format: schema integrity, version agreement, fixture round-trip.
+
+        The verdict JSON is the product's public surface — the CLI, the MCP server,
+        and every agent consumer parse it. A drift between the Swift encoder and
+        `contracts/verdict-schema.json` breaks them all silently, which is exactly
+        the failure a PM stage should catch before a push rather than after.
+        """
+        validator = PROJECT_ROOT / "contracts" / "validate-contracts.py"
+        if not validator.exists():
+            return {"passed": False, "detail": "contracts/validate-contracts.py not found"}
+        r = subprocess.run(  # noqa: S603 — fixed argv built from constants
+            [sys.executable, str(validator)],
+            capture_output=True,
+            text=True,
+            timeout=TIMEOUT_STANDARD,
+        )
+        if r.returncode != 0:
+            failures = [ln for ln in r.stdout.splitlines() if ln.startswith("FAIL")]
+            return {"passed": False, "detail": "; ".join(failures)[:400] or r.stderr[:400]}
+        checks = sum(1 for ln in r.stdout.splitlines() if ln.startswith("PASS"))
+        return {"passed": True, "detail": f"verdict contract validated ({checks} checks)"}
+
     def stage_architecture(self) -> dict:
         """Kernel purity: VerdictUIKernel must never import SwiftUI/AppKit/CoreGraphics.
 
@@ -253,6 +276,7 @@ class VerdictUIPM(PmBase):
             ("stage_build", self.stage_build),
             ("stage_test", self.stage_test),
             ("stage_floor", self.stage_floor),
+            ("stage_contracts", self.stage_contracts),
             ("stage_architecture", self.stage_architecture),
             ("stage_ai_artifacts", self.stage_ai_artifacts),
             ("stage_todo_review", self.stage_todo_review),
