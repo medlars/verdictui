@@ -31,6 +31,16 @@ let package = Package(
             dependencies: ["VerdictUIKernel"],
             swiftSettings: strictSettings
         ),
+        .target(
+            name: "VerdictUIDemoScenarios",
+            dependencies: ["VerdictUIProbe", "VerdictUIKernel"],
+            swiftSettings: strictSettings
+        ),
+        .executableTarget(
+            name: "VerdictUIDemo",
+            dependencies: ["VerdictUIDemoScenarios", "VerdictUIProbe", "VerdictUIKernel"],
+            swiftSettings: strictSettings
+        ),
         .testTarget(
             name: "VerdictUIKernelTests",
             dependencies: ["VerdictUIKernel"],
@@ -38,7 +48,15 @@ let package = Package(
         ),
         .testTarget(
             name: "VerdictUIProbeTests",
-            dependencies: ["VerdictUIProbe"],
+            // The demo catalog is a dependency of the probe's own test target so
+            // Wave 2 Task 6's integration tests can render it there, alongside
+            // the harness tests it belongs with.
+            dependencies: ["VerdictUIProbe", "VerdictUIDemoScenarios"],
+            swiftSettings: strictSettings
+        ),
+        .testTarget(
+            name: "VerdictUIDemoScenariosTests",
+            dependencies: ["VerdictUIDemoScenarios"],
             swiftSettings: strictSettings
         ),
     ]
