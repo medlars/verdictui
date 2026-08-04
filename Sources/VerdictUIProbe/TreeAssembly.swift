@@ -86,6 +86,10 @@ public enum TreeAssembly {
         let descendants = entries.filter { $0.order != rootEntry?.order }
 
         let linkage = link(descendants)
+        // `uniqueKeysWithValues` on purpose: orders come from `enumerated()`
+        // eleven lines up, so they are unique by construction, and a future
+        // refactor that breaks that should trap here rather than have
+        // `uniquingKeysWith` silently drop an entry from the tree.
         let byOrder = Dictionary(uniqueKeysWithValues: descendants.map { ($0.order, $0) })
         let topLevel = linkage.roots.compactMap { byOrder[$0] }.map {
             subtree(of: $0, linkage: linkage, byOrder: byOrder, measurements: measurements)
@@ -136,11 +140,13 @@ public enum TreeAssembly {
     ///   are no lines to count;
     /// - the record carries no text, or empty text — without the string there is
     ///   no way to know whether the unconstrained height is one line;
-    /// - the text contains a hard line break: the unconstrained height is then
-    ///   several lines, the per-line denominator is unknown, and dividing by the
-    ///   whole block would fabricate both counts. This is a real gap, not a
-    ///   rounding detail — `\n`-broken text gets no metrics until the probe can
-    ///   measure a single line directly;
+    /// - the text contains a hard line break — any `Character.isNewline`
+    ///   scalar: `\n`, `\r`, CRLF, NEL, or a Unicode line/paragraph separator.
+    ///   The unconstrained height is then several lines, the per-line
+    ///   denominator is unknown, and dividing by the whole block would
+    ///   fabricate both counts. This is a real gap, not a rounding detail —
+    ///   hard-broken text gets no metrics until the probe can measure a single
+    ///   line directly;
     /// - no recorded measurement matches the reported frame, or the
     ///   unconstrained height is zero. A measurement from a speculative pass at
     ///   a different size does not describe the frame being reported, and
@@ -150,7 +156,13 @@ public enum TreeAssembly {
         measurements: [ProbeMeasurement]
     ) -> TextMetrics? {
         guard record.role.isTextBearing else { return nil }
-        guard let text = record.text, !text.isEmpty, !text.contains("\n") else { return nil }
+        // `isNewline` rather than a literal "\n": SwiftUI renders a bare CR,
+        // NEL, and the Unicode line/paragraph separators as line breaks too,
+        // and any of them makes the unconstrained height a multi-line block —
+        // the same unknown-denominator problem, differing only in spelling.
+        guard let text = record.text, !text.isEmpty, !text.contains(where: \.isNewline) else {
+            return nil
+        }
         guard let measurement = measurement(matching: record.frame, in: measurements) else {
             return nil
         }

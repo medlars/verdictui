@@ -241,7 +241,7 @@ final class TreeAssemblyTests: XCTestCase {
 
     // MARK: - Text metrics
 
-    func testTextMetricsComeFromTheMeasurementThatMatchesTheFrame() {
+    func testTextMetricsComeFromTheMeasurementThatMatchesTheFrame() throws {
         let frame = Rect(x: 0, y: 0, width: 120, height: 17)
         let tree = TreeAssembly.assemble(
             records: [record("label", frame, role: .text, text: "Cancel the renewal")],
@@ -258,14 +258,17 @@ final class TreeAssemblyTests: XCTestCase {
             ],
             viewport: viewport
         )
-        let metrics = tree.children.first?.textMetrics
-        XCTAssertEqual(metrics?.intrinsicWidth, 260, "intrinsicWidth is the measured value, as is")
-        XCTAssertEqual(metrics?.renderedLineCount, 1)
-        XCTAssertEqual(metrics?.idealLineCount, 1)
-        XCTAssertFalse(metrics?.isLineTruncated ?? true)
+        let metrics = try XCTUnwrap(
+            tree.children.first?.textMetrics,
+            "the committed measurement matches the frame, so metrics must be attached"
+        )
+        XCTAssertEqual(metrics.intrinsicWidth, 260, "intrinsicWidth is the measured value, as is")
+        XCTAssertEqual(metrics.renderedLineCount, 1)
+        XCTAssertEqual(metrics.idealLineCount, 1)
+        XCTAssertFalse(metrics.isLineTruncated)
     }
 
-    func testLineCountsAreDerivedFromTheHeightRatios() {
+    func testLineCountsAreDerivedFromTheHeightRatios() throws {
         // 51 pt rendered over a 17 pt unconstrained line is three lines; 85 pt of
         // ideal height at the same width is five. Vertical truncation.
         let tree = TreeAssembly.assemble(
@@ -282,10 +285,13 @@ final class TreeAssemblyTests: XCTestCase {
             ],
             viewport: viewport
         )
-        let metrics = tree.children.first?.textMetrics
-        XCTAssertEqual(metrics?.renderedLineCount, 3)
-        XCTAssertEqual(metrics?.idealLineCount, 5)
-        XCTAssertTrue(metrics?.isLineTruncated ?? false)
+        let metrics = try XCTUnwrap(
+            tree.children.first?.textMetrics,
+            "the measurement matches the frame, so metrics must be attached"
+        )
+        XCTAssertEqual(metrics.renderedLineCount, 3)
+        XCTAssertEqual(metrics.idealLineCount, 5)
+        XCTAssertTrue(metrics.isLineTruncated)
     }
 
     func testTextMetricsAreAttachedOnlyWhereAMeasurementMatches() {
@@ -362,6 +368,21 @@ final class TreeAssemblyTests: XCTestCase {
             metrics(record("hard-break", frame, role: .text, text: "two\nlines"), usable),
             "a hard line break makes the per-line denominator unknown"
         )
+        // Every spelling of a hard break must hit the same guard: SwiftUI
+        // renders all of these as line breaks, and any one slipping through
+        // makes both derived counts silently wrong for multi-line text.
+        for (label, breaker) in [
+            ("bare CR", "two\rlines"),
+            ("CRLF", "two\r\nlines"),
+            ("NEL", "two\u{0085}lines"),
+            ("line separator", "two\u{2028}lines"),
+            ("paragraph separator", "two\u{2029}lines"),
+        ] {
+            XCTAssertNil(
+                metrics(record("hard-break", frame, role: .text, text: breaker), usable),
+                "a \(label) is a hard line break too, and must withhold metrics like \\n does"
+            )
+        }
         XCTAssertNil(
             metrics(record("not-text", frame, role: .image, text: "Renew"), usable),
             "an image has no lines to count"

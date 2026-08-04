@@ -354,10 +354,17 @@ public struct ProbeLayout: Layout {
         let resolved = Self.measure(subviews, proposal: proposal)
         if let recorder {
             let intrinsic = Self.measure(subviews, proposal: .unspecified)
-            let idealAtWidth = Self.measure(
-                subviews,
-                proposal: ProposedViewSize(width: proposal.width, height: nil)
-            )
+            // With no proposed width the ideal-at-width query *is* the
+            // unconstrained one — `ProposedViewSize(width: nil, height: nil)`
+            // is `.unspecified` — so reuse the answer rather than reading as
+            // though a third distinct measurement always happens.
+            let idealAtWidth =
+                proposal.width == nil
+                ? intrinsic
+                : Self.measure(
+                    subviews,
+                    proposal: ProposedViewSize(width: proposal.width, height: nil)
+                )
             let measurement = ProbeMeasurement(
                 probeID: probeID,
                 proposal: ProbeProposal(proposal),

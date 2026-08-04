@@ -48,7 +48,12 @@ public enum LayoutSettle {
     /// loop a real slice. 5 ms is short enough that settling costs single-digit
     /// milliseconds in the common case (one confirming iteration) and long enough
     /// that a turn's worth of enqueued main-actor work actually runs.
-    public static let pumpInterval: TimeInterval = 0.005
+    ///
+    /// `nonisolated` because it is a compile-time constant, not main-actor state:
+    /// a caller reasoning about the settle budget (or a test pinning this number
+    /// against the prose that quotes it) should not have to hop to the main actor
+    /// to read a `Double`.
+    public nonisolated static let pumpInterval: TimeInterval = 0.005
 
     /// How many consecutive checks must report the same token before the layout
     /// counts as settled.
@@ -61,7 +66,9 @@ public enum LayoutSettle {
     /// so intermittently, because whether the second delivery has landed depends
     /// on timing. One confirming check is the cheapest observation that
     /// distinguishes "delivered" from "finished".
-    public static let requiredAgreeingChecks = 2
+    ///
+    /// `nonisolated` for the same reason as ``pumpInterval``.
+    public nonisolated static let requiredAgreeingChecks = 2
 
     /// How a pump ended.
     public enum Outcome: Equatable, Sendable {
@@ -431,6 +438,11 @@ public final class OracleHost {
             // scenario that never produced a tree.
             sink.latestTree == nil ? nil : sink.updateCount
         }
+        // The second clause cannot fail once the first holds: `isSettled` means
+        // the closure above returned the same non-nil token twice, which means
+        // `latestTree` was set, and nothing on this synchronous stretch calls
+        // `reset()`. It exists to bind `tree` without a force-unwrap, not to
+        // cover a reachable state — the `else` branch is entered only on expiry.
         guard outcome.isSettled, let tree = sink.latestTree else {
             throw OracleHostError.settleTimedOut(
                 scenario: scenarioName,
@@ -484,6 +496,43 @@ public final class OracleHost {
 
     /// Wrap `view` in the verdict root and the pinned environment.
     ///
+    /// The pins themselves live on ``SwiftUI/View/verdictPinnedEnvironment()``,
+    /// which is where they are documented and where anything else that hosts a
+    /// probed view — including this package's own test hosts — gets them from.
+    /// One definition, so a host that pins six of the seven values cannot exist.
+    private static func pinned<Content: View>(
+        _ view: Content,
+        sink: VerdictTreeSink
+    ) -> AnyView {
+        // `AnyView` so the class can stay non-generic while `NSHostingView` cannot.
+        // It is layout-transparent — it forwards the proposal it receives and
+        // reports the size its content returns — which the exact-frame tests in
+        // `OracleHostTests` hold to.
+        AnyView(view.verdictRoot(into: sink).verdictPinnedEnvironment())
+    }
+
+    /// The pinned locale. `en_US` because it is the locale the kernel's fixtures,
+    /// the demo scenarios and every documented expectation are written against.
+    nonisolated static let pinnedLocale = Locale(identifier: "en_US")
+
+    /// The pinned time zone. UTC because it is the only zone with no daylight
+    /// saving transition, so a scenario rendering a date cannot produce a
+    /// different tree in March than it did in February.
+    nonisolated static let pinnedTimeZone = TimeZone(identifier: "UTC") ?? .gmt
+}
+
+// MARK: - The deterministic environment
+
+extension View {
+    /// Pin every environment value a VerdictUI render must not read from the
+    /// machine it runs on.
+    ///
+    /// Applied by ``OracleHost`` to every scenario it hosts, and separated out so
+    /// it is applied *identically* everywhere: a second host — this package's own
+    /// test hosts, Wave 5's sweeps, a caller embedding the probe in their own
+    /// harness — that pinned six of these seven values would produce trees that
+    /// agree with the harness on most machines and disagree on someone's.
+    ///
     /// Every pin below exists because the value it fixes would otherwise be read
     /// from the machine running the test, and a verdict that depends on the
     /// machine is not a verdict — it is a local opinion that will disagree with
@@ -493,7 +542,7 @@ public final class OracleHost {
     ///
     /// | Pin | Fixes | Why layout depends on it |
     /// |---|---|---|
-    /// | `displayScale` = 1 | backing-store scale | point-to-pixel rounding: at 2× a frame can land on a half point, at 1× it cannot. Also makes points and pixels the same number, so the cap in ``sizeCap`` means one thing. |
+    /// | `displayScale` = 1 | backing-store scale | point-to-pixel rounding: at 2× a frame can land on a half point, at 1× it cannot. Also makes points and pixels the same number, so the cap in ``OracleHost/sizeCap`` means one thing. |
     /// | `locale` = `en_US` | number, date, currency and plural formatting | `Text(date, format:)` and `Text(value, format:)` render a locale-specific string, and a longer string is a wider frame. Measured: the same instant renders 142 pt wide under `en_US` and 115 pt under `de_DE`. |
     /// | `calendar` = Gregorian in UTC | era, month names, week rules | pinned separately from `timeZone` because it carries its own: an unpinned `calendar` keeps the machine's zone even when `\.timeZone` is pinned, which was measured (`America/Toronto` surviving a `UTC` pin) and is exactly the kind of half-fix that makes a determinism bug intermittent. |
     /// | `timeZone` = UTC | wall-clock rendering of an instant | the same `Date` is a different day, and a different number of characters, in a different zone. |
@@ -511,39 +560,19 @@ public final class OracleHost {
     /// across machines in a way this harness cannot fix. Wave 3, which drives
     /// animations on purpose, applies `Transaction(animation: nil)` instead —
     /// controlling the animation rather than asking the system to.
-    private static func pinned<Content: View>(
-        _ view: Content,
-        sink: VerdictTreeSink
-    ) -> AnyView {
+    public func verdictPinnedEnvironment() -> some View {
         var calendar = Calendar(identifier: .gregorian)
-        calendar.locale = Self.pinnedLocale
-        calendar.timeZone = Self.pinnedTimeZone
+        calendar.locale = OracleHost.pinnedLocale
+        calendar.timeZone = OracleHost.pinnedTimeZone
 
-        // `AnyView` so the class can stay non-generic while `NSHostingView` cannot.
-        // It is layout-transparent — it forwards the proposal it receives and
-        // reports the size its content returns — which the exact-frame tests in
-        // `OracleHostTests` hold to.
-        return AnyView(
-            view
-                .verdictRoot(into: sink)
-                .environment(\.displayScale, 1)
-                .environment(\.locale, Self.pinnedLocale)
-                .environment(\.calendar, calendar)
-                .environment(\.timeZone, Self.pinnedTimeZone)
-                .environment(\.colorScheme, .light)
-                .environment(\.dynamicTypeSize, .medium)
-                .environment(\.layoutDirection, .leftToRight)
-        )
+        return environment(\.displayScale, 1)
+            .environment(\.locale, OracleHost.pinnedLocale)
+            .environment(\.calendar, calendar)
+            .environment(\.timeZone, OracleHost.pinnedTimeZone)
+            .environment(\.colorScheme, .light)
+            .environment(\.dynamicTypeSize, .medium)
+            .environment(\.layoutDirection, .leftToRight)
     }
-
-    /// The pinned locale. `en_US` because it is the locale the kernel's fixtures,
-    /// the demo scenarios and every documented expectation are written against.
-    nonisolated static let pinnedLocale = Locale(identifier: "en_US")
-
-    /// The pinned time zone. UTC because it is the only zone with no daylight
-    /// saving transition, so a scenario rendering a date cannot produce a
-    /// different tree in March than it did in February.
-    nonisolated static let pinnedTimeZone = TimeZone(identifier: "UTC") ?? .gmt
 }
 
 // MARK: - Scenario hosting

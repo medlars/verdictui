@@ -29,6 +29,16 @@ jobs:
       - name: Test (zero-warning)
         run: swift test -Xswiftc -warnings-as-errors
 
+      # DemoReportTests exercises the executable's body in-process; this catches
+      # what it cannot: a process-level failure (broken @MainActor async entry,
+      # stdout wiring, a crash on launch). The pipe also proves stdout is one
+      # parseable JSON document. PIPESTATUS-free: pipefail makes a swift-run
+      # failure fail the step even though python is last in the pipe.
+      - name: Smoke-run demo executable
+        run: |
+          set -o pipefail
+          swift run VerdictUIDemo | python3 -c "import sys, json; json.load(sys.stdin)"
+
   secret-scan:
     name: Secret scan (gitleaks)
     runs-on: ubuntu-latest

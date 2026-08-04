@@ -60,11 +60,53 @@ final class DemoScenarioCatalogTests: XCTestCase {
         // Order is not decoration: the executable prints verdicts in it, and a
         // reader (and a README recording) compares runs by position.
         XCTAssertEqual(DemoScenarios.all.map(\.name), Self.expectedNames)
+
+        // `all` is a computed property, so every access rebuilds six entries and
+        // reads six names off freshly constructed scenarios. Comparing two
+        // *separately bound* evaluations is the assertion that repeating that
+        // work is stable; comparing `all.map(\.name)` to itself in one
+        // expression would be comparing one value to itself and could not fail.
+        let first = DemoScenarios.all.map(\.name)
+        let second = DemoScenarios.all.map(\.name)
+        XCTAssertEqual(first, second, "two evaluations of the computed catalog disagreed")
         XCTAssertEqual(
-            DemoScenarios.all.map(\.name),
-            DemoScenarios.all.map(\.name),
-            "two evaluations of the computed catalog disagreed about order"
+            second,
+            Self.expectedNames,
+            "the second evaluation drifted from the pinned order"
         )
+    }
+
+    /// The viewport override, which nothing in Wave 2 uses and Wave 5 depends on.
+    ///
+    /// ``DemoScenarioEntry/makeHost(viewport:deadline:)`` defaults to the
+    /// recommended viewport, and every current caller takes that default — so the
+    /// override arm is unexercised code in a public API that a later wave builds
+    /// its size sweeps on. Both directions are pinned: an explicit viewport is
+    /// honoured, and omitting one falls back to the recommendation.
+    @MainActor
+    func testAnEntryHostsAtAnExplicitViewportOrFallsBackToItsRecommendation() throws {
+        let entry = try XCTUnwrap(DemoScenarios.all.first)
+        XCTAssertEqual(
+            entry.makeHost().hostSize,
+            entry.recommendedViewport,
+            "the default must be the entry's own recommendation"
+        )
+
+        let override = Size(width: 321, height: 123)
+        XCTAssertNotEqual(
+            override,
+            entry.recommendedViewport,
+            "the override must differ from the recommendation or this proves nothing"
+        )
+        XCTAssertEqual(
+            entry.makeHost(viewport: override).hostSize,
+            override,
+            "an explicit viewport was ignored in favour of the recommendation"
+        )
+
+        // The deadline override travels the same closure and is what makes the
+        // failure path testable at all (see `DemoReportTests`).
+        XCTAssertEqual(entry.makeHost(deadline: 0).deadline, 0)
     }
 
     func testEveryScenarioNameIsNonEmptyAndUnique() {
