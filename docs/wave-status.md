@@ -41,6 +41,7 @@
 
 ## Session log (newest first, keep last ~10)
 
+- **2026-08-04 03:55** — Founding business/marketing Q&A recorded as `docs/business-decisions.md` (market gap, open-core model, naming/domains, XCUITest/web scope decisions).
 - **2026-08-04 03:45** — Immaculate-build bar enforced: strict concurrency in Package.swift, `-warnings-as-errors` in PM + CI (SWIFT_STRICT_FLAGS), `ruff format --check` + pytest + gitleaks secret-scan jobs in CI, shutil.which root-fixes for B607, grype scan clean. Entire CIS detector backlog resolved (fixed or suppressed with rationale) — only todo_md backlog rows remain.
 - **2026-08-04 03:10** — Session continuity wiring: this file created; skill resume protocol added. All P0/P1 CIS closed; PM Grade A.
 - **2026-08-04 02:00** — Scaffold debt cleared: pyright extraPaths fix, executables chmod'd, CodeWatch baseline seeded, 19-test PM suite added, CI green.
