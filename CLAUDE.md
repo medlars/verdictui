@@ -12,6 +12,15 @@ bash scripts/dev.sh                        # setup + build + test
 python3.14 scripts/verdictui-pm.py --quick # health check
 ```
 
+## Session Continuity (read this first, every session)
+
+**Every session resumes the build from where the last one left off.** Protocol:
+
+1. Read `docs/wave-status.md` — its "Next action" row is the first task. Cross-check against `git log --oneline -5`; if the file is stale (newer commits or uncommitted work), reconcile it from git evidence before continuing.
+2. P0/P1 in `TODO.md` / open CIS issues preempt wave work; a non-Grade-A PM preempts everything.
+3. Start working without asking what to do — announce in one line what is being resumed.
+4. **Before the session ends**: update `docs/wave-status.md` (tasks done, precise next action, session-log line), commit, push. Leaving it stale breaks the next session's resume.
+
 ## Architecture
 
 Three concentric verification loops (see `docs/implementation-plan.md` for the full wave plan):
@@ -36,6 +45,7 @@ Target layout:
 | Root | `~/Projects/VerdictUI/` |
 | PM | `scripts/verdictui-pm.py` |
 | Wave plan | `docs/implementation-plan.md` |
+| Wave status (resume point) | `docs/wave-status.md` |
 | SLOs | `docs/slo.md` |
 | Runbook | `docs/runbook.md` |
 | Contracts | `contracts/` |
