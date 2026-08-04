@@ -13,6 +13,9 @@
 | `Sources/VerdictUIProbe/VerdictProbe.swift` | `.verdictProbe(id:)` modifier + VerdictFramesKey preference | Active | 2026-08-04 |
 | `Tests/VerdictUIKernelTests/VerdictUIKernelTests.swift` | Kernel: lint + verdict + JSON round-trip tests | Active | 2026-08-04 |
 | `Tests/VerdictUIProbeTests/VerdictUIProbeTests.swift` | Probe: preference-key merge + modifier smoke tests | Active | 2026-08-04 |
+| `Tests/test_verdictui_pm.py` | Python tests for PM stages, floor-check, contracts stub | Active | 2026-08-04 |
+| `Tests/__init__.py` | Python package marker for pytest collection | Active | 2026-08-04 |
+| `pyproject.toml` | Fleet tooling config (ruff/mypy/pyright/pytest) — no [project] section | Active | 2026-08-04 |
 | `scripts/verdictui-pm.py` | Project Manager (build/test/floor/governance stages) | Active | 2026-08-04 |
 | `scripts/floor-check.py` | Floor compliance audit | Active | 2026-08-04 |
 | `scripts/dev.sh` | One-command setup + build + test | Active | 2026-08-04 |

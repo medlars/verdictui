@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path.home() / "Projects/shared-libs/pm-base"))
 # SIBLING repo, absent on CI runners — an unguarded import raises at COLLECTION
 # time and takes down the whole quick gate, not just the PM tests (Lesson 168).
 try:
-    from pm_base import PmBase  # type: ignore
+    from pm_base import PmBase  # type: ignore  # noqa: E402 — must follow sys.path setup
 except ImportError as _imp_err:
     logging.getLogger(__name__).warning("pm_base unavailable (%s) — stages disabled", _imp_err)
 
@@ -50,9 +50,9 @@ def _pm_log(message: str, level: str = "INFO") -> None:
     _logger.log(getattr(logging, level, logging.INFO), message)
 
 
-def _swift_runner():  # noqa: ANN201
+def _swift_runner():  # noqa: ANN201 — heterogeneous tuple of shared-libs callables
     """Lazy import of swift_runner — keeps hook-snapshot imports of this module fast."""
-    from swift_runner import (  # type: ignore  # noqa: PLC0415
+    from swift_runner import (  # type: ignore  # noqa: PLC0415 — lazy on purpose (startup cost)
         kill_zombie_swift_processes,
         run_swift_build,
         run_swift_test,
@@ -77,7 +77,7 @@ class VerdictUIPM(PmBase):
         """Swift package build including test targets (stage_test then only runs)."""
         if not (PROJECT_ROOT / "Package.swift").exists():
             return {"passed": False, "detail": "Package.swift not found"}
-        swift = subprocess.run(  # noqa: S603,S607
+        swift = subprocess.run(  # noqa: S603,S607 — fixed argv, no user input
             ["which", "swift"], capture_output=True, timeout=TIMEOUT_WHICH_PROBE
         )
         if swift.returncode != 0:
@@ -94,7 +94,7 @@ class VerdictUIPM(PmBase):
 
     def stage_test(self) -> dict:
         """Run Swift unit tests (kernel + probe suites)."""
-        swift = subprocess.run(  # noqa: S603,S607
+        swift = subprocess.run(  # noqa: S603,S607 — fixed argv, no user input
             ["which", "swift"], capture_output=True, timeout=TIMEOUT_WHICH_PROBE
         )
         if swift.returncode != 0:
@@ -114,7 +114,7 @@ class VerdictUIPM(PmBase):
         fc = PROJECT_ROOT / "scripts" / "floor-check.py"
         if not fc.exists():
             return {"passed": False, "detail": "floor-check.py not found"}
-        r = subprocess.run(  # noqa: S603
+        r = subprocess.run(  # noqa: S603 — fixed argv built from constants
             [sys.executable, str(fc)],
             capture_output=True,
             text=True,
@@ -156,7 +156,9 @@ class VerdictUIPM(PmBase):
 
     def stage_todo_review(self) -> dict:
         try:
-            from cts_bridge import stage_todo_review_impl  # type: ignore  # noqa: PLC0415
+            from cts_bridge import (
+                stage_todo_review_impl,  # type: ignore  # noqa: PLC0415 — deferred shared-libs import (skip sentinel pattern)
+            )
         except ImportError as e:
             return self._skipped_shared_libs(e)
         passed, detail = stage_todo_review_impl(PROJECT_ROOT)
@@ -164,7 +166,9 @@ class VerdictUIPM(PmBase):
 
     def stage_last20(self) -> dict:
         try:
-            from stage_last20 import run_stage_last20  # type: ignore  # noqa: PLC0415
+            from stage_last20 import (
+                run_stage_last20,  # type: ignore  # noqa: PLC0415 — deferred shared-libs import (skip sentinel pattern)
+            )
         except ImportError as e:
             return self._skipped_shared_libs(e)
         passed, detail, _elapsed = run_stage_last20(PROJECT_ROOT)
@@ -172,7 +176,7 @@ class VerdictUIPM(PmBase):
 
     def stage_test_alongside(self) -> dict:
         try:
-            from stage_test_alongside import (  # type: ignore  # noqa: PLC0415
+            from stage_test_alongside import (  # type: ignore  # noqa: PLC0415 — deferred shared-libs import (skip sentinel pattern)
                 run_stage_test_alongside,
             )
         except ImportError as e:
@@ -182,22 +186,21 @@ class VerdictUIPM(PmBase):
 
     def stage_ai_artifacts(self) -> dict:
         try:
-            from stage_ai_artifacts import (  # type: ignore  # noqa: PLC0415
+            from stage_ai_artifacts import (  # type: ignore  # noqa: PLC0415 — deferred shared-libs import (skip sentinel pattern)
                 run_stage_ai_artifacts,
             )
         except ImportError as e:
             return self._skipped_shared_libs(e)
-        passed, detail, _score = run_stage_ai_artifacts(
-            PROJECT_ROOT, src_dirs=[PROJECT_ROOT / "Sources"]
-        )
+        # src_dirs takes subdirectory NAMES relative to project_root, not Paths.
+        passed, detail, _score = run_stage_ai_artifacts(PROJECT_ROOT, src_dirs=["Sources"])
         return {"passed": passed, "detail": detail}
 
     def stage_lint(self) -> dict:
         """ruff check on the project root (PM/scripts are Python). Skips if not installed."""
         if shutil.which("ruff") is None:
             return {"passed": True, "detail": "ruff not installed; skipped"}
-        r = subprocess.run(  # noqa: S603
-            ["ruff", "check", "."],  # noqa: S607
+        r = subprocess.run(  # noqa: S603 — fixed argv, no user input
+            ["ruff", "check", "."],  # noqa: S607 — presence guarded by shutil.which above
             cwd=PROJECT_ROOT,
             capture_output=True,
             text=True,
@@ -210,7 +213,7 @@ class VerdictUIPM(PmBase):
 
     def stage_codewatch(self) -> dict:
         try:
-            from pm_base_pm_stages import (  # type: ignore  # noqa: PLC0415
+            from pm_base_pm_stages import (  # type: ignore  # noqa: PLC0415 — deferred shared-libs import (skip sentinel pattern)
                 stage_codewatch_impl,
             )
         except ImportError as e:
@@ -219,7 +222,7 @@ class VerdictUIPM(PmBase):
 
     def stage_issuewatch(self) -> dict:
         try:
-            from pm_base_pm_stages import (  # type: ignore  # noqa: PLC0415
+            from pm_base_pm_stages import (  # type: ignore  # noqa: PLC0415 — deferred shared-libs import (skip sentinel pattern)
                 stage_issuewatch_impl,
             )
         except ImportError as e:
@@ -228,7 +231,7 @@ class VerdictUIPM(PmBase):
 
     def stage_capabilitywatch(self) -> dict:
         try:
-            from pm_base_pm_stages import (  # type: ignore  # noqa: PLC0415
+            from pm_base_pm_stages import (  # type: ignore  # noqa: PLC0415 — deferred shared-libs import (skip sentinel pattern)
                 stage_capabilitywatch_impl,
             )
         except ImportError as e:
@@ -238,7 +241,7 @@ class VerdictUIPM(PmBase):
     def stage_cis_health(self) -> dict:
         """CIS health via shared-libs. Surfaces real errors — never swallows them."""
         try:
-            from pm_base_pm_stages import (  # type: ignore  # noqa: PLC0415
+            from pm_base_pm_stages import (  # type: ignore  # noqa: PLC0415 — deferred shared-libs import (skip sentinel pattern)
                 stage_cis_health_impl,
             )
         except ImportError as e:
@@ -263,7 +266,7 @@ class VerdictUIPM(PmBase):
         ]
         # WatchTools fleet-wide stages — ImportError means not installed, skip gracefully
         try:
-            from pm_base_pm_stages import (  # type: ignore  # noqa: PLC0415
+            from pm_base_pm_stages import (  # type: ignore  # noqa: PLC0415 — deferred shared-libs import (skip sentinel pattern)
                 build_watch_stages,
             )
         except ImportError:

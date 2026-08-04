@@ -1,0 +1,27 @@
+# Python tooling config for the PM/scripts layer only — the product is Swift.
+# No [project]/[build-system] section on purpose: this package is never pip-installed
+# (ADR 2026-003 legacy-install hazard); the file exists to carry the canonical fleet
+# code-quality config (shared/rules.md).
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+ignore = ["E501"]
+
+[tool.mypy]
+ignore_missing_imports = true
+follow_imports = "skip"
+
+[tool.pytest.ini_options]
+markers = [
+    "quick: fast pure-python tests included in the pre-merge quick gate",
+]
+
+[tool.pyright]
+typeCheckingMode = "basic"
+# The PM imports pm_base via a runtime sys.path.insert that static analysis can't
+# see; extraPaths gives pyright the same resolution so PmBase is a known base class.
+# Relative to project root (sibling repo layout under ~/Projects).
+extraPaths = ["../shared-libs/pm-base", "../shared-libs/release-tools", "../shared-libs"]
