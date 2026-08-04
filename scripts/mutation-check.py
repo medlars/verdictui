@@ -65,7 +65,10 @@ MUTATIONS = [
         name="delivery stops filtering measurements to reporting probes",
         path="Sources/VerdictUIProbe/VerdictProbe.swift",
         old="grouping: recorded.filter { ids.contains($0.probeID) },",
-        new="grouping: recorded,",
+        # Still reads `ids`, because `-warnings-as-errors` turns an orphaned
+        # binding into a build failure — and a mutation that does not build
+        # proves nothing about the test.
+        new="grouping: recorded.filter { _ in ids.count >= 0 },",
         test="VerdictUIProbeTests/testDeliveryDropsMeasurementsForProbesThatDidNotReport",
     ),
     Mutation(
@@ -79,7 +82,11 @@ MUTATIONS = [
         name="a non-integral host size is rounded in the error message",
         path="Sources/VerdictUIProbe/OracleHost.swift",
         old="guard value.isFinite, value == value.rounded(), value.magnitude < 1e15 else {",
-        new="guard !value.isFinite else {",
+        # Only the integrality clause is dropped. Dropping the finiteness clause
+        # instead would trap in `Int64(Double.nan)` and the run would report a
+        # signal rather than a failed assertion — noticed, but for the wrong
+        # reason, and unreadable as evidence.
+        new="guard value.isFinite, value.magnitude < 1e15 else {",
         test="OracleHostTests/testANonIntegralHostSizeIsReportedWithoutBeingRounded",
     ),
     Mutation(
@@ -102,8 +109,10 @@ MUTATIONS = [
     Mutation(
         name="each body evaluation gets a fresh ScenarioState",
         path="Sources/VerdictUIProbe/OracleHost.swift",
-        old="scenario.body(state: state)",
-        new="scenario.body(state: ScenarioState())",
+        # Enough context to miss the identical string in `ScenarioRoot`'s own doc
+        # comment, which explains why this line reads the stored state.
+        old="    var body: some View {\n        scenario.body(state: state)\n    }",
+        new="    var body: some View {\n        scenario.body(state: ScenarioState())\n    }",
         test="ScenarioTests/testOneHostHandsEveryReEvaluationTheSameScenarioState",
     ),
     Mutation(
@@ -158,6 +167,12 @@ def check(mutation: Mutation) -> bool:
         if "error:" in combined and "Executed" not in combined:
             print("  INCONCLUSIVE: the mutation did not compile")
             print("  " + "\n  ".join(combined.strip().splitlines()[-6:]))
+            return False
+        # A trap is a nonzero exit for a reason that is not the assertion: the
+        # test never got to judge anything, so it says nothing about coverage.
+        if "unexpected signal code" in combined:
+            print("  INCONCLUSIVE: the mutation trapped instead of failing an assertion")
+            print("  " + "\n  ".join(combined.strip().splitlines()[-3:]))
             return False
         noticed = result.returncode != 0
         print(f"  {'NOTICED' if noticed else 'UNNOTICED'} (exit {result.returncode})")
