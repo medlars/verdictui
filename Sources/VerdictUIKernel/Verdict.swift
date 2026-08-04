@@ -10,10 +10,14 @@ public struct Verdict: Equatable, Codable, Sendable {
         case fail = "FAIL"
     }
 
+    /// Name of the scenario that produced this verdict.
+    public var scenario: String
+    /// Derived from ``findings``: any `error` makes the verdict a FAIL.
     public var status: Status
     public var findings: [Finding]
 
-    public init(findings: [Finding]) {
+    public init(scenario: String = "unnamed", findings: [Finding]) {
+        self.scenario = scenario
         self.findings = findings
         self.status = findings.contains(where: { $0.severity == .error }) ? .fail : .pass
     }
@@ -31,12 +35,23 @@ public struct Finding: Equatable, Codable, Sendable {
     public var severity: Severity
     public var nodeID: String
     public var message: String
+    /// Machine-actionable repair hint, e.g. "increase frame width to >= intrinsic
+    /// width 212 pt". Present whenever the rule can name a concrete fix — this is
+    /// what turns a verdict into an edit an agent can make without guessing.
+    public var suggestion: String?
 
-    public init(rule: String, severity: Severity, nodeID: String, message: String) {
+    public init(
+        rule: String,
+        severity: Severity,
+        nodeID: String,
+        message: String,
+        suggestion: String? = nil
+    ) {
         self.rule = rule
         self.severity = severity
         self.nodeID = nodeID
         self.message = message
+        self.suggestion = suggestion
     }
 }
 

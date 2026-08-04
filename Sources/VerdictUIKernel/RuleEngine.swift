@@ -1,0 +1,139 @@
+// VerdictUIKernel — platform-pure. No SwiftUI/AppKit imports allowed in this target.
+import Foundation
+
+/// A lint rule: pure function from a semantic tree to findings.
+///
+/// Rules are `Sendable` value types with no state, so the Wave 6 daemon can hold
+/// one rule set and evaluate trees concurrently. A rule must never mutate the tree
+/// and must derive every finding from the node data it was given — no ambient
+/// state, no I/O, no clock.
+public protocol LintRule: Sendable {
+    /// Stable kebab-case identifier. It appears in ``Finding/rule``, in
+    /// ``LintContext/disabledRules``, and in per-node suppression lists, so
+    /// renaming one is a breaking change for consumers.
+    static var id: String { get }
+
+    /// Evaluate the whole tree rooted at `root`.
+    func evaluate(_ root: SemanticNode, context: LintContext) -> [Finding]
+}
+
+/// Everything a rule needs to know beyond the tree itself: the viewport it was
+/// laid out in, the platform's minimums, and the caller's rule configuration.
+public struct LintContext: Sendable {
+    /// Attribute key a view uses to opt a node out of rules:
+    /// `.bool(true)` or `.string("*")` suppresses every rule, and a
+    /// comma-separated list (`"tap-target,truncation"`) suppresses those rules.
+    ///
+    /// Every rule honours it. A rule with no suppression path is a rule people
+    /// disable wholesale, which is how a lint library loses its users.
+    public static let suppressionKey = "verdict.suppress"
+
+    /// Wildcard value for ``suppressionKey``.
+    public static let suppressAllRules = "*"
+
+    /// macOS pointer-target minimum (Apple HIG). Smaller than the 44×44 pt touch
+    /// minimum on purpose: measuring a mouse-driven UI against a finger target
+    /// produces noise, and a rule that cries wolf gets switched off.
+    public static let macOSMinimumTapTarget = Size(width: 28, height: 28)
+
+    /// Touch-target minimum (Apple HIG), for scenarios rendered at iOS metrics.
+    public static let touchMinimumTapTarget = Size(width: 44, height: 44)
+
+    /// Scenario name recorded in the resulting ``Verdict``.
+    public var scenario: String
+    /// Bounds the tree was laid out in — the reference frame for ``OffscreenRule``.
+    public var viewport: Rect
+    /// Minimum hit size ``TapTargetRule`` enforces on interactive roles.
+    public var minimumTapTarget: Size
+    /// Slack, in points, before a width shortfall counts as truncation. Absorbs
+    /// sub-pixel layout rounding so a 0.001 pt shortfall is not a defect.
+    public var truncationTolerance: Double
+    /// Per-rule severity replacement, e.g. demote `tap-target` to a warning.
+    public var severityOverrides: [String: Finding.Severity]
+    /// Rules skipped entirely by ``RuleEngine/run(rules:on:context:)``.
+    public var disabledRules: Set<String>
+
+    public init(
+        scenario: String = "unnamed",
+        viewport: Rect,
+        minimumTapTarget: Size = LintContext.macOSMinimumTapTarget,
+        truncationTolerance: Double = 0.5,
+        severityOverrides: [String: Finding.Severity] = [:],
+        disabledRules: Set<String> = []
+    ) {
+        self.scenario = scenario
+        self.viewport = viewport
+        self.minimumTapTarget = minimumTapTarget
+        self.truncationTolerance = truncationTolerance
+        self.severityOverrides = severityOverrides
+        self.disabledRules = disabledRules
+    }
+
+    /// Context with macOS platform minimums (the default for the desktop probe).
+    public static func macOS(viewport: Rect, scenario: String = "unnamed") -> LintContext {
+        LintContext(scenario: scenario, viewport: viewport, minimumTapTarget: macOSMinimumTapTarget)
+    }
+
+    /// Context with touch platform minimums.
+    public static func touch(viewport: Rect, scenario: String = "unnamed") -> LintContext {
+        LintContext(scenario: scenario, viewport: viewport, minimumTapTarget: touchMinimumTapTarget)
+    }
+
+    /// Whether `node` opted out of `ruleID` via ``suppressionKey``.
+    public func isSuppressed(rule ruleID: String, on node: SemanticNode) -> Bool {
+        guard let directive = node.attributes[LintContext.suppressionKey] else { return false }
+        if let flag = directive.boolValue { return flag }
+        guard let list = directive.stringValue else { return false }
+        return list.split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .contains { $0 == ruleID || $0 == LintContext.suppressAllRules }
+    }
+
+    /// The severity to report for `ruleID`, honouring ``severityOverrides``.
+    public func severity(for ruleID: String, default fallback: Finding.Severity) -> Finding.Severity
+    {
+        severityOverrides[ruleID] ?? fallback
+    }
+
+    /// Build a finding for `node`, or `nil` if the node suppressed this rule.
+    ///
+    /// Rules call this instead of constructing ``Finding`` directly, so
+    /// suppression and severity overrides cannot be forgotten by a new rule.
+    public func makeFinding(
+        rule ruleID: String,
+        node: SemanticNode,
+        message: String,
+        suggestion: String?,
+        defaultSeverity: Finding.Severity
+    ) -> Finding? {
+        guard !isSuppressed(rule: ruleID, on: node) else { return nil }
+        return Finding(
+            rule: ruleID,
+            severity: severity(for: ruleID, default: defaultSeverity),
+            nodeID: node.id.isEmpty ? node.structuralPath : node.id,
+            message: message,
+            suggestion: suggestion
+        )
+    }
+}
+
+/// Runs a rule set over a tree and packages the findings as a ``Verdict``.
+public enum RuleEngine {
+    /// Evaluate `rules` against `root` and return the verdict.
+    ///
+    /// Findings are ordered by rule, then by the rule's own traversal order, so
+    /// the output is byte-stable for a given tree — a prerequisite for baselines
+    /// and for diffing verdicts between runs. Rules named in
+    /// ``LintContext/disabledRules`` are not evaluated at all.
+    public static func run(
+        rules: [any LintRule],
+        on root: SemanticNode,
+        context: LintContext
+    ) -> Verdict {
+        var findings: [Finding] = []
+        for rule in rules where !context.disabledRules.contains(type(of: rule).id) {
+            findings.append(contentsOf: rule.evaluate(root, context: context))
+        }
+        return Verdict(scenario: context.scenario, findings: findings)
+    }
+}
