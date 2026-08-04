@@ -6,6 +6,15 @@
 //   VerdictUIProbe  — SwiftUI instrumentation runtime (Layout probes, preference keys, oracle host).
 import PackageDescription
 
+// Immaculate-build bar: complete strict-concurrency checking on every target so
+// data-race issues surface at compile time, not in Wave 6's daemon at runtime.
+// (Warnings-as-errors is enforced at the invocation layer — PM + CI pass
+// `-Xswiftc -warnings-as-errors` — because putting unsafeFlags in the manifest
+// would make the package unusable as a dependency for downstream consumers.)
+let strictSettings: [SwiftSetting] = [
+    .enableExperimentalFeature("StrictConcurrency")
+]
+
 let package = Package(
     name: "VerdictUI",
     platforms: [
@@ -16,9 +25,21 @@ let package = Package(
         .library(name: "VerdictUIProbe", targets: ["VerdictUIProbe"]),
     ],
     targets: [
-        .target(name: "VerdictUIKernel"),
-        .target(name: "VerdictUIProbe", dependencies: ["VerdictUIKernel"]),
-        .testTarget(name: "VerdictUIKernelTests", dependencies: ["VerdictUIKernel"]),
-        .testTarget(name: "VerdictUIProbeTests", dependencies: ["VerdictUIProbe"]),
+        .target(name: "VerdictUIKernel", swiftSettings: strictSettings),
+        .target(
+            name: "VerdictUIProbe",
+            dependencies: ["VerdictUIKernel"],
+            swiftSettings: strictSettings
+        ),
+        .testTarget(
+            name: "VerdictUIKernelTests",
+            dependencies: ["VerdictUIKernel"],
+            swiftSettings: strictSettings
+        ),
+        .testTarget(
+            name: "VerdictUIProbeTests",
+            dependencies: ["VerdictUIProbe"],
+            swiftSettings: strictSettings
+        ),
     ]
 )

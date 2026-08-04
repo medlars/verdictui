@@ -66,6 +66,7 @@ Switch with `/model opus` if current session model differs.
 
 ## Rules
 
+0. **Immaculate build (zero-warning policy)** — Swift compiles with `-warnings-as-errors` + complete strict concurrency (PM `stage_build`/`stage_test` and CI both enforce; `SWIFT_STRICT_FLAGS` in the PM and the CI workflow must stay in sync). Python stays ruff-clean, `ruff format --check`-clean, and pyright-clean. Never silence a warning to pass the gate — fix its cause or, for a true false positive, suppress narrowly with a written justification.
 1. **Kernel purity** — `VerdictUIKernel` never imports SwiftUI/AppKit/CoreGraphics. The verdict engine must run headless anywhere.
 2. **Public API first** — `VerdictUIProbe` uses only supported SwiftUI extension points. Private-API backends (e.g. `_viewDebugData`) live behind an explicit optional adapter target, never in the core path (see `no.md` #001).
 3. **Every wave lands with tests alongside** — the product's whole thesis is verification; an untested wave is self-refuting.

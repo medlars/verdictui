@@ -40,10 +40,14 @@ _LOCK_DIR = PROJECT_ROOT / "logs"
 
 # Swift build/test timeouts (seconds). Small package today; headroom for the
 # SwiftSyntax dependency arriving in Wave 4 (macro target compiles are slow).
-TIMEOUT_WHICH_PROBE = 5
 TIMEOUT_SWIFT_BUILD = 900
 TIMEOUT_SWIFT_TEST = 600
 TIMEOUT_STANDARD = 120
+
+# Immaculate-build bar: any Swift warning fails the build stage. Applied at the
+# invocation layer (not Package.swift unsafeFlags) so downstream consumers of
+# the library are unaffected. CI mirrors these flags — keep the two in sync.
+SWIFT_STRICT_FLAGS = ["-Xswiftc", "-warnings-as-errors"]
 
 
 def _pm_log(message: str, level: str = "INFO") -> None:
@@ -74,13 +78,10 @@ class VerdictUIPM(PmBase):
         self.status_file = self.PROJECT_ROOT / "logs" / "pm-last-status.json"
 
     def stage_build(self) -> dict:
-        """Swift package build including test targets (stage_test then only runs)."""
+        """Swift build incl. test targets, warnings-as-errors (immaculate-build bar)."""
         if not (PROJECT_ROOT / "Package.swift").exists():
             return {"passed": False, "detail": "Package.swift not found"}
-        swift = subprocess.run(  # noqa: S603,S607 — fixed argv, no user input
-            ["which", "swift"], capture_output=True, timeout=TIMEOUT_WHICH_PROBE
-        )
-        if swift.returncode != 0:
+        if shutil.which("swift") is None:
             return {"passed": True, "detail": "swift not installed — build skipped"}
         _LOCK_DIR.mkdir(parents=True, exist_ok=True)
         _, run_swift_build, _ = _swift_runner()
@@ -89,15 +90,12 @@ class VerdictUIPM(PmBase):
             lock_dir=_LOCK_DIR,
             log=_pm_log,
             timeout=TIMEOUT_SWIFT_BUILD,
-            extra_flags=["--build-tests"],
+            extra_flags=["--build-tests", *SWIFT_STRICT_FLAGS],
         )
 
     def stage_test(self) -> dict:
-        """Run Swift unit tests (kernel + probe suites)."""
-        swift = subprocess.run(  # noqa: S603,S607 — fixed argv, no user input
-            ["which", "swift"], capture_output=True, timeout=TIMEOUT_WHICH_PROBE
-        )
-        if swift.returncode != 0:
+        """Run Swift unit tests (kernel + probe suites), warnings-as-errors."""
+        if shutil.which("swift") is None:
             return {"passed": True, "detail": "swift not installed — test skipped"}
         _LOCK_DIR.mkdir(parents=True, exist_ok=True)
         _, _, run_swift_test = _swift_runner()
@@ -107,6 +105,7 @@ class VerdictUIPM(PmBase):
             log=_pm_log,
             timeout=TIMEOUT_SWIFT_TEST,
             min_test_count=1,
+            extra_flags=SWIFT_STRICT_FLAGS,
         )
 
     def stage_floor(self) -> dict:
@@ -196,11 +195,12 @@ class VerdictUIPM(PmBase):
         return {"passed": passed, "detail": detail}
 
     def stage_lint(self) -> dict:
-        """ruff check on the project root (PM/scripts are Python). Skips if not installed."""
-        if shutil.which("ruff") is None:
+        """ruff check via resolved absolute path (B607-clean). Skips if not installed."""
+        ruff = shutil.which("ruff")
+        if ruff is None:
             return {"passed": True, "detail": "ruff not installed; skipped"}
-        r = subprocess.run(  # noqa: S603 — fixed argv, no user input
-            ["ruff", "check", "."],  # noqa: S607 — presence guarded by shutil.which above
+        r = subprocess.run(  # noqa: S603 — fixed argv, absolute path, no user input
+            [ruff, "check", "."],
             cwd=PROJECT_ROOT,
             capture_output=True,
             text=True,

@@ -33,6 +33,7 @@
 ## TestWatch Gaps (auto-generated — do not edit this block)
 - [ ] (P2) testwatch: add test for `check-pinned-actions` in `/Users/eiman/Projects/VerdictUI/.github/workflows/check-pinned-actions.yml` [live]
 - [ ] (P2) testwatch: add test for `python-scripts` in `/Users/eiman/Projects/VerdictUI/.github/workflows/ci.yml` [live]
+- [ ] (P2) testwatch: add test for `secret-scan` in `/Users/eiman/Projects/VerdictUI/.github/workflows/ci.yml` [live]
 - [ ] (P2) testwatch: add test for `_check_todo_tracking` in `scripts/floor-check.py` [NONE]
 - [ ] (P2) testwatch: add test for `_swift_runner` in `scripts/verdictui-pm.py` [NONE]
 - [ ] (P2) testwatch: add test for `stage_ai_artifacts` in `scripts/verdictui-pm.py` [NONE]

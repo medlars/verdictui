@@ -22,11 +22,27 @@ jobs:
       - name: Swift version
         run: swift --version
 
-      - name: Build (including test targets)
-        run: swift build --build-tests
+      # Warnings-as-errors mirrors the PM's SWIFT_STRICT_FLAGS — keep in sync.
+      - name: Build (including test targets, zero-warning)
+        run: swift build --build-tests -Xswiftc -warnings-as-errors
 
-      - name: Test
-        run: swift test
+      - name: Test (zero-warning)
+        run: swift test -Xswiftc -warnings-as-errors
+
+  secret-scan:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout (full history for scan)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Gitleaks
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e  # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   python-scripts:
     name: Lint PM scripts
@@ -44,7 +60,13 @@ jobs:
       - name: Syntax check
         run: python3 -m py_compile scripts/*.py contracts/validate-contracts.py
 
-      - name: Ruff
+      - name: Ruff (lint + format drift)
         run: |
           pip install --quiet ruff
-          ruff check scripts/ contracts/
+          ruff check .
+          ruff format --check .
+
+      - name: PM test suite
+        run: |
+          pip install --quiet pytest
+          python3 -m pytest Tests/test_verdictui_pm.py -q
