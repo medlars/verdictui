@@ -148,6 +148,31 @@ private func probeTestRoot<Content: View>(
         .environment(\.probeRecorder, recorder)
 }
 
+/// A root whose `ZStack` really is 200 × 100 and really does align its content,
+/// which is what makes an alignment difference observable.
+///
+/// The spacer child is what fixes the stack's size: `ZStack { small }.frame(…)`
+/// would leave the stack the size of `small` and let the outer frame centre it,
+/// so every alignment would produce the same frame and the test would pass
+/// vacuously. With the spacer inside, the stack's own bounds are 200 × 100 and
+/// `alignment` is the only thing deciding where the 40 × 20 leaf lands. The outer
+/// frame then pins the coordinate-space origin so frames are comparable across
+/// hosts.
+@MainActor
+private func alignmentTestRoot<Content: View>(
+    alignment: Alignment,
+    recorder: ProbeRecorder?,
+    @ViewBuilder content: () -> Content
+) -> some View {
+    ZStack(alignment: alignment) {
+        Color.clear.frame(width: 200, height: 100)
+        content()
+    }
+    .frame(width: 200, height: 100)
+    .coordinateSpace(.named(FrameReporter.coordinateSpaceName))
+    .environment(\.probeRecorder, recorder)
+}
+
 // MARK: - Tests
 
 final class ProbeLayoutTests: XCTestCase {
@@ -196,6 +221,96 @@ final class ProbeLayoutTests: XCTestCase {
         XCTAssertEqual(probed.height, plain.height, accuracy: 0.01, "probe changed height")
         XCTAssertEqual(probed.origin.x, plain.origin.x, accuracy: 0.01, "probe moved the view in x")
         XCTAssertEqual(probed.origin.y, plain.origin.y, accuracy: 0.01, "probe moved the view in y")
+    }
+
+    /// Alignment is part of transparency: a wrapper that reproduces size and
+    /// position under a centring parent but not under an aligning one is not
+    /// transparent, it is transparent-by-coincidence. `.topLeading` is the case
+    /// Wave 2 Task 2 hit — the wrapped leaf came out centred in the stack.
+    @MainActor
+    func testProbeLayoutPreservesTopLeadingAlignmentInsideAZStack() throws {
+        let frames = try XCTUnwrap(
+            alignmentFrames(.topLeading) { sink in
+                Color.red.frame(width: 40, height: 20).reportingFrame("leaf", to: sink)
+            }
+        )
+        // The unwrapped leaf must actually be at the stack's top-leading corner,
+        // otherwise "identical to unwrapped" would be a claim about nothing.
+        XCTAssertEqual(frames.plain.origin.x, 0, accuracy: 0.01, "unwrapped leaf is not leading")
+        XCTAssertEqual(frames.plain.origin.y, 0, accuracy: 0.01, "unwrapped leaf is not at the top")
+        assertFramesMatch(frames, alignment: ".topLeading")
+    }
+
+    /// The opposite corner, so a fix cannot be a one-corner special case: the
+    /// bottom-trailing guides resolve at the far edges of the leaf's own frame,
+    /// which a wrapper that reports its own geometry instead of the child's gets
+    /// wrong in the other direction.
+    @MainActor
+    func testProbeLayoutPreservesBottomTrailingAlignmentInsideAZStack() throws {
+        let frames = try XCTUnwrap(
+            alignmentFrames(.bottomTrailing) { sink in
+                Color.red.frame(width: 40, height: 20).reportingFrame("leaf", to: sink)
+            }
+        )
+        XCTAssertEqual(frames.plain.maxX, 200, accuracy: 0.01, "unwrapped leaf is not trailing")
+        XCTAssertEqual(
+            frames.plain.maxY, 100, accuracy: 0.01, "unwrapped leaf is not at the bottom"
+        )
+        assertFramesMatch(frames, alignment: ".bottomTrailing")
+    }
+
+    /// An *explicit* guide, which the wrapper's own default geometry cannot
+    /// reproduce by accident: the leaf declares its leading edge to be its own
+    /// horizontal centre, so the stack hangs it outside its leading edge. A
+    /// wrapper that reports only its own default guides swallows the override and
+    /// the leaf snaps back to the edge.
+    ///
+    /// The precondition is "moved leading-outward", not an exact coordinate: how
+    /// far out the leaf ends up also depends on the outer frame re-centring a
+    /// stack whose content now overhangs it, which is SwiftUI's business and not
+    /// the property under test. What the test pins down is that the wrapped leaf
+    /// lands wherever the unwrapped one does.
+    @MainActor
+    func testProbeLayoutForwardsAnExplicitAlignmentGuideOverride() throws {
+        let frames = try XCTUnwrap(
+            alignmentFrames(.topLeading) { sink in
+                Color.red.frame(width: 40, height: 20)
+                    .reportingFrame("leaf", to: sink)
+                    .alignmentGuide(.leading) { dimensions in dimensions.width / 2 }
+            }
+        )
+        XCTAssertLessThan(
+            frames.plain.origin.x,
+            -0.5,
+            "the unwrapped leaf must honour its own .leading override — hanging "
+                + "outside the leading edge — before the wrapper can be asked to "
+                + "reproduce it"
+        )
+        assertFramesMatch(frames, alignment: ".topLeading with a .leading override")
+    }
+
+    /// The vertical half of the same property, and the half that fails in the
+    /// other direction: the leaf declares its bottom edge to be its own vertical
+    /// centre, so a bottom-aligning stack lets it hang below. Covering both axes
+    /// keeps the fix from being a one-overload patch, since `Layout` declares
+    /// `explicitAlignment` separately for horizontal and vertical guides.
+    @MainActor
+    func testProbeLayoutForwardsAnExplicitVerticalAlignmentGuideOverride() throws {
+        let frames = try XCTUnwrap(
+            alignmentFrames(.bottomTrailing) { sink in
+                Color.red.frame(width: 40, height: 20)
+                    .reportingFrame("leaf", to: sink)
+                    .alignmentGuide(.bottom) { dimensions in dimensions.height / 2 }
+            }
+        )
+        XCTAssertGreaterThan(
+            frames.plain.maxY,
+            100.5,
+            "the unwrapped leaf must honour its own .bottom override — hanging "
+                + "below the stack's bottom edge — before the wrapper can be asked "
+                + "to reproduce it"
+        )
+        assertFramesMatch(frames, alignment: ".bottomTrailing with a .bottom override")
     }
 
     @MainActor
@@ -436,6 +551,93 @@ final class ProbeLayoutTests: XCTestCase {
     }
 
     // MARK: - Helpers
+
+    /// The frame the leaf resolves to without the probe and with it, measured in
+    /// two hosts that differ in nothing but the wrapper.
+    ///
+    /// `leaf` is built twice because each host needs its own sink; taking a
+    /// closure keeps the two view trees provably identical up to the wrapper.
+    /// Returns `nil` after an `XCTFail` when either host never produced a frame.
+    @MainActor
+    private func alignmentFrames<Leaf: View>(
+        _ alignment: Alignment,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+        leaf: (FrameSink) -> Leaf
+    ) -> (plain: CGRect, probed: CGRect)? {
+        let plainSink = FrameSink()
+        let plainHost = HeadlessHost(
+            alignmentTestRoot(alignment: alignment, recorder: nil) { leaf(plainSink) }
+        )
+        guard plainHost.pump(
+            until: "a frame for the unwrapped leaf under \(alignment)",
+            file: file,
+            line: line,
+            isReady: { plainSink.frame("leaf") != nil }
+        ) else { return nil }
+
+        let probedSink = FrameSink()
+        let probedHost = HeadlessHost(
+            alignmentTestRoot(alignment: alignment, recorder: ProbeRecorder()) {
+                leaf(probedSink).probeLayout(id: "aligned")
+            }
+        )
+        guard probedHost.pump(
+            until: "a frame for the probe-wrapped leaf under \(alignment)",
+            file: file,
+            line: line,
+            isReady: { probedSink.frame("leaf") != nil }
+        ) else { return nil }
+
+        guard let plain = plainSink.frame("leaf"), let probed = probedSink.frame("leaf") else {
+            XCTFail("a pumped sink reported ready but held no frame", file: file, line: line)
+            return nil
+        }
+        return (plain, probed)
+    }
+
+    @MainActor
+    private func assertFramesMatch(
+        _ frames: (plain: CGRect, probed: CGRect),
+        alignment: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertEqual(
+            frames.probed.origin.x,
+            frames.plain.origin.x,
+            accuracy: 0.01,
+            "probe moved the leaf in x under \(alignment): "
+                + "unwrapped \(frames.plain), wrapped \(frames.probed)",
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(
+            frames.probed.origin.y,
+            frames.plain.origin.y,
+            accuracy: 0.01,
+            "probe moved the leaf in y under \(alignment): "
+                + "unwrapped \(frames.plain), wrapped \(frames.probed)",
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(
+            frames.probed.width,
+            frames.plain.width,
+            accuracy: 0.01,
+            "probe changed the leaf's width under \(alignment)",
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(
+            frames.probed.height,
+            frames.plain.height,
+            accuracy: 0.01,
+            "probe changed the leaf's height under \(alignment)",
+            file: file,
+            line: line
+        )
+    }
 
     @MainActor
     private func assertSize(
