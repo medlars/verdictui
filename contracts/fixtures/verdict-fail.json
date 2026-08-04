@@ -1,0 +1,163 @@
+{
+  "delta" : {
+    "added" : [
+      {
+        "index" : 3,
+        "node" : {
+          "frame" : {
+            "height" : 32,
+            "width" : 88,
+            "x" : 16,
+            "y" : 72
+          },
+          "id" : "retry",
+          "isVisible" : true,
+          "role" : "button",
+          "structuralPath" : "root/button[3]"
+        },
+        "path" : [
+          "$root",
+          "retry"
+        ]
+      }
+    ],
+    "changed" : [
+      {
+        "changes" : [
+          {
+            "after" : false,
+            "before" : true,
+            "key" : "attributes.enabled"
+          }
+        ],
+        "path" : [
+          "$root",
+          "close"
+        ]
+      }
+    ],
+    "moved" : [
+      {
+        "from" : {
+          "height" : 20,
+          "width" : 120,
+          "x" : 16,
+          "y" : 16
+        },
+        "path" : [
+          "$root",
+          "title"
+        ],
+        "to" : {
+          "height" : 20,
+          "width" : 120,
+          "x" : 16,
+          "y" : 20
+        }
+      }
+    ],
+    "removed" : [
+      [
+        "$root",
+        "footer"
+      ]
+    ]
+  },
+  "findings" : [
+    {
+      "message" : "'title' needs 212 pt of width on one line but was given 120 pt",
+      "nodeID" : "title",
+      "rule" : "truncation",
+      "severity" : "error",
+      "suggestion" : "increase frame width to >= intrinsicWidth 212 pt, or allow wrapping"
+    },
+    {
+      "message" : "'close' is 24 x 18 pt, below the 28 x 28 pt minimum hit size",
+      "nodeID" : "close",
+      "rule" : "tap-target",
+      "severity" : "warning"
+    }
+  ],
+  "scenario" : "settings-pane-regression",
+  "schemaVersion" : "1.0",
+  "status" : "FAIL",
+  "timestamp" : "2026-08-04T09:20:31Z",
+  "timing" : {
+    "evaluateMs" : 0.42,
+    "settleMs" : 8.5
+  },
+  "tree" : {
+    "children" : [
+      {
+        "frame" : {
+          "height" : 20,
+          "width" : 120,
+          "x" : 16,
+          "y" : 20
+        },
+        "id" : "title",
+        "isVisible" : true,
+        "role" : "text",
+        "structuralPath" : "root/text[0]",
+        "text" : "Monthly summary",
+        "textMetrics" : {
+          "idealLineCount" : 1,
+          "intrinsicWidth" : 212,
+          "renderedLineCount" : 1
+        }
+      },
+      {
+        "attributes" : {
+          "enabled" : false,
+          "role.hint" : "dismiss"
+        },
+        "frame" : {
+          "height" : 18,
+          "width" : 24,
+          "x" : 280,
+          "y" : 16
+        },
+        "id" : "close",
+        "isVisible" : true,
+        "role" : "button",
+        "structuralPath" : "root/button[1]"
+      },
+      {
+        "frame" : {
+          "height" : 16,
+          "width" : 100,
+          "x" : 16,
+          "y" : 48
+        },
+        "id" : "legend",
+        "isVisible" : false,
+        "role" : "text",
+        "structuralPath" : "root/text[2]",
+        "text" : "Totals",
+        "zIndex" : 2
+      },
+      {
+        "frame" : {
+          "height" : 32,
+          "width" : 88,
+          "x" : 16,
+          "y" : 72
+        },
+        "id" : "retry",
+        "isVisible" : true,
+        "role" : "button",
+        "structuralPath" : "root/button[3]"
+      }
+    ],
+    "frame" : {
+      "height" : 240,
+      "width" : 320,
+      "x" : 0,
+      "y" : 0
+    },
+    "id" : "root",
+    "isVisible" : true,
+    "role" : "container",
+    "structuralPath" : "root"
+  }
+}

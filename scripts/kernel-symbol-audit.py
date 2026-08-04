@@ -34,6 +34,7 @@ import argparse
 import json
 import re
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -357,10 +358,12 @@ def _report(result: AuditResult) -> None:
                 print(f"  {symbol.display} ({symbol.kind}) — {symbol.file}:{symbol.line}")
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: Sequence[str] = ()) -> int:
+    """`argv` defaults to empty, not ``sys.argv``: an in-process caller (the tests)
+    must not inherit the host process's arguments."""
     parser = argparse.ArgumentParser(description="Audit VerdictUIKernel's public surface.")
     parser.add_argument("--json", action="store_true", help="machine-readable output")
-    args = parser.parse_args(argv)
+    args = parser.parse_args(list(argv))
 
     result = audit()
     if args.json:
@@ -388,4 +391,4 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))
