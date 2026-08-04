@@ -144,11 +144,39 @@ final class RuleEngineTests: XCTestCase {
         )
     }
 
+    /// Everything the engine *decides*, with the two fields it merely *measures*
+    /// held constant: `timing` is a wall-clock duration and `timestamp` is
+    /// clock-derived (truncated to whole seconds, so two runs either side of a
+    /// second boundary differ). Comparing whole verdicts makes a determinism
+    /// test fail on timing noise instead of on a determinism regression.
+    private func decidedPart(of verdict: Verdict) -> Verdict {
+        var copy = verdict
+        copy.timestamp = Date(timeIntervalSince1970: 0)
+        copy.timing = Verdict.Timing()
+        return copy
+    }
+
     func testRunIsDeterministicAcrossRepeatedEvaluations() {
         let context = LintContext(viewport: viewport)
         let first = RuleEngine.run(rules: [StubRule(), SecondStubRule()], on: tree(), context: context)
         let second = RuleEngine.run(rules: [StubRule(), SecondStubRule()], on: tree(), context: context)
-        XCTAssertEqual(first, second)
+        XCTAssertEqual(decidedPart(of: first), decidedPart(of: second))
+    }
+
+    /// Guards the exclusion above: if the engine stopped populating `evaluateMs`,
+    /// normalising it away would let the determinism test pass on a regression.
+    func testRunMeasuresItsOwnEvaluationTime() throws {
+        let verdict = RuleEngine.run(
+            rules: [StubRule()],
+            on: tree(),
+            context: LintContext(viewport: viewport)
+        )
+        let evaluateMs = try XCTUnwrap(
+            verdict.timing.evaluateMs,
+            "engine must record how long evaluation took"
+        )
+        XCTAssertGreaterThanOrEqual(evaluateMs, 0, "a measured duration cannot be negative")
+        XCTAssertNil(verdict.timing.settleMs, "settleMs belongs to the Wave 3 settle engine")
     }
 
     func testDisabledRuleIsNotEvaluated() {

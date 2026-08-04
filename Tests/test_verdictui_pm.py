@@ -248,12 +248,21 @@ class TestFloorCheck:
 
 
 class TestValidateContracts:
-    def test_validate_contracts_stub_exits_zero(self) -> None:
+    def test_validate_contracts_validates_the_pinned_schema(self) -> None:
+        """Asserted PASS, not SKIP: SKIP was only correct while no schema existed.
+
+        Wave 1 Task 5 pinned contracts/verdict-schema.json, so the validator now
+        takes its real branch. The old assertion described a transitional state
+        and started failing the moment the file it was waiting for arrived.
+        """
+        schema = _PROJECT_ROOT / "contracts" / "verdict-schema.json"
+        assert schema.exists(), "schema is pinned as of Wave 1 Task 5"
         r = subprocess.run(
             [_PYTHON, str(_PROJECT_ROOT / "contracts" / "validate-contracts.py")],
             capture_output=True,
             text=True,
             timeout=60,
         )
-        assert r.returncode == 0
-        assert "SKIP" in r.stdout
+        assert r.returncode == 0, r.stdout + r.stderr
+        assert "PASS" in r.stdout, r.stdout
+        assert "verdict-schema.json" in r.stdout, r.stdout

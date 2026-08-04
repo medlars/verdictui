@@ -11,18 +11,18 @@
 | Field | Value |
 |-------|-------|
 | Current wave | **Wave 1 — Kernel: the verdict engine** |
-| Wave task in progress | *(none — Wave 1 not yet started)* |
-| Next action | Start Wave 1 Task 1: extend `SemanticNode` (Role enum, attributes, isVisible/zIndex, TextMetrics, structuralPath) |
-| Last session ended | 2026-08-04 03:45 |
-| Health at last session end | PM Grade A (100.0), floor 0 gaps, CI green (zero-warning + gitleaks), 0 open defect CIS (P0–P3) |
+| Wave task in progress | **Task 5 — Verdict schema v1**: Swift side landed (`SchemaVersion.swift`, `Verdict` envelope with `schemaVersion`/`timestamp`/`tree`/`delta`/`timing`, `contracts/verdict-schema.json`). Still owed: tests for the new public symbols, and the fixture round-trip upgrade to `contracts/validate-contracts.py` (it currently only parses the schema) |
+| Next action | Finish Task 5's verification half, then Task 6 (`docs/kernel.md`) |
+| Last session ended | 2026-08-04 09:15 |
+| Health at last session end | PM Grade A (100.0), stage_build PASS, 105 Swift + 19 Python tests green, kernel purity intact |
 
 ## Wave 1 task checklist (from implementation-plan.md)
 
-- [ ] Task 1 — Extend `SemanticNode`: Role enum, `attributes`, `isVisible`, `zIndex`, `TextMetrics`, `structuralPath`
-- [ ] Task 2 — `TreeDiff.swift`: compute TreeDelta (added/removed/moved/changed), id-first matching, property test
-- [ ] Task 3 — `RuleEngine.swift`: `LintRule` protocol, `LintContext`, `RuleEngine.run`
-- [ ] Task 4 — Six rules under `Rules/`: SiblingOverlap, ZeroSize, Offscreen, Truncation, TapTarget, DuplicateProbeID
-- [ ] Task 5 — Verdict schema v1: `contracts/verdict-schema.json`, `SchemaVersion.swift`, fixture round-trip in validate-contracts.py
+- [x] Task 1 — Extend `SemanticNode`: Role enum, `attributes`, `isVisible`, `zIndex`, `TextMetrics`, `structuralPath` — commit 9c38d60
+- [x] Task 2 — `TreeDiff.swift`: compute TreeDelta (added/removed/moved/changed), id-first matching, property test — commit 0d80c3b
+- [x] Task 3 — `RuleEngine.swift`: `LintRule` protocol, `LintContext`, `RuleEngine.run` — commit a7a9e8c
+- [x] Task 4 — Six rules under `Rules/`: SiblingOverlap, ZeroSize, Offscreen, Truncation, TapTarget, DuplicateProbeID — commit 5b8df5e
+- [~] Task 5 — Verdict schema v1: `SchemaVersion.swift` + `contracts/verdict-schema.json` + `Verdict` envelope DONE; **owed**: tests covering the new public symbols (`SchemaVersion.current`/`major(of:)`/`isCompatible`, `Verdict.Timing`, `tree`/`delta`/`timestamp` encoding) and the fixture round-trip in `validate-contracts.py` with `contracts/fixtures/`
 - [ ] Task 6 — `docs/kernel.md`: role vocabulary, rule catalog, schema reference
 
 ### Wave 1 exit gate (all must pass before Wave 2)
@@ -41,6 +41,7 @@
 
 ## Session log (newest first, keep last ~10)
 
+- **2026-08-04 09:15** — Wave 1 Tasks 1–4 committed by the kernel-build agent, which then died on a PING timeout mid-Task 5, leaving uncommitted work and a **red suite**. Two real test defects fixed: (a) `testRunIsDeterministicAcrossRepeatedEvaluations` compared whole `Verdict`s, so Task 5's new measured `timing.evaluateMs` made it fail by construction — it now compares the *decided* part and a new sibling test asserts `evaluateMs` is populated, so normalising it away cannot hide a regression; `timestamp` was excluded too, since whole-second truncation made it flake across a second boundary. (b) `test_validate_contracts_stub_exits_zero` asserted `SKIP`, correct only while no schema existed — it broke the moment Task 5 added the file it was waiting for, and now asserts the real PASS branch. Both fixes mutation-verified (shuffled findings and dropped timing each fail the intended test). Green: 105 Swift + 19 Python, PM Grade A.
 - **2026-08-04 03:55** — Founding business/marketing Q&A recorded as `docs/business-decisions.md` (market gap, open-core model, naming/domains, XCUITest/web scope decisions).
 - **2026-08-04 03:45** — Immaculate-build bar enforced: strict concurrency in Package.swift, `-warnings-as-errors` in PM + CI (SWIFT_STRICT_FLAGS), `ruff format --check` + pytest + gitleaks secret-scan jobs in CI, shutil.which root-fixes for B607, grype scan clean. Entire CIS detector backlog resolved (fixed or suppressed with rationale) — only todo_md backlog rows remain.
 - **2026-08-04 03:10** — Session continuity wiring: this file created; skill resume protocol added. All P0/P1 CIS closed; PM Grade A.
