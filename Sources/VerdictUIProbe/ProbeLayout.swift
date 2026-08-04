@@ -425,13 +425,28 @@ public struct ProbeLayout: Layout {
     /// the one thing this type promises cannot happen.
     ///
     /// So the rule is to forward the child's answer *and its explicitness*:
-    /// report the guide when the child declared one, translated by `bounds.origin`
-    /// because that is where the child was placed, and report `nil` when it did
+    /// report the guide when the child declared one, and report `nil` when it did
     /// not. Synthesising the computed default instead of `nil` would yield the
     /// same number and still be wrong: explicitness is itself observable, and
     /// containers that derive their own guides from their children's explicit ones
     /// would start seeing a guide the wrapped view never declared — the same class
     /// of distortion, introduced by the code meant to remove it.
+    ///
+    /// The value is forwarded **untranslated**, which is not an oversight. A guide
+    /// is expressed in its own view's dimensions, and the probe places the child
+    /// flush at `bounds.origin`, so the child's space and the wrapper's space are
+    /// the same space and the number needs no adjustment. A `bounds.origin` term
+    /// was written here first, on the theory that the guide is owed in whatever
+    /// space `bounds` is stated in — and it was removed as unverifiable: SwiftUI
+    /// evaluates a layout's guides in that layout's own unoffset space, so the
+    /// term was always adding zero and no test could tell a correct one from a
+    /// wrong one. `ProbeLayoutTests`
+    /// `.testAlignmentGuidesAreEvaluatedInTheLayoutsOwnUnoffsetSpace` measures
+    /// that assumption directly — every guide evaluation across a stack
+    /// alignment, an offsetting custom parent, padding, a five-deep layout nest, a
+    /// baseline stack and a custom `AlignmentID` receives a zero origin, while
+    /// placements in those same shapes do not — and fails if a future SwiftUI ever
+    /// hands this method an offset region, which is the signal to translate.
     ///
     /// Guides are forwarded only for the single-subview case the probe is designed
     /// for. Content that resolves to several subviews is stacked at a common
@@ -448,7 +463,7 @@ public struct ProbeLayout: Layout {
         guard let explicit = Self.soleSubviewDimensions(subviews, proposal: proposal)?[
             explicit: guide
         ] else { return nil }
-        return bounds.minX + explicit
+        return explicit
     }
 
     /// Forwards a vertical alignment guide declared inside the wrapped view, and
@@ -469,7 +484,7 @@ public struct ProbeLayout: Layout {
         guard let explicit = Self.soleSubviewDimensions(subviews, proposal: proposal)?[
             explicit: guide
         ] else { return nil }
-        return bounds.minY + explicit
+        return explicit
     }
 
     /// The wrapped view's dimensions under `proposal`, or `nil` unless the probe
