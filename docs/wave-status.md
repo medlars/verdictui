@@ -13,8 +13,8 @@
 | Current wave | **Wave 1 — Kernel: the verdict engine** |
 | Wave task in progress | *(none — Wave 1 not yet started)* |
 | Next action | Start Wave 1 Task 1: extend `SemanticNode` (Role enum, attributes, isVisible/zIndex, TextMetrics, structuralPath) |
-| Last session ended | 2026-08-04 03:10 |
-| Health at last session end | PM Grade A (100.0), floor 0 gaps, CI green, 0 open P0/P1 CIS |
+| Last session ended | 2026-08-04 03:45 |
+| Health at last session end | PM Grade A (100.0), floor 0 gaps, CI green (zero-warning + gitleaks), 0 open defect CIS (P0–P3) |
 
 ## Wave 1 task checklist (from implementation-plan.md)
 
@@ -41,6 +41,7 @@
 
 ## Session log (newest first, keep last ~10)
 
+- **2026-08-04 03:45** — Immaculate-build bar enforced: strict concurrency in Package.swift, `-warnings-as-errors` in PM + CI (SWIFT_STRICT_FLAGS), `ruff format --check` + pytest + gitleaks secret-scan jobs in CI, shutil.which root-fixes for B607, grype scan clean. Entire CIS detector backlog resolved (fixed or suppressed with rationale) — only todo_md backlog rows remain.
 - **2026-08-04 03:10** — Session continuity wiring: this file created; skill resume protocol added. All P0/P1 CIS closed; PM Grade A.
 - **2026-08-04 02:00** — Scaffold debt cleared: pyright extraPaths fix, executables chmod'd, CodeWatch baseline seeded, 19-test PM suite added, CI green.
 - **2026-08-04 00:30** — Project scaffolded via /project-forge; 10-wave implementation plan written; registrations complete.
