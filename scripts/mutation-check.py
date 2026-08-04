@@ -62,14 +62,18 @@ MUTATIONS = [
         test="VerdictUIProbeTests/testAPassWithNoViewportDeliversNoTree",
     ),
     Mutation(
-        name="delivery stops filtering measurements to reporting probes",
-        path="Sources/VerdictUIProbe/VerdictProbe.swift",
-        old="grouping: recorded.filter { ids.contains($0.probeID) },",
-        # Still reads `ids`, because `-warnings-as-errors` turns an orphaned
-        # binding into a build failure — and a mutation that does not build
-        # proves nothing about the test.
-        new="grouping: recorded.filter { _ in ids.count >= 0 },",
-        test="VerdictUIProbeTests/testDeliveryDropsMeasurementsForProbesThatDidNotReport",
+        # This replaced a mutation on a `recorded.filter { ids.contains(...) }`
+        # line in `assembledTree`, which went unnoticed for a good reason: the
+        # filter changed no output, because `TreeAssembly` reads only
+        # `measurements[record.id]`. The line was deleted rather than papered over
+        # with a test, and the guard that *is* load-bearing — that a node's
+        # metrics come from its own probe id — is mutated instead.
+        name="a node's text metrics stop being keyed by its own probe id",
+        path="Sources/VerdictUIProbe/TreeAssembly.swift",
+        old="measurements: measurements[record.id] ?? []",
+        # Sorted so the wrong answer is deterministic: dictionary order is not.
+        new="measurements: measurements.sorted { $0.key < $1.key }.last?.value ?? []",
+        test="VerdictUIProbeTests/testAMeasurementWithoutARecordNeitherBecomesNorAltersANode",
     ),
     Mutation(
         name="a multi-subview probe forwards its first subview's explicit guide",

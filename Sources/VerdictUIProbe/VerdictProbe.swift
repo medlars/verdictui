@@ -405,19 +405,22 @@ struct VerdictRootModifier: ViewModifier {
     /// `nonisolated` because it touches no main-actor state: SwiftUI's
     /// `ViewModifier` conformance is main-actor isolated, which would otherwise
     /// make this pure function inherit an isolation it has no use for.
+    ///
+    /// The recorder is append-only, so it also holds measurements for probes that
+    /// have since left the view tree. Those are handed over as they are and not
+    /// filtered out: `TreeAssembly` reads `measurements[record.id]` and nothing
+    /// else, so a group no record names is never consulted. A filter here read
+    /// like a guard against stale data leaking into a node and was removed once
+    /// mutation testing showed no test could tell whether it was present — it
+    /// could not, because removing it changes no output.
     nonisolated static func assembledTree(
         from snapshot: ProbeSnapshot,
         measurements recorded: [ProbeMeasurement]
     ) -> SemanticNode? {
         guard let viewport = snapshot.viewport else { return nil }
-        let ids = Set(snapshot.records.map(\.id))
-        let measurements = Dictionary(
-            grouping: recorded.filter { ids.contains($0.probeID) },
-            by: \.probeID
-        )
         return TreeAssembly.assemble(
             records: snapshot.records,
-            measurements: measurements,
+            measurements: Dictionary(grouping: recorded, by: \.probeID),
             viewport: viewport
         )
     }
