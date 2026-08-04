@@ -54,38 +54,3 @@ public struct Finding: Equatable, Codable, Sendable {
         self.suggestion = suggestion
     }
 }
-
-/// Wave 1 seed rule: two sibling nodes must not overlap unless one is an
-/// ancestor of the other. Proves the kernel pipeline (tree in → findings out)
-/// end-to-end; the full rule library lands in Wave 5.
-public enum LayoutLint {
-    public static func siblingOverlaps(in root: SemanticNode) -> [Finding] {
-        var findings: [Finding] = []
-        walk(root) { node in
-            for i in node.children.indices {
-                for j in node.children.indices where j > i {
-                    let a = node.children[i]
-                    let b = node.children[j]
-                    if !a.frame.isEmpty, !b.frame.isEmpty, a.frame.intersects(b.frame) {
-                        findings.append(
-                            Finding(
-                                rule: "sibling-overlap",
-                                severity: .error,
-                                nodeID: b.id,
-                                message: "'\(b.id)' overlaps sibling '\(a.id)'"
-                            )
-                        )
-                    }
-                }
-            }
-        }
-        return findings
-    }
-
-    private static func walk(_ node: SemanticNode, _ visit: (SemanticNode) -> Void) {
-        visit(node)
-        for child in node.children {
-            walk(child, visit)
-        }
-    }
-}
