@@ -10,8 +10,12 @@ import Foundation
 /// are omitted rather than encoded as `null`, keeping the payload small for the
 /// token-metered MCP surface.
 public struct Verdict: Equatable, Codable, Sendable {
+    /// The headline answer, derived from ``Verdict/findings`` and never set by a
+    /// caller. Uppercase on the wire so a shell can grep it.
     public enum Status: String, Codable, Sendable {
+        /// No finding reached `error` severity. Warnings may still be present.
         case pass = "PASS"
+        /// At least one finding has `error` severity.
         case fail = "FAIL"
 
         /// The only place status is computed. Both the initializer and the
@@ -51,6 +55,7 @@ public struct Verdict: Equatable, Codable, Sendable {
     public var tree: SemanticNode?
     /// What changed since the previous observation, for act-and-observe steps.
     public var delta: TreeDelta?
+    /// Where the wall-clock cost went; see ``Timing``.
     public var timing: Timing
 
     /// - Parameter timestamp: truncated to whole seconds, because that is the
@@ -131,6 +136,8 @@ public struct Verdict: Equatable, Codable, Sendable {
         timing = try container.decodeIfPresent(Timing.self, forKey: .timing) ?? Timing()
     }
 
+    /// Writes the pinned wire shape: ISO-8601 UTC `timestamp`, and `tree`/`delta`
+    /// omitted entirely when absent rather than encoded as `null`.
     public func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(schemaVersion, forKey: .schemaVersion)
@@ -150,14 +157,24 @@ public struct Verdict: Equatable, Codable, Sendable {
 /// One piece of evidence-backed feedback. `nodeID` ties the finding back to a
 /// probed element so agents can self-correct without guessing.
 public struct Finding: Equatable, Codable, Sendable {
+    /// How much a finding costs. Only `error` changes the verdict's
+    /// ``Verdict/status``; ``LintContext/severityOverrides`` can move a rule
+    /// between the two without editing the rule.
     public enum Severity: String, Codable, Sendable {
+        /// A defect: the UI is wrong, and the verdict becomes a FAIL.
         case error
+        /// Worth reporting but not failing — a judgement call the caller may
+        /// promote via ``LintContext/severityOverrides``.
         case warning
     }
 
+    /// Identifier of the rule that produced this finding, e.g. `tap-target`.
     public var rule: String
+    /// Effective severity, after any ``LintContext/severityOverrides``.
     public var severity: Severity
+    /// Probe id of the offending node, or its structural path when unprobed.
     public var nodeID: String
+    /// Why the rule fired, including the measurements that triggered it.
     public var message: String
     /// Machine-actionable repair hint, e.g. "increase frame width to >= intrinsic
     /// width 212 pt". Present whenever the rule can name a concrete fix — this is

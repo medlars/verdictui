@@ -144,11 +144,17 @@ final class ZeroSizeRuleTests: XCTestCase {
     }
 
     func testSpacerAndProbeScaffoldingAreExemptByRole() {
+        XCTAssertEqual(ZeroSizeRule.probeRolePrefix, "verdict.")
         let tree = Fixture.root([
             node("gap", role: .spacer),
-            node("probe", role: .custom("verdict.anchor")),
+            node("probe", role: .custom(ZeroSizeRule.probeRolePrefix + "anchor")),
         ])
         XCTAssertTrue(rule.evaluate(tree, context: Fixture.context()).isEmpty)
+
+        // The exemption is the prefix, not the word: a role that merely mentions
+        // it elsewhere is still policed.
+        let misleading = Fixture.root([node("late", role: .custom("nested.verdict.anchor"))])
+        XCTAssertEqual(rule.evaluate(misleading, context: Fixture.context()).count, 1)
     }
 
     func testInvisibleNodesAndSizedNodesPass() {

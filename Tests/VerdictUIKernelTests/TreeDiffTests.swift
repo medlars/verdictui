@@ -347,4 +347,70 @@ final class TreeDiffTests: XCTestCase {
         )
         XCTAssertEqual(TreeDiffError.rootRemoved.description, "delta removed the tree root")
     }
+
+    // MARK: - wire vocabulary
+
+    /// The change keys and the root segment are wire strings an agent reads, so
+    /// they are pinned against literals rather than against each other. The keys
+    /// are asserted here; `testFieldChangesCoverEveryNonGeometricField` asserts
+    /// (also with literals) that the differ actually emits them.
+    func testChangeKeyVocabularyMatchesTheDocumentedWireStrings() {
+        XCTAssertEqual(AttributeChange.idKey, "id")
+        XCTAssertEqual(AttributeChange.roleKey, "role")
+        XCTAssertEqual(AttributeChange.textKey, "text")
+        XCTAssertEqual(AttributeChange.isVisibleKey, "isVisible")
+        XCTAssertEqual(AttributeChange.zIndexKey, "zIndex")
+        XCTAssertEqual(AttributeChange.structuralPathKey, "structuralPath")
+        XCTAssertEqual(AttributeChange.childIndexKey, "childIndex")
+        XCTAssertEqual(AttributeChange.intrinsicWidthKey, "textMetrics.intrinsicWidth")
+        XCTAssertEqual(AttributeChange.renderedLineCountKey, "textMetrics.renderedLineCount")
+        XCTAssertEqual(AttributeChange.idealLineCountKey, "textMetrics.idealLineCount")
+        XCTAssertEqual(AttributeChange.attributePrefix, "attributes.")
+        XCTAssertEqual(AttributeChange.attributeKey("verdict.suppress"), "attributes.verdict.suppress")
+    }
+
+    func testRootSegmentIsTheFixedPathPrefix() {
+        XCTAssertEqual(TreeDiff.rootSegment, "$root")
+        XCTAssertEqual(NodePath.root.segments, [TreeDiff.rootSegment])
+        // Fixed rather than identity-derived: probing the root must not re-key
+        // every path in the tree.
+        var root = container("root", [leaf("a")])
+        let anonymous = TreeDiff.compute(before: root, after: root)
+        XCTAssertTrue(anonymous.isEmpty)
+        root.id = "renamed-root"
+        XCTAssertEqual(
+            TreeDiff.compute(before: container("root", [leaf("a")]), after: root).changed.map(\.path),
+            [.root]
+        )
+    }
+
+    /// A hand-built move applies on its own, which is what a Wave 7 client does
+    /// when it replays a delta it received without the tree.
+    func testAppliedNodeMoveRelocatesOnlyThatFrame() throws {
+        let tree = container("root", [leaf("a"), leaf("b", x: 40)])
+        let destination = Rect(x: 90, y: 5, width: 20, height: 20)
+        let delta = TreeDelta(
+            moved: [NodeMove(path: NodePath.root.appending("b"), from: leaf("b", x: 40).frame, to: destination)]
+        )
+        let rebuilt = try TreeDiff.apply(delta, to: tree)
+        XCTAssertEqual(rebuilt.children.map(\.frame), [leaf("a").frame, destination])
+    }
+
+    /// The schema requires `minItems: 1` on a node path. An empty path names
+    /// nothing, so it must not cross the JSON boundary in either direction.
+    func testEmptyNodePathIsRejectedByBothEncodeAndDecode() {
+        XCTAssertThrowsError(try JSONEncoder().encode(NodePath([]))) { error in
+            guard case EncodingError.invalidValue(_, let context) = error else {
+                return XCTFail("expected invalidValue, got \(error)")
+            }
+            XCTAssertEqual(context.debugDescription, "node path has no segments")
+        }
+        XCTAssertThrowsError(try JSONDecoder().decode(NodePath.self, from: Data("[]".utf8))) {
+            error in
+            guard case DecodingError.dataCorrupted(let context) = error else {
+                return XCTFail("expected dataCorrupted, got \(error)")
+            }
+            XCTAssertEqual(context.debugDescription, "node path has no segments")
+        }
+    }
 }

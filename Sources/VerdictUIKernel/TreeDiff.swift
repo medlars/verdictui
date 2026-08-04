@@ -39,12 +39,36 @@ public struct NodePath: Hashable, Sendable, CustomStringConvertible {
 extension NodePath: Codable {
     /// Encoded as a JSON array of segments, not a joined string: a
     /// structural-path segment may itself contain `/`.
+    ///
+    /// - Throws: on an empty array. The schema requires `minItems: 1`, and a path
+    ///   with no segments points at nothing — ``TreeDiff/apply(_:to:)`` could not
+    ///   act on it, so accepting one only defers the failure.
     public init(from decoder: any Decoder) throws {
-        segments = try decoder.singleValueContainer().decode([String].self)
+        let container = try decoder.singleValueContainer()
+        let decoded = try container.decode([String].self)
+        guard !decoded.isEmpty else {
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "node path has no segments"
+            )
+        }
+        segments = decoded
     }
 
+    /// Encoded as the segment array, matching ``init(from:)``.
+    ///
+    /// - Throws: on an empty path, for the same reason decoding rejects one.
     public func encode(to encoder: any Encoder) throws {
         var container = encoder.singleValueContainer()
+        guard !segments.isEmpty else {
+            throw EncodingError.invalidValue(
+                self,
+                EncodingError.Context(
+                    codingPath: container.codingPath,
+                    debugDescription: "node path has no segments"
+                )
+            )
+        }
         try container.encode(segments)
     }
 }
@@ -192,6 +216,8 @@ public enum TreeDiffError: Error, Equatable, CustomStringConvertible {
     /// The delta removed the root, which has no valid representation.
     case rootRemoved
 
+    /// Operator-facing sentence naming the offending path, index, or key — an
+    /// apply failure is a bug report about the delta, so it must say where.
     public var description: String {
         switch self {
         case .pathNotFound(let path): "no node at path '\(path)'"
