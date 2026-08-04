@@ -1,8 +1,13 @@
 import AppKit
 import SwiftUI
 import VerdictUIKernel
-import VerdictUIProbe
 import XCTest
+
+// `@testable` for `VerdictRootModifier.assembledTree(from:measurements:)`: the
+// no-viewport case it guards cannot be provoked through a hosted view (a host
+// with a frame always reports a viewport), so the judgement is tested as a
+// function. Exposing it publicly to test it would be API nobody calls.
+@testable import VerdictUIProbe
 
 // MARK: - Headless host
 
@@ -22,10 +27,19 @@ import XCTest
 private final class HeadlessHost<Content: View> {
     private static var deadline: TimeInterval { 3 }
 
-    private let hostingView: NSHostingView<Content>
+    /// `AnyView` because the pinned environment changes the hosted type, and
+    /// `AnyView` is layout-transparent — the same erasure `OracleHost` performs
+    /// for the same reason.
+    private let hostingView: NSHostingView<AnyView>
 
     init(_ rootView: Content, size: CGSize = CGSize(width: 400, height: 300)) {
-        hostingView = NSHostingView(rootView: rootView)
+        // The same pins `OracleHost` applies, from the same definition. Without
+        // them this file's text assertions (an intrinsic width wider than a
+        // 120 pt frame) would be measured against whatever locale, display scale
+        // and dynamic type size the machine reports — passing here and failing
+        // on a colleague's Mac, which is the exact failure mode the pins exist
+        // to prevent.
+        hostingView = NSHostingView(rootView: AnyView(rootView.verdictPinnedEnvironment()))
         hostingView.frame = CGRect(origin: .zero, size: size)
         hostingView.layoutSubtreeIfNeeded()
     }
@@ -436,6 +450,150 @@ final class VerdictUIProbeTests: XCTestCase {
             "reduction order is layout order, and it is the only ordering token there is"
         )
         XCTAssertEqual(accumulated.viewport, Rect(x: 0, y: 0, width: 300, height: 200))
+    }
+
+    // MARK: - Delivery
+
+    /// A pass that reported no viewport delivers nothing, rather than a tree
+    /// measured against an invented reference frame.
+    ///
+    /// Unreachable through a hosted view — an `NSHostingView` with a frame
+    /// always lays its root out, so the reporter always emits — which is exactly
+    /// why it is asserted here. The consequence of getting it wrong is not a
+    /// crash but a plausible lie: every frame in the tree, and the rectangle
+    /// `OffscreenRule` measures against, would be relative to a rectangle
+    /// nothing measured.
+    func testAPassWithNoViewportDeliversNoTree() {
+        let record = ProbeRecord(
+            id: "orphan",
+            role: .text,
+            frame: Rect(x: 0, y: 0, width: 50, height: 20)
+        )
+
+        XCTAssertNil(
+            VerdictRootModifier.assembledTree(
+                from: ProbeSnapshot(viewport: nil, records: [record]),
+                measurements: []
+            ),
+            "records without a viewport must not be assembled into a tree"
+        )
+        XCTAssertNil(
+            VerdictRootModifier.assembledTree(
+                from: ProbeSnapshot(viewport: nil, records: []),
+                measurements: []
+            ),
+            "an entirely empty snapshot is still a non-delivery, not an empty root"
+        )
+        // Control: the same records *with* a viewport do assemble, so the nil
+        // above is the viewport's absence and not a broken call.
+        XCTAssertNotNil(
+            VerdictRootModifier.assembledTree(
+                from: ProbeSnapshot(
+                    viewport: Rect(x: 0, y: 0, width: 100, height: 100),
+                    records: [record]
+                ),
+                measurements: []
+            ),
+            "control failed: this snapshot should assemble"
+        )
+    }
+
+    /// Delivery hands `TreeAssembly` only the measurements belonging to probes
+    /// that actually reported this pass.
+    ///
+    /// The recorder is append-only and never cleared mid-pass, so it holds
+    /// measurements for probes that have since disappeared from the view tree —
+    /// a collapsed `if` branch, a `ForEach` row that went away. Filtering by the
+    /// reported ids is what stops a stale probe's measurement from being filed
+    /// under a live probe that happens to share its frame.
+    func testDeliveryDropsMeasurementsForProbesThatDidNotReport() throws {
+        let frame = Rect(x: 0, y: 0, width: 120, height: 17)
+        func measurement(_ probeID: String) -> ProbeMeasurement {
+            ProbeMeasurement(
+                probeID: probeID,
+                proposal: ProbeProposal(width: 120, height: nil),
+                returnedSize: Size(width: 120, height: 17),
+                intrinsicSize: Size(width: 260, height: 17),
+                idealSizeAtProposedWidth: Size(width: 120, height: 17)
+            )
+        }
+
+        let tree = try XCTUnwrap(
+            VerdictRootModifier.assembledTree(
+                from: ProbeSnapshot(
+                    viewport: Rect(x: 0, y: 0, width: 300, height: 200),
+                    records: [
+                        ProbeRecord(id: "live", role: .text, frame: frame, text: "Cancel renewal")
+                    ]
+                ),
+                measurements: [measurement("live"), measurement("vanished")]
+            )
+        )
+
+        let live = try XCTUnwrap(tree.node(withID: "live"))
+        XCTAssertEqual(
+            live.textMetrics?.intrinsicWidth,
+            260,
+            "the reporting probe's own measurement must still be used"
+        )
+        XCTAssertNil(
+            tree.node(withID: "vanished"),
+            "a measurement is not a node: only reported records become nodes"
+        )
+        XCTAssertEqual(tree.flattened().count, 2, "root plus the one probe that reported")
+    }
+
+    // MARK: - Probe id validation
+
+    /// The two ids `verdictProbe(_:role:text:attributes:)` refuses.
+    ///
+    /// Asserted through ``ProbeRecord/idViolation(_:)`` rather than by tripping
+    /// the precondition, because a trap cannot be caught and asserted on in
+    /// XCTest — the process dies. The judgement is what matters, and it is the
+    /// same judgement the precondition consults.
+    ///
+    /// Both cases are silent failures rather than visible ones, which is why
+    /// they are refused up front: an empty id is indistinguishable from an
+    /// unprobed node, so `DuplicateProbeIDRule` skips it; an `@`-prefixed id
+    /// collides with the namespace ``SemanticNode/identity`` reserves for
+    /// unprobed nodes, and `TreeDiff` then degrades to positional matching for
+    /// the whole sibling group without saying so.
+    func testAnEmptyOrStructuralPathShapedProbeIDIsRefused() throws {
+        XCTAssertNil(ProbeRecord.idViolation("save-button"), "an ordinary id must be accepted")
+        XCTAssertNil(
+            ProbeRecord.idViolation("row@2"),
+            "'@' is only reserved as a *prefix*; an id containing one is fine"
+        )
+
+        let empty = try XCTUnwrap(ProbeRecord.idViolation(""), "an empty probe id must be refused")
+        XCTAssertTrue(empty.contains("non-empty"), "unhelpful message: \(empty)")
+
+        // The exact shape that collides: `SemanticNode.identity` returns
+        // "@" + the last structural-path component for an unprobed node, so a
+        // probe named this would be indistinguishable from one.
+        let structural = try XCTUnwrap(
+            ProbeRecord.idViolation("@container[0]"),
+            "an id in the structural-path identity namespace must be refused"
+        )
+        XCTAssertTrue(
+            structural.contains("structural-path"),
+            "the message must say which namespace was collided with: \(structural)"
+        )
+
+        // And the collision itself, so the refusal above is pinned to a real
+        // consequence rather than to a naming convention.
+        let unprobed = SemanticNode(
+            id: "",
+            role: .container,
+            frame: Rect(x: 0, y: 0, width: 10, height: 10),
+            structuralPath: "root/container[0]"
+        )
+        XCTAssertEqual(
+            unprobed.identity,
+            "@container[0]",
+            "if this is no longer the identity an unprobed node takes, the '@' prefix is no "
+                + "longer the thing that needs reserving"
+        )
     }
 
     // MARK: - Helpers

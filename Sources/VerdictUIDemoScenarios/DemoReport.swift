@@ -36,11 +36,23 @@ public enum DemoReport {
     ///
     /// - Throws: whatever ``OracleHost/currentTree()`` throws — a scenario that
     ///   cannot be settled is reported as a failure of the run, not smuggled
-    ///   into the output as an empty verdict.
-    public static func verdicts() async throws -> [Verdict] {
+    ///   into the output as an empty verdict. Failure is fail-fast and total on
+    ///   purpose: verdicts already computed for earlier scenarios are discarded,
+    ///   because the run's contract is "one JSON document describing the whole
+    ///   catalog, or a thrown error naming the scenario that broke it" — a
+    ///   partial document would parse cleanly and read as a smaller catalog.
+    ///   `OracleHostError`'s description carries the scenario name, so the
+    ///   caller can always say *which* scenario failed. (`no.md` entry 9.)
+    ///
+    /// - Parameter deadline: settle budget per scenario, forwarded to each
+    ///   host. The default is the production value; tests hand in `0` to walk
+    ///   the failure path without waiting out a real timeout.
+    public static func verdicts(
+        deadline: TimeInterval = OracleHost.defaultDeadline
+    ) async throws -> [Verdict] {
         var results: [Verdict] = []
         for entry in DemoScenarios.all {
-            let host = entry.makeHost()
+            let host = entry.makeHost(deadline: deadline)
             let started = ContinuousClock.now
             let tree = try await host.currentTree()
             let settle = ContinuousClock.now - started

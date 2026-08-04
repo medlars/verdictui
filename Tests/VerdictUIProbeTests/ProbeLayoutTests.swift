@@ -24,10 +24,20 @@ private final class HeadlessHost<Content: View> {
     /// broken probe fails the suite quickly rather than hanging CI.
     private static var deadline: TimeInterval { 3 }
 
-    private let hostingView: NSHostingView<Content>
+    /// `AnyView` because the pinned environment changes the hosted type, and
+    /// `AnyView` is layout-transparent — the same erasure `OracleHost` performs
+    /// for the same reason. The transparency claim is not taken on faith here:
+    /// `testProbeLayoutDoesNotChangeTheRenderedFrame` compares frames across two
+    /// of these hosts, so an `AnyView` that perturbed layout would have to
+    /// perturb both identically to go unnoticed.
+    private let hostingView: NSHostingView<AnyView>
 
     init(_ rootView: Content, size: CGSize = CGSize(width: 400, height: 300)) {
-        hostingView = NSHostingView(rootView: rootView)
+        // The same pins `OracleHost` applies, from the same definition. This file
+        // asserts on glyph-derived widths (an unconstrained text measurement
+        // wider than its 120 pt frame), and those are a function of locale,
+        // display scale and dynamic type size — machine settings, unless pinned.
+        hostingView = NSHostingView(rootView: AnyView(rootView.verdictPinnedEnvironment()))
         hostingView.frame = CGRect(origin: .zero, size: size)
         hostingView.layoutSubtreeIfNeeded()
     }
@@ -666,6 +676,61 @@ final class ProbeLayoutTests: XCTestCase {
         XCTAssertEqual(small.origin.y, large.origin.y, accuracy: 0.01, "origins diverged in y")
         XCTAssertEqual(small.width, 40, accuracy: 0.01, "the smaller subview changed size")
         XCTAssertEqual(large.width, 80, accuracy: 0.01, "the larger subview changed size")
+    }
+
+    /// The other half of that degenerate case: with several subviews the probe
+    /// declares *no* explicit alignment guide, even when one subview declares
+    /// one.
+    ///
+    /// `soleSubviewDimensions` returns `nil` unless the probe wraps exactly one
+    /// subview, so both `explicitAlignment` overloads report nothing here and
+    /// the wrapper's own geometry answers. That is the honest choice — no one
+    /// subview's guide speaks for a union of subviews stacked at a common origin
+    /// — but it is only honest if it actually happens: forwarding the first
+    /// subview's guide would silently align the whole union by a number that
+    /// describes one member of it.
+    ///
+    /// The leaf here declares its `.leading` to be its own horizontal centre,
+    /// which is the same override
+    /// ``testProbeLayoutForwardsAnExplicitAlignmentGuideOverride()`` proves
+    /// *does* move a single-subview probe outside the leading edge. So a
+    /// forwarded guide would put these frames at a negative x, and flush-at-zero
+    /// is a real distinction rather than the absence of an effect.
+    @MainActor
+    func testAProbeWrappingSeveralSubviewsForwardsNoExplicitGuide() throws {
+        let sink = FrameSink()
+        let host = HeadlessHost(
+            alignmentTestRoot(alignment: .topLeading, recorder: ProbeRecorder()) {
+                Group {
+                    Color.red.frame(width: 40, height: 20)
+                        .reportingFrame("guided", to: sink)
+                        .alignmentGuide(.leading) { dimensions in dimensions.width / 2 }
+                    Color.blue.frame(width: 80, height: 30)
+                        .reportingFrame("plain", to: sink)
+                }
+                .probeLayout(id: "multi")
+            }
+        )
+        guard host.pump(until: "frames for both subviews of the multi-subview probe", isReady: {
+            sink.frame("guided") != nil && sink.frame("plain") != nil
+        }) else { return }
+
+        let guided = try XCTUnwrap(sink.frame("guided"))
+        let plain = try XCTUnwrap(sink.frame("plain"))
+        XCTAssertEqual(
+            guided.origin.x,
+            0,
+            accuracy: 0.01,
+            "the wrapped union hangs outside the leading edge, so one subview's explicit "
+                + "guide was forwarded on behalf of all of them: \(guided)"
+        )
+        XCTAssertEqual(
+            plain.origin.x,
+            0,
+            accuracy: 0.01,
+            "the unguided subview moved too, which is the same leaked guide seen from the "
+                + "other side: \(plain)"
+        )
     }
 
     @MainActor

@@ -75,8 +75,17 @@ final class SiblingOverlapRuleTests: XCTestCase {
     }
 
     func testZStackParentRoleReadsAsIntentionalLayering() {
-        let tree = Fixture.root([box("a", x: 0), box("b", x: 50)], role: .custom("ZStack"))
-        XCTAssertTrue(rule.evaluate(tree, context: Fixture.context()).isEmpty)
+        // Case-insensitive on purpose, and every casing is held here: "zstack"
+        // is the form the probe target actually deploys (CleanSettingsScenario),
+        // so a comparison that quietly became case-sensitive would exonerate
+        // nothing while this test kept passing on "ZStack" alone.
+        for casing in ["ZStack", "zstack", "ZSTACK"] {
+            let tree = Fixture.root([box("a", x: 0), box("b", x: 50)], role: .custom(casing))
+            XCTAssertTrue(
+                rule.evaluate(tree, context: Fixture.context()).isEmpty,
+                "a parent role of '\(casing)' did not read as intentional layering"
+            )
+        }
     }
 
     func testOverlapIsDetectedInNestedContainersAndCousinsAreNotCompared() {

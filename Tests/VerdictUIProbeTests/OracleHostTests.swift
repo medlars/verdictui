@@ -516,6 +516,71 @@ final class OracleHostTests: XCTestCase {
         XCTAssertTrue(error.description.contains("10 x 10 pt"), error.description)
     }
 
+    /// A host size that is not a whole number is still rendered honestly in the
+    /// message.
+    ///
+    /// The whole-point path above is the one every other test takes, because
+    /// `resolveHostSize(_:)` rounds — so the fallback in `points(_:)` is
+    /// unreachable through a real host and has to be exercised on the error
+    /// value directly. It still has to be right: the alternative is a message
+    /// claiming "10 x 99 pt" for a 10.5 x 99.9 host, which sends a reader
+    /// looking for a rounding bug that is not there.
+    func testANonIntegralHostSizeIsReportedWithoutBeingRounded() {
+        let fractional = OracleHostError.settleTimedOut(
+            scenario: "fractional",
+            hostSize: Size(width: 10.5, height: 99.9),
+            deadline: 3,
+            iterations: 4,
+            deliveries: 1
+        )
+        XCTAssertTrue(
+            fractional.description.contains("10.5 x 99.9 pt"),
+            "a fractional host size was rounded or mangled in the message: "
+                + fractional.description
+        )
+
+        // The same fallback covers the values that have no integral form at all.
+        // These cannot come from `resolveHostSize(_:)` either, but an error is
+        // the one place a caller looks when something has already gone wrong, so
+        // it must not trap while trying to describe it.
+        let nonFinite = OracleHostError.settleTimedOut(
+            scenario: "nonfinite",
+            hostSize: Size(width: .nan, height: .infinity),
+            deadline: 3,
+            iterations: 4,
+            deliveries: 1
+        )
+        XCTAssertTrue(
+            nonFinite.description.contains("nan x inf pt"),
+            "non-finite dimensions must be stated, not crashed on: " + nonFinite.description
+        )
+    }
+
+    // MARK: - Settle constants
+
+    /// The two numbers the settle loop's documented behaviour is stated in.
+    ///
+    /// Both are quoted as prose elsewhere — `LayoutSettle.pumpInterval`'s doc
+    /// comment says "5 ms", `requiredAgreeingChecks`'s says "Two", and
+    /// `OracleHostTests` reasons in single-digit milliseconds — and prose does
+    /// not fail a build. Changing either is a legitimate decision; changing it
+    /// without noticing that several paragraphs now lie is not, so the literals
+    /// are pinned here and the failure message says where to look.
+    func testTheSettleConstantsMatchTheirDocumentedValues() {
+        XCTAssertEqual(
+            LayoutSettle.pumpInterval,
+            0.005,
+            "pumpInterval changed: the '5 ms' prose on LayoutSettle and the single-digit "
+                + "millisecond claim in OraclePerformanceTests both need revisiting"
+        )
+        XCTAssertEqual(
+            LayoutSettle.requiredAgreeingChecks,
+            2,
+            "requiredAgreeingChecks changed: the 'two consecutive checks' contract is quoted "
+                + "in LayoutSettle.pump, Outcome.settled, and OracleHost.currentTree"
+        )
+    }
+
     // MARK: - Helpers
 
     /// Canonical encoding: sorted keys, so a byte comparison compares content and

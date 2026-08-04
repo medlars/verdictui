@@ -1,4 +1,5 @@
 import AppKit
+import Observation
 import SwiftUI
 import VerdictUIKernel
 import VerdictUIProbe
@@ -109,6 +110,63 @@ final class ScenarioTests: XCTestCase {
         )
     }
 
+    /// The other direction of the same guarantee, and the one Wave 3 actually
+    /// leans on: *within* one host, every re-evaluation of the body is handed the
+    /// **same** state object.
+    ///
+    /// ``testEachHostHandsItsBodyItsOwnScenarioState()`` proves two hosts do not
+    /// share a state; that is the "not too shared" half. This is the "not too
+    /// fresh" half, and without it the documented contract ("handed to every
+    /// re-evaluation of the same scenario's body, never replaced between renders")
+    /// would be enforced only by `ScenarioRoot.state` happening to be a `let` —
+    /// a property nothing would fail if someone made it `@State` while chasing
+    /// something else. An action that mutates a binding is worthless if the next
+    /// body evaluation reads a different object.
+    ///
+    /// Re-evaluation is provoked, not waited for: `ScenarioRoot` has no mutable
+    /// dependency of its own, so the scenario reads an `@Observable` counter and
+    /// the test bumps it. That read happens inside `ScenarioRoot`'s body
+    /// evaluation, so bumping it invalidates exactly the view whose re-evaluation
+    /// is under test.
+    @MainActor
+    func testOneHostHandsEveryReEvaluationTheSameScenarioState() async throws {
+        let witness = StateWitness()
+        let trigger = RenderTrigger()
+        let host = OracleHost(
+            scenario: RerenderWitnessScenario(witness: witness, trigger: trigger),
+            viewport: Size(width: 120, height: 60)
+        )
+
+        let firstTree = try await host.currentTree()
+        XCTAssertEqual(
+            try Self.attribute("generation", of: "witness", in: firstTree),
+            .number(0)
+        )
+        let evaluationsAfterFirstRender = witness.evaluations
+
+        trigger.generation += 1
+        let secondTree = try await host.currentTree()
+
+        XCTAssertEqual(
+            try Self.attribute("generation", of: "witness", in: secondTree),
+            .number(1),
+            "the tree still reports generation 0, so the body was never re-evaluated and this "
+                + "test cannot say anything about what a re-evaluation receives"
+        )
+        XCTAssertGreaterThan(
+            witness.evaluations,
+            evaluationsAfterFirstRender,
+            "no further body evaluation happened after the invalidation"
+        )
+        XCTAssertEqual(
+            witness.distinctInstances,
+            1,
+            "one host handed its body \(witness.distinctInstances) different ScenarioState "
+                + "objects across \(witness.evaluations) evaluations; a Wave 3 binding "
+                + "registered on the first would be orphaned by the second"
+        )
+    }
+
     /// The measurement pass that resolves `fittingSize` must not hand the real
     /// render its state, or Wave 3's bindings would be registered against an
     /// object that is about to be thrown away.
@@ -179,6 +237,42 @@ private struct WitnessScenario: VerdictScenario {
                 "witness",
                 role: .container,
                 attributes: ["is-first-state": .bool(witness.note(state))]
+            )
+    }
+}
+
+/// An invalidation handle: the scenario reads ``generation`` during its body
+/// evaluation, so bumping it makes SwiftUI re-evaluate that body.
+///
+/// `@Observable` rather than a `@State` inside some child view, deliberately —
+/// the read has to happen in the same body evaluation that calls
+/// `scenario.body(state:)`, or the re-evaluation under test would be a child's
+/// and not the scenario's.
+@Observable
+@MainActor
+private final class RenderTrigger {
+    var generation = 0
+}
+
+/// Reports both the state identity and the generation it was rendered at, so a
+/// missing re-evaluation is distinguishable from a re-evaluation with a fresh
+/// state.
+private struct RerenderWitnessScenario: VerdictScenario {
+    let name = "rerender-witness"
+
+    let witness: StateWitness
+    let trigger: RenderTrigger
+
+    func body(state: ScenarioState) -> some View {
+        Color.clear
+            .frame(width: 40, height: 20)
+            .verdictProbe(
+                "witness",
+                role: .container,
+                attributes: [
+                    "generation": .number(Double(trigger.generation)),
+                    "is-first-state": .bool(witness.note(state)),
+                ]
             )
     }
 }

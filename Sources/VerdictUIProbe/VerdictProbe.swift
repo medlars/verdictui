@@ -103,6 +103,23 @@ public struct ProbeRecord: Equatable, Sendable {
         self.text = text
         self.attributes = attributes
     }
+
+    /// Why `candidate` is not a legal probe id, or `nil` if it is.
+    ///
+    /// The rules `verdictProbe(_:role:text:attributes:)` preconditions on,
+    /// separated out so they are testable — a trap message cannot be asserted
+    /// on, but the judgement behind it can be. Kept here rather than on the
+    /// modifier because the namespace being protected is this record's `id`.
+    public static func idViolation(_ candidate: String) -> String? {
+        if candidate.isEmpty {
+            return "a probe id must be non-empty — an empty id is an unprobed node"
+        }
+        if candidate.hasPrefix("@") {
+            return "probe id '\(candidate)' starts with '@', which is reserved for "
+                + "structural-path identity"
+        }
+        return nil
+    }
 }
 
 /// Everything one layout pass reported through the preference stream: the root's
@@ -129,10 +146,18 @@ public struct ProbeSnapshot: Equatable, Sendable {
 /// Preference key carrying probe records and the root's bounds up the view tree.
 ///
 /// Reduction concatenates records, preserving the depth-first order SwiftUI
-/// visits the tree in. The viewport is coalesced first-writer-wins: exactly one
-/// reporter emits it per root, and if `verdictRoot` is nested inside another
-/// `verdictRoot` the innermost value reaching a given collector is the one that
-/// describes it.
+/// visits the tree in. The viewport is coalesced first-writer-wins, which is
+/// correct for the supported arrangement — exactly one `verdictRoot`, whose
+/// single reporter is the only viewport writer in the stream.
+///
+/// **Nesting `verdictRoot` inside another `verdictRoot` is not supported.**
+/// Reduction is depth-first, so the *inner* root's viewport wins the
+/// first-writer race, and the outer collector would assemble every frame —
+/// including the kernel's `OffscreenRule` reference — against the inner root's
+/// smaller rectangle. The inner collector works; the outer one lies. Nothing
+/// in this package nests roots, and a preference key has no way to strip its
+/// own value at a boundary, so the limitation is documented rather than
+/// papered over.
 public struct VerdictProbeKey: PreferenceKey {
     public static let defaultValue = ProbeSnapshot()
 
@@ -302,13 +327,24 @@ extension View {
     ///     see ``TreeAssembly/textMetrics(for:measurements:)`` for why the string
     ///     itself is needed and not just the measurements.
     ///   - attributes: role-specific data, forwarded to the node unchanged.
+    ///
+    /// The id must be non-empty and must not start with `@`. Both are programmer
+    /// errors a rule cannot catch after the fact: an empty id makes the node
+    /// indistinguishable from an unprobed one, so `DuplicateProbeIDRule` skips it
+    /// and the author's chosen identity silently never existed; a leading `@`
+    /// collides with the namespace ``SemanticNode/identity`` reserves for
+    /// unprobed nodes (`@` + structural-path component), and a collision there
+    /// makes `TreeDiff` silently fall back to positional matching for the whole
+    /// sibling group. Neither failure produces a finding, which is why this is a
+    /// precondition rather than a rule.
     public func verdictProbe(
         _ id: String,
         role: Role = ProbeRecord.unclassifiedRole,
         text: String? = nil,
         attributes: [String: AttributeValue] = [:]
     ) -> some View {
-        probeLayout(id: id)
+        if let violation = ProbeRecord.idViolation(id) { preconditionFailure(violation) }
+        return probeLayout(id: id)
             .background {
                 ProbeRecordReporter(id: id, role: role, text: text, attributes: attributes)
             }
@@ -319,7 +355,10 @@ extension View {
 
 /// The root half of the spine: declares the coordinate space, installs the
 /// recorder, collects the records, assembles the tree, delivers it.
-private struct VerdictRootModifier: ViewModifier {
+///
+/// Internal rather than private so `assembledTree(from:measurements:)` — the
+/// judgement half of delivery — is reachable from the test target.
+struct VerdictRootModifier: ViewModifier {
     let explicitSink: VerdictTreeSink?
     let onTree: ((SemanticNode) -> Void)?
 
@@ -345,23 +384,42 @@ private struct VerdictRootModifier: ViewModifier {
     /// Assemble and deliver, or do nothing if the pass reported no viewport.
     ///
     /// Runs while SwiftUI propagates preferences, i.e. after layout — so the
-    /// recorder already holds this pass's measurements. Delivering a tree
-    /// without a viewport would mean guessing the reference frame every
-    /// coordinate is relative to, so an absent viewport is a non-delivery.
+    /// recorder already holds this pass's measurements.
     private func deliver(_ snapshot: ProbeSnapshot, to sink: VerdictTreeSink) {
-        guard let viewport = snapshot.viewport else { return }
+        guard
+            let tree = Self.assembledTree(from: snapshot, measurements: sink.recorder.measurements)
+        else { return }
+        sink.accept(tree)
+        onTree?(tree)
+    }
+
+    /// The tree `snapshot` honestly supports, or `nil` when it reported no
+    /// viewport.
+    ///
+    /// Delivering a tree without a viewport would mean guessing the reference
+    /// frame every coordinate is relative to, so an absent viewport is a
+    /// non-delivery — `nil` here, a skipped `accept` above. A pure function of
+    /// its arguments so that judgement is directly assertable, not only
+    /// observable as a pump timeout.
+    ///
+    /// `nonisolated` because it touches no main-actor state: SwiftUI's
+    /// `ViewModifier` conformance is main-actor isolated, which would otherwise
+    /// make this pure function inherit an isolation it has no use for.
+    nonisolated static func assembledTree(
+        from snapshot: ProbeSnapshot,
+        measurements recorded: [ProbeMeasurement]
+    ) -> SemanticNode? {
+        guard let viewport = snapshot.viewport else { return nil }
         let ids = Set(snapshot.records.map(\.id))
         let measurements = Dictionary(
-            grouping: sink.recorder.measurements.filter { ids.contains($0.probeID) },
+            grouping: recorded.filter { ids.contains($0.probeID) },
             by: \.probeID
         )
-        let tree = TreeAssembly.assemble(
+        return TreeAssembly.assemble(
             records: snapshot.records,
             measurements: measurements,
             viewport: viewport
         )
-        sink.accept(tree)
-        onTree?(tree)
     }
 }
 
