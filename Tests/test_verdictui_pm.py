@@ -15,6 +15,15 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 _PM_PATH = str(_PROJECT_ROOT / "scripts" / "verdictui-pm.py")
 _PYTHON = sys.executable
 
+# floor-check asserts dev-machine surfaces (~/.claude skills, iTerm2 profile)
+# that do not exist on a CI runner. Tests whose SUBJECT is the full floor must
+# skip there rather than fail for "the environment lacks the thing" (lesson 221).
+_ON_DEV_MACHINE = (Path.home() / ".claude" / "skills" / "verdictui" / "SKILL.md").exists()
+_needs_dev_machine = pytest.mark.skipif(
+    not _ON_DEV_MACHINE,
+    reason="floor-check asserts dev-machine surfaces absent on CI runners",
+)
+
 # Load verdictui-pm.py (hyphenated filename) without package machinery.
 _spec = importlib.util.spec_from_file_location("verdictui_pm", _PM_PATH)
 _mod = importlib.util.module_from_spec(_spec)  # type: ignore[arg-type]
@@ -170,6 +179,7 @@ class TestStageWrappers:
         result = pm.stage_lint()
         assert result["passed"], result["detail"]
 
+    @_needs_dev_machine
     def test_stage_floor_passes_on_this_repo(self) -> None:
         pm = VerdictUIPM.__new__(VerdictUIPM)
         result = pm.stage_floor()
@@ -222,6 +232,7 @@ class TestValidateContractsMain:
 
 
 class TestFloorCheck:
+    @_needs_dev_machine
     def test_floor_check_reports_zero_gaps(self) -> None:
         r = subprocess.run(
             [_PYTHON, str(_PROJECT_ROOT / "scripts" / "floor-check.py"), "--json"],
