@@ -6,19 +6,45 @@ this applies the change, runs the single test that is supposed to notice, and
 requires that test to FAIL. Then it restores the file and re-checks the sha256,
 so a mutation run cannot leave the tree altered.
 
-Not a permanent part of the build: run it by hand when adding a guard. Exits
-non-zero on the first mutation that goes unnoticed.
+Three ways a naive version of this lies, all guarded against here:
+
+- **The test was already red.** Then it fails with the mutation applied too, and
+  the run reports coverage that does not exist. Every mutation is preceded by a
+  baseline run of the same test on unmutated source, which must pass.
+- **The filter matched nothing.** `swift test --filter` exits 0 having executed
+  zero tests, so a renamed or misspelled test reads as "the guard is uncovered"
+  rather than "this harness is out of date". Both runs assert a nonzero count.
+- **The mutation did not compile, or trapped.** Neither is a test noticing
+  anything; both are reported as INCONCLUSIVE, not as coverage.
+
+Run `--verify-targets` for the cheap half: that every mutation still points at
+source text that exists exactly once. That is what CI and PM run, because it
+catches the harness rotting without paying for a rebuild per mutation.
+
+Recovery: mutations are written in place and restored in a `finally`, and the
+tree must be clean to start, so `git checkout -- <path>` undoes any mutation
+left behind by a kill -9.
 """
 
 from __future__ import annotations
 
+import argparse
 import hashlib
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 
+SUMMARY = "Mutation-verify guards: break one thing, watch a named test fail, restore exactly."
+
 REPO = Path(__file__).resolve().parent.parent
+
+# A `swift test --filter` that rebuilds from cold takes minutes; one that hangs
+# would otherwise hang this script forever, and it edits source files while it
+# waits.
+TEST_TIMEOUT_SECONDS = 900
 
 
 @dataclass(frozen=True)
@@ -30,6 +56,14 @@ class Mutation:
     old: str
     new: str
     test: str  # `swift test --filter` pattern
+
+
+class Outcome(Enum):
+    """What one mutation run proved, if anything."""
+
+    NOTICED = "NOTICED"
+    UNNOTICED = "UNNOTICED"
+    INCONCLUSIVE = "INCONCLUSIVE"
 
 
 MUTATIONS = [
@@ -83,6 +117,17 @@ MUTATIONS = [
         test="ProbeLayoutTests/testAProbeWrappingSeveralSubviewsForwardsNoExplicitGuide",
     ),
     Mutation(
+        # The reuse-the-intrinsic-answer shortcut in `sizeThatFits`. Inverting the
+        # ternary keeps the width-unconstrained case correct by coincidence (both
+        # arms measure `.unspecified` there) and breaks the constrained one, which
+        # is exactly the asymmetry the named test pins.
+        name="the ideal-at-width measurement is reused when a width WAS proposed",
+        path="Sources/VerdictUIProbe/ProbeLayout.swift",
+        old="                proposal.width == nil\n                ? intrinsic",
+        new="                proposal.width != nil\n                ? intrinsic",
+        test="ProbeLayoutTests/testWidthConstrainedMeasurementReportsTheHeightWrappingWouldNeed",
+    ),
+    Mutation(
         name="a non-integral host size is rounded in the error message",
         path="Sources/VerdictUIProbe/OracleHost.swift",
         old="guard value.isFinite, value == value.rounded(), value.magnitude < 1e15 else {",
@@ -99,6 +144,17 @@ MUTATIONS = [
         old="let tree = try await host.currentTree()",
         new="guard let tree = try? await host.currentTree() else { continue }",
         test="DemoReportTests/testAScenarioThatCannotSettleFailsTheRunAndNamesItself",
+    ),
+    Mutation(
+        # `renderJSON` is what `main.swift` calls, so its failure branch gets its
+        # own mutation rather than riding on `verdicts`'.
+        name="renderJSON turns an unsettleable run into an empty document",
+        path="Sources/VerdictUIDemoScenarios/DemoReport.swift",
+        old="let data = try encoder.encode(try await verdicts(deadline: deadline))",
+        new="let data = try encoder.encode((try? await verdicts(deadline: deadline)) ?? [])",
+        test=(
+            "DemoReportTests/testRenderJSONPropagatesTheFailureRatherThanEmittingAnEmptyDocument"
+        ),
     ),
     Mutation(
         name="an entry ignores an explicit viewport override",
@@ -128,70 +184,166 @@ MUTATIONS = [
     ),
 ]
 
+# XCTest prints this once per suite plus once for the total; the largest count is
+# the outermost total. swift-testing's parallel summary is not counted — every
+# mutation here names an XCTest method.
+_EXECUTED = re.compile(r"Executed (\d+) test")
+
+
+def executed_test_count(output: str) -> int:
+    """How many tests `swift test` reported running, or 0 if it never said."""
+    counts = [int(match) for match in _EXECUTED.findall(output)]
+    return max(counts) if counts else 0
+
 
 def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def resolve_in_repo(relative: str) -> Path:
+    """`relative` under `REPO`, refusing anything that climbs out of it."""
+    candidate = (REPO / relative).resolve()
+    if not candidate.is_relative_to(REPO):
+        raise SystemExit(f"mutation path escapes the repository: {relative}")
+    return candidate
+
+
 def run(args: list[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        args, cwd=REPO, capture_output=True, text=True, check=False
+    return subprocess.run(  # noqa: S603 — fixed argv, no shell, literals only
+        args,
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=TEST_TIMEOUT_SECONDS,
     )
 
 
+def run_named_test(test: str) -> subprocess.CompletedProcess[str]:
+    """The one `swift test` invocation this script makes, spelled once.
+
+    Baseline and mutated runs must differ only in the state of the source, so
+    they go through the same argv rather than two copies of it.
+    """
+    return run(["swift", "test", "--filter", test, "-Xswiftc", "-warnings-as-errors"])
+
+
 def git_is_clean() -> bool:
-    return run(["git", "diff", "--quiet"]).returncode == 0
+    """True when nothing is modified, staged, or untracked.
+
+    `git diff --quiet` alone would miss staged and untracked changes, which
+    would make the "restored byte-identically" claim at the end weaker than it
+    reads.
+    """
+    return not run(["git", "status", "--porcelain"]).stdout.strip()
+
+
+def classify(result: subprocess.CompletedProcess[str]) -> tuple[Outcome, str]:
+    """Read one mutated test run. Returns the outcome and a one-line reason."""
+    combined = result.stdout + result.stderr
+    # A mutation that stops the build compiles nothing and proves nothing, so a
+    # compile failure is not an acceptable "the test noticed" signal.
+    if "error:" in combined and "Executed" not in combined:
+        return Outcome.INCONCLUSIVE, "the mutation did not compile"
+    # A trap is a nonzero exit for a reason that is not the assertion: the test
+    # never got to judge anything, so it says nothing about coverage.
+    if "unexpected signal code" in combined:
+        return Outcome.INCONCLUSIVE, "the mutation trapped instead of failing an assertion"
+    # Zero tests run exits 0, which would otherwise read as an uncovered guard
+    # when the truth is that this harness names a test that no longer exists.
+    if executed_test_count(combined) == 0:
+        return Outcome.INCONCLUSIVE, "the filter matched no tests — has the test been renamed?"
+    if result.returncode != 0:
+        return Outcome.NOTICED, f"exit {result.returncode}"
+    return Outcome.UNNOTICED, "the test passed with the guard broken"
+
+
+def baseline_problem(mutation: Mutation) -> str | None:
+    """Why the named test cannot serve as a witness, or `None` if it can.
+
+    Without this a test that is *already* failing reports NOTICED for every
+    mutation aimed at it — coverage claimed on the strength of a red test.
+    """
+    result = run_named_test(mutation.test)
+    combined = result.stdout + result.stderr
+    if executed_test_count(combined) == 0:
+        return "the filter matched no tests before mutating — has the test been renamed?"
+    if result.returncode != 0:
+        return f"the test is already failing on unmutated source (exit {result.returncode})"
+    return None
+
+
+def target_problem(mutation: Mutation) -> str | None:
+    """Why the mutation cannot be applied, or `None` if it can."""
+    path = resolve_in_repo(mutation.path)
+    if not path.is_file():
+        return f"{mutation.path} does not exist"
+    occurrences = path.read_text().count(mutation.old)
+    if occurrences != 1:
+        return f"target appears {occurrences} times in {mutation.path}, expected exactly 1"
+    return None
 
 
 def check(mutation: Mutation) -> bool:
-    """Apply, run the named test, require failure, restore. True when verified."""
-    path = REPO / mutation.path
+    """Baseline, apply, run, require failure, restore. True when verified."""
+    if problem := target_problem(mutation):
+        print(f"  SETUP FAILED: {problem}")
+        return False
+    if problem := baseline_problem(mutation):
+        print(f"  SETUP FAILED: {problem}")
+        return False
+
+    path = resolve_in_repo(mutation.path)
     original = path.read_text()
     before = sha256(path)
 
-    occurrences = original.count(mutation.old)
-    if occurrences != 1:
-        print(
-            f"  SETUP FAILED: target appears {occurrences} times, expected exactly 1"
-        )
-        return False
-
     path.write_text(original.replace(mutation.old, mutation.new))
     try:
-        result = run(
-            [
-                "swift", "test",
-                "--filter", mutation.test,
-                "-Xswiftc", "-warnings-as-errors",
-            ]
-        )
-        # A mutation that stops the build compiles nothing and proves nothing, so
-        # a compile failure is not an acceptable "the test noticed" signal.
-        combined = result.stdout + result.stderr
-        if "error:" in combined and "Executed" not in combined:
-            print("  INCONCLUSIVE: the mutation did not compile")
-            print("  " + "\n  ".join(combined.strip().splitlines()[-6:]))
-            return False
-        # A trap is a nonzero exit for a reason that is not the assertion: the
-        # test never got to judge anything, so it says nothing about coverage.
-        if "unexpected signal code" in combined:
-            print("  INCONCLUSIVE: the mutation trapped instead of failing an assertion")
-            print("  " + "\n  ".join(combined.strip().splitlines()[-3:]))
-            return False
-        noticed = result.returncode != 0
-        print(f"  {'NOTICED' if noticed else 'UNNOTICED'} (exit {result.returncode})")
-        if not noticed:
-            print("  the guard is not covered: the test passed with it broken")
-        return noticed
+        outcome, reason = classify(run_named_test(mutation.test))
+        print(f"  {outcome.value} ({reason})")
+        return outcome is Outcome.NOTICED
     finally:
         path.write_text(original)
         after = sha256(path)
         if after != before:
             print(f"  RESTORE FAILED: {before} -> {after}")
+            print(f"  recover with: git checkout -- {mutation.path}")
             raise SystemExit(2)
 
 
-def main() -> int:
+def verify_targets() -> int:
+    """Cheap rot check: every mutation still points at text that exists once.
+
+    No build, so it costs milliseconds and can run on every PM pass. It cannot
+    tell whether a guard is covered — only that this file has not drifted away
+    from the source it claims to mutate.
+    """
+    problems = [
+        (mutation.name, problem) for mutation in MUTATIONS if (problem := target_problem(mutation))
+    ]
+    for name, problem in problems:
+        print(f"STALE: {name}\n  {problem}")
+    if problems:
+        print(f"\n{len(problems)} of {len(MUTATIONS)} mutation targets are stale")
+        return 1
+    print(f"all {len(MUTATIONS)} mutation targets resolve to exactly one site")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    # Not `__doc__.splitlines()[0]`: under `python -OO` docstrings are stripped
+    # and `__doc__` is None, which would turn `--help` into an AttributeError.
+    parser = argparse.ArgumentParser(description=SUMMARY)
+    parser.add_argument(
+        "--verify-targets",
+        action="store_true",
+        help="only check that each mutation's target text still exists exactly once",
+    )
+    args = parser.parse_args(argv)
+
+    if args.verify_targets:
+        return verify_targets()
+
     if not git_is_clean():
         print("working tree is dirty; commit or stash before mutation testing")
         return 2
@@ -205,7 +357,7 @@ def main() -> int:
 
     print(f"\n{'=' * 68}")
     if failures:
-        print(f"{len(failures)} of {len(MUTATIONS)} mutations went unnoticed:")
+        print(f"{len(failures)} of {len(MUTATIONS)} mutations went unverified:")
         for name in failures:
             print(f"  - {name}")
         return 1

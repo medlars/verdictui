@@ -86,10 +86,11 @@ public enum TreeAssembly {
         let descendants = entries.filter { $0.order != rootEntry?.order }
 
         let linkage = link(descendants)
-        // `uniqueKeysWithValues` on purpose: orders come from `enumerated()`
-        // eleven lines up, so they are unique by construction, and a future
-        // refactor that breaks that should trap here rather than have
-        // `uniquingKeysWith` silently drop an entry from the tree.
+        // `uniqueKeysWithValues` on purpose: `order` is assigned by the
+        // `records.enumerated()` at the top of this function, so the keys are
+        // unique by construction. A future refactor that breaks that should trap
+        // here rather than have `uniquingKeysWith` silently drop an entry from
+        // the tree.
         let byOrder = Dictionary(uniqueKeysWithValues: descendants.map { ($0.order, $0) })
         let topLevel = linkage.roots.compactMap { byOrder[$0] }.map {
             subtree(of: $0, linkage: linkage, byOrder: byOrder, measurements: measurements)

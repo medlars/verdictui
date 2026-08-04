@@ -512,17 +512,18 @@ public struct ProbeLayout: Layout {
     /// `Group`, a `ForEach`): those are stacked at a common origin and reported
     /// together rather than dropped on the floor, which is the honest degenerate
     /// behaviour for a probe asked to wrap more than it was designed for.
-    /// Zero subviews report zero — there is nothing to measure.
+    /// Zero subviews report zero, which is the seed rather than a special case:
+    /// SwiftUI elides empty content (`EmptyView`, an empty `ForEach`) before a
+    /// custom `Layout` is instantiated, so an empty `subviews` is not reachable
+    /// through `.probeLayout(id:)`. Written as a reduction over the zero size so
+    /// that the unreachable state needs no branch — an `if` no test can enter
+    /// reads like a handled case and is not one.
     private static func measure(_ subviews: Subviews, proposal: ProposedViewSize) -> CGSize {
-        var union: CGSize?
-        for subview in subviews {
+        subviews.reduce(into: CGSize.zero) { union, subview in
             let size = subview.sizeThatFits(proposal)
-            union =
-                union.map {
-                    CGSize(width: max($0.width, size.width), height: max($0.height, size.height))
-                } ?? size
+            union.width = max(union.width, size.width)
+            union.height = max(union.height, size.height)
         }
-        return union ?? .zero
     }
 }
 

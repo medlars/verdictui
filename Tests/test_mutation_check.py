@@ -1,0 +1,367 @@
+"""Tests for scripts/mutation-check.py.
+
+This script is the evidence behind every "mutation-verified" claim in the
+changelog. If it reports NOTICED when nothing was noticed, the guards it blesses
+are unproven and nothing downstream would say so — so its three lying modes get
+pinned here by hand:
+
+- a test that was already red must not be accepted as a witness;
+- a filter that matches no tests must not read as an uncovered guard;
+- a mutation that fails to compile, or traps, must not read as coverage.
+
+Everything here drives the pure decision functions with synthetic
+`CompletedProcess` values. Nothing shells out to `swift`.
+"""
+
+import importlib.util
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+pytestmark = pytest.mark.quick
+
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _load() -> Any:
+    """Import the hyphen-named script as a module. `Any`, because tests rebind
+    its `REPO` constant — a `ModuleType` annotation would reject that."""
+    name = "verdictui_mutation_check"
+    path = str(_PROJECT_ROOT / "scripts" / "mutation-check.py")
+    spec = importlib.util.spec_from_file_location(name, path)
+    mod = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
+    # `@dataclass` resolves its own annotations through `sys.modules[__module__]`,
+    # so a module executed without being registered there raises on the
+    # decorator rather than on anything this file is testing. Re-registering per
+    # load is deliberate: tests rebind `REPO` and `MUTATIONS`, and each needs its
+    # own copy.
+    sys.modules[name] = mod
+    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    return mod
+
+
+def _result(
+    returncode: int = 0, stdout: str = "", stderr: str = ""
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.CompletedProcess(
+        args=["swift", "test"], returncode=returncode, stdout=stdout, stderr=stderr
+    )
+
+
+# One passing XCTest method, as `swift test --filter` prints it.
+_ONE_PASSED = "Test Suite 'Selected tests' passed\n\t Executed 1 test, with 0 failures\n"
+# The same method failing an assertion.
+_ONE_FAILED = (
+    "<unknown>:0: error: -[SubjectTests testThing] : XCTAssertEqual failed\n"
+    "\t Executed 1 test, with 1 failure (0 unexpected)\n"
+)
+# What a filter that matches nothing prints — note the exit code is 0.
+_NONE_MATCHED = "\t Executed 0 tests, with 0 failures (0 unexpected) in 0.000 seconds\n"
+
+
+class TestExecutedTestCount:
+    """`swift test` reports a count per suite; the total is the largest."""
+
+    def test_a_run_that_executed_nothing_counts_zero(self) -> None:
+        assert _load().executed_test_count(_NONE_MATCHED) == 0
+
+    def test_output_with_no_count_line_at_all_counts_zero(self) -> None:
+        assert _load().executed_test_count("error: could not build\n") == 0
+
+    def test_the_outermost_suite_total_wins_over_per_suite_lines(self) -> None:
+        # Nested suites each print their own tally. Summing would double-count;
+        # taking the first would under-count when the inner suite prints first.
+        output = (
+            "\t Executed 1 test, with 0 failures\n"
+            "\t Executed 4 tests, with 0 failures\n"
+            "\t Executed 1 test, with 0 failures\n"
+        )
+        assert _load().executed_test_count(output) == 4
+
+
+class TestClassify:
+    """The verdict on one mutated run.
+
+    Each test loads the module once and holds it: `_load()` builds a fresh
+    module object every call, so `_load().classify(...) is _load().Outcome.X`
+    compares members of two distinct enum classes and is never true.
+    """
+
+    def test_a_failing_assertion_is_the_guard_being_noticed(self) -> None:
+        mod = _load()
+        outcome, _ = mod.classify(_result(returncode=1, stdout=_ONE_FAILED))
+        assert outcome is mod.Outcome.NOTICED
+
+    def test_a_passing_test_means_the_guard_is_uncovered(self) -> None:
+        mod = _load()
+        outcome, reason = mod.classify(_result(returncode=0, stdout=_ONE_PASSED))
+        assert outcome is mod.Outcome.UNNOTICED
+        assert "passed with the guard broken" in reason
+
+    def test_a_mutation_that_will_not_compile_proves_nothing(self) -> None:
+        # Nonzero exit, but no test ever ran. Counting this as NOTICED is the
+        # single easiest way to fake a fully mutation-covered codebase.
+        mod = _load()
+        outcome, reason = mod.classify(
+            _result(returncode=1, stderr="Subject.swift:9:5: error: cannot find 'x'\n")
+        )
+        assert outcome is mod.Outcome.INCONCLUSIVE
+        assert "did not compile" in reason
+
+    def test_a_trap_is_not_an_assertion_noticing_anything(self) -> None:
+        mod = _load()
+        outcome, reason = mod.classify(
+            _result(
+                returncode=4,
+                stdout=_ONE_FAILED + "Fatal error: unexpected signal code 4\n",
+            )
+        )
+        assert outcome is mod.Outcome.INCONCLUSIVE
+        assert "trapped" in reason
+
+    def test_a_filter_matching_no_tests_is_stale_not_uncovered(self) -> None:
+        # Exit 0 with zero tests run. Without the count check this reads as
+        # UNNOTICED, sending a reader to audit a guard that is fine while the
+        # real fault — a renamed test — goes unmentioned.
+        mod = _load()
+        outcome, reason = mod.classify(_result(returncode=0, stdout=_NONE_MATCHED))
+        assert outcome is mod.Outcome.INCONCLUSIVE
+        assert "renamed" in reason
+
+
+class TestBaselineProblem:
+    """A witness must be green before it is asked to testify."""
+
+    def test_a_green_test_is_accepted_as_a_witness(self, monkeypatch: Any) -> None:
+        mod = _load()
+        monkeypatch.setattr(mod, "run_named_test", lambda _test: _result(0, stdout=_ONE_PASSED))
+        assert mod.baseline_problem(mod.MUTATIONS[0]) is None
+
+    def test_an_already_failing_test_is_refused(self, monkeypatch: Any) -> None:
+        # The lie this exists to stop: a red test fails with the mutation too,
+        # so every mutation aimed at it reports NOTICED.
+        mod = _load()
+        monkeypatch.setattr(mod, "run_named_test", lambda _test: _result(1, stdout=_ONE_FAILED))
+        problem = mod.baseline_problem(mod.MUTATIONS[0])
+        assert problem is not None
+        assert "already failing" in problem
+
+    def test_a_filter_matching_nothing_is_refused_before_mutating(self, monkeypatch: Any) -> None:
+        mod = _load()
+        monkeypatch.setattr(mod, "run_named_test", lambda _test: _result(0, stdout=_NONE_MATCHED))
+        problem = mod.baseline_problem(mod.MUTATIONS[0])
+        assert problem is not None
+        assert "renamed" in problem
+
+
+class TestTargetProblem:
+    """The text a mutation replaces must exist exactly once."""
+
+    def _mutation(self, mod: Any, old: str) -> Any:
+        return mod.Mutation(
+            name="synthetic", path="Sources/Subject.swift", old=old, new="x", test="T/t"
+        )
+
+    def _stage(self, mod: Any, tmp_path: Path, body: str) -> None:
+        (tmp_path / "Sources").mkdir(parents=True)
+        (tmp_path / "Sources" / "Subject.swift").write_text(body)
+        mod.REPO = tmp_path
+
+    def test_a_target_present_once_has_no_problem(self, tmp_path: Path) -> None:
+        mod = _load()
+        self._stage(mod, tmp_path, "let a = 1\nlet b = 2\n")
+        assert mod.target_problem(self._mutation(mod, "let a = 1")) is None
+
+    def test_a_target_present_twice_is_refused(self, tmp_path: Path) -> None:
+        # Replacing both sites mutates more than the guard under test, so the
+        # named test failing would not localise to anything.
+        mod = _load()
+        self._stage(mod, tmp_path, "let a = 1\nlet a = 1\n")
+        problem = mod.target_problem(self._mutation(mod, "let a = 1"))
+        assert problem is not None
+        assert "appears 2 times" in problem
+
+    def test_a_target_that_has_vanished_is_refused(self, tmp_path: Path) -> None:
+        mod = _load()
+        self._stage(mod, tmp_path, "let a = 1\n")
+        problem = mod.target_problem(self._mutation(mod, "let gone = 1"))
+        assert problem is not None
+        assert "appears 0 times" in problem
+
+    def test_a_missing_file_is_named_rather_than_raising(self, tmp_path: Path) -> None:
+        mod = _load()
+        mod.REPO = tmp_path
+        problem = mod.target_problem(self._mutation(mod, "anything"))
+        assert problem is not None
+        assert "does not exist" in problem
+
+
+class TestResolveInRepo:
+    """Mutation paths are literals, but they are still joined onto a root."""
+
+    def test_a_path_inside_the_repo_resolves(self, tmp_path: Path) -> None:
+        mod = _load()
+        mod.REPO = tmp_path
+        assert mod.resolve_in_repo("Sources/Subject.swift") == (
+            tmp_path / "Sources" / "Subject.swift"
+        )
+
+    def test_a_path_climbing_out_of_the_repo_is_refused(self, tmp_path: Path) -> None:
+        mod = _load()
+        mod.REPO = tmp_path / "repo"
+        (tmp_path / "repo").mkdir()
+        with pytest.raises(SystemExit):
+            mod.resolve_in_repo("../outside.swift")
+
+
+class TestGitIsClean:
+    """`git diff --quiet` would miss staged and untracked changes."""
+
+    def test_no_porcelain_output_means_clean(self, monkeypatch: Any) -> None:
+        mod = _load()
+        monkeypatch.setattr(mod, "run", lambda _args: _result(0, stdout=""))
+        assert mod.git_is_clean() is True
+
+    def test_an_untracked_file_counts_as_dirty(self, monkeypatch: Any) -> None:
+        mod = _load()
+        monkeypatch.setattr(mod, "run", lambda _args: _result(0, stdout="?? stray.swift\n"))
+        assert mod.git_is_clean() is False
+
+    def test_a_staged_change_counts_as_dirty(self, monkeypatch: Any) -> None:
+        # This is the case `git diff --quiet` returned 0 for.
+        mod = _load()
+        monkeypatch.setattr(mod, "run", lambda _args: _result(0, stdout="M  Subject.swift\n"))
+        assert mod.git_is_clean() is False
+
+
+class TestCheckRestoresTheFile:
+    """A mutation run must not be able to leave the tree altered."""
+
+    def _stage(self, mod: Any, tmp_path: Path) -> tuple[Any, Path]:
+        (tmp_path / "Sources").mkdir(parents=True)
+        source = tmp_path / "Sources" / "Subject.swift"
+        source.write_text("let guarded = true\n")
+        mod.REPO = tmp_path
+        mutation = mod.Mutation(
+            name="synthetic",
+            path="Sources/Subject.swift",
+            old="let guarded = true",
+            new="let guarded = false",
+            test="T/t",
+        )
+        return mutation, source
+
+    def test_a_refused_baseline_never_writes_the_mutation_at_all(
+        self, tmp_path: Path, monkeypatch: Any
+    ) -> None:
+        # When the witness is already red the source must not be touched: there
+        # is nothing to learn, and a mutation written and restored is a window
+        # in which a kill leaves the tree broken for no benefit.
+        mod = _load()
+        mutation, source = self._stage(mod, tmp_path)
+        calls: list[str] = []
+
+        def _run(_test: str) -> subprocess.CompletedProcess[str]:
+            calls.append(source.read_text())
+            return _result(1, stdout=_ONE_FAILED)
+
+        monkeypatch.setattr(mod, "run_named_test", _run)
+        assert mod.check(mutation) is False
+        assert calls == ["let guarded = true\n"], "only the baseline should have run"
+        assert source.read_text() == "let guarded = true\n"
+
+    def test_the_file_is_restored_even_when_the_mutation_goes_unnoticed(
+        self, tmp_path: Path, monkeypatch: Any
+    ) -> None:
+        mod = _load()
+        mutation, source = self._stage(mod, tmp_path)
+        calls: list[str] = []
+
+        def _run(_test: str) -> subprocess.CompletedProcess[str]:
+            calls.append(source.read_text())
+            # Green baseline, then a green mutated run: UNNOTICED.
+            return _result(0, stdout=_ONE_PASSED)
+
+        monkeypatch.setattr(mod, "run_named_test", _run)
+        assert mod.check(mutation) is False
+        assert calls[0] == "let guarded = true\n", "baseline must run unmutated"
+        assert calls[1] == "let guarded = false\n", "the second run must be mutated"
+        assert source.read_text() == "let guarded = true\n"
+
+    def test_a_verified_guard_reports_true_and_restores(
+        self, tmp_path: Path, monkeypatch: Any
+    ) -> None:
+        mod = _load()
+        mutation, source = self._stage(mod, tmp_path)
+        outcomes = iter([_result(0, stdout=_ONE_PASSED), _result(1, stdout=_ONE_FAILED)])
+        monkeypatch.setattr(mod, "run_named_test", lambda _t: next(outcomes))
+        assert mod.check(mutation) is True
+        assert source.read_text() == "let guarded = true\n"
+
+
+class TestVerifyTargets:
+    """The cheap rot check CI and PM run."""
+
+    def test_the_real_catalog_still_points_at_real_source(self) -> None:
+        # Not synthetic: this is the assertion that keeps the shipped mutation
+        # list from drifting away from the code it claims to cover.
+        assert _load().verify_targets() == 0
+
+    def test_a_stale_target_is_reported_nonzero(self, tmp_path: Path) -> None:
+        mod = _load()
+        (tmp_path / "Sources").mkdir(parents=True)
+        (tmp_path / "Sources" / "Subject.swift").write_text("let a = 1\n")
+        mod.REPO = tmp_path
+        mod.MUTATIONS = [
+            mod.Mutation(
+                name="synthetic",
+                path="Sources/Subject.swift",
+                old="let vanished = 1",
+                new="x",
+                test="T/t",
+            )
+        ]
+        assert mod.verify_targets() == 1
+
+
+class TestMain:
+    """Argument handling and the dirty-tree precondition."""
+
+    def test_verify_targets_mode_skips_the_clean_tree_requirement(self, monkeypatch: Any) -> None:
+        # PM runs this mid-edit, so requiring a clean tree would make it
+        # unusable exactly when it is most useful.
+        mod = _load()
+        monkeypatch.setattr(mod, "git_is_clean", lambda: False)
+        monkeypatch.setattr(mod, "verify_targets", lambda: 0)
+        assert mod.main(["--verify-targets"]) == 0
+
+    def test_a_dirty_tree_refuses_a_full_run(self, monkeypatch: Any) -> None:
+        mod = _load()
+        monkeypatch.setattr(mod, "git_is_clean", lambda: False)
+        assert mod.main([]) == 2
+
+    def test_an_unverified_mutation_exits_nonzero(self, monkeypatch: Any) -> None:
+        mod = _load()
+        monkeypatch.setattr(mod, "git_is_clean", lambda: True)
+        monkeypatch.setattr(mod, "check", lambda _m: False)
+        assert mod.main([]) == 1
+
+    def test_all_mutations_verified_exits_zero(self, monkeypatch: Any) -> None:
+        mod = _load()
+        monkeypatch.setattr(mod, "git_is_clean", lambda: True)
+        monkeypatch.setattr(mod, "check", lambda _m: True)
+        assert mod.main([]) == 0
+
+    def test_a_run_that_dirtied_the_tree_exits_nonzero_despite_passing(
+        self, monkeypatch: Any
+    ) -> None:
+        # Every mutation verified, but something was left behind: that is a
+        # failure of the run, not a footnote to a success.
+        mod = _load()
+        states = iter([True, False])
+        monkeypatch.setattr(mod, "git_is_clean", lambda: next(states))
+        monkeypatch.setattr(mod, "check", lambda _m: True)
+        assert mod.main([]) == 2

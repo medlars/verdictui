@@ -91,6 +91,24 @@ final class DemoReportTests: XCTestCase {
         }
     }
 
+    /// The same failure through the function the executable actually calls.
+    ///
+    /// `main.swift` calls `renderJSON()`, not `verdicts()`, so a seam that
+    /// stopped at `verdicts` would leave one link untested — the one where a
+    /// throw could be caught and turned into an empty document. Nothing is
+    /// returned partially: the throw must escape `renderJSON` rather than
+    /// produce `"[]"`, which would parse, satisfy the CI smoke step, and report
+    /// a catalog of nothing as success.
+    @MainActor
+    func testRenderJSONPropagatesTheFailureRatherThanEmittingAnEmptyDocument() async throws {
+        do {
+            let json = try await DemoReport.renderJSON(deadline: 0)
+            XCTFail("renderJSON returned a document for an unsettleable run: \(json)")
+        } catch is OracleHostError {
+            // Expected: the scenario's failure, not an encoding failure.
+        }
+    }
+
     /// The report's own error case, which Foundation cannot provoke.
     ///
     /// `JSONEncoder` emits UTF-8 by contract, so the branch is unreachable
