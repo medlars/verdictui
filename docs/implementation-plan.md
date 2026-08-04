@@ -92,6 +92,22 @@ oracle" from the research becomes a supported library API.
 **Why**: this is the moment screenshots become optional — ground truth starts flowing from
 the layout pass itself.
 
+### Spike finding (2026-08-04, pre-wave, /tmp — the assumption the wave rests on)
+
+**Question**: does a windowless `NSHostingView` yield real layout-engine frames with no
+window-server dependency? **Answer: yes — verified with a positive control, not just a
+green run.** A throwaway package (`/tmp/verdictui-spike`) hosted a probed SwiftUI view in
+an `NSHostingView` with no `NSWindow`, no `NSApplication.run`; GeometryReader/preference
+frames came back glyph-real (20-char 13 pt text measured 120 pt wide, `VStack` spacing
+exact at 10 pt, `.frame(width: 120)` honored to the point). Re-run under a `sandbox-exec`
+profile denying every `com.apple.windowserver*`/`CARenderServer` mach-lookup: byte-identical
+frames, exit 0. The profile itself was proven non-vacuous by a control program that orders
+a real `NSWindow` on screen — it succeeds normally (window server allocates windowNumber)
+and fails under the same profile (windowNumber 0, exit 1). Two operational facts for
+Task 3: (a) preference values are delivered only after pumping the main run loop —
+a single `layoutSubtreeIfNeeded` is not sufficient, confirming risk #3's
+loop-until-stable design; (b) `fittingSize` works headless.
+
 ### Tasks (ordered)
 
 1. **Transparent Layout probe** (`Sources/VerdictUIProbe/ProbeLayout.swift`):
