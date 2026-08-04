@@ -43,8 +43,9 @@ final class OraclePerformanceTests: XCTestCase {
     }
 
     /// Samples per scenario on the warm path. Twenty, so the pooled set across the
-    /// six-scenario catalog is 120 — enough that nearest-rank p95 lands on the
-    /// sixth-slowest sample rather than on the single slowest.
+    /// six-scenario catalog is 120 — enough that nearest-rank p95 (rank
+    /// `ceil(0.95 × 120)` = 114) lands on the seventh-slowest sample, with six
+    /// slower ones above it, rather than on the single slowest.
     private static let samplesPerScenario = 20
 
     /// The exit gate, in milliseconds: `OracleHost.currentTree()` p95 < 50 ms.

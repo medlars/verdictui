@@ -631,6 +631,43 @@ final class ProbeLayoutTests: XCTestCase {
         }
     }
 
+    /// The documented degenerate case: content that resolves to several subviews
+    /// (a `Group`, a `ForEach`) is reported as their union and stacked at a
+    /// common origin, rather than dropped or reported as the first subview alone.
+    @MainActor
+    func testAProbeWrappingAGroupReportsTheUnionOfItsSubviews() throws {
+        let recorder = ProbeRecorder()
+        let sink = FrameSink()
+        let host = HeadlessHost(
+            probeTestRoot(recorder: recorder) {
+                Group {
+                    Color.red.frame(width: 40, height: 20).reportingFrame("small", to: sink)
+                    Color.blue.frame(width: 80, height: 30).reportingFrame("large", to: sink)
+                }
+                .probeLayout(id: "multi")
+            }
+        )
+        guard host.pump(until: "a measurement for probe 'multi' and both leaf frames", isReady: {
+            recorder.latestMeasurement(for: "multi") != nil
+                && sink.frame("small") != nil
+                && sink.frame("large") != nil
+        }) else { return }
+
+        let measurement = try XCTUnwrap(recorder.latestMeasurement(for: "multi"))
+        // The union of (40 x 20) and (80 x 30) is (80 x 30) — not the first
+        // subview's answer, and not zero.
+        assertSize(measurement.returnedSize, width: 80, height: 30)
+
+        // "Stacked at a common origin": both subviews are placed top-leading at
+        // the probe's bounds, so their origins coincide.
+        let small = try XCTUnwrap(sink.frame("small"))
+        let large = try XCTUnwrap(sink.frame("large"))
+        XCTAssertEqual(small.origin.x, large.origin.x, accuracy: 0.01, "origins diverged in x")
+        XCTAssertEqual(small.origin.y, large.origin.y, accuracy: 0.01, "origins diverged in y")
+        XCTAssertEqual(small.width, 40, accuracy: 0.01, "the smaller subview changed size")
+        XCTAssertEqual(large.width, 80, accuracy: 0.01, "the larger subview changed size")
+    }
+
     @MainActor
     func testResetEmptiesTheRecorder() {
         let recorder = ProbeRecorder()
