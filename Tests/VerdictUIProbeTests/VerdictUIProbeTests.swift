@@ -498,22 +498,26 @@ final class VerdictUIProbeTests: XCTestCase {
         )
     }
 
-    /// Delivery hands `TreeAssembly` only the measurements belonging to probes
-    /// that actually reported this pass.
+    /// A measurement is not a node: only reported records become nodes, and each
+    /// one's metrics come from its own id.
     ///
-    /// The recorder is append-only and never cleared mid-pass, so it holds
-    /// measurements for probes that have since disappeared from the view tree —
-    /// a collapsed `if` branch, a `ForEach` row that went away. Filtering by the
-    /// reported ids is what stops a stale probe's measurement from being filed
-    /// under a live probe that happens to share its frame.
-    func testDeliveryDropsMeasurementsForProbesThatDidNotReport() throws {
+    /// The recorder is append-only, so at delivery it holds measurements for
+    /// probes that have since left the view tree — a collapsed `if` branch, a
+    /// `ForEach` row that went away. What must not happen is a node appearing for
+    /// one of them, or a live node picking up one of their measurements because
+    /// the frames happen to agree. Records are the sole source of nodes and
+    /// `probeID` is the sole key, and this pins both.
+    func testAMeasurementWithoutARecordNeitherBecomesNorAltersANode() throws {
         let frame = Rect(x: 0, y: 0, width: 120, height: 17)
-        func measurement(_ probeID: String) -> ProbeMeasurement {
+        // Same frame for both, so a lookup that matched on geometry instead of on
+        // `probeID` would find the stale one and be believed. Different intrinsic
+        // widths, so which one was used is visible in the tree.
+        func measurement(_ probeID: String, intrinsicWidth: Double) -> ProbeMeasurement {
             ProbeMeasurement(
                 probeID: probeID,
                 proposal: ProbeProposal(width: 120, height: nil),
                 returnedSize: Size(width: 120, height: 17),
-                intrinsicSize: Size(width: 260, height: 17),
+                intrinsicSize: Size(width: intrinsicWidth, height: 17),
                 idealSizeAtProposedWidth: Size(width: 120, height: 17)
             )
         }
@@ -526,7 +530,10 @@ final class VerdictUIProbeTests: XCTestCase {
                         ProbeRecord(id: "live", role: .text, frame: frame, text: "Cancel renewal")
                     ]
                 ),
-                measurements: [measurement("live"), measurement("vanished")]
+                measurements: [
+                    measurement("live", intrinsicWidth: 260),
+                    measurement("vanished", intrinsicWidth: 999),
+                ]
             )
         )
 
@@ -534,7 +541,8 @@ final class VerdictUIProbeTests: XCTestCase {
         XCTAssertEqual(
             live.textMetrics?.intrinsicWidth,
             260,
-            "the reporting probe's own measurement must still be used"
+            "the live node took the vanished probe's measurement, so measurements are being "
+                + "matched by something other than probe id"
         )
         XCTAssertNil(
             tree.node(withID: "vanished"),

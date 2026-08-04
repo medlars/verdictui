@@ -98,3 +98,4 @@
 - [ ] (P2) testwatch: add test for `stage_todo_review` in `scripts/verdictui-pm.py` [NONE]
 <!-- /testwatch-gaps -->
 - [ ] (P1) testwatch-hook: no test file references `kernel_symbol_audit` — add tests for `scripts/kernel-symbol-audit.py`
+- [ ] (P1) testwatch-hook: no test file references `mutation_check` — add tests for `scripts/mutation-check.py`
