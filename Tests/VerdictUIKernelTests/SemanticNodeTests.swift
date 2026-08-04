@@ -32,6 +32,25 @@ final class SemanticNodeTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode([Role].self, from: encoded), [.button, .custom("zstack")])
     }
 
+    /// `Role.custom("")` is constructible in memory but must never reach the
+    /// wire: `contracts/verdict-schema.json` requires `minLength: 1` on `role`,
+    /// so emitting `""` would produce a payload this kernel's own schema rejects.
+    func testEmptyRoleIdentifierIsRejectedByBothEncodeAndDecode() {
+        XCTAssertThrowsError(try JSONEncoder().encode([Role.custom("")])) { error in
+            guard case EncodingError.invalidValue(_, let context) = error else {
+                return XCTFail("expected invalidValue, got \(error)")
+            }
+            XCTAssertEqual(context.debugDescription, "role identifier is empty")
+        }
+        XCTAssertThrowsError(try JSONDecoder().decode([Role].self, from: Data(#"[""]"#.utf8))) {
+            error in
+            guard case DecodingError.dataCorrupted(let context) = error else {
+                return XCTFail("expected dataCorrupted, got \(error)")
+            }
+            XCTAssertEqual(context.debugDescription, "role identifier is empty")
+        }
+    }
+
     func testRoleInteractiveAndTextBearingClassification() {
         XCTAssertTrue(Role.button.isInteractive)
         XCTAssertTrue(Role.toggle.isInteractive)

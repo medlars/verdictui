@@ -95,7 +95,10 @@ final class RuleEngineTests: XCTestCase {
         XCTAssertFalse(context.isSuppressed(rule: "stub", on: node(nil)))
         XCTAssertTrue(context.isSuppressed(rule: "stub", on: node(.bool(true))))
         XCTAssertFalse(context.isSuppressed(rule: "stub", on: node(.bool(false))))
-        XCTAssertTrue(context.isSuppressed(rule: "stub", on: node(.string("*"))))
+        XCTAssertEqual(LintContext.suppressAllRules, "*", "the wildcard is a documented wire value")
+        XCTAssertTrue(
+            context.isSuppressed(rule: "stub", on: node(.string(LintContext.suppressAllRules)))
+        )
         XCTAssertTrue(context.isSuppressed(rule: "stub", on: node(.string("other, stub"))))
         XCTAssertFalse(context.isSuppressed(rule: "stub", on: node(.string("other"))))
         XCTAssertFalse(context.isSuppressed(rule: "stub", on: node(.number(1))))

@@ -23,8 +23,18 @@ public enum SchemaVersion {
 
     /// Major component of an arbitrary version string, or `nil` if it is not
     /// `major` / `major.minor` shaped.
+    ///
+    /// Shape is enforced rather than skimmed: one or two dot-separated
+    /// components, each a non-negative integer. Reading `"1.2.3"` as major 1
+    /// would accept a payload built to a versioning scheme this kernel does not
+    /// know, which is the same "guess rather than refuse" failure
+    /// ``isCompatible(_:)`` exists to prevent.
     public static func major(of version: String) -> Int? {
-        Int(version.split(separator: ".").first ?? "")
+        let components = version.split(separator: ".", omittingEmptySubsequences: false)
+        guard components.count == 1 || components.count == 2 else { return nil }
+        let numbers = components.compactMap { Int($0) }
+        guard numbers.count == components.count, numbers.allSatisfy({ $0 >= 0 }) else { return nil }
+        return numbers[0]
     }
 
     /// Whether a payload declaring `version` can be decoded by this kernel.

@@ -106,13 +106,39 @@ public enum Role: Hashable, Sendable {
 }
 
 extension Role: Codable {
+    /// - Throws: if the identifier is empty. `contracts/verdict-schema.json`
+    ///   requires `minLength: 1` on `role`, and a nameless role is not a role —
+    ///   it is a probe that failed to classify and said nothing about it.
     public init(from decoder: any Decoder) throws {
-        let identifier = try decoder.singleValueContainer().decode(String.self)
+        let container = try decoder.singleValueContainer()
+        let identifier = try container.decode(String.self)
+        guard !identifier.isEmpty else {
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "role identifier is empty"
+            )
+        }
         self.init(identifier: identifier)
     }
 
+    /// Encoded as the bare ``identifier`` string, not an object — the AX channel
+    /// and the JSON schema both expect `"role": "button"`.
+    ///
+    /// - Throws: if the identifier is empty, which only `Role.custom("")` can
+    ///   produce. Emitting `""` would put a payload on the wire that the kernel's
+    ///   own schema rejects, and a contract that only holds in one direction is
+    ///   not a contract.
     public func encode(to encoder: any Encoder) throws {
         var container = encoder.singleValueContainer()
+        guard !identifier.isEmpty else {
+            throw EncodingError.invalidValue(
+                self,
+                EncodingError.Context(
+                    codingPath: container.codingPath,
+                    debugDescription: "role identifier is empty"
+                )
+            )
+        }
         try container.encode(identifier)
     }
 }
@@ -124,8 +150,11 @@ extension Role: Codable {
 /// over-modeling risk in `docs/implementation-plan.md`. A rule that needs
 /// structure flattens it into dotted keys (`"text.alignment"`) instead.
 public enum AttributeValue: Hashable, Sendable {
+    /// Text: a label, a suppression list, a flattened enum name.
     case string(String)
+    /// Any numeric measurement; JSON has one number type, so integers land here too.
     case number(Double)
+    /// A flag, e.g. a toggle's on/off state.
     case bool(Bool)
 
     /// The wrapped string, or `nil` if this value is a number or bool.
@@ -178,6 +207,8 @@ extension AttributeValue: Codable {
         }
     }
 
+    /// Encoded as a bare JSON scalar, so `attributes` reads as
+    /// `{"sliderValue": 0.5}` rather than a tagged wrapper object.
     public func encode(to encoder: any Encoder) throws {
         var container = encoder.singleValueContainer()
         switch self {
