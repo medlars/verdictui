@@ -6,11 +6,11 @@ final class VerdictUIKernelTests: XCTestCase {
     func testOverlappingSiblingsProduceFailVerdict() {
         let root = SemanticNode(
             id: "root",
-            role: "container",
+            role: .container,
             frame: Rect(x: 0, y: 0, width: 100, height: 100),
             children: [
-                SemanticNode(id: "a", role: "button", frame: Rect(x: 0, y: 0, width: 60, height: 40)),
-                SemanticNode(id: "b", role: "button", frame: Rect(x: 50, y: 10, width: 60, height: 40)),
+                SemanticNode(id: "a", role: .button, frame: Rect(x: 0, y: 0, width: 60, height: 40)),
+                SemanticNode(id: "b", role: .button, frame: Rect(x: 50, y: 10, width: 60, height: 40)),
             ]
         )
         let verdict = Verdict(findings: LayoutLint.siblingOverlaps(in: root))
@@ -23,11 +23,11 @@ final class VerdictUIKernelTests: XCTestCase {
     func testDisjointSiblingsProducePassVerdict() {
         let root = SemanticNode(
             id: "root",
-            role: "container",
+            role: .container,
             frame: Rect(x: 0, y: 0, width: 200, height: 100),
             children: [
-                SemanticNode(id: "a", role: "button", frame: Rect(x: 0, y: 0, width: 60, height: 40)),
-                SemanticNode(id: "b", role: "button", frame: Rect(x: 80, y: 0, width: 60, height: 40)),
+                SemanticNode(id: "a", role: .button, frame: Rect(x: 0, y: 0, width: 60, height: 40)),
+                SemanticNode(id: "b", role: .button, frame: Rect(x: 80, y: 0, width: 60, height: 40)),
             ]
         )
         let verdict = Verdict(findings: LayoutLint.siblingOverlaps(in: root))
@@ -38,11 +38,11 @@ final class VerdictUIKernelTests: XCTestCase {
     func testZeroSizeFramesDoNotTriggerOverlap() {
         let root = SemanticNode(
             id: "root",
-            role: "container",
+            role: .container,
             frame: Rect(x: 0, y: 0, width: 100, height: 100),
             children: [
-                SemanticNode(id: "a", role: "spacer", frame: Rect(x: 10, y: 10, width: 0, height: 0)),
-                SemanticNode(id: "b", role: "button", frame: Rect(x: 0, y: 0, width: 60, height: 40)),
+                SemanticNode(id: "a", role: .spacer, frame: Rect(x: 10, y: 10, width: 0, height: 0)),
+                SemanticNode(id: "b", role: .button, frame: Rect(x: 0, y: 0, width: 60, height: 40)),
             ]
         )
         XCTAssertTrue(LayoutLint.siblingOverlaps(in: root).isEmpty)
