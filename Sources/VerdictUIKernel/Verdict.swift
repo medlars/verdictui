@@ -13,6 +13,13 @@ public struct Verdict: Equatable, Codable, Sendable {
     public enum Status: String, Codable, Sendable {
         case pass = "PASS"
         case fail = "FAIL"
+
+        /// The only place status is computed. Both the initializer and the
+        /// decoder route through here so the rule cannot drift between the
+        /// verdicts this kernel produces and the ones it accepts.
+        public static func derived(from findings: [Finding]) -> Status {
+            findings.contains { $0.severity == .error } ? .fail : .pass
+        }
     }
 
     /// Where the wall-clock cost went. Populated as the pipeline grows: Wave 1
@@ -63,7 +70,7 @@ public struct Verdict: Equatable, Codable, Sendable {
             timeIntervalSince1970: timestamp.timeIntervalSince1970.rounded(.down)
         )
         self.findings = findings
-        self.status = findings.contains(where: { $0.severity == .error }) ? .fail : .pass
+        self.status = Status.derived(from: findings)
         self.tree = tree
         self.delta = delta
         self.timing = timing
@@ -87,8 +94,24 @@ public struct Verdict: Equatable, Codable, Sendable {
                 debugDescription: "expected an ISO-8601 UTC timestamp, got '\(stamp)'"
             )
         }
-        status = try container.decode(Status.self, forKey: .status)
+        let declared = try container.decode(Status.self, forKey: .status)
         findings = try container.decode([Finding].self, forKey: .findings)
+        // Status is derived, never set — so a payload whose status contradicts its
+        // own findings is corrupt, not merely stale. Recomputing it silently would
+        // paper over a broken producer and let a verdict carrying an error finding
+        // be reported as PASS by whatever consumed it.
+        let derived = Status.derived(from: findings)
+        guard declared == derived else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .status,
+                in: container,
+                debugDescription: """
+                    status '\(declared.rawValue)' contradicts the findings, which \
+                    derive '\(derived.rawValue)'
+                    """
+            )
+        }
+        status = derived
         tree = try container.decodeIfPresent(SemanticNode.self, forKey: .tree)
         delta = try container.decodeIfPresent(TreeDelta.self, forKey: .delta)
         timing = try container.decodeIfPresent(Timing.self, forKey: .timing) ?? Timing()

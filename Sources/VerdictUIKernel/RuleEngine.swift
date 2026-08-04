@@ -142,7 +142,7 @@ public enum RuleEngine {
     ///
     /// Rules named in ``LintContext/disabledRules`` are not evaluated at all.
     ///
-    /// - Parameter tree: whether to embed `root` in the verdict. Off by default:
+    /// - Parameter includeTree: whether to embed `root` in the verdict. Off by default:
     ///   the tree dwarfs the findings, and the MCP surface pays per token.
     public static func run(
         rules: [any LintRule],
