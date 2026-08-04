@@ -320,25 +320,75 @@ final class KernelDocumentationTests: XCTestCase {
         XCTAssertTrue(text.contains(TreeDiff.rootSegment), "docs must name the root path segment")
     }
 
+    /// Read row-scoped, not with a whole-document `contains`: the numbers here also
+    /// appear in the prose and in the quoted `tap-target` message, so a
+    /// document-wide search for "28" stays satisfied while the authoritative table
+    /// says something else entirely.
     func testDocsStateTheRealDefaultThresholds() throws {
         let text = try documentation
         let defaults = LintContext(viewport: viewport)
+        let rows = try Self.tableRows(after: "| Field | Default | Used by |", in: text)
+
+        func defaultCell(for field: String) throws -> String {
+            let row = try XCTUnwrap(
+                rows.first { $0.hasPrefix("| `\(field)` |") },
+                "no LintContext defaults row for \(field)"
+            )
+            let cells = row.split(separator: "|").map { $0.trimmingCharacters(in: .whitespaces) }
+            XCTAssertEqual(cells.count, 3, "unexpected defaults-table shape: \(row)")
+            return cells[1]
+        }
+
+        let tapCell = try defaultCell(for: "minimumTapTarget")
         XCTAssertTrue(
-            text.contains("\(defaults.minimumTapTarget.width.pointsDescription)"),
-            "docs must state the default tap-target minimum"
+            tapCell.contains(Self.dimensionPhrase(defaults.minimumTapTarget)),
+            "defaults table says \(tapCell) for the tap-target minimum"
         )
+        let toleranceCell = try defaultCell(for: "truncationTolerance")
         XCTAssertTrue(
-            text.contains("\(LintContext.touchMinimumTapTarget.width.pointsDescription)"),
-            "docs must state the touch minimum"
+            toleranceCell.contains("`\(defaults.truncationTolerance)`"),
+            "defaults table says \(toleranceCell) for the truncation tolerance"
         )
-        XCTAssertTrue(
-            text.contains("\(defaults.truncationTolerance)"),
-            "docs must state the truncation tolerance"
-        )
+
         XCTAssertTrue(
             text.contains(ZeroSizeRule.probeRolePrefix),
             "docs must state the probe role prefix zero-size exempts"
         )
+    }
+
+    /// Every tap-target dimension the page states, table or prose, must be one a
+    /// `LintContext` constructor actually installs — and both must be stated.
+    ///
+    /// Scoped to the backticked `` `N` × `N` pt `` form the threshold text uses;
+    /// example frames and viewports are written plainly (`24 × 18 pt`), so they do
+    /// not collide with this.
+    func testDocsStateNoTapTargetDimensionTheKernelDoesNotUse() throws {
+        let defaults = LintContext(viewport: viewport)
+        let allowed: Set<String> = [
+            Self.dimensionPhrase(defaults.minimumTapTarget),
+            Self.dimensionPhrase(LintContext.touchMinimumTapTarget),
+        ]
+        let text = try documentation
+        let dimension = try Regex("`[0-9.]+` × `[0-9.]+` pt")
+        let stated = text.matches(of: dimension).map { String(text[$0.range]) }
+
+        XCTAssertFalse(stated.isEmpty, "docs state no tap-target dimensions at all")
+        for phrase in stated {
+            XCTAssertTrue(
+                allowed.contains(phrase),
+                "docs state \(phrase), which no LintContext constructor uses"
+            )
+        }
+        XCTAssertEqual(
+            Set(stated),
+            allowed,
+            "docs must state both the macOS pointer minimum and the touch minimum"
+        )
+    }
+
+    /// The page's rendering of a tap-target size: `` `28` × `28` pt ``.
+    private static func dimensionPhrase(_ size: Size) -> String {
+        "`\(size.width.pointsDescription)` × `\(size.height.pointsDescription)` pt"
     }
 
     /// Body rows of the markdown table whose header line is `header`.
