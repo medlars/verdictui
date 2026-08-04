@@ -83,6 +83,20 @@ public struct Verdict: Equatable, Codable, Sendable {
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         schemaVersion = try container.decode(String.self, forKey: .schemaVersion)
+        // ``SchemaVersion`` defines a major bump as a breaking change, which makes
+        // accepting a foreign major the worst kind of success: the fields still
+        // decode, so the CLI and MCP would act confidently on values whose meaning
+        // changed. A newer *minor* is fine — its extra fields are simply ignored.
+        guard SchemaVersion.isCompatible(schemaVersion) else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .schemaVersion,
+                in: container,
+                debugDescription: """
+                    payload declares schema '\(schemaVersion)', incompatible with \
+                    this kernel's '\(SchemaVersion.current)'
+                    """
+            )
+        }
         scenario = try container.decode(String.self, forKey: .scenario)
         let stamp = try container.decode(String.self, forKey: .timestamp)
         do {
