@@ -1,0 +1,134 @@
+# VerdictUI — Business & Marketing Decision History
+
+> Record of the market/business Q&A that led to building VerdictUI, and the
+> decisions taken. Written 2026-08-04 from the founding chat session (research +
+> scaffold session of 2026-08-03/04). Future business decisions append here;
+> technical non-decisions stay in `no.md`; architecture decisions get ADRs in
+> `.decisions/`.
+
+## The founding problem
+
+Agent-driven development is bottlenecked by UI verification: the
+screenshot → wait → click → confirm cycle is slow, lossy, and repeated on every
+edit. The founding goal: automate an accurate virtual render + verification of
+UIs for desktop (SwiftUI first) and web apps, eliminating repeated screenshots
+and the delays between act and verify.
+
+## Q&A history (questions asked, answers that shaped the product)
+
+### Q1. Will it be a useful, highly demanded tool? Is there a competitor? Should we build it?
+
+**Answer — yes, build it.** Demand is driven by the rise of coding agents: every
+agent session pays the screenshot-cycle tax, and dev teams pay it again in CI.
+Competitive research (5-agent deep survey, 2026-08-03) found the *components*
+exist but no unified product:
+
+- Agent-facing MCP servers exist (Playwright MCP, Xcode/Previews MCP) but are
+  chatty, single-session wrappers over existing tools.
+- Snapshot/pixel tools exist (swift-snapshot-testing, ODiff/SSIM compare,
+  reftests) but are pixel-first, flaky, and blind to semantics.
+- Bidirectional UI editors (Onlook, Tempo) target design-to-code, not
+  verification.
+- Semantic/accessibility linting exists on web (axe-core, layout linters) but
+  nothing equivalent for SwiftUI, and nothing that unifies web + native.
+
+**No competitor unifies in-process instrumentation + external cross-validation
++ machine-readable verdicts**, and the unified web+native verdict contract is a
+completely open space. That gap is the product.
+
+### Q2. Is the SwiftUI approach the most innovative available?
+
+**Answer — the in-process strategy is the differentiator.** Rather than
+assembling external tools (AX scraping, screenshots, XCUITest), VerdictUI
+instruments SwiftUI from inside the layout pass using public API only: the
+`Layout` protocol as a transparent probe, `PreferenceKey` frame streams, and
+(Wave 4) Swift macros for compile-time instrumentation. The layout engine
+itself emits the ground-truth semantic tree — nothing is reconstructed from
+pixels or scraped trees after the fact.
+
+### Q3. Does any competitor use this strategy?
+
+**Answer — no.** No shipped product instruments SwiftUI's layout pass in-process
+for verification. Existing tools are all out-of-process (XCUITest, AX scraping)
+or pixel-based (snapshot testing).
+
+### Q4. Does the critique apply to XCUITest too?
+
+**Answer — yes.** XCUITest is out-of-process, black-box, slow (seconds per
+query), and synchronization-blind. Decision: XCUITest is not the engine — it is
+kept only as a **thin outer E2E smoke loop** for OS-level truths (permissions
+dialogs, window management) that in-process code cannot see.
+
+### Q5. Does the solution combine in-process AND out-of-process checking?
+
+**Answer — yes, that is the architecture** (three concentric loops):
+1. **Inner loop** — in-process probe + kernel verdicts on every edit (ms, no pixels).
+2. **Middle loop** — external cross-validation per scenario: `AXUIElement` tree,
+   real event injection, windowless pixel capture, reconciled against the
+   in-process stream. **Divergence between the two views IS the bug detector.**
+3. **Outer loop** — thin orchestrated XCUITest smoke.
+
+### Q6. One-stop solution for SwiftUI + XCUITest + web?
+
+**Answer — yes, by design.** The kernel (`VerdictUIKernel`) is platform-pure:
+semantic tree, diff, lint rules, and the versioned verdict JSON schema contain
+no UI-framework imports. SwiftUI is the first backend; a web backend (CDP-based)
+consumes the same verdict contract later (deferred deliberately — `no.md`).
+One schema means agents learn one wire format for native and web.
+
+### Q7. What shortfalls in CDP / Playwright / axe-core can we solve?
+
+**Answer — the cycle overhead, not the browser tech.** Playwright's perceived
+slowness is mostly the MCP wrapper's chatty protocol and agent round-trips, not
+browser concurrency. VerdictUI's web-facing answers, baked into the plan:
+- **Atomic act-and-observe** — one call performs the action and returns the
+  settled semantic delta + verdict (no act/screenshot/confirm round-trips).
+- **Settle detection instead of sleeps** — rAF/MutationObserver (web),
+  CATransaction/AXObserver + virtual clock (native).
+- **Session pooling / multi-session** — warm daemon, parallel scenario sweeps.
+- **Semantic diffing + layout linting** as first-class outputs, not screenshots.
+
+## Monetization decision
+
+**Open-core.** (Decided in the founding session.)
+
+| Layer | License | Rationale |
+|-------|---------|-----------|
+| Engine: kernel, probe, rules, CLI basics | Open source | The SwiftUI engine is the adoption wedge — nothing comparable exists; open source drives trust + community rule contributions |
+| Team workflow: baseline management, CI integration, dashboards, cross-run analytics | Paid | Teams pay for workflow and history, individuals don't pay for engines |
+
+Explicitly rejected: fully proprietary (kills adoption for a new-category dev
+tool), fully free (no revenue), consulting-led (doesn't scale).
+
+## Naming & brand
+
+- **Name: VerdictUI** — chosen 2026-08-04 (the product's core output is a
+  machine-readable verdict with evidence).
+- **Domains**: `verdictui.com` and `verdictui.dev` confirmed available
+  2026-08-04 (whois/RDAP). Registration is an owner action — tracked in TODO P1.
+- Positioning phrase used throughout docs: replaces the
+  *screenshot–wait–click–confirm* cycle with *atomic act-and-observe verdicts*.
+
+## Distribution & go-to-market notes (from founding session)
+
+- Primary early audience: developers running coding agents (Claude Code, Cursor)
+  on Swift/SwiftUI projects — reached via the MCP server surface (Wave 7).
+- Homebrew tap + downloadable CLI at first public release (TODO P2;
+  `stage_auto_release` registered False in CEO PROPAGATION_PATTERNS until then).
+- Open-source launch of the engine is itself the marketing event; the
+  agent-native MCP angle is the differentiator to lead with.
+
+## Decision log
+
+| Date | Decision | Status |
+|------|----------|--------|
+| 2026-08-03 | Problem validated via 5-agent research survey; build decision taken | Done |
+| 2026-08-04 | Name: VerdictUI; domains .com/.dev available, registration pending | Domains pending (owner) |
+| 2026-08-04 | Open-core monetization: open engine, paid team workflow | Standing |
+| 2026-08-04 | XCUITest = thin outer smoke only, never the engine | Standing |
+| 2026-08-04 | Web backend deferred until native engine proves the contract | Standing (`no.md`) |
+| 2026-08-04 | Model for build sessions: Opus; 10-wave plan is execution SSoT | Standing |
+
+> **Provenance note**: the original chat transcript was not retained on disk;
+> this history was written the same day from the session's summarized record.
+> Treat quoted-sounding phrasing as faithful paraphrase, not verbatim.

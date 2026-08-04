@@ -46,6 +46,7 @@ Target layout:
 | PM | `scripts/verdictui-pm.py` |
 | Wave plan | `docs/implementation-plan.md` |
 | Wave status (resume point) | `docs/wave-status.md` |
+| Business decisions | `docs/business-decisions.md` |
 | SLOs | `docs/slo.md` |
 | Runbook | `docs/runbook.md` |
 | Contracts | `contracts/` |
