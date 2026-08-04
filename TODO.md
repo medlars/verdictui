@@ -4,6 +4,10 @@
 <!-- none -->
 
 ## P1 — High Priority
+- [x] (2026-08-04) (P1) CEO/stage_lint: [1m[91mF821 [0m[1mUndefined name `shutil`[0m
+   [1m[94m-->[0m scripts/floor-check.py:99:8
+    [1m[94m|[0m
+[1
 - [x] (2026-08-04) (P1) CEO/stage_lint: [1m[91mI001 [0m[[1m[96m*[0m] [1mImport block is un-sorted or un-formatted[0m
    [1m[94m-->[0m scripts/verdict
 - [x] (2026-08-04) (P1) CEO/stage_floor: VerdictUI floor: 3 gap(s):

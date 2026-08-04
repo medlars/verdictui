@@ -7,6 +7,7 @@ Run: python3.14 scripts/floor-check.py
 
 import json
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -95,14 +96,19 @@ for skill_dir in [SLUG, f"{SLUG}-audit"]:
     if not p.exists():
         GAPS.append({"item": f"skill/{skill_dir}", "path": str(p), "status": "missing"})
 
-# GitHub remote
-remote = subprocess.run(
-    ["git", "-C", str(ROOT), "remote", "get-url", "origin"],
-    capture_output=True,
-    text=True,
-)
-if remote.returncode != 0 or "github.com" not in remote.stdout:
-    GAPS.append({"item": "GitHub remote", "path": ".git/config", "status": "missing"})
+# GitHub remote — absolute git path (B607: partial paths resolve via caller's PATH)
+_git = shutil.which("git")
+if _git is None:
+    GAPS.append({"item": "GitHub remote", "path": ".git/config", "status": "git not installed"})
+else:
+    remote = subprocess.run(  # noqa: S603 — fixed argv, absolute path, no user input
+        [_git, "-C", str(ROOT), "remote", "get-url", "origin"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if remote.returncode != 0 or "github.com" not in remote.stdout:
+        GAPS.append({"item": "GitHub remote", "path": ".git/config", "status": "missing"})
 
 # CI workflow
 ci = ROOT / ".github" / "workflows" / "ci.yml"
