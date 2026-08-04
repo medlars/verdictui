@@ -268,12 +268,15 @@ public struct SemanticNode: Equatable, Sendable {
         self.children = children
     }
 
-    /// Identity used for diff matching: the probe `id` when present, the
-    /// ``structuralPath`` otherwise (prefixed so the two namespaces cannot collide).
-    /// Empty for a node with neither, which callers resolve positionally.
+    /// Sibling-local identity used for diff matching: the probe `id` when present,
+    /// otherwise the last component of ``structuralPath`` (`@`-prefixed so the two
+    /// namespaces cannot collide). Empty for a node with neither, which
+    /// ``TreeDiff/childSegments(of:)`` resolves positionally.
     public var identity: String {
         if !id.isEmpty { return id }
-        if !structuralPath.isEmpty { return "@" + structuralPath }
+        if let component = structuralPath.split(separator: "/").last {
+            return "@" + component
+        }
         return ""
     }
 

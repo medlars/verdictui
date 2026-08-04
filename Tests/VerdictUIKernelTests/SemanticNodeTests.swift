@@ -104,7 +104,7 @@ final class SemanticNodeTests: XCTestCase {
         var unprobed = node
         unprobed.id = ""
         unprobed.structuralPath = "root/container[0]"
-        XCTAssertEqual(unprobed.identity, "@root/container[0]", "namespaces must not collide")
+        XCTAssertEqual(unprobed.identity, "@container[0]", "sibling-local, namespaces separated")
 
         var anonymous = unprobed
         anonymous.structuralPath = ""
