@@ -288,10 +288,14 @@ extension Rect {
 /// nothing about how it lays out.
 ///
 /// Transparency is the entire contract: the same proposal goes in, the child's
-/// own answer comes out, and the child is placed at the probe's `bounds.origin`
-/// anchored top-leading — which is where it would have been without the probe.
+/// own answer comes out, the child is placed at the probe's `bounds.origin`
+/// anchored top-leading — which is where it would have been without the probe —
+/// and any alignment guide the child declared is forwarded, so a parent that
+/// aligns rather than centres still positions the child the way it would have.
 /// `ProbeLayoutTests.testProbeLayoutDoesNotChangeTheRenderedFrame` holds the
-/// line: it compares a hosted view's resolved frame with and without the wrapper.
+/// line: it compares a hosted view's resolved frame with and without the wrapper,
+/// and `testProbeLayoutForwardsAnExplicitAlignmentGuideOverride` (with its
+/// vertical twin) holds the alignment half of it.
 ///
 /// Beyond forwarding, the probe performs two extra queries per size negotiation:
 /// it measures the child again under `ProposedViewSize.unspecified`
@@ -391,6 +395,91 @@ public struct ProbeLayout: Layout {
             frame: Rect(CGRect(origin: bounds.origin, size: placed))
         )
         MainActor.assumeIsolated { recorder.record(placement) }
+    }
+
+    /// Forwards a horizontal alignment guide declared inside the wrapped view,
+    /// and reports no guide when the wrapped view declared none.
+    ///
+    /// A `Layout` view's alignment guides come from this method and its
+    /// `VerticalAlignment` twin, and from nothing else. The protocol's default
+    /// implementations return `nil` for every guide — "this view declares no
+    /// explicit guide" — and SwiftUI then derives the guide from the *wrapper's*
+    /// own `ViewDimensions` via `AlignmentID.defaultValue`: `.leading` → 0,
+    /// `.bottom` → height, and so on.
+    ///
+    /// For a **default** guide that fallback is already exactly right, and is
+    /// deliberately left in place: the probe reports the child's size as its own
+    /// and places the child at `bounds.origin`, so the wrapper's box and the
+    /// child's box are the same box, and a guide derived from one is the guide
+    /// derived from the other. That is why `.topLeading`, `.bottomTrailing` and
+    /// `.center` reproduce the unwrapped layout with no forwarding at all, and
+    /// why the fix here is not "compute a position" but "stop dropping one".
+    ///
+    /// For an **explicit** guide — one the wrapped subtree declared with
+    /// `.alignmentGuide(_:computeValue:)` — the fallback is wrong, and silently
+    /// so. The child's dimensions carry a value its author chose (a caption whose
+    /// `.leading` is its own centre, a row whose `.firstTextBaseline` sits inside
+    /// it). A parent aligning the unwrapped child uses that value; a parent above
+    /// the probe was told there was no explicit guide and aligned against the
+    /// wrapper's edge instead, so the child lands somewhere it never would have —
+    /// the one thing this type promises cannot happen.
+    ///
+    /// So the rule is to forward the child's answer *and its explicitness*:
+    /// report the guide when the child declared one, translated by `bounds.origin`
+    /// because that is where the child was placed, and report `nil` when it did
+    /// not. Synthesising the computed default instead of `nil` would yield the
+    /// same number and still be wrong: explicitness is itself observable, and
+    /// containers that derive their own guides from their children's explicit ones
+    /// would start seeing a guide the wrapped view never declared — the same class
+    /// of distortion, introduced by the code meant to remove it.
+    ///
+    /// Guides are forwarded only for the single-subview case the probe is designed
+    /// for. Content that resolves to several subviews is stacked at a common
+    /// origin (see `measure(_:proposal:)`), and no one subview's guide speaks for
+    /// that union, so the wrapper declares nothing explicit and its own geometry
+    /// answers — the same honest degenerate behaviour the sizing path takes.
+    public func explicitAlignment(
+        of guide: HorizontalAlignment,
+        in bounds: CGRect,
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout Void
+    ) -> CGFloat? {
+        guard let explicit = Self.soleSubviewDimensions(subviews, proposal: proposal)?[
+            explicit: guide
+        ] else { return nil }
+        return bounds.minX + explicit
+    }
+
+    /// Forwards a vertical alignment guide declared inside the wrapped view, and
+    /// reports no guide when the wrapped view declared none.
+    ///
+    /// The vertical half of the same rule; the reasoning is on the
+    /// `HorizontalAlignment` overload above. `Layout` declares the two guide
+    /// families as separate requirements, so an implementation that covers only
+    /// one axis is transparent only along that axis — `.firstTextBaseline` and a
+    /// `.bottom` override live here.
+    public func explicitAlignment(
+        of guide: VerticalAlignment,
+        in bounds: CGRect,
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout Void
+    ) -> CGFloat? {
+        guard let explicit = Self.soleSubviewDimensions(subviews, proposal: proposal)?[
+            explicit: guide
+        ] else { return nil }
+        return bounds.minY + explicit
+    }
+
+    /// The wrapped view's dimensions under `proposal`, or `nil` unless the probe
+    /// wraps exactly one subview.
+    private static func soleSubviewDimensions(
+        _ subviews: Subviews,
+        proposal: ProposedViewSize
+    ) -> ViewDimensions? {
+        guard subviews.count == 1, let subview = subviews.first else { return nil }
+        return subview.dimensions(in: proposal)
     }
 
     /// The size the probe reports for `proposal`.
