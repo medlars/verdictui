@@ -391,6 +391,68 @@ final class TreeAssemblyTests: XCTestCase {
         XCTAssertEqual(tree.children.first?.textMetrics?.intrinsicWidth, 72)
     }
 
+    func testARenderedHeightOfZeroStillCountsAsOneLine() {
+        // The "never less than one" floor on line counts: content that was
+        // measured at all occupies at least one line, even when a collapsed
+        // frame renders it at zero height. Without the floor a zero-height text
+        // would report zero rendered lines, and a rule comparing rendered to
+        // ideal would read "zero of one" as vertical truncation of nothing.
+        let frame = Rect(x: 0, y: 0, width: 120, height: 0)
+        let metrics = TreeAssembly.textMetrics(
+            for: record("collapsed", frame, role: .text, text: "Renew"),
+            measurements: [
+                measurement(returned: Size(width: 120, height: 0),
+                    intrinsic: Size(width: 260, height: 17),
+                    idealAtWidth: Size(width: 120, height: 17))
+            ]
+        )
+        XCTAssertEqual(metrics?.renderedLineCount, 1, "the one-line floor was lost")
+        XCTAssertEqual(metrics?.idealLineCount, 1)
+    }
+
+    // MARK: - Degenerate frames
+
+    func testARecordWithNegativeDimensionsStaysALeafSibling() {
+        // A broken layout can report negative dimensions. `Entry.area` clamps
+        // them to zero so a double-negative rect (whose raw product is a large
+        // positive number) cannot be sorted as the biggest container in the
+        // pass. Whatever the sort does, the observable contract is pinned here:
+        // a degenerate record never becomes anyone's parent, never swallows a
+        // real node, and stays in the tree as a leaf sibling in layout order.
+        let tree = TreeAssembly.assemble(
+            records: [
+                record("broken", Rect(x: 0, y: 0, width: -50, height: -40)),
+                record("card", Rect(x: 5, y: 5, width: 100, height: 100)),
+                record("label", Rect(x: 10, y: 10, width: 40, height: 20)),
+            ],
+            measurements: [:],
+            viewport: viewport
+        )
+
+        XCTAssertEqual(
+            tree.children.map(\.id),
+            ["broken", "card"],
+            "top level must be the degenerate record and the real container, in layout order"
+        )
+        let broken = tree.children.first { $0.id == "broken" }
+        XCTAssertEqual(
+            broken?.children.count,
+            0,
+            "a record with negative dimensions became a parent: \(broken?.children.map(\.id) ?? [])"
+        )
+        XCTAssertEqual(
+            broken?.frame,
+            Rect(x: 0, y: 0, width: -50, height: -40),
+            "the degenerate frame must be stored as measured, not repaired"
+        )
+        let card = tree.children.first { $0.id == "card" }
+        XCTAssertEqual(
+            card?.children.map(\.id),
+            ["label"],
+            "the real nesting must be unaffected by the degenerate sibling"
+        )
+    }
+
     // MARK: - Determinism
 
     func testTheSameInputsProduceTheSameTree() throws {
