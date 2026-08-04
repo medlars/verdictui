@@ -16,7 +16,6 @@
   ✗ GitHub remote
   ✗ .github/workflows/ci.yml
 
-- [ ] Close CIS-B653B221 + CIS-663E58AD (both already fixed in code: pyright and ruff-format clean) — blocked 2026-08-04 by `detector-fix-not-row-suppress-gate.sh` returning invalid JSON; fix or report the hook, then run mark_fixed_verified
 - [ ] Execute Wave 1 (kernel: full semantic tree model + verdict schema + rule engine) per docs/implementation-plan.md
 - [ ] Register verdictui.com + verdictui.dev (owner action — confirmed available 2026-08-04)
 - [ ] Fill in docs/runbook.md start/stop commands once the daemon exists (Wave 6)
