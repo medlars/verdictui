@@ -13,6 +13,7 @@ Everything here drives the pure decision functions with synthetic
 `CompletedProcess` values. Nothing shells out to `swift`.
 """
 
+import hashlib
 import importlib.util
 import subprocess
 import sys
@@ -300,6 +301,67 @@ class TestCheckRestoresTheFile:
         monkeypatch.setattr(mod, "run_named_test", lambda _t: next(outcomes))
         assert mod.check(mutation) is True
         assert source.read_text() == "let guarded = true\n"
+
+
+class TestSha256:
+    """The restore check's only evidence that a file came back unchanged."""
+
+    def test_the_digest_matches_hashlib_over_the_same_bytes(self, tmp_path: Path) -> None:
+        target = tmp_path / "Subject.swift"
+        target.write_bytes(b"let guarded = true\n")
+        expected = hashlib.sha256(b"let guarded = true\n").hexdigest()
+        assert _load().sha256(target) == expected
+
+    def test_a_one_byte_change_changes_the_digest(self, tmp_path: Path) -> None:
+        # The property `check` relies on: restoring "close enough" is caught.
+        mod = _load()
+        target = tmp_path / "Subject.swift"
+        target.write_bytes(b"let guarded = true\n")
+        before = mod.sha256(target)
+        target.write_bytes(b"let guarded = true \n")
+        assert mod.sha256(target) != before
+
+    def test_it_reads_bytes_rather_than_decoded_text(self, tmp_path: Path) -> None:
+        # A text-mode read would normalise CRLF on some platforms and report two
+        # different files as identical.
+        mod = _load()
+        unix, dos = tmp_path / "a.swift", tmp_path / "b.swift"
+        unix.write_bytes(b"a\nb\n")
+        dos.write_bytes(b"a\r\nb\r\n")
+        assert mod.sha256(unix) != mod.sha256(dos)
+
+
+class TestRun:
+    """The subprocess wrapper every other call goes through."""
+
+    def test_it_reports_the_real_exit_code_rather_than_raising(self) -> None:
+        # `check=False` on purpose: a nonzero exit is the signal this whole
+        # script reads, not an error condition.
+        result = _load().run([sys.executable, "-c", "raise SystemExit(3)"])
+        assert result.returncode == 3
+
+    def test_it_captures_stdout_and_stderr_as_text(self) -> None:
+        result = _load().run(
+            [sys.executable, "-c", "import sys; print('out'); print('err', file=sys.stderr)"]
+        )
+        assert result.stdout.strip() == "out"
+        assert result.stderr.strip() == "err"
+
+    def test_it_runs_in_the_repository_not_the_caller_s_directory(self, tmp_path: Path) -> None:
+        # Mutation paths are relative to REPO, and `git status` must describe the
+        # repository rather than wherever pytest was invoked from.
+        mod = _load()
+        mod.REPO = tmp_path
+        result = mod.run([sys.executable, "-c", "import os; print(os.getcwd())"])
+        assert Path(result.stdout.strip()).resolve() == tmp_path.resolve()
+
+    def test_a_hanging_command_is_cut_off_rather_than_hanging_forever(self) -> None:
+        # The script edits source files while it waits, so an unbounded wait
+        # leaves the tree mutated indefinitely.
+        mod = _load()
+        mod.TEST_TIMEOUT_SECONDS = 0.5
+        with pytest.raises(subprocess.TimeoutExpired):
+            mod.run([sys.executable, "-c", "import time; time.sleep(30)"])
 
 
 class TestVerifyTargets:

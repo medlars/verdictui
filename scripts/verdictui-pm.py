@@ -270,7 +270,7 @@ class VerdictUIPM(PmBase):
             }
         return {"passed": True, "detail": f"{len(verdicts)} verdicts, valid JSON"}
 
-    def stage_mutation_targets(self) -> dict:
+    def stage_mutations(self) -> dict:
         """Every mutation in `scripts/mutation-check.py` still names real source.
 
         The full mutation run rebuilds once per mutation and is too slow for a
@@ -343,7 +343,7 @@ class VerdictUIPM(PmBase):
             ("stage_last20", self.stage_last20),
             ("stage_test_alongside", self.stage_test_alongside),
             ("stage_demo", self.stage_demo),
-            ("stage_mutation_targets", self.stage_mutation_targets),
+            ("stage_mutations", self.stage_mutations),
             ("stage_lint", self.stage_lint),
             ("stage_codewatch", self.stage_codewatch),
             ("stage_issuewatch", self.stage_issuewatch),
