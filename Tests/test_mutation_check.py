@@ -123,12 +123,27 @@ class TestPytestRunner:
         # check report the harness as having dirtied the repository.
         mod = _load()
         seen: list[list[str]] = []
-        mod.run = lambda argv: seen.append(argv) or _result(0)  # type: ignore[assignment]
+
+        def _capture(argv: list[str]) -> subprocess.CompletedProcess[str]:
+            seen.append(argv)
+            return _result(0)
+
+        mod.run = _capture
         mod.run_named_test("Tests/test_x.py::TestY::test_z", mod.Runner.PYTEST)
         argv = seen[0]
         assert "pytest" in argv
         assert "Tests/test_x.py::TestY::test_z" in argv
         assert argv[argv.index("-p") + 1] == "no:cacheprovider"
+
+    def test_no_swift_mutation_carries_a_pytest_node_id(self) -> None:
+        # The mirror of the check below. `swift test --filter` treats a node id
+        # as a regex that matches nothing and still exits 0, so getting the
+        # runner wrong in one direction is caught only by the baseline check
+        # and in the other only by this.
+        mod = _load()
+        for mutation in mod.MUTATIONS:
+            if mutation.runner is mod.Runner.SWIFT:
+                assert "::" not in mutation.test, f"node id on a swift runner: {mutation.test}"
 
     def test_every_pytest_mutation_names_a_node_id_that_exists(self) -> None:
         # A `--filter`-style name would silently select nothing under pytest.
