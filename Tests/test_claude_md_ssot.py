@@ -85,9 +85,13 @@ class TestClaudeMdSSoT:
     def test_every_ssot_location_exists(self) -> None:
         for row in _ssot_rows():
             location = row[2].strip("`")
-            assert (_PROJECT_ROOT / location).exists(), (
-                f"SSoT row points at a missing path: {location}"
+            resolved = (_PROJECT_ROOT / location).resolve()
+            # An absolute path or a `../` resolves outside the checkout, where it
+            # may well exist — letting a wrong pointer satisfy the check.
+            assert resolved.is_relative_to(_PROJECT_ROOT), (
+                f"SSoT row points outside the repo: {location}"
             )
+            assert resolved.exists(), f"SSoT row points at a missing path: {location}"
 
     def test_every_ssot_symbol_lives_where_the_table_says(self) -> None:
         """Only the canonical-implementation column is checked. The notes column
@@ -115,5 +119,8 @@ class TestClaudeMdSSoT:
         assert len(candidates) >= 8, (
             f"path scan found only {len(candidates)} paths — check the regex"
         )
-        missing = sorted(path for path in candidates if not (_PROJECT_ROOT / path).exists())
+        resolved = {path: (_PROJECT_ROOT / path).resolve() for path in candidates}
+        escaping = sorted(p for p, r in resolved.items() if not r.is_relative_to(_PROJECT_ROOT))
+        assert not escaping, f"CLAUDE.md names paths outside the repo: {escaping}"
+        missing = sorted(p for p, r in resolved.items() if not r.exists())
         assert not missing, f"CLAUDE.md names paths that do not exist: {missing}"
