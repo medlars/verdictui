@@ -199,7 +199,7 @@ class TestFileRegistry:
                 "so build output and generated artifacts will start demanding rows"
             )
         finally:
-            intruder.unlink()
+            intruder.unlink(missing_ok=True)
 
     def test_every_tracked_suffix_is_classified(self) -> None:
         """A hardcoded suffix allowlist shrinks the same way a hardcoded directory
