@@ -80,6 +80,15 @@ public final class VerdictClock: Clock, @unchecked Sendable {
         withLock { $0 }
     }
 
+    /// How many `sleep(until:)` waiters are still suspended.
+    ///
+    /// The quiescence detector (Wave 3 Task 2) refuses to report settled while
+    /// this is non-zero: a pending virtual-clock timer means work the scenario
+    /// has already scheduled has not run yet, and calling that quiet would lie.
+    public var pendingWaiterCount: Int {
+        withLock { _ in waiters.count }
+    }
+
     public var minimumResolution: Duration { .nanoseconds(1) }
 
     /// Move the virtual frontier forward and resume every waiter whose
