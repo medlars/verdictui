@@ -10,4 +10,8 @@ pm-baselines.json
 .DS_Store
 __pycache__/
 *.pyc
+# Written and removed inside one test in Tests/test_file_registry.py. Ignored so
+# a run of the suite never makes the tree look dirty — scripts/mutation-check.py
+# refuses to start on a dirty tree, and that abort would be a lie.
+Tests/untracked_scan_probe_*.py
 .venv/

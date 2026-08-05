@@ -90,13 +90,18 @@ def _tracked() -> set[str]:
     Matches `Agents/tests/test_file_registry_parity.py`, the fleet's prior art.
     """
     listed = subprocess.run(
-        ["git", "ls-files"],
+        # `-z` because the newline form quotes and octal-escapes any path holding
+        # a non-ASCII byte, a quote, a backslash or a newline: `Tests/café.py`
+        # comes back as `"Tests/caf\303\251.py"` (measured), which matches no
+        # registry row, so the guard would report a file missing that is sitting
+        # right there. Spaces alone are not quoted; the rest are.
+        ["git", "ls-files", "-z"],
         cwd=_PROJECT_ROOT,
         capture_output=True,
         text=True,
         check=True,
     ).stdout
-    return set(listed.split("\n")) - {""}
+    return set(listed.split("\0")) - {""}
 
 
 def _authored_source_files() -> set[str]:
@@ -180,7 +185,9 @@ class TestFileRegistry:
         """
         # Named per process: the PM and a hand-run `pytest` can be in this repo at
         # the same time, and a fixed path would have one run deleting the other's
-        # probe — a flake in the guard that exists to prevent flaky trust.
+        # probe — a flake in the guard that exists to prevent flaky trust. The
+        # pattern is in `.gitignore` so this never makes the tree read as dirty,
+        # which `scripts/mutation-check.py` would refuse to start on.
         name = f"untracked_scan_probe_{os.getpid()}.py"
         intruder = _PROJECT_ROOT / "Tests" / name
         assert not intruder.exists(), f"stale probe left behind: {intruder}"
