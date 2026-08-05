@@ -274,6 +274,21 @@ MUTATIONS = [
         runner=Runner.PYTEST,
     ),
     Mutation(
+        # The one guard here whose subject is a policy constant rather than a
+        # file: it fails when a tracked file's type is in neither classification
+        # set, and no edit to a *document* can produce that. Dropping `.swift`
+        # from the source set is the honest equivalent of adding an unclassified
+        # file type, and proves the canary reads the tree instead of itself.
+        name="a file type drops out of both classification sets",
+        path="Tests/test_file_registry.py",
+        old='".swift", ',
+        new="",
+        test=(
+            "Tests/test_file_registry.py::TestFileRegistry::test_every_tracked_suffix_is_classified"
+        ),
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
         # Anchored on the widest Purpose cell, the one row the markdown formatter
         # leaves unpadded, so this target does not depend on column alignment. If
         # a longer purpose is ever written, --verify-targets reports this STALE.

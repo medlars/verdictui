@@ -13,6 +13,7 @@ directions: every source file has a row, and every row still names something
 real.
 """
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -33,9 +34,15 @@ _SOURCE_SUFFIXES = frozenset({".swift", ".py", ".sh", ".json", ".toml"})
 
 # Everything tracked that is deliberately not source. Declared rather than
 # inferred so that a file type nobody has classified fails the run instead of
-# falling out of scope in silence — `.example` is `.env.example`, and the empty
-# string covers `.gitignore` and `logs/.gitkeep`.
-_NON_SOURCE_SUFFIXES = frozenset({".md", ".yml", ".example", ""})
+# falling out of scope in silence — `.example` is `.env.example`.
+_NON_SOURCE_SUFFIXES = frozenset({".md", ".yml", ".example"})
+
+# Extensionless files are classified by name, not by an empty suffix: `""` would
+# put a future `Makefile` or `Dockerfile` in the same bucket as `.gitignore` and
+# quietly decide it is not source. If one of those ever arrives, the suffix guard
+# fails and someone decides — at which point the scan needs a name-based arm too,
+# since it selects on suffix alone.
+_NON_SOURCE_FILENAMES = frozenset({".gitignore"})
 
 
 def _text() -> str:
@@ -171,12 +178,16 @@ class TestFileRegistry:
         source file inside the repo, where a filesystem walk would find it, and
         checks the scan passes it over. `tmp_path` would not test anything.
         """
-        intruder = _PROJECT_ROOT / "Tests" / "untracked_scan_probe.py"
+        # Named per process: the PM and a hand-run `pytest` can be in this repo at
+        # the same time, and a fixed path would have one run deleting the other's
+        # probe — a flake in the guard that exists to prevent flaky trust.
+        name = f"untracked_scan_probe_{os.getpid()}.py"
+        intruder = _PROJECT_ROOT / "Tests" / name
         assert not intruder.exists(), f"stale probe left behind: {intruder}"
         intruder.write_text("# temporary: asserts the scan is tracked-only\n", encoding="utf-8")
         try:
             assert intruder.exists(), "the probe was not written"
-            assert "Tests/untracked_scan_probe.py" not in _authored_source_files(), (
+            assert f"Tests/{name}" not in _authored_source_files(), (
                 "the scan picked up an untracked file — it is walking the filesystem, "
                 "so build output and generated artifacts will start demanding rows"
             )
@@ -187,14 +198,14 @@ class TestFileRegistry:
         """A hardcoded suffix allowlist shrinks the same way a hardcoded directory
         list does: add `foo.ts` and it is simply not source any more, silently. So
         an unclassified suffix is a failure that asks for a decision."""
+        known = _SOURCE_SUFFIXES | _NON_SOURCE_SUFFIXES
         unclassified = sorted(
-            {
-                Path(path).suffix
-                for path in _tracked()
-                if Path(path).suffix not in _SOURCE_SUFFIXES | _NON_SOURCE_SUFFIXES
-            }
+            path
+            for path in _tracked()
+            if Path(path).name not in _NON_SOURCE_FILENAMES and Path(path).suffix not in known
         )
         assert not unclassified, (
-            f"tracked files use suffixes this guard has never classified: {unclassified} — "
-            f"add each to _SOURCE_SUFFIXES or _NON_SOURCE_SUFFIXES"
+            f"tracked files this guard has never classified: {unclassified} — decide each, "
+            f"then add its suffix to _SOURCE_SUFFIXES/_NON_SOURCE_SUFFIXES or its name to "
+            f"_NON_SOURCE_FILENAMES"
         )
