@@ -529,6 +529,42 @@ public final class OracleHost {
         caTransactionFlushCount += AnimationControl.apply(settlePolicy, body)
     }
 
+    /// Wait until the hosted UI is quiescent, or until `timeout`.
+    ///
+    /// Composes main-queue drain, probe-recorder activity, tree stability,
+    /// virtual-clock waiter census, and a `CATransaction.flush` sample on top
+    /// of ``LayoutSettle`` — see ``Quiescence``. Default timeout is 2 seconds
+    /// (tighter than ``defaultDeadline`` because settle has more signals).
+    ///
+    /// - Returns: ``SettleResult/settled(after:)`` or
+    ///   ``SettleResult/timedOut(lastDelta:)``. Never hangs. On timeout, call
+    ///   ``timeoutVerdict(from:settleMs:)`` for the FAIL ``Verdict`` agents cite.
+    public func settle(
+        timeout: Duration = Quiescence.defaultTimeout
+    ) async -> SettleResult {
+        await Quiescence.settle(
+            view: hostingView,
+            sink: sink,
+            clock: clock,
+            beforeTree: sink.latestTree,
+            timeout: timeout
+        )
+    }
+
+    /// FAIL verdict for a ``SettleResult/timedOut(lastDelta:)``, or `nil` when
+    /// `result` was a settle. Uses the sink's latest tree as evidence.
+    public func timeoutVerdict(
+        from result: SettleResult,
+        settleMs: Double
+    ) -> Verdict? {
+        Quiescence.timeoutVerdict(
+            scenario: scenarioName,
+            result: result,
+            tree: sink.latestTree,
+            settleMs: settleMs
+        )
+    }
+
     /// Wrap `view` in the verdict root, the pinned environment, and the
     /// harness-owned virtual clock.
     ///

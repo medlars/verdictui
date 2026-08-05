@@ -9,6 +9,12 @@
   `AnimationControl.apply`, and `OracleHost.applyStateChange` + `\.verdictClock`
   environment injection. Animation control uses `Transaction(animation: nil)` —
   not the unwritable `accessibilityReduceMotion` key.
+- Wave 3 Task 2: `Quiescence` / `OracleHost.settle(timeout:)` composes main-queue
+  drain, probe-recorder activity, tree stability, virtual-clock waiter census, and
+  `CATransaction.flush` on top of `LayoutSettle`. Timeout returns
+  `SettleResult.timedOut(lastDelta:)` and a FAIL `settle-timeout` verdict.
+- SLO 1 warm `currentTree()` gate aligned to `docs/slo.md` (< 100 ms p95); the
+  prior 50 ms Wave 2 stretch failed CI under load (~55 ms p95).
 
 ### 2026-08-04
 
