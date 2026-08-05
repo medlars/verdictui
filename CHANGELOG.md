@@ -20,10 +20,13 @@
   `floor-check.py` asserting the file exists. Three files had reached `main` with no row —
   `Tests/test_mutation_check.py`, `Tests/test_claude_md_ssot.py`, and `scripts/mutation-check.py`
   itself, a peer of two scripts that were listed — and each was found by hand, one audit at a
-  time. The guard runs both directions — every tracked source file has a row, every row still
-  names something real — and takes its file list from `git ls-files` rather than a fixed set
-  of directories, so source added somewhere new is covered instead of quietly unscanned.
-  Follows `Agents/tests/test_file_registry_parity.py`, which solved the same drift.
+  time. The guard runs both directions — every tracked source file has an **Active** row, every
+  active row still names something real — and takes its file list from `git ls-files` rather
+  than a fixed set of directories, so source added somewhere new is covered instead of quietly
+  unscanned. Both scope lists that remain are self-policing: an unclassified file suffix fails
+  the run rather than dropping out of scope, and the status cell is checked in both directions,
+  because a row flipped out of `Active` would otherwise satisfy completeness while being skipped
+  for existence. Follows `Agents/tests/test_file_registry_parity.py`, which solved the same drift.
 - The mutation harness's node-id guard now asks pytest to collect the ids instead of checking
   that they look like ids. It only required the shape `file::Class::test`, so a wrong class
   name or a renamed method still selected nothing — which the harness scores INCONCLUSIVE,
