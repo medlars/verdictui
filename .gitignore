@@ -14,3 +14,7 @@ __pycache__/
 # refuses to start on a dirty tree, and that abort would be a lie.
 Tests/untracked_scan_probe_*.py
 .venv/
+# Isolated SDD / agent worktrees (CIS-C0A083C5 — never share a working tree)
+.worktrees/
+# Subagent-driven-development scratch (briefs, reports, progress ledger)
+.superpowers/
