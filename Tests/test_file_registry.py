@@ -13,6 +13,7 @@ directions: every source file has a row, and every row still names something
 real.
 """
 
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -25,10 +26,9 @@ _REGISTRY = _PROJECT_ROOT / "docs" / "FILE_REGISTRY.md"
 _ACTIVE_HEADING = "## Source Files"
 _ARCHIVED_HEADING = "## Archived / Removed"
 
-# Where authored source lives. `test_no_source_directory_is_invisible_to_the_scan`
-# exists so that adding a fifth directory cannot quietly shrink this guard's reach.
-_SOURCE_DIRS = ("Sources", "Tests", "scripts", "contracts")
-_ROOT_MANIFESTS = ("Package.swift", "pyproject.toml")
+# The registry's scope is code, not the scaffold's prose: `README.md` and
+# `docs/roadmap.md` have no rows and want none. Authored docs that *do* have rows
+# are still checked by the reverse direction, which asserts every row resolves.
 _SOURCE_SUFFIXES = frozenset({".swift", ".py", ".sh", ".json", ".toml"})
 
 
@@ -67,20 +67,23 @@ def _registered(heading: str, *, status: str | None = None) -> set[str]:
 
 
 def _authored_source_files() -> set[str]:
-    """Every source file a human wrote, as repo-relative posix paths.
+    """Every tracked source file, as repo-relative posix paths.
 
-    Caches and build products are skipped by ignoring any dot-prefixed path
-    component, which also keeps `.build` out without naming it.
+    Asking git rather than walking a hardcoded list of directories is what makes
+    this guard hold as the tree grows: a source file in a directory nobody
+    thought of is still tracked, so it is still covered. It also excludes build
+    products and generated artifacts for free — `pm-baselines.json` sits in the
+    root, is never committed, and would otherwise read as an unregistered file.
+    Matches `Agents/tests/test_file_registry_parity.py`, the fleet's prior art.
     """
-    found = set()
-    for directory in _SOURCE_DIRS:
-        for path in (_PROJECT_ROOT / directory).rglob("*"):
-            relative = path.relative_to(_PROJECT_ROOT)
-            if any(part.startswith((".", "__")) for part in relative.parts):
-                continue
-            if path.is_file() and path.suffix in _SOURCE_SUFFIXES:
-                found.add(relative.as_posix())
-    return found | {name for name in _ROOT_MANIFESTS if (_PROJECT_ROOT / name).is_file()}
+    listed = subprocess.run(
+        ["git", "ls-files"],
+        cwd=_PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    return {line for line in listed.splitlines() if Path(line).suffix in _SOURCE_SUFFIXES}
 
 
 class TestFileRegistry:
@@ -133,21 +136,17 @@ class TestFileRegistry:
             f"{resurrected}"
         )
 
-    def test_no_source_directory_is_invisible_to_the_scan(self) -> None:
-        """`_SOURCE_DIRS` is a hardcoded list, so a new top-level source directory
-        would be skipped in silence — the scan would still pass, having looked
-        at less of the tree than it did yesterday."""
-        for entry in _PROJECT_ROOT.iterdir():
-            if not entry.is_dir() or entry.name.startswith("."):
-                continue
-            if entry.name in _SOURCE_DIRS:
-                continue
-            code = [
-                p.relative_to(_PROJECT_ROOT).as_posix()
-                for p in entry.rglob("*")
-                if p.suffix in {".swift", ".py"} and not p.name.startswith(".")
-            ]
-            assert not code, (
-                f"'{entry.name}/' holds source the registry scan never looks at "
-                f"({code[:3]}) — add it to _SOURCE_DIRS"
-            )
+    def test_the_scan_reaches_past_the_directories_source_happens_to_live_in_today(
+        self,
+    ) -> None:
+        """A scan of a fixed directory list shrinks in silence: source added
+        somewhere new is simply not looked at, and the guard still passes."""
+        found = _authored_source_files()
+        # Both sit outside Sources/Tests/scripts/contracts and had to be named
+        # one by one while this walked directories.
+        assert {"Package.swift", "pyproject.toml"} <= found, (
+            f"the scan lost the root manifests: {sorted(found)[:5]}"
+        )
+        # The other failure mode: a walk pulls in build output, which would
+        # demand registry rows for thousands of generated files.
+        assert not [p for p in found if p.startswith(".build/")], "the scan reached into .build/"
