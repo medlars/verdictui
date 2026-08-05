@@ -241,6 +241,25 @@ MUTATIONS = [
         new='node.role.identifier == "ZStack"',
         test="SiblingOverlapRuleTests/testZStackParentRoleReadsAsIntentionalLayering",
     ),
+    Mutation(
+        name="CLAUDE.md's SSoT table points at a file that does not exist",
+        path="CLAUDE.md",
+        old="Sources/VerdictUIProbe/OracleHost.swift",
+        new="Sources/VerdictUIProbe/OracleHostRenamed.swift",
+        test=("Tests/test_claude_md_ssot.py::TestClaudeMdSSoT::test_every_ssot_location_exists"),
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
+        name="CLAUDE.md's SSoT table names a symbol that moved",
+        path="CLAUDE.md",
+        old="`VerdictScenario`",
+        new="`VerdictScenarioProtocol`",
+        test=(
+            "Tests/test_claude_md_ssot.py::TestClaudeMdSSoT::"
+            "test_every_ssot_symbol_lives_where_the_table_says"
+        ),
+        runner=Runner.PYTEST,
+    ),
 ]
 
 # XCTest prints this once per suite plus once for the total; the largest count is

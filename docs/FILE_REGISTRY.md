@@ -58,6 +58,8 @@
 | `Tests/VerdictUIDemoScenariosTests/DemoReportTests.swift` | Executable core: one verdict per scenario in catalog order, valid JSON | Active | 2026-08-04 |
 | `Tests/test_verdictui_pm.py` | Python tests for PM stages, floor-check, and the contract validator | Active | 2026-08-04 |
 | `Tests/test_kernel_symbol_audit.py` | Python tests for the kernel public-surface audit | Active | 2026-08-04 |
+| `Tests/test_mutation_check.py` | Python tests for the mutation harness: catalog integrity, baseline precondition, both runners | Active | 2026-08-04 |
+| `Tests/test_claude_md_ssot.py` | Pins `CLAUDE.md`: SSoT rows resolve to real files and symbols, every referenced path exists | Active | 2026-08-04 |
 | `Tests/__init__.py` | Python package marker for pytest collection | Active | 2026-08-04 |
 | `pyproject.toml` | Fleet tooling config (ruff/mypy/pyright/pytest) — no [project] section | Active | 2026-08-04 |
 | `docs/kernel.md` | Kernel reference: role vocabulary, rule catalog, diff and schema reference | Active | 2026-08-04 |
