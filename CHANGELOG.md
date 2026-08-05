@@ -97,12 +97,36 @@
     `git diff --quiet` and saw neither staged nor untracked files, and
     `renderJSON` did not forward the `deadline` seam, leaving the function
     `main.swift` actually calls unreachable on its failure branch.
-  - **`ProbeLayout.measure`** loses its `union ?? .zero` fallback. SwiftUI
-    elides empty content before a custom `Layout` is instantiated — verified
-    against both `EmptyView` and an empty `ForEach`, neither of which records a
-    measurement at all — so no probe can wrap zero subviews. It is now a
-    reduction seeded with `.zero`, making the unreachable case an identity
-    element rather than a branch no test can enter (`no.md` entry 10).
+  - **`ProbeLayout.measure` keeps its `union ?? .zero` fallback**, after an
+    attempt to remove it was reverted. SwiftUI elides empty content before a
+    custom `Layout` is instantiated — verified against both `EmptyView` and an
+    empty `ForEach`, neither of which records a measurement at all — so the
+    fallback is unreachable, and rewriting it as a reduction seeded with `.zero`
+    looked like a clean way to delete a branch no test can enter. It is not:
+    seeding puts a `max(0, _)` on the **single-subview** path, and `max(0, -5)`
+    and `max(0, .nan)` are both `0` in Swift (measured). A wrapper documented as
+    returning its subview's answer byte-for-byte would have silently rewritten
+    negative and NaN dimensions. An unreachable `??` beats a reachable
+    misstatement (`no.md` entry 10).
+  - **Third review pass — the stage that was not running what it claimed.**
+    `stage_demo` shipped as `swift run VerdictUIDemo -Xswiftc -warnings-as-errors`.
+    Everything after the target name is the *executable's* argv, so the strict
+    flags were never applied — confirmed by appending a flag `swift` itself
+    would reject and watching the run exit 0 — and, because the configuration
+    then differed from `stage_build`'s, the stage rebuilt the package instead of
+    reusing it. Flags now precede the target.
+  - **The mutation harness learns a second runner.** Every guard added in the
+    previous pass was Python, and the harness could only run `swift test`, so
+    the rule that each new guard is mutation-verified had quietly stopped
+    applying to exactly the code doing the verifying. `Mutation` now carries a
+    `Runner`, `pytest` node ids are first-class, and the four Python guards
+    (flag order, empty verdict array, empty mutation catalog, broken-build
+    diagnosis) are mutated like the Swift ones — 17 mutations, both languages.
+  - Also in this pass: an **empty `MUTATIONS` list** made both `--verify-targets`
+    and a full run print success and exit 0, so emptying the catalog would have
+    turned PM's stage green by deleting what it checks; and `baseline_problem`
+    reported a **tree that does not build** as "has the test been renamed?",
+    since both execute zero tests.
 - Wave 1: the verdict engine. `VerdictUIKernel` now owns the whole path from a probed
   tree to a machine-readable verdict, and stays platform-pure while doing it.
   - **Semantic tree**: `Role` vocabulary mirroring SwiftUI's accessibility roles,

@@ -224,6 +224,90 @@ class TestStageWrappers:
         result = pm.stage_floor()
         assert result["passed"], result["detail"]
 
+    def test_stage_demo_puts_build_flags_before_the_target_name(self, monkeypatch) -> None:
+        """`swift run TARGET -Xswiftc ...` hands the flags to the executable.
+
+        Everything after the target name is the executable's argv, so flags
+        placed there are silently dropped — and because the resulting build
+        configuration differs from `stage_build`'s, the package is recompiled
+        instead of reusing those products. The demo ignores argv, so nothing
+        fails; the strict-warnings guarantee just quietly stops holding.
+        """
+        seen: list[list[str]] = []
+
+        def _fake_run(argv, **_kwargs):
+            seen.append(argv)
+            return subprocess.CompletedProcess(argv, 0, stdout="[{}]", stderr="")
+
+        monkeypatch.setattr(_mod.subprocess, "run", _fake_run)
+        pm = VerdictUIPM.__new__(VerdictUIPM)
+        assert pm.stage_demo()["passed"]
+
+        argv = seen[0]
+        target = argv.index("VerdictUIDemo")
+        assert "-Xswiftc" in argv, argv
+        assert argv.index("-Xswiftc") < target, f"flags must precede the target: {argv}"
+
+    def test_stage_demo_fails_on_an_empty_verdict_array(self, monkeypatch) -> None:
+        # `[]` is valid JSON and would otherwise read as success while
+        # reporting a catalog of nothing.
+        monkeypatch.setattr(
+            _mod.subprocess,
+            "run",
+            lambda argv, **_k: subprocess.CompletedProcess(argv, 0, stdout="[]", stderr=""),
+        )
+        pm = VerdictUIPM.__new__(VerdictUIPM)
+        result = pm.stage_demo()
+        assert not result["passed"]
+        assert "non-empty" in result["detail"]
+
+    def test_stage_demo_fails_when_stdout_is_not_json(self, monkeypatch) -> None:
+        monkeypatch.setattr(
+            _mod.subprocess,
+            "run",
+            lambda argv, **_k: subprocess.CompletedProcess(argv, 0, stdout="not json", stderr=""),
+        )
+        pm = VerdictUIPM.__new__(VerdictUIPM)
+        result = pm.stage_demo()
+        assert not result["passed"]
+        assert "not valid JSON" in result["detail"]
+
+    def test_stage_demo_surfaces_a_nonzero_exit_with_its_stderr(self, monkeypatch) -> None:
+        monkeypatch.setattr(
+            _mod.subprocess,
+            "run",
+            lambda argv, **_k: subprocess.CompletedProcess(
+                argv, 1, stdout="", stderr="verdictui-demo: settle timed out\n"
+            ),
+        )
+        pm = VerdictUIPM.__new__(VerdictUIPM)
+        result = pm.stage_demo()
+        assert not result["passed"]
+        assert "settle timed out" in result["detail"]
+
+    def test_stage_demo_hard_fails_when_swift_is_missing(self, monkeypatch) -> None:
+        # Not a soft skip: the stage exists to run a Swift executable, and a
+        # stage that cannot do its work must fail rather than print PASS.
+        monkeypatch.setattr(_mod.shutil, "which", lambda _: None)
+        pm = VerdictUIPM.__new__(VerdictUIPM)
+        result = pm.stage_demo()
+        assert not result["passed"]
+        assert "swift not installed" in result["detail"]
+
+    @_needs_dev_machine
+    def test_stage_mutations_passes_on_this_repo(self) -> None:
+        pm = VerdictUIPM.__new__(VerdictUIPM)
+        result = pm.stage_mutations()
+        assert result["passed"], result["detail"]
+        assert "resolve to exactly one site" in result["detail"]
+
+    def test_stage_mutations_fails_when_the_script_is_gone(self, monkeypatch) -> None:
+        monkeypatch.setattr(_mod, "PROJECT_ROOT", Path("/nonexistent-verdictui-root"))
+        pm = VerdictUIPM.__new__(VerdictUIPM)
+        result = pm.stage_mutations()
+        assert not result["passed"]
+        assert "not found" in result["detail"]
+
     def test_pm_log_routes_through_logging(self, caplog) -> None:
         import logging
 

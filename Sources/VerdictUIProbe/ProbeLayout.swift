@@ -512,18 +512,29 @@ public struct ProbeLayout: Layout {
     /// `Group`, a `ForEach`): those are stacked at a common origin and reported
     /// together rather than dropped on the floor, which is the honest degenerate
     /// behaviour for a probe asked to wrap more than it was designed for.
-    /// Zero subviews report zero, which is the seed rather than a special case:
-    /// SwiftUI elides empty content (`EmptyView`, an empty `ForEach`) before a
-    /// custom `Layout` is instantiated, so an empty `subviews` is not reachable
-    /// through `.probeLayout(id:)`. Written as a reduction over the zero size so
-    /// that the unreachable state needs no branch — an `if` no test can enter
-    /// reads like a handled case and is not one.
+    /// Zero subviews report zero. That fallback is unreachable through
+    /// `.probeLayout(id:)` — SwiftUI elides empty content (`EmptyView`, an empty
+    /// `ForEach`) before a custom `Layout` is instantiated, so `sizeThatFits` is
+    /// never called and there is nothing to measure; both were tried, and
+    /// neither records a measurement at all (`no.md` entry 10).
+    ///
+    /// The optional accumulator is kept rather than seeding a reduction with
+    /// `.zero`, because seeding puts a `max(0, _)` on the single-subview path
+    /// and that is not transparent: `max(0, -5)` and `max(0, .nan)` are both
+    /// `0` in Swift, so a subview answering with a negative or NaN dimension
+    /// would be silently rewritten on its way through a wrapper documented two
+    /// lines up as never touching the value. An unreachable `??` is the smaller
+    /// cost than a reachable lie.
     private static func measure(_ subviews: Subviews, proposal: ProposedViewSize) -> CGSize {
-        subviews.reduce(into: CGSize.zero) { union, subview in
+        var union: CGSize?
+        for subview in subviews {
             let size = subview.sizeThatFits(proposal)
-            union.width = max(union.width, size.width)
-            union.height = max(union.height, size.height)
+            union =
+                union.map {
+                    CGSize(width: max($0.width, size.width), height: max($0.height, size.height))
+                } ?? size
         }
+        return union ?? .zero
     }
 }
 
