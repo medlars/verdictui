@@ -47,6 +47,19 @@ REPO = Path(__file__).resolve().parent.parent
 TEST_TIMEOUT_SECONDS = 900
 
 
+class Runner(Enum):
+    """Which test runner owns the witness.
+
+    The guards worth mutating stopped being Swift-only once PM grew stages with
+    their own preconditions. A Python guard that no mutation can reach is
+    exactly the unverified guard this script exists to rule out, so the runner
+    travels with the mutation instead of being assumed.
+    """
+
+    SWIFT = "swift"
+    PYTEST = "pytest"
+
+
 @dataclass(frozen=True)
 class Mutation:
     """One deliberate break, and the test that must notice it."""
@@ -55,7 +68,9 @@ class Mutation:
     path: str
     old: str
     new: str
-    test: str  # `swift test --filter` pattern
+    # `swift test --filter` pattern, or a pytest node id when `runner` is PYTEST.
+    test: str
+    runner: Runner = Runner.SWIFT
 
 
 class Outcome(Enum):
@@ -176,6 +191,50 @@ MUTATIONS = [
         test="ScenarioTests/testOneHostHandsEveryReEvaluationTheSameScenarioState",
     ),
     Mutation(
+        name="the demo stage puts its build flags after the target name",
+        path="scripts/verdictui-pm.py",
+        old='["swift", "run", *SWIFT_STRICT_FLAGS, "VerdictUIDemo"]',
+        new='["swift", "run", "VerdictUIDemo", *SWIFT_STRICT_FLAGS]',
+        test=(
+            "Tests/test_verdictui_pm.py::TestStageWrappers::"
+            "test_stage_demo_puts_build_flags_before_the_target_name"
+        ),
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
+        name="the demo stage accepts an empty verdict array",
+        path="scripts/verdictui-pm.py",
+        old="if not isinstance(verdicts, list) or not verdicts:",
+        new="if not isinstance(verdicts, list):",
+        test=(
+            "Tests/test_verdictui_pm.py::TestStageWrappers::"
+            "test_stage_demo_fails_on_an_empty_verdict_array"
+        ),
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
+        name="an empty mutation catalog reports success",
+        path="scripts/mutation-check.py",
+        old='        print("the mutation catalog is empty — nothing was verified")\n        return 1\n    problems = [',
+        new="        pass\n    problems = [",
+        test=(
+            "Tests/test_mutation_check.py::TestVerifyTargets::"
+            "test_an_empty_catalog_fails_rather_than_reporting_nothing_wrong"
+        ),
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
+        name="a broken build is blamed on a renamed test",
+        path="scripts/mutation-check.py",
+        old='        if "error:" in combined:\n            return "unmutated source does not build',
+        new='        if False:\n            return "unmutated source does not build',
+        test=(
+            "Tests/test_mutation_check.py::TestBaselineProblem::"
+            "test_a_tree_that_does_not_build_says_so_instead_of_blaming_the_name"
+        ),
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
         name="the ZStack layering exemption becomes case-sensitive",
         path="Sources/VerdictUIKernel/Rules/SiblingOverlapRule.swift",
         old='node.role.identifier.lowercased() == "zstack"',
@@ -186,12 +245,17 @@ MUTATIONS = [
 
 # XCTest prints this once per suite plus once for the total; the largest count is
 # the outermost total. swift-testing's parallel summary is not counted — every
-# mutation here names an XCTest method.
+# Swift mutation here names an XCTest method.
 _EXECUTED = re.compile(r"Executed (\d+) test")
+# pytest's terminal summary: "3 passed", "1 failed, 2 passed". Both counts are
+# tests that ran, so both are summed — a run that fails is still a run.
+_PYTEST_RAN = re.compile(r"(\d+) (?:passed|failed)")
 
 
-def executed_test_count(output: str) -> int:
-    """How many tests `swift test` reported running, or 0 if it never said."""
+def executed_test_count(output: str, runner: Runner = Runner.SWIFT) -> int:
+    """How many tests the runner reported running, or 0 if it never said."""
+    if runner is Runner.PYTEST:
+        return sum(int(match) for match in _PYTEST_RAN.findall(output))
     counts = [int(match) for match in _EXECUTED.findall(output)]
     return max(counts) if counts else 0
 
@@ -219,12 +283,16 @@ def run(args: list[str]) -> subprocess.CompletedProcess[str]:
     )
 
 
-def run_named_test(test: str) -> subprocess.CompletedProcess[str]:
-    """The one `swift test` invocation this script makes, spelled once.
+def run_named_test(test: str, runner: Runner = Runner.SWIFT) -> subprocess.CompletedProcess[str]:
+    """The one test invocation this script makes, spelled once per runner.
 
     Baseline and mutated runs must differ only in the state of the source, so
     they go through the same argv rather than two copies of it.
     """
+    if runner is Runner.PYTEST:
+        # `-p no:cacheprovider` so a mutation run leaves no `.pytest_cache`
+        # behind for the final clean-tree check to trip over.
+        return run([sys.executable, "-m", "pytest", test, "-q", "-p", "no:cacheprovider"])
     return run(["swift", "test", "--filter", test, "-Xswiftc", "-warnings-as-errors"])
 
 
@@ -238,20 +306,25 @@ def git_is_clean() -> bool:
     return not run(["git", "status", "--porcelain"]).stdout.strip()
 
 
-def classify(result: subprocess.CompletedProcess[str]) -> tuple[Outcome, str]:
+def classify(
+    result: subprocess.CompletedProcess[str], runner: Runner = Runner.SWIFT
+) -> tuple[Outcome, str]:
     """Read one mutated test run. Returns the outcome and a one-line reason."""
     combined = result.stdout + result.stderr
+    ran = executed_test_count(combined, runner)
     # A mutation that stops the build compiles nothing and proves nothing, so a
-    # compile failure is not an acceptable "the test noticed" signal.
-    if "error:" in combined and "Executed" not in combined:
+    # compile failure is not an acceptable "the test noticed" signal. Under
+    # pytest the equivalent is a collection error, which also runs no tests.
+    if ran == 0 and ("error:" in combined or "errors during collection" in combined):
         return Outcome.INCONCLUSIVE, "the mutation did not compile"
     # A trap is a nonzero exit for a reason that is not the assertion: the test
     # never got to judge anything, so it says nothing about coverage.
     if "unexpected signal code" in combined:
         return Outcome.INCONCLUSIVE, "the mutation trapped instead of failing an assertion"
-    # Zero tests run exits 0, which would otherwise read as an uncovered guard
-    # when the truth is that this harness names a test that no longer exists.
-    if executed_test_count(combined) == 0:
+    # Zero tests run exits 0 under `swift test --filter`, which would otherwise
+    # read as an uncovered guard when the truth is that this harness names a
+    # test that no longer exists.
+    if ran == 0:
         return Outcome.INCONCLUSIVE, "the filter matched no tests — has the test been renamed?"
     if result.returncode != 0:
         return Outcome.NOTICED, f"exit {result.returncode}"
@@ -264,9 +337,14 @@ def baseline_problem(mutation: Mutation) -> str | None:
     Without this a test that is *already* failing reports NOTICED for every
     mutation aimed at it — coverage claimed on the strength of a red test.
     """
-    result = run_named_test(mutation.test)
+    result = run_named_test(mutation.test, mutation.runner)
     combined = result.stdout + result.stderr
-    if executed_test_count(combined) == 0:
+    if executed_test_count(combined, mutation.runner) == 0:
+        # "Matched no tests" and "the tree does not build" both show zero
+        # executed tests, and sending someone to hunt a renamed test when the
+        # real fault is a broken build wastes the diagnosis this exists to give.
+        if "error:" in combined:
+            return "unmutated source does not build — fix the tree before mutation testing"
         return "the filter matched no tests before mutating — has the test been renamed?"
     if result.returncode != 0:
         return f"the test is already failing on unmutated source (exit {result.returncode})"
@@ -299,7 +377,7 @@ def check(mutation: Mutation) -> bool:
 
     path.write_text(original.replace(mutation.old, mutation.new))
     try:
-        outcome, reason = classify(run_named_test(mutation.test))
+        outcome, reason = classify(run_named_test(mutation.test, mutation.runner), mutation.runner)
         print(f"  {outcome.value} ({reason})")
         return outcome is Outcome.NOTICED
     finally:
@@ -318,6 +396,11 @@ def verify_targets() -> int:
     tell whether a guard is covered — only that this file has not drifted away
     from the source it claims to mutate.
     """
+    # An empty catalog would otherwise print "all 0 targets resolve" and exit 0,
+    # turning PM's stage green by deleting the thing it checks.
+    if not MUTATIONS:
+        print("the mutation catalog is empty — nothing was verified")
+        return 1
     problems = [
         (mutation.name, problem) for mutation in MUTATIONS if (problem := target_problem(mutation))
     ]
@@ -344,6 +427,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.verify_targets:
         return verify_targets()
 
+    if not MUTATIONS:
+        print("the mutation catalog is empty — nothing was verified")
+        return 1
     if not git_is_clean():
         print("working tree is dirty; commit or stash before mutation testing")
         return 2

@@ -83,6 +83,64 @@ class TestExecutedTestCount:
         assert _load().executed_test_count(output) == 4
 
 
+class TestPytestRunner:
+    """Guards in PM stages are Python, and must be mutable like the Swift ones."""
+
+    def test_a_pytest_run_counts_passed_and_failed_as_tests_that_ran(self) -> None:
+        mod = _load()
+        assert mod.executed_test_count("3 passed in 0.1s", mod.Runner.PYTEST) == 3
+        assert mod.executed_test_count("1 failed, 2 passed in 0.1s", mod.Runner.PYTEST) == 3
+
+    def test_a_pytest_run_that_collected_nothing_counts_zero(self) -> None:
+        # `pytest <nodeid>` on a renamed test exits nonzero with no tally, which
+        # must read as a stale catalog, not as a noticed mutation.
+        mod = _load()
+        assert mod.executed_test_count("no tests ran in 0.01s", mod.Runner.PYTEST) == 0
+
+    def test_the_swift_tally_is_not_read_as_a_pytest_one(self) -> None:
+        # "Executed 4 tests" contains no "passed"/"failed" count, so reading it
+        # with the wrong runner must yield zero rather than a wrong number.
+        mod = _load()
+        assert (
+            mod.executed_test_count("\t Executed 4 tests, with 0 failures", mod.Runner.PYTEST) == 0
+        )
+
+    def test_a_pytest_collection_error_is_inconclusive_not_coverage(self) -> None:
+        mod = _load()
+        outcome, reason = mod.classify(
+            _result(2, stdout="!!! 1 errors during collection !!!\n"), mod.Runner.PYTEST
+        )
+        assert outcome is mod.Outcome.INCONCLUSIVE
+        assert "did not compile" in reason
+
+    def test_a_failing_pytest_witness_is_the_guard_being_noticed(self) -> None:
+        mod = _load()
+        outcome, _ = mod.classify(_result(1, stdout="1 failed in 0.1s"), mod.Runner.PYTEST)
+        assert outcome is mod.Outcome.NOTICED
+
+    def test_the_pytest_invocation_targets_the_node_id_and_leaves_no_cache(self) -> None:
+        # A `.pytest_cache` written mid-run would make the final clean-tree
+        # check report the harness as having dirtied the repository.
+        mod = _load()
+        seen: list[list[str]] = []
+        mod.run = lambda argv: seen.append(argv) or _result(0)  # type: ignore[assignment]
+        mod.run_named_test("Tests/test_x.py::TestY::test_z", mod.Runner.PYTEST)
+        argv = seen[0]
+        assert "pytest" in argv
+        assert "Tests/test_x.py::TestY::test_z" in argv
+        assert argv[argv.index("-p") + 1] == "no:cacheprovider"
+
+    def test_every_pytest_mutation_names_a_node_id_that_exists(self) -> None:
+        # A `--filter`-style name would silently select nothing under pytest.
+        mod = _load()
+        pytest_mutations = [m for m in mod.MUTATIONS if m.runner is mod.Runner.PYTEST]
+        assert pytest_mutations, "the Python guards lost their mutations"
+        for mutation in pytest_mutations:
+            file_part = mutation.test.split("::")[0]
+            assert (_PROJECT_ROOT / file_part).is_file(), mutation.test
+            assert mutation.test.count("::") == 2, f"not a node id: {mutation.test}"
+
+
 class TestClassify:
     """The verdict on one mutated run.
 
@@ -138,24 +196,48 @@ class TestBaselineProblem:
 
     def test_a_green_test_is_accepted_as_a_witness(self, monkeypatch: Any) -> None:
         mod = _load()
-        monkeypatch.setattr(mod, "run_named_test", lambda _test: _result(0, stdout=_ONE_PASSED))
+        monkeypatch.setattr(
+            mod, "run_named_test", lambda _test, _runner=None: _result(0, stdout=_ONE_PASSED)
+        )
         assert mod.baseline_problem(mod.MUTATIONS[0]) is None
 
     def test_an_already_failing_test_is_refused(self, monkeypatch: Any) -> None:
         # The lie this exists to stop: a red test fails with the mutation too,
         # so every mutation aimed at it reports NOTICED.
         mod = _load()
-        monkeypatch.setattr(mod, "run_named_test", lambda _test: _result(1, stdout=_ONE_FAILED))
+        monkeypatch.setattr(
+            mod, "run_named_test", lambda _test, _runner=None: _result(1, stdout=_ONE_FAILED)
+        )
         problem = mod.baseline_problem(mod.MUTATIONS[0])
         assert problem is not None
         assert "already failing" in problem
 
     def test_a_filter_matching_nothing_is_refused_before_mutating(self, monkeypatch: Any) -> None:
         mod = _load()
-        monkeypatch.setattr(mod, "run_named_test", lambda _test: _result(0, stdout=_NONE_MATCHED))
+        monkeypatch.setattr(
+            mod, "run_named_test", lambda _test, _runner=None: _result(0, stdout=_NONE_MATCHED)
+        )
         problem = mod.baseline_problem(mod.MUTATIONS[0])
         assert problem is not None
         assert "renamed" in problem
+
+    def test_a_tree_that_does_not_build_says_so_instead_of_blaming_the_name(
+        self, monkeypatch: Any
+    ) -> None:
+        # A broken build also executes zero tests. Reporting it as a renamed
+        # test sends the reader to the wrong file.
+        mod = _load()
+        monkeypatch.setattr(
+            mod,
+            "run_named_test",
+            lambda _test, _runner=None: _result(
+                1, stderr="Subject.swift:3:1: error: expected '}'\n"
+            ),
+        )
+        problem = mod.baseline_problem(mod.MUTATIONS[0])
+        assert problem is not None
+        assert "does not build" in problem
+        assert "renamed" not in problem
 
 
 class TestTargetProblem:
@@ -265,7 +347,7 @@ class TestCheckRestoresTheFile:
         mutation, source = self._stage(mod, tmp_path)
         calls: list[str] = []
 
-        def _run(_test: str) -> subprocess.CompletedProcess[str]:
+        def _run(_test: str, _runner: Any = None) -> subprocess.CompletedProcess[str]:
             calls.append(source.read_text())
             return _result(1, stdout=_ONE_FAILED)
 
@@ -281,7 +363,7 @@ class TestCheckRestoresTheFile:
         mutation, source = self._stage(mod, tmp_path)
         calls: list[str] = []
 
-        def _run(_test: str) -> subprocess.CompletedProcess[str]:
+        def _run(_test: str, _runner: Any = None) -> subprocess.CompletedProcess[str]:
             calls.append(source.read_text())
             # Green baseline, then a green mutated run: UNNOTICED.
             return _result(0, stdout=_ONE_PASSED)
@@ -298,7 +380,7 @@ class TestCheckRestoresTheFile:
         mod = _load()
         mutation, source = self._stage(mod, tmp_path)
         outcomes = iter([_result(0, stdout=_ONE_PASSED), _result(1, stdout=_ONE_FAILED)])
-        monkeypatch.setattr(mod, "run_named_test", lambda _t: next(outcomes))
+        monkeypatch.setattr(mod, "run_named_test", lambda _t, _runner=None: next(outcomes))
         assert mod.check(mutation) is True
         assert source.read_text() == "let guarded = true\n"
 
@@ -372,6 +454,14 @@ class TestVerifyTargets:
         # list from drifting away from the code it claims to cover.
         assert _load().verify_targets() == 0
 
+    def test_an_empty_catalog_fails_rather_than_reporting_nothing_wrong(self) -> None:
+        # "all 0 targets resolve" would exit 0 and turn PM's stage green by
+        # deleting the thing it checks — a validator that skips its work must
+        # fail, not pass.
+        mod = _load()
+        mod.MUTATIONS = []
+        assert mod.verify_targets() == 1
+
     def test_a_stale_target_is_reported_nonzero(self, tmp_path: Path) -> None:
         mod = _load()
         (tmp_path / "Sources").mkdir(parents=True)
@@ -409,6 +499,12 @@ class TestMain:
         mod = _load()
         monkeypatch.setattr(mod, "git_is_clean", lambda: True)
         monkeypatch.setattr(mod, "check", lambda _m: False)
+        assert mod.main([]) == 1
+
+    def test_an_empty_catalog_fails_a_full_run_too(self, monkeypatch: Any) -> None:
+        mod = _load()
+        mod.MUTATIONS = []
+        monkeypatch.setattr(mod, "git_is_clean", lambda: True)
         assert mod.main([]) == 1
 
     def test_all_mutations_verified_exits_zero(self, monkeypatch: Any) -> None:

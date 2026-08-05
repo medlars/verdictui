@@ -247,8 +247,13 @@ class VerdictUIPM(PmBase):
         """
         if shutil.which("swift") is None:
             return {"passed": False, "detail": "swift not installed — demo cannot be run"}
+        # Flags go BEFORE the target name. `swift run VerdictUIDemo -Xswiftc ...`
+        # passes everything after the target to the executable as argv, so the
+        # strict flags would be silently dropped — and, because the resulting
+        # build configuration differs from `stage_build`'s, the whole package
+        # would be recompiled here rather than reusing those products.
         r = subprocess.run(  # noqa: S603 — fixed argv built from constants
-            ["swift", "run", "VerdictUIDemo", *SWIFT_STRICT_FLAGS],
+            ["swift", "run", *SWIFT_STRICT_FLAGS, "VerdictUIDemo"],
             cwd=PROJECT_ROOT,
             capture_output=True,
             text=True,
