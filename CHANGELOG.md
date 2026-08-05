@@ -23,8 +23,10 @@
   time. The guard runs both directions — every tracked source file has an **Active** row, every
   active row still names something real — and takes its file list from `git ls-files` rather
   than a fixed set of directories, so source added somewhere new is covered instead of quietly
-  unscanned. Both scope lists that remain are self-policing: an unclassified file suffix fails
-  the run rather than dropping out of scope, and the status cell is checked in both directions,
+  unscanned. Both scope lists that remain are self-policing: a tracked file whose type nobody has
+  classified fails the run rather than dropping out of scope — by name for extensionless files,
+  so a future `Makefile` cannot be waved through as `.gitignore` was — and the status cell is
+  checked in both directions,
   because a row flipped out of `Active` would otherwise satisfy completeness while being skipped
   for existence. Follows `Agents/tests/test_file_registry_parity.py`, which solved the same drift.
 - The mutation harness's node-id guard now asks pytest to collect the ids instead of checking
