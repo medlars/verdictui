@@ -15,13 +15,25 @@
   mutation discipline, and the requirement that a schema shape change moves
   `SchemaVersion`, the JSON schema, and the fixtures together. These had been retyped into
   every session prompt instead of living in the repo.
+- `docs/FILE_REGISTRY.md` is now enforced by `Tests/test_file_registry.py`. It calls itself
+  the single source of truth for source files, but the only thing measuring that claim was
+  `floor-check.py` asserting the file exists. Three files had reached `main` with no row —
+  `Tests/test_mutation_check.py`, `Tests/test_claude_md_ssot.py`, and `scripts/mutation-check.py`
+  itself, a peer of two scripts that were listed — and each was found by hand, one audit at a
+  time. The guard runs both directions (every source file has a row, every row still names
+  something real) and fails if a new top-level source directory would slip past its scan.
+- The mutation harness's node-id guard now asks pytest to collect the ids instead of checking
+  that they look like ids. It only required the shape `file::Class::test`, so a wrong class
+  name or a renamed method still selected nothing — which the harness scores INCONCLUSIVE,
+  reading as "not proven yet" rather than "this entry is broken". Found because an external
+  write dropped `TestClaudeMdSSoT::` from two entries after they were committed green.
 
 - Wave 2: probe runtime + oracle harness. Any SwiftUI view wrapped in a probe scenario
   now renders **headless** — no window, no window server — and yields a `SemanticNode`
   tree with real layout-engine frames. Screenshots become optional here.
   - **Pre-wave spike** (recorded in `docs/implementation-plan.md`): windowless
     `NSHostingView` proven to need no window server, verified against a sandbox
-    profile that denies every windowserver mach-lookup *and* a positive control
+    profile that denies every windowserver mach-lookup _and_ a positive control
     that fails under the same profile. The whole 248-test suite also passes under
     that denial.
   - **`ProbeLayout`**: byte-transparent `Layout` wrapper recording size negotiation
@@ -122,7 +134,7 @@
     misstatement (`no.md` entry 10).
   - **Third review pass — the stage that was not running what it claimed.**
     `stage_demo` shipped as `swift run VerdictUIDemo -Xswiftc -warnings-as-errors`.
-    Everything after the target name is the *executable's* argv, so the strict
+    Everything after the target name is the _executable's_ argv, so the strict
     flags were never applied — confirmed by appending a flag `swift` itself
     would reject and watching the run exit 0 — and, because the configuration
     then differed from `stage_build`'s, the stage rebuilt the package instead of

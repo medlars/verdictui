@@ -9,8 +9,9 @@ pinned here by hand:
 - a filter that matches no tests must not read as an uncovered guard;
 - a mutation that fails to compile, or traps, must not read as coverage.
 
-Everything here drives the pure decision functions with synthetic
-`CompletedProcess` values. Nothing shells out to `swift`.
+The outcome tests drive the pure decision functions with synthetic
+`CompletedProcess` values. Nothing shells out to `swift`; the one subprocess
+here is a pytest collection pass, which runs no test bodies.
 """
 
 import hashlib
@@ -154,6 +155,31 @@ class TestPytestRunner:
             file_part = mutation.test.split("::")[0]
             assert (_PROJECT_ROOT / file_part).is_file(), mutation.test
             assert mutation.test.count("::") == 2, f"not a node id: {mutation.test}"
+        # Shape is not existence. A wrong class name or a renamed method keeps
+        # the shape, selects nothing, and scores INCONCLUSIVE forever — which
+        # reads as "not proven yet" rather than "this entry is broken". Only
+        # collection can tell the two apart, so ask pytest itself. Collection
+        # runs no test bodies, so this cannot recurse.
+        collected = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "pytest",
+                "--collect-only",
+                "-q",
+                "-p",
+                "no:cacheprovider",
+                *[m.test for m in pytest_mutations],
+            ],
+            cwd=_PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert collected.returncode == 0, (
+            "a mutation names a node id pytest cannot collect:\n"
+            f"{collected.stdout}{collected.stderr}"
+        )
 
 
 class TestClassify:
