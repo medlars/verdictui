@@ -97,6 +97,7 @@ for skill_dir in [SLUG, f"{SLUG}-audit"]:
         GAPS.append({"item": f"skill/{skill_dir}", "path": str(p), "status": "missing"})
 
 # GitHub remote — absolute git path (B607: partial paths resolve via caller's PATH)
+_GIT_REMOTE_TIMEOUT_SECONDS = 30
 _git = shutil.which("git")
 if _git is None:
     GAPS.append({"item": "GitHub remote", "path": ".git/config", "status": "git not installed"})
@@ -105,7 +106,7 @@ else:
         [_git, "-C", str(ROOT), "remote", "get-url", "origin"],
         capture_output=True,
         text=True,
-        timeout=30,
+        timeout=_GIT_REMOTE_TIMEOUT_SECONDS,
     )
     if remote.returncode != 0 or "github.com" not in remote.stdout:
         GAPS.append({"item": "GitHub remote", "path": ".git/config", "status": "missing"})
