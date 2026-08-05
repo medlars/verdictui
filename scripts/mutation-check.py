@@ -260,6 +260,30 @@ MUTATIONS = [
         ),
         runner=Runner.PYTEST,
     ),
+    Mutation(
+        # Retargeting a row rather than deleting one: this leaves every row
+        # pointing at a real file, so only the completeness direction can catch it.
+        name="a source file loses its FILE_REGISTRY row",
+        path="docs/FILE_REGISTRY.md",
+        old="| `scripts/dev.sh`",
+        new="| `scripts/floor-check.py`",
+        test=(
+            "Tests/test_file_registry.py::TestFileRegistry::"
+            "test_every_authored_source_file_has_an_active_row"
+        ),
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
+        name="a FILE_REGISTRY row is left behind by a rename",
+        path="docs/FILE_REGISTRY.md",
+        old="| `scripts/floor-check.py`",
+        new="| `scripts/floor-check-renamed.py`",
+        test=(
+            "Tests/test_file_registry.py::TestFileRegistry::"
+            "test_every_active_row_points_at_a_path_that_exists"
+        ),
+        runner=Runner.PYTEST,
+    ),
 ]
 
 # XCTest prints this once per suite plus once for the total; the largest count is
