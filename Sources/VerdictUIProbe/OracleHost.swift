@@ -312,6 +312,21 @@ public final class OracleHost {
     /// Settle budget ``currentTree()`` works within, in seconds.
     public let deadline: TimeInterval
 
+    /// Controllable clock installed into the hosted environment as
+    /// ``EnvironmentValues/verdictClock``. Scenario code that sleeps against it
+    /// advances only when a test (or later the settle engine) calls
+    /// ``VerdictClock/advance(by:)``.
+    public let clock: VerdictClock
+
+    /// How ``applyStateChange(_:)`` wraps injected mutations. Defaults to
+    /// ``SettlePolicy/skipAnimations`` — Wave 3's animation control, not the
+    /// unwritable `accessibilityReduceMotion` pin.
+    public var settlePolicy: SettlePolicy
+
+    /// Count of `CATransaction.flush` calls performed by ``applyStateChange(_:)``
+    /// on this host. Tests pin the ``SettlePolicy/runAnimations`` path with it.
+    public private(set) var caTransactionFlushCount = 0
+
     /// The raw layout negotiations recorded below the root: proposals, answers,
     /// placements, per probe id.
     ///
@@ -345,13 +360,21 @@ public final class OracleHost {
     ///     that large is not a viewport, it is a mistake, and obeying it would
     ///     hang the caller.
     ///   - deadline: settle budget for ``currentTree()``, in seconds.
+    ///   - settlePolicy: animation control for ``applyStateChange(_:)``.
+    ///   - clock: virtual clock installed into the hosted environment. The host
+    ///     owns the default instance; tests that need a pre-advanced frontier
+    ///     can pass one in.
     public init<Scenario: VerdictScenario>(
         scenario: Scenario,
         viewport: Size? = nil,
-        deadline: TimeInterval = OracleHost.defaultDeadline
+        deadline: TimeInterval = OracleHost.defaultDeadline,
+        settlePolicy: SettlePolicy = .skipAnimations,
+        clock: VerdictClock = VerdictClock()
     ) {
         scenarioName = scenario.name
         self.deadline = deadline
+        self.settlePolicy = settlePolicy
+        self.clock = clock
 
         let requested: Size
         if let viewport {
@@ -364,7 +387,8 @@ public final class OracleHost {
             let measuring = NSHostingView(
                 rootView: Self.pinned(
                     ScenarioRoot(scenario: scenario, state: ScenarioState()),
-                    sink: VerdictTreeSink()
+                    sink: VerdictTreeSink(),
+                    clock: clock
                 )
             )
             requested = Size(measuring.fittingSize)
@@ -385,7 +409,8 @@ public final class OracleHost {
                     // does not fill, and a clamped host would not actually
                     // constrain the content it was clamped to protect.
                     .frame(width: resolved.size.width, height: resolved.size.height),
-                sink: sink
+                sink: sink,
+                clock: clock
             )
         )
         hostingView.frame = CGRect(
@@ -494,7 +519,18 @@ public final class OracleHost {
 
     // MARK: - The hosted root
 
-    /// Wrap `view` in the verdict root and the pinned environment.
+    /// Apply an injected state mutation under the host's ``settlePolicy``.
+    ///
+    /// This is the Wave 3 Task 1 seam Task 4's `perform` will call before
+    /// settle: one place that owns `Transaction(animation: nil)` vs the
+    /// `CATransaction.flush` + run-loop pump path. It does not settle and does
+    /// not capture trees — that is later work.
+    public func applyStateChange(_ body: () -> Void) {
+        caTransactionFlushCount += AnimationControl.apply(settlePolicy, body)
+    }
+
+    /// Wrap `view` in the verdict root, the pinned environment, and the
+    /// harness-owned virtual clock.
     ///
     /// The pins themselves live on ``SwiftUI/View/verdictPinnedEnvironment()``,
     /// which is where they are documented and where anything else that hosts a
@@ -502,13 +538,19 @@ public final class OracleHost {
     /// One definition, so a host that pins six of the seven values cannot exist.
     private static func pinned<Content: View>(
         _ view: Content,
-        sink: VerdictTreeSink
+        sink: VerdictTreeSink,
+        clock: VerdictClock
     ) -> AnyView {
         // `AnyView` so the class can stay non-generic while `NSHostingView` cannot.
         // It is layout-transparent — it forwards the proposal it receives and
         // reports the size its content returns — which the exact-frame tests in
         // `OracleHostTests` hold to.
-        AnyView(view.verdictRoot(into: sink).verdictPinnedEnvironment())
+        AnyView(
+            view
+                .verdictRoot(into: sink)
+                .verdictPinnedEnvironment()
+                .environment(\.verdictClock, clock)
+        )
     }
 
     /// The pinned locale. `en_US` because it is the locale the kernel's fixtures,

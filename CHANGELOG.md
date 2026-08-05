@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### 2026-08-05
+
+- Wave 3 Task 1 (settle engine foundations): `VerdictClock` (manual `Clock` with
+  `advance(by:)`), `SettlePolicy` (`.skipAnimations` default / `.runAnimations`),
+  `AnimationControl.apply`, and `OracleHost.applyStateChange` + `\.verdictClock`
+  environment injection. Animation control uses `Transaction(animation: nil)` —
+  not the unwritable `accessibilityReduceMotion` key.
+
 ### 2026-08-04
 
 - `CLAUDE.md` is now pinned by `Tests/test_claude_md_ssot.py`. The page every session
