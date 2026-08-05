@@ -31,6 +31,12 @@ _ARCHIVED_HEADING = "## Archived / Removed"
 # are still checked by the reverse direction, which asserts every row resolves.
 _SOURCE_SUFFIXES = frozenset({".swift", ".py", ".sh", ".json", ".toml"})
 
+# Everything tracked that is deliberately not source. Declared rather than
+# inferred so that a file type nobody has classified fails the run instead of
+# falling out of scope in silence — `.example` is `.env.example`, and the empty
+# string covers `.gitignore` and `logs/.gitkeep`.
+_NON_SOURCE_SUFFIXES = frozenset({".md", ".yml", ".example", ""})
+
 
 def _text() -> str:
     return _REGISTRY.read_text(encoding="utf-8")
@@ -66,8 +72,8 @@ def _registered(heading: str, *, status: str | None = None) -> set[str]:
     return paths
 
 
-def _authored_source_files() -> set[str]:
-    """Every tracked source file, as repo-relative posix paths.
+def _tracked() -> set[str]:
+    """Every file git tracks, as repo-relative posix paths.
 
     Asking git rather than walking a hardcoded list of directories is what makes
     this guard hold as the tree grows: a source file in a directory nobody
@@ -83,7 +89,12 @@ def _authored_source_files() -> set[str]:
         text=True,
         check=True,
     ).stdout
-    return {line for line in listed.splitlines() if Path(line).suffix in _SOURCE_SUFFIXES}
+    return set(listed.split("\n")) - {""}
+
+
+def _authored_source_files() -> set[str]:
+    """The tracked files the registry is expected to list."""
+    return {path for path in _tracked() if Path(path).suffix in _SOURCE_SUFFIXES}
 
 
 class TestFileRegistry:
@@ -107,9 +118,14 @@ class TestFileRegistry:
         assert len(found) >= 50, f"scanned only {len(found)} source files — check the scan"
 
     def test_every_authored_source_file_has_an_active_row(self) -> None:
-        missing = sorted(_authored_source_files() - _registered(_ACTIVE_HEADING))
+        """`status="Active"` is the whole point of the name. Without it a row
+        whose status cell reads anything else counts as coverage here while the
+        reverse direction skips it for not being Active — so flipping one cell
+        drops a file out of both checks at once."""
+        missing = sorted(_authored_source_files() - _registered(_ACTIVE_HEADING, status="Active"))
         assert not missing, (
-            f"source files with no FILE_REGISTRY row (add one, or archive the file): {missing}"
+            f"source files with no active FILE_REGISTRY row (add one, or archive the file): "
+            f"{missing}"
         )
 
     def test_every_active_row_points_at_a_path_that_exists(self) -> None:
@@ -147,6 +163,38 @@ class TestFileRegistry:
         assert {"Package.swift", "pyproject.toml"} <= found, (
             f"the scan lost the root manifests: {sorted(found)[:5]}"
         )
-        # The other failure mode: a walk pulls in build output, which would
-        # demand registry rows for thousands of generated files.
-        assert not [p for p in found if p.startswith(".build/")], "the scan reached into .build/"
+
+    def test_the_scan_ignores_files_git_does_not_track(self) -> None:
+        """The other half of asking git: build output and generated artifacts must
+        not demand registry rows. Asserting `.build/` is absent would prove nothing,
+        since git never lists an ignored path — so this writes a real untracked
+        source file inside the repo, where a filesystem walk would find it, and
+        checks the scan passes it over. `tmp_path` would not test anything.
+        """
+        intruder = _PROJECT_ROOT / "Tests" / "untracked_scan_probe.py"
+        assert not intruder.exists(), f"stale probe left behind: {intruder}"
+        intruder.write_text("# temporary: asserts the scan is tracked-only\n", encoding="utf-8")
+        try:
+            assert intruder.exists(), "the probe was not written"
+            assert "Tests/untracked_scan_probe.py" not in _authored_source_files(), (
+                "the scan picked up an untracked file — it is walking the filesystem, "
+                "so build output and generated artifacts will start demanding rows"
+            )
+        finally:
+            intruder.unlink()
+
+    def test_every_tracked_suffix_is_classified(self) -> None:
+        """A hardcoded suffix allowlist shrinks the same way a hardcoded directory
+        list does: add `foo.ts` and it is simply not source any more, silently. So
+        an unclassified suffix is a failure that asks for a decision."""
+        unclassified = sorted(
+            {
+                Path(path).suffix
+                for path in _tracked()
+                if Path(path).suffix not in _SOURCE_SUFFIXES | _NON_SOURCE_SUFFIXES
+            }
+        )
+        assert not unclassified, (
+            f"tracked files use suffixes this guard has never classified: {unclassified} — "
+            f"add each to _SOURCE_SUFFIXES or _NON_SOURCE_SUFFIXES"
+        )

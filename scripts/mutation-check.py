@@ -274,6 +274,20 @@ MUTATIONS = [
         runner=Runner.PYTEST,
     ),
     Mutation(
+        # Anchored on the widest Purpose cell, the one row the markdown formatter
+        # leaves unpadded, so this target does not depend on column alignment. If
+        # a longer purpose is ever written, --verify-targets reports this STALE.
+        name="a source file's registry row is flipped out of Active",
+        path="docs/FILE_REGISTRY.md",
+        old="tree delivery | Active |",
+        new="tree delivery | Removed |",
+        test=(
+            "Tests/test_file_registry.py::TestFileRegistry::"
+            "test_every_authored_source_file_has_an_active_row"
+        ),
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
         name="a FILE_REGISTRY row is left behind by a rename",
         path="docs/FILE_REGISTRY.md",
         old="| `scripts/floor-check.py`",
