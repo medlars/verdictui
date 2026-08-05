@@ -6,7 +6,6 @@ DerivedData/
 logs/
 *.log
 .env
-pm-baselines.json
 .DS_Store
 __pycache__/
 *.pyc
