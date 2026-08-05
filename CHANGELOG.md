@@ -4,6 +4,18 @@
 
 ### 2026-08-04
 
+- `CLAUDE.md` is now pinned by `Tests/test_claude_md_ssot.py`. The page every session
+  is told to read first had rotted unnoticed: its Single-Source-of-Truth table promised
+  the Layout probe as future work after Wave 2 shipped it, and named `VerdictFramesKey`,
+  which survives only in a historical comment. A table that sends the next session to the
+  wrong file causes the second implementation it exists to prevent. The guard resolves
+  every SSoT row to a real file and symbol and checks all 18 repo-relative paths the page
+  names; two catalog rows in `scripts/mutation-check.py` prove it notices when they lie.
+- Rules 5–7 added to `CLAUDE.md`: subagent scoping and worktree isolation, exit-code and
+  mutation discipline, and the requirement that a schema shape change moves
+  `SchemaVersion`, the JSON schema, and the fixtures together. These had been retyped into
+  every session prompt instead of living in the repo.
+
 - Wave 2: probe runtime + oracle harness. Any SwiftUI view wrapped in a probe scenario
   now renders **headless** — no window, no window server — and yields a `SemanticNode`
   tree with real layout-engine frames. Screenshots become optional here.
