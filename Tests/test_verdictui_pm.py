@@ -700,3 +700,115 @@ class TestValidateContractsFailureBranches:
         code, output = self._run(contracts, kernel)
         assert code == 1
         assert "unsupported $ref" in output, output
+
+class TestStageRuntimeBench:
+    """SLO 1's gate. Every test here targets a way it could report health it
+    did not measure — which is the only failure mode that matters in a
+    performance gate, because an over-budget run is loud and a gate that
+    stopped measuring is silent."""
+
+    @staticmethod
+    def _pm():
+        return VerdictUIPM.__new__(VerdictUIPM)
+
+    @staticmethod
+    def _fake_swift(monkeypatch, *, stdout: str, returncode: int = 0) -> None:
+        """Replace the swift subprocess with a canned result."""
+
+        class _Result:
+            def __init__(self) -> None:
+                self.stdout = stdout
+                self.stderr = ""
+                self.returncode = returncode
+
+        monkeypatch.setattr(_mod.shutil, "which", lambda _: "/usr/bin/swift")
+        monkeypatch.setattr(_mod.subprocess, "run", lambda *a, **k: _Result())
+
+    def test_under_budget_passes_and_reports_the_figure(self, monkeypatch) -> None:
+        self._fake_swift(
+            monkeypatch,
+            stdout="SLO1-PERFORM p50=20.03ms p95=32.23ms mean=22.97ms max=89.79ms n=60\n"
+            "Executed 2 tests, with 0 failures\n",
+        )
+        result = self._pm().stage_runtime_bench()
+        assert result["passed"], result["detail"]
+        assert "32.23ms" in result["detail"]
+
+    def test_over_budget_fails(self, monkeypatch) -> None:
+        self._fake_swift(
+            monkeypatch,
+            stdout="SLO1-PERFORM p50=90.00ms p95=140.50ms mean=95.00ms max=200.0ms n=60\n"
+            "Executed 2 tests, with 0 failures\n",
+        )
+        result = self._pm().stage_runtime_bench()
+        assert not result["passed"]
+        assert "140.50ms" in result["detail"]
+
+    def test_a_missing_summary_line_fails_rather_than_passing_quietly(
+        self, monkeypatch
+    ) -> None:
+        """The benchmark ran tests but printed no figure. That is not health —
+        it means the reporting line was renamed or removed, and a gate that
+        treats 'no number' as 'no problem' is exactly the fail-open this
+        stage exists to avoid."""
+        self._fake_swift(monkeypatch, stdout="Executed 2 tests, with 0 failures\n")
+        result = self._pm().stage_runtime_bench()
+        assert not result["passed"]
+        assert "did not report" in result["detail"]
+
+    def test_zero_executed_tests_fails_even_though_swift_exits_zero(
+        self, monkeypatch
+    ) -> None:
+        """`swift test --filter` exits 0 when the filter matches nothing. A
+        stale filter must read as a broken gate, not as a fast one."""
+        self._fake_swift(monkeypatch, stdout="Executed 0 tests, with 0 failures\n")
+        result = self._pm().stage_runtime_bench()
+        assert not result["passed"]
+        assert "no executed tests" in result["detail"]
+
+    def test_no_executed_line_at_all_fails(self, monkeypatch) -> None:
+        """Not even a summary line: the runner died or never started."""
+        self._fake_swift(monkeypatch, stdout="")
+        result = self._pm().stage_runtime_bench()
+        assert not result["passed"]
+
+    def test_budget_boundary_is_exclusive(self, monkeypatch) -> None:
+        """p95 exactly at the budget fails. SLO 1 reads '< 100 ms', so 100.00
+        is over, and pinning it here stops a later refactor turning `>=` into
+        `>` without anyone noticing."""
+        self._fake_swift(
+            monkeypatch,
+            stdout=f"SLO1-PERFORM p50=50.0ms p95={_mod.SLO1_P95_BUDGET_MS:.2f}ms n=60\n"
+            "Executed 2 tests, with 0 failures\n",
+        )
+        result = self._pm().stage_runtime_bench()
+        assert not result["passed"]
+
+    def test_swift_failure_is_surfaced_not_swallowed(self, monkeypatch) -> None:
+        self._fake_swift(
+            monkeypatch,
+            stdout="HarnessPerformanceTests.swift:110: error: p95 over budget\n",
+            returncode=1,
+        )
+        result = self._pm().stage_runtime_bench()
+        assert not result["passed"]
+        assert "error:" in result["detail"]
+
+    def test_missing_swift_fails_closed(self, monkeypatch) -> None:
+        monkeypatch.setattr(_mod.shutil, "which", lambda _: None)
+        result = self._pm().stage_runtime_bench()
+        assert not result["passed"]
+        assert "swift not installed" in result["detail"]
+
+    def test_the_stage_is_registered_in_the_pipeline(self) -> None:
+        """A stage that exists but is never run is not a gate. Read the source
+        rather than the stage list, which is built inside a method."""
+        source = (_PROJECT_ROOT / "scripts" / "verdictui-pm.py").read_text()
+        assert '("stage_runtime_bench", self.stage_runtime_bench)' in source
+
+    def test_the_budget_matches_the_published_slo(self) -> None:
+        """docs/slo.md is the SSoT for the number. The constant is duplicated
+        into the PM deliberately (parsing a threshold out of prose fails open
+        when the prose is reworded), so the two must be asserted equal."""
+        slo = (_PROJECT_ROOT / "docs" / "slo.md").read_text()
+        assert f"< {int(_mod.SLO1_P95_BUDGET_MS)} ms p95" in slo

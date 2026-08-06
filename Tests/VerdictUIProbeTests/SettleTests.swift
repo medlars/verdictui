@@ -80,10 +80,16 @@ final class SettleTests: XCTestCase {
         )
         _ = try await host.currentTree()
 
-        // Fire on the main RunLoop so ``LayoutSettle``'s `run(until:)` slices
-        // actually deliver mutations — a concurrent Task often never interleaves
-        // with the synchronous pump and the settle would falsely report quiet.
-        let timer = Timer(timeInterval: 0.004, repeats: true) { _ in
+        // Oscillate on a timer FASTER than LayoutSettle.pumpInterval, not near
+        // it. At the original 4 ms against a 5 ms pump the two periods were
+        // close enough that a loaded run loop could let two consecutive quiet
+        // checks land between ticks, and the test then reported the ENGINE
+        // broken for a race in its own fixture — it passed alone and failed in
+        // the full suite (measured: 308 tests, one failure, then 308 tests,
+        // zero, on the same commit). A hostile test that intermittently accuses
+        // the subject is worse than no hostile test.
+        let interval = LayoutSettle.pumpInterval / 4
+        let timer = Timer(timeInterval: interval, repeats: true) { _ in
             model.tick += 1
         }
         RunLoop.main.add(timer, forMode: .common)
