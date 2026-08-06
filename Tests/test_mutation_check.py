@@ -16,6 +16,7 @@ here is a pytest collection pass, which runs no test bodies.
 
 import hashlib
 import importlib.util
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -489,6 +490,47 @@ class TestRun:
 
 class TestVerifyTargets:
     """The cheap rot check CI and PM run."""
+
+    def test_every_swift_mutation_names_a_test_that_exists(self) -> None:
+        """The Swift half of the catalog needs the same existence check pytest got.
+
+        `--verify-targets` validates only that `mutation.old` appears once in
+        `mutation.path`; the `test=` field is never checked for the Swift
+        mutations. So a renamed or deleted witness leaves the catalog reporting
+        "all N targets resolve" — measured: renaming
+        `testRunStopsEarlyOnTheFirstFailure` and touching no source still exits 0
+        with "all 31 mutation targets resolve to exactly one site".
+
+        A full run then scores that mutation INCONCLUSIVE, which reads as "not
+        proven yet" rather than "this entry is broken", and `main()` only fails
+        on NOT-NOTICED, so an INCONCLUSIVE never fails the harness either. The
+        guard the fourth review pass built for pytest (`--collect-only`) simply
+        was not mirrored here — this is that mirror.
+
+        Source text rather than `swift test --list-tests`: listing needs a build
+        (~4 min under strict flags) and this suite is the sub-second quick gate.
+        A declaration grep cannot confirm the test RUNS, but it does confirm the
+        name in the catalog still exists, which is the drift being guarded.
+        """
+        mod = _load()
+        swift_mutations = [m for m in mod.MUTATIONS if m.runner is mod.Runner.SWIFT]
+        assert swift_mutations, "no swift mutations — this test would check nothing"
+
+        declarations: set[str] = set()
+        for path in (_PROJECT_ROOT / "Tests").rglob("*.swift"):
+            for match in re.finditer(r"func\s+(test[A-Za-z0-9_]*)\s*\(", path.read_text()):
+                declarations.add(match.group(1))
+        assert declarations, "found no test declarations — the scan itself is broken"
+
+        missing = []
+        for mutation in swift_mutations:
+            # "SuiteName/testMethod" or a bare method name.
+            method = mutation.test.rsplit("/", maxsplit=1)[-1]
+            if method not in declarations:
+                missing.append(f"{mutation.name!r} names {mutation.test!r}")
+        assert not missing, "swift mutations naming tests that do not exist:\n" + "\n".join(
+            missing
+        )
 
     def test_the_real_catalog_still_points_at_real_source(self) -> None:
         # Not synthetic: this is the assertion that keeps the shipped mutation
