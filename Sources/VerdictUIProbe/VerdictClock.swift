@@ -109,6 +109,58 @@ public final class VerdictClock: Clock, @unchecked Sendable {
 
     /// Move the virtual frontier forward and resume every waiter whose
     /// deadline is now in the past (or exactly `now`).
+    /// What a registering continuation body decided to do, resolved under the
+    /// lock so it can never disagree with a concurrent `onCancel`.
+    private enum Registration {
+        case resumeNow
+        case throwCancelled
+        case suspended
+    }
+
+    /// The suspension half of ``sleep(until:tolerance:)``, extracted so the
+    /// deterministic cancellation test drives the SAME code the production path
+    /// does rather than a re-implementation of it.
+    ///
+    /// A second copy written for a test drifts in the one direction the test
+    /// can never observe, so the seam is an extraction and not a duplicate.
+    func registerSleep(id: UUID, until deadline: Instant) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+            // Continuation bodies are synchronous — safe to lock here.
+            let registration = withLock { now -> Registration in
+                // Cancellation that beat us to the lock: consume the mark and
+                // fail here, rather than registering a waiter nothing will ever
+                // resume.
+                if cancelledBeforeRegistration.remove(id) != nil {
+                    return .throwCancelled
+                }
+                if deadline <= now { return .resumeNow }
+                waiters[id] = Waiter(deadline: deadline, continuation: continuation)
+                return .suspended
+            }
+            switch registration {
+            case .resumeNow:
+                continuation.resume()
+            case .throwCancelled:
+                continuation.resume(throwing: CancellationError())
+            case .suspended:
+                break
+            }
+        }
+    }
+
+    /// Record a cancellation mark directly — the state ``onCancel`` leaves when
+    /// it wins the race. Test seam: lets the losing interleaving be constructed
+    /// instead of waited for.
+    func markCancelledBeforeRegistration(_ id: UUID) {
+        withLock { _ in _ = cancelledBeforeRegistration.insert(id) }
+    }
+
+    /// Whether a cancellation mark is still outstanding for `id`. Test seam for
+    /// asserting marks are consumed rather than accumulated.
+    func hasCancellationMark(_ id: UUID) -> Bool {
+        withLock { _ in cancelledBeforeRegistration.contains(id) }
+    }
+
     public func advance(by duration: Duration) {
         let toResume: [CheckedContinuation<Void, any Error>] = withLock { now in
             now = now.advanced(by: duration)
@@ -141,41 +193,13 @@ public final class VerdictClock: Clock, @unchecked Sendable {
         if deadline <= now { return }
 
         let id = UUID()
-        // What the continuation body decided to do, resolved under the lock so
-        // it can never disagree with a concurrent `onCancel`.
-        enum Registration {
-            case resumeNow
-            case throwCancelled
-            case suspended
-        }
         // A cancellation arriving after this sleep finished (resumed by
         // `advance`, or already-past) leaves a mark no continuation body will
         // ever consume. Harmless per-sleep, unbounded across a long session, so
         // every exit from this scope clears its own id.
         defer { withLock { _ in _ = cancelledBeforeRegistration.remove(id) } }
         try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
-                // Continuation bodies are synchronous — safe to lock here.
-                let registration = withLock { now -> Registration in
-                    // Cancellation that beat us to the lock: consume the mark
-                    // and fail here, rather than registering a waiter nothing
-                    // will ever resume.
-                    if cancelledBeforeRegistration.remove(id) != nil {
-                        return .throwCancelled
-                    }
-                    if deadline <= now { return .resumeNow }
-                    waiters[id] = Waiter(deadline: deadline, continuation: continuation)
-                    return .suspended
-                }
-                switch registration {
-                case .resumeNow:
-                    continuation.resume()
-                case .throwCancelled:
-                    continuation.resume(throwing: CancellationError())
-                case .suspended:
-                    break
-                }
-            }
+            try await registerSleep(id: id, until: deadline)
         } onCancel: {
             let cancelled = withLock { _ -> CheckedContinuation<Void, any Error>? in
                 guard let waiter = waiters.removeValue(forKey: id) else {
