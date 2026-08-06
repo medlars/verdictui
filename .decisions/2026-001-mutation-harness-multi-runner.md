@@ -1,7 +1,7 @@
 # ADR 2026-001 — Mutation harness runs both `swift test` and `pytest`
 
-**Date:** 2026-08-05  
-**Status:** Active  
+**Date:** 2026-08-05
+**Status:** Active
 **Author:** Wave 2 third review (end-of-session)
 
 ## Context
