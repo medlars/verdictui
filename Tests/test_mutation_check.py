@@ -528,9 +528,7 @@ class TestVerifyTargets:
             method = mutation.test.rsplit("/", maxsplit=1)[-1]
             if method not in declarations:
                 missing.append(f"{mutation.name!r} names {mutation.test!r}")
-        assert not missing, "swift mutations naming tests that do not exist:\n" + "\n".join(
-            missing
-        )
+        assert not missing, "swift mutations naming tests that do not exist:\n" + "\n".join(missing)
 
     def test_the_real_catalog_still_points_at_real_source(self) -> None:
         # Not synthetic: this is the assertion that keeps the shipped mutation

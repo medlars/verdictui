@@ -205,14 +205,18 @@ class TestDefineStages:
 class TestStageWrappers:
     """Governance wrappers must return the {passed, detail} shape in all paths."""
 
-    def test_stage_lint_skips_when_ruff_missing(self, monkeypatch) -> None:
+    def test_stage_lint_fails_closed_when_ruff_is_missing(self, monkeypatch) -> None:
+        """Was `assert result["passed"]` with "skipped" in the detail — this test
+        pinned the fail-open as the intended contract, which is why the gap
+        survived a review. A stage that cannot observe its subject must fail;
+        "could not check" and "checked, clean" are different answers."""
         import shutil as _shutil
 
         monkeypatch.setattr(_shutil, "which", lambda _: None)
         pm = VerdictUIPM.__new__(VerdictUIPM)
         result = pm.stage_lint()
-        assert result["passed"]
-        assert "skipped" in result["detail"]
+        assert not result["passed"]
+        assert "cannot be verified" in result["detail"]
 
     def test_stage_lint_runs_clean_on_this_repo(self) -> None:
         pm = VerdictUIPM.__new__(VerdictUIPM)
@@ -935,3 +939,53 @@ class TestStagePytest:
         divergence is the whole reason this stage exists."""
         workflow = (_PROJECT_ROOT / ".github" / "workflows" / "ci.yml").read_text()
         assert "pytest Tests/" in workflow, "CI no longer runs Tests/ — update this stage with it"
+
+
+class TestStagesFailClosedWithoutTheirTool:
+    """A stage whose tool is missing must FAIL, never pass with "skipped".
+
+    `stage_build` and `stage_test` returned `passed: True` when `swift` was
+    absent, so on any host without a toolchain the PM reported Grade A having
+    compiled and run nothing — and `stage_lint` did the same for ruff. The two
+    newest stages (`stage_demo`, `stage_runtime_bench`) were written to fail
+    closed and carry their own tests for it; the oldest and most important ones
+    were never brought forward. This pins all of them together so the next
+    stage cannot be added with the old shape.
+    """
+
+    @staticmethod
+    def _pm():
+        return VerdictUIPM.__new__(VerdictUIPM)
+
+    @pytest.mark.parametrize(
+        ("stage_name", "tool"),
+        [
+            ("stage_build", "swift"),
+            ("stage_test", "swift"),
+            ("stage_demo", "swift"),
+            ("stage_runtime_bench", "swift"),
+            ("stage_lint", "ruff"),
+        ],
+    )
+    def test_stage_fails_when_its_tool_is_missing(self, stage_name, tool, monkeypatch) -> None:
+        monkeypatch.setattr(_mod.shutil, "which", lambda _: None)
+        result = getattr(self._pm(), stage_name)()
+        assert not result["passed"], (
+            f"{stage_name} passed with {tool} absent -- it verified nothing and said so was fine"
+        )
+
+    def test_lint_runs_both_check_and_format(self) -> None:
+        """CI runs `ruff format --check .`; a stage running only `check` lets
+        format drift through to a red CI on a locally-green tree. Measured
+        2026-08-06 -- that is exactly what happened."""
+        source = (_PROJECT_ROOT / "scripts" / "verdictui-pm.py").read_text()
+        assert '[ruff, "check", "."]' in source
+        assert '[ruff, "format", "--check", "."]' in source
+
+    def test_lint_scope_matches_ci_scope(self) -> None:
+        """Both must cover the whole repo. A stage scoped narrower than CI
+        reproduces the same gap in miniature."""
+        workflow = (_PROJECT_ROOT / ".github" / "workflows" / "ci.yml").read_text()
+        assert "ruff format --check ." in workflow, (
+            "CI changed its format scope -- stage_lint must move with it"
+        )

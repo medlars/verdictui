@@ -88,7 +88,7 @@ class VerdictUIPM(PmBase):
         if not (PROJECT_ROOT / "Package.swift").exists():
             return {"passed": False, "detail": "Package.swift not found"}
         if shutil.which("swift") is None:
-            return {"passed": True, "detail": "swift not installed — build skipped"}
+            return {"passed": False, "detail": "swift not installed -- build cannot be verified"}
         _LOCK_DIR.mkdir(parents=True, exist_ok=True)
         _, run_swift_build, _ = _swift_runner()
         return run_swift_build(
@@ -102,7 +102,7 @@ class VerdictUIPM(PmBase):
     def stage_test(self) -> dict:
         """Run Swift unit tests (kernel + probe suites), warnings-as-errors."""
         if shutil.which("swift") is None:
-            return {"passed": True, "detail": "swift not installed — test skipped"}
+            return {"passed": False, "detail": "swift not installed -- tests cannot be verified"}
         _LOCK_DIR.mkdir(parents=True, exist_ok=True)
         _, _, run_swift_test = _swift_runner()
         return run_swift_test(
@@ -224,21 +224,35 @@ class VerdictUIPM(PmBase):
         return {"passed": passed, "detail": detail}
 
     def stage_lint(self) -> dict:
-        """ruff check via resolved absolute path (B607-clean). Skips if not installed."""
+        """`ruff check` AND `ruff format --check`, the pair CI runs.
+
+        Format drift was CI-only until 2026-08-06: CI ran `ruff format --check .`
+        and this stage ran `check` alone, so a locally-green PM could and did
+        push a red build. Both halves run here now, over the whole repo (`.`),
+        because a stage scoped more narrowly than CI reproduces the same gap in
+        miniature.
+
+        Fails CLOSED when ruff is absent. The previous `passed: True,
+        "skipped"` meant a host without ruff reported a clean lint having
+        linted nothing, which is the fail-open shape `stage_demo` and
+        `stage_runtime_bench` were both written to avoid.
+        """
         ruff = shutil.which("ruff")
         if ruff is None:
-            return {"passed": True, "detail": "ruff not installed; skipped"}
-        r = subprocess.run(  # noqa: S603 — fixed argv, absolute path, no user input
-            [ruff, "check", "."],
-            cwd=PROJECT_ROOT,
-            capture_output=True,
-            text=True,
-            timeout=TIMEOUT_STANDARD,
-        )
-        return {
-            "passed": r.returncode == 0,
-            "detail": (r.stdout.strip() or "clean")[:500],
-        }
+            return {"passed": False, "detail": "ruff not installed -- lint cannot be verified"}
+        checks = (("check", [ruff, "check", "."]), ("format", [ruff, "format", "--check", "."]))
+        for name, argv in checks:
+            r = subprocess.run(  # noqa: S603 -- fixed argv, absolute path, no user input
+                argv,
+                cwd=PROJECT_ROOT,
+                capture_output=True,
+                text=True,
+                timeout=TIMEOUT_STANDARD,
+            )
+            if r.returncode != 0:
+                detail = (r.stdout.strip() or r.stderr.strip() or "no output")[:400]
+                return {"passed": False, "detail": f"ruff {name}: {detail}"}
+        return {"passed": True, "detail": "ruff check + format clean"}
 
     def stage_demo(self) -> dict:
         """Run the demo executable and parse its stdout as one JSON document.
