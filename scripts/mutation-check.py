@@ -352,6 +352,20 @@ MUTATIONS = [
         new='nodeID: "wrong-id",',
         test="HarnessTests/testUnknownProbeIDBecomesAFailVerdictNamingTheProbe",
     ),
+    Mutation(
+        name="settle stops censusing pending virtual-clock timers",
+        path="Sources/VerdictUIProbe/Settle.swift",
+        old="if clock.pendingWaiterCount > 0 { return nil }",
+        new="if false { return nil }",
+        test="HostileSettleTests/testDelayedMutationBlocksQuietUntilTheClockAdvances",
+    ),
+    Mutation(
+        name="quiet is accepted on a single check instead of two agreeing ones",
+        path="Sources/VerdictUIProbe/OracleHost.swift",
+        old="public nonisolated static let requiredAgreeingChecks = 2",
+        new="public nonisolated static let requiredAgreeingChecks = 1",
+        test="HostileSettleTests/testInfiniteAnimationTimesOutWithAFailVerdict",
+    ),
 ]
 
 # XCTest prints this once per suite plus once for the total; the largest count is
