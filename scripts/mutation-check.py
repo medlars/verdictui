@@ -443,6 +443,17 @@ MUTATIONS = [
         test="HostileSettleTests/testSettleWaitsOutAMutationScheduledBeyondOnePumpInterval",
     ),
     Mutation(
+        # A 3x latency regression. Caught by the p50 gate, which is asserted in
+        # EVERY environment because the median is load-stable (49.6-51.2 ms
+        # across isolated, full-suite, and breaching runs) — unlike p95, which
+        # moves 56.7 -> 102.6 ms purely from contention with the other 318 tests.
+        name="the settle floor triples, tripling inner-loop latency",
+        path="Sources/VerdictUIProbe/OracleHost.swift",
+        old="public nonisolated static let minimumQuietInterval: TimeInterval = 0.030",
+        new="public nonisolated static let minimumQuietInterval: TimeInterval = 0.090",
+        test="HarnessPerformanceTests/testPerformCycleMeetsTheSLO1Gate",
+    ),
+    Mutation(
         # Removes the mid-run clean-tree check, restoring the state where an
         # edit landing during a ~30 minute sweep makes every later case measure
         # a tree nobody intended and report SETUP FAILED as if a guard broke.
