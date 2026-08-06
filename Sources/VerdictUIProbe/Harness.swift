@@ -212,13 +212,13 @@ public final class Harness {
             )
         }
 
+        // Measured on both branches. The timeout path used to report the
+        // REQUESTED timeout, which is a budget rather than an observation — a
+        // settle that gave up early still claimed the full 2 s, and a consumer
+        // could not tell an assumed number from a measured one.
+        let settleStarted = ContinuousClock.now
         let settle = await host.settle(timeout: timeout)
-        let settleMs: Double
-        if case .settled(let after) = settle {
-            settleMs = after.asMilliseconds
-        } else {
-            settleMs = timeout.asMilliseconds
-        }
+        let settleMs = settleStarted.duration(to: .now).asMilliseconds
 
         if case .timedOut = settle {
             let after = host.latestTree
