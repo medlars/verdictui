@@ -35,6 +35,54 @@ final class SemanticNodeTests: XCTestCase {
     /// `Role.custom("")` is constructible in memory but must never reach the
     /// wire: `contracts/verdict-schema.json` requires `minLength: 1` on `role`,
     /// so emitting `""` would produce a payload this kernel's own schema rejects.
+    // MARK: - Non-finite geometry
+
+    /// A NaN frame must not read as a renderable rectangle.
+    ///
+    /// `isEmpty` was `width <= 0 || height <= 0`, and every comparison against
+    /// NaN is `false`, so a NaN frame reported itself NON-empty — the one answer
+    /// that makes all six rules skip it. NaN is not a theoretical input here: it
+    /// is what a broken layout actually produces (a division by zero in sizing,
+    /// an unresolved `GeometryReader`, `.frame(width: someNaN)`), so the engine
+    /// was silent on precisely the shapes it exists to catch.
+    func testANonFiniteFrameIsEmptyRatherThanRenderable() {
+        let nan = Rect(x: .nan, y: .nan, width: .nan, height: .nan)
+        XCTAssertTrue(nan.isEmpty, "a NaN frame must not read as renderable")
+
+        let infinite = Rect(x: 0, y: 0, width: .infinity, height: 20)
+        XCTAssertTrue(infinite.isEmpty, "an infinite frame must not read as renderable")
+
+        let nanWidthOnly = Rect(x: 0, y: 0, width: .nan, height: 20)
+        XCTAssertTrue(nanWidthOnly.isEmpty)
+        let nanOriginOnly = Rect(x: .nan, y: 0, width: 10, height: 20)
+        XCTAssertTrue(
+            nanOriginOnly.isEmpty,
+            "a finite size at a NaN origin cannot be placed, so it is not renderable"
+        )
+
+        // The control: ordinary rectangles are unaffected by the guard.
+        XCTAssertFalse(Rect(x: 0, y: 0, width: 10, height: 20).isEmpty)
+        XCTAssertTrue(Rect(x: 0, y: 0, width: 0, height: 20).isEmpty)
+        XCTAssertTrue(Rect(x: 0, y: 0, width: -5, height: 20).isEmpty)
+    }
+
+    /// `intersects` must not answer "yes" for a rectangle that cannot be placed.
+    ///
+    /// It is a negated disjunction of `>=`/`<=`, so with NaN every disjunct is
+    /// `false` and the negation returned `true` — which made `OffscreenRule`
+    /// treat a NaN node as comfortably on screen.
+    func testANonFiniteRectIntersectsNothing() {
+        let viewport = Rect(x: 0, y: 0, width: 400, height: 400)
+        let nan = Rect(x: .nan, y: .nan, width: .nan, height: .nan)
+
+        XCTAssertFalse(viewport.intersects(nan))
+        XCTAssertFalse(nan.intersects(viewport))
+        XCTAssertNil(viewport.intersection(nan))
+
+        // The control: a real overlap still reports one.
+        XCTAssertTrue(viewport.intersects(Rect(x: 10, y: 10, width: 5, height: 5)))
+    }
+
     func testEmptyRoleIdentifierIsRejectedByBothEncodeAndDecode() {
         XCTAssertThrowsError(try JSONEncoder().encode([Role.custom("")])) { error in
             guard case EncodingError.invalidValue(_, let context) = error else {
