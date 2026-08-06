@@ -436,7 +436,24 @@ public struct Rect: Equatable, Codable, Sendable {
     }
 
     /// True when the rectangle encloses no area, i.e. nothing can render in it.
-    public var isEmpty: Bool { width <= 0 || height <= 0 }
+    ///
+    /// Non-finite components count as empty. `width <= 0` alone is `false` for
+    /// NaN — every comparison against NaN is — so a NaN frame reported itself
+    /// RENDERABLE and all six rules skipped it: `ZeroSizeRule` saw a non-empty
+    /// box, `TapTargetRule`'s `width < minimum` was false, and `OffscreenRule`
+    /// found it intersecting the viewport. The engine was therefore silent on
+    /// exactly the shapes it exists to catch, since NaN is what a broken layout
+    /// produces (division by zero in sizing, an unresolved `GeometryReader`,
+    /// `.frame(width: someNaN)`). An infinite dimension is treated the same way:
+    /// nothing renders at infinite size, and letting it through leaks `inf` into
+    /// finding messages.
+    ///
+    /// The origin is included because a finite size at a NaN origin cannot be
+    /// placed, so it is not renderable either.
+    public var isEmpty: Bool {
+        guard x.isFinite, y.isFinite, width.isFinite, height.isFinite else { return true }
+        return width <= 0 || height <= 0
+    }
 
     /// Right edge (`x + width`).
     public var maxX: Double { x + width }
@@ -449,7 +466,13 @@ public struct Rect: Equatable, Codable, Sendable {
 
     /// True when the two rectangles share any area. Empty rectangles never intersect.
     public func intersects(_ other: Rect) -> Bool {
-        !(other.x >= maxX || other.maxX <= x || other.y >= maxY || other.maxY <= y)
+        // Written as a negated disjunction, so with a non-finite component every
+        // disjunct is `false` and the negation answered `true` — a rectangle that
+        // cannot be placed appeared to overlap everything, which is how a NaN node
+        // read as comfortably on screen. A rectangle that encloses no area cannot
+        // share area with anything.
+        guard !isEmpty, !other.isEmpty else { return false }
+        return !(other.x >= maxX || other.maxX <= x || other.y >= maxY || other.maxY <= y)
     }
 
     /// The shared area, or `nil` when the rectangles do not intersect.

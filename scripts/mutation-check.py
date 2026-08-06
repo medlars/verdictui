@@ -395,6 +395,24 @@ MUTATIONS = [
         ].dropLast()""",
         test="DemoScenarioCatalogTests/testEveryScenarioFileOnDiskIsRegisteredInTheCatalog",
     ),
+    Mutation(
+        # Restores the NaN blindness: without the finite guard, `nan <= 0` is
+        # false, so a NaN frame reads as RENDERABLE and all six rules skip it.
+        name="a non-finite frame reads as renderable again",
+        path="Sources/VerdictUIKernel/SemanticNode.swift",
+        old="guard x.isFinite, y.isFinite, width.isFinite, height.isFinite else { return true }",
+        new="guard true else { return true }",
+        test="SemanticNodeTests/testANonFiniteFrameIsEmptyRatherThanRenderable",
+    ),
+    Mutation(
+        # Restores the other half: a rect that cannot be placed intersecting
+        # everything, which is how a NaN node read as on-screen.
+        name="an unplaceable rect intersects everything again",
+        path="Sources/VerdictUIKernel/SemanticNode.swift",
+        old="guard !isEmpty, !other.isEmpty else { return false }",
+        new="guard true else { return false }",
+        test="SemanticNodeTests/testANonFiniteRectIntersectsNothing",
+    ),
 ]
 
 # XCTest prints this once per suite plus once for the total; the largest count is
