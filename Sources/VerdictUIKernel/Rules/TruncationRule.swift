@@ -38,7 +38,13 @@ public struct TruncationRule: LintRule {
             }
 
             let available = node.frame.width + context.truncationTolerance
-            guard metrics.idealLineCount <= 1, available < metrics.intrinsicWidth else { return nil }
+            // `== 1`, not `<= 1`: a node reporting ZERO ideal lines has no lines to
+            // truncate — it is empty text, or text whose metrics were never
+            // measured — and `<= 1` treated it as a one-line text that needed
+            // its full intrinsic width, producing a FAIL on a node the probe
+            // was least sure about.
+            guard metrics.idealLineCount == 1, available < metrics.intrinsicWidth
+            else { return nil }
             return context.makeFinding(
                 rule: Self.id,
                 node: node,

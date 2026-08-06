@@ -360,22 +360,41 @@ MUTATIONS = [
         test="HostileSettleTests/testDelayedMutationBlocksQuietUntilTheClockAdvances",
     ),
     Mutation(
-        name="quiet is accepted on a single check instead of two agreeing ones",
+        # Was `requiredAgreeingChecks = 2 -> 1`, which the 30 ms quiet floor now
+        # SUBSUMES: with a wall-clock span required, the count is no longer what
+        # keeps a moving layout from settling, so the old mutation went
+        # UNNOTICED and correctly so. Mutating the floor instead targets the
+        # guard that is actually load-bearing today.
+        name="quiet is accepted without the wall-clock floor holding",
         path="Sources/VerdictUIProbe/OracleHost.swift",
-        old="public nonisolated static let requiredAgreeingChecks = 2",
-        new="public nonisolated static let requiredAgreeingChecks = 1",
-        test="HostileSettleTests/testInfiniteAnimationTimesOutWithAFailVerdict",
+        old="public nonisolated static let minimumQuietInterval: TimeInterval = 0.030",
+        new="public nonisolated static let minimumQuietInterval: TimeInterval = 0.0",
+        test="HostileSettleTests/testSettleWaitsOutAMutationScheduledBeyondOnePumpInterval",
+    ),
+    Mutation(
+        # Re-admits idealLineCount == 0 into the single-line clipping branch,
+        # which reports text with NO lines as truncated.
+        name="text with no ideal lines is reported as truncated again",
+        path="Sources/VerdictUIKernel/Rules/TruncationRule.swift",
+        old="guard metrics.idealLineCount == 1, available < metrics.intrinsicWidth",
+        new="guard metrics.idealLineCount <= 1, available < metrics.intrinsicWidth",
+        test="TruncationRuleTests/testTextWithNoIdealLinesIsNotReportedAsTruncated",
     ),
     Mutation(
         # Restores the lost-cancellation race: a `cancel()` that beats the
         # continuation body to the lock leaves no mark, so the body registers a
         # waiter nothing will ever resume. Unmutated, this hung the whole xctest
         # process about one run in three.
+        # Points at the DETERMINISTIC witness, not the 200-attempt race test.
+        # The race version catches this 5/5 in isolation but was UNNOTICED in a
+        # full sweep, where each case runs straight after a cold rebuild under
+        # load — a guard whose detection power varies with machine load reports
+        # coverage it cannot always deliver.
         name="a cancel arriving before registration is silently dropped again",
         path="Sources/VerdictUIProbe/VerdictClock.swift",
-        old="cancelledBeforeRegistration.insert(id)",
-        new="()",
-        test="VerdictClockTests/testCancellationRacingRegistrationIsNeverLost",
+        old="if cancelledBeforeRegistration.remove(id) != nil {",
+        new="if false {",
+        test="VerdictClockTests/testAPreMarkedCancellationIsConsumedByTheRegisteringBody",
     ),
     Mutation(
         # Actually DROPS the last catalog entry while its file stays on disk —

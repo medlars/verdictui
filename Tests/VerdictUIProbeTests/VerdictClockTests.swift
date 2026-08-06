@@ -132,6 +132,60 @@ final class VerdictClockTests: XCTestCase {
         }
     }
 
+    /// The deterministic companion to the 200-attempt race above.
+    ///
+    /// That test wins the losing interleaving by REPETITION, so its detection
+    /// power depends on scheduling: measured 5/5 catches in isolation but
+    /// UNNOTICED during a full `mutation-check.py` sweep, where every case runs
+    /// straight after a cold rebuild under load. A guard whose ability to fail
+    /// varies with machine load reports coverage it cannot always deliver — and
+    /// the mutation harness scores that as an unverified guard, correctly.
+    ///
+    /// This drives the same window with no race at all: mark the id cancelled
+    /// BEFORE the continuation body runs, which is exactly the state `onCancel`
+    /// leaves behind when it wins, then assert the body consumes the mark and
+    /// throws instead of registering a waiter nobody will resume.
+    func testAPreMarkedCancellationIsConsumedByTheRegisteringBody() async throws {
+        let clock = VerdictClock()
+        let deadline = clock.now.advanced(by: .seconds(60))
+
+        // Stand in for `onCancel` having already run: the mark is present, no
+        // waiter is registered, and the body is about to run.
+        let id = UUID()
+        clock.markCancelledBeforeRegistration(id)
+
+        // Bounded, because the defect under test is a PERMANENTLY suspended
+        // continuation: with the mark never consumed, `registerSleep` suspends
+        // on a 60-second virtual deadline nobody will advance to, and an
+        // unbounded await would hang the whole xctest process rather than fail.
+        // Measured: without this the mutated build times out at 450s instead of
+        // failing in milliseconds, and a hang is a strictly worse signal than a
+        // failure — the harness cannot tell it from a broken build.
+        // `withTimeout` takes a non-throwing body, so the throw is captured as
+        // a Result — the same shape the 200-attempt test above uses.
+        let outcome = try await Self.withTimeout(seconds: 5) {
+            await Task { try await clock.registerSleep(id: id, until: deadline) }.result
+        }
+        switch outcome {
+        case .success:
+            XCTFail("a pre-marked cancellation must not register a waiter")
+        case .failure(let error):
+            XCTAssertTrue(
+                error is CancellationError,
+                "expected CancellationError from the consumed mark, got \(error)"
+            )
+        }
+
+        XCTAssertEqual(
+            clock.pendingWaiterCount, 0,
+            "the body registered a waiter despite a pending cancellation mark"
+        )
+        XCTAssertFalse(
+            clock.hasCancellationMark(id),
+            "the mark must be consumed, not left to accumulate"
+        )
+    }
+
     /// Awaits `work`, throwing ``TimeoutError`` rather than hanging if it does
     /// not finish in `seconds`.
     ///

@@ -269,6 +269,39 @@ final class TruncationRuleTests: XCTestCase {
         XCTAssertEqual(finding.suggestion, "increase frame width to >= intrinsicWidth 212 pt, or allow wrapping")
     }
 
+    func testTextWithNoIdealLinesIsNotReportedAsTruncated() {
+        // `idealLineCount == 0` means the probe has no line count to offer —
+        // empty text, or a node whose metrics were not measured. The single-line
+        // clipping branch guarded on `idealLineCount <= 1`, so zero fell into
+        // it and a node with NO lines was reported as a one-line text that
+        // needed 100 pt and got 10. There is nothing to truncate in text that
+        // renders nothing, and a false FAIL here trains an agent to ignore the
+        // rule on exactly the nodes it is least sure about.
+        let node = text(
+            "label",
+            width: 10,
+            metrics: TextMetrics(intrinsicWidth: 100, renderedLineCount: 0, idealLineCount: 0)
+        )
+        XCTAssertTrue(
+            rule.evaluate(Fixture.root([node]), context: Fixture.context()).isEmpty,
+            "text with no ideal lines cannot be truncated"
+        )
+    }
+
+    func testSingleLineTextIsStillReportedWhenItIsActuallyClipped() {
+        // The control for the test above: tightening the guard from `<= 1` to
+        // `== 1` must not silence the case the branch exists for.
+        let node = text(
+            "title",
+            width: 10,
+            metrics: TextMetrics(intrinsicWidth: 100, renderedLineCount: 1, idealLineCount: 1)
+        )
+        XCTAssertFalse(
+            rule.evaluate(Fixture.root([node]), context: Fixture.context()).isEmpty,
+            "a genuinely clipped single-line text must still be reported"
+        )
+    }
+
     func testMultiLineTextNarrowerThanIntrinsicWidthIsWrappingNotTruncation() {
         let node = text(
             "body",
