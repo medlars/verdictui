@@ -313,6 +313,31 @@ MUTATIONS = [
         ),
         runner=Runner.PYTEST,
     ),
+    Mutation(
+        name="toggle action stops flipping the bool binding",
+        path="Sources/VerdictUIProbe/Scenario.swift",
+        old="bools[id] = !current",
+        new="bools[id] = current",
+        test="ActionInjectionTests/testToggleActionExpandsToggleLayoutScenario",
+    ),
+    Mutation(
+        name="unknown probe toggle is silently ignored instead of throwing",
+        path="Sources/VerdictUIProbe/Scenario.swift",
+        old="""\
+        guard let current = bools[id] else {
+            if strings[id] != nil || doubles[id] != nil || taps[id] != nil {
+                throw ProbeActionError.typeMismatch(id: id, expected: "bool")
+            }
+            throw ProbeActionError.unknownProbe(id)
+        }
+""",
+        new="""\
+        guard let current = bools[id] else {
+            return
+        }
+""",
+        test="ActionInjectionTests/testUnknownProbeIDThrowsWithEvidence",
+    ),
 ]
 
 # XCTest prints this once per suite plus once for the total; the largest count is

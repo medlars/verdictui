@@ -376,16 +376,21 @@ extension View {
 }
 
 /// Registers a ``ProbeSiteAction`` onto ``EnvironmentValues/verdictScenarioState``
-/// during layout. Inert when no host installed the state (previews / unhosted views).
+/// during view evaluation (not `onAppear`).
+///
+/// `onAppear` was too late: ``OracleHost/apply(_:)`` after `init`'s
+/// `layoutSubtreeIfNeeded()` still raced when registration waited for appear,
+/// and Task 4's `perform` must not depend on that ordering. Evaluating
+/// `register` in `body` runs whenever SwiftUI builds the probe — including the
+/// host's first layout pass. Inert when no host installed the state.
 private struct ProbeActionRegistrar: View {
     let id: String
     let action: ProbeSiteAction
     @Environment(\.verdictScenarioState) private var state
 
     var body: some View {
-        Color.clear
-            .onAppear { state?.register(probeID: id, action: action) }
-            .onChange(of: id) { _, _ in state?.register(probeID: id, action: action) }
+        let _ = state?.register(probeID: id, action: action)
+        return Color.clear
     }
 }
 

@@ -103,6 +103,39 @@ final class ActionInjectionTests: XCTestCase {
         XCTAssertEqual(host.state.stringBinding("name-field").wrappedValue, "Ada")
         XCTAssertEqual(host.state.doubleBinding("volume-slider").wrappedValue, 0.75, accuracy: 1e-9)
     }
+
+    @MainActor
+    func testApplyWorksWithoutAPriorCurrentTreeCall() async throws {
+        // Registration must not depend on `onAppear` after `currentTree()` —
+        // host init's layout pass + `apply`'s forced layout are enough.
+        let host = OracleHost(
+            scenario: ToggleLayoutScenario(isExpanded: false),
+            viewport: ToggleLayoutScenario.recommendedViewport
+        )
+        try host.apply(.toggle(ToggleLayoutScenario.toggleProbeID))
+        _ = await host.settle(timeout: .seconds(2))
+        let tree = try await host.currentTree()
+        XCTAssertNotNil(tree.node(withID: "advanced-detail"))
+    }
+
+    @MainActor
+    func testToggleOnAStringBindingIsATypeMismatch() async throws {
+        let host = OracleHost(
+            scenario: EditableFieldsScenario(),
+            viewport: Size(width: 280, height: 120)
+        )
+        _ = try await host.currentTree()
+        XCTAssertThrowsError(try host.apply(.toggle("name-field"))) { error in
+            guard let actionError = error as? ProbeActionError else {
+                XCTFail("expected ProbeActionError, got \(error)")
+                return
+            }
+            XCTAssertEqual(
+                actionError,
+                .typeMismatch(id: "name-field", expected: "bool")
+            )
+        }
+    }
 }
 
 // MARK: - Fixtures

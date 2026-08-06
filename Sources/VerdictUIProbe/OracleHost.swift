@@ -539,10 +539,14 @@ public final class OracleHost {
 
     /// Apply a ``ProbeAction`` to ``state`` under ``settlePolicy``.
     ///
+    /// Forces one layout pass first so `.verdictProbe(..., action:)` sites and
+    /// ``ScenarioState`` binding factories have registered — otherwise a call
+    /// before any render fails with a false ``ProbeActionError/unknownProbe``.
     /// Does not settle and does not capture trees — Task 4's `perform` wraps
     /// this with settle + diff. Throws ``ProbeActionError`` when the probe has
     /// no compatible binding.
     public func apply(_ action: ProbeAction) throws {
+        hostingView.layoutSubtreeIfNeeded()
         var thrown: (any Error)?
         applyStateChange {
             do {

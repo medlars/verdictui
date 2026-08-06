@@ -18,7 +18,8 @@
 - Wave 3 Task 3: `ProbeAction` in-process injection via `ScenarioState` bindings
   and `.verdictProbe(..., action:)`; `OracleHost.apply(_:)`; `ToggleLayoutScenario`
   driven by a real binding. Trust levels (inner vs Wave 8 real events) documented
-  in `docs/kernel.md`.
+  in `docs/kernel.md`. Probe action registration runs during view evaluation (not
+  `onAppear`); toggle/unknown-probe guards are mutation-catalogued.
 
 ### 2026-08-04
 
