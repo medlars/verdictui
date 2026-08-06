@@ -29,6 +29,57 @@ final class DemoScenarioCatalogTests: XCTestCase {
         "demo-clean-settings",
     ]
 
+    /// Every `*Scenario.swift` file in the target is actually in the catalog.
+    ///
+    /// The three counts the test below compares — `all.count`, `DemoScenarios.count`,
+    /// and `expectedNames.count` — are all hand-maintained in this repo, so they
+    /// agree with each other and with nothing else. A scenario file that is written,
+    /// committed, and never registered is invisible to all three: measured during the
+    /// Wave 1–3 audit by adding an unregistered `ProbeGapScenario.swift`, after which
+    /// all 8 tests in this file still passed.
+    ///
+    /// That is precisely the failure this file's own doc comment warns about — "a
+    /// scenario missing from the enumeration is a scenario nobody verifies again" —
+    /// so it needs a check that reads the FILESYSTEM rather than another list someone
+    /// has to remember to update. Same shape as `Tests/test_file_registry.py`, which
+    /// takes its file list from `git ls-files` for the same reason.
+    func testEveryScenarioFileOnDiskIsRegisteredInTheCatalog() throws {
+        // #filePath resolves through the test file's own location, so this does not
+        // depend on the working directory `swift test` happens to be run from.
+        let testFile = URL(fileURLWithPath: #filePath)
+        let root = testFile
+            .deletingLastPathComponent()  // DemoScenariosTests
+            .deletingLastPathComponent()  // Tests
+            .deletingLastPathComponent()  // package root
+        let sourceDir = root
+            .appendingPathComponent("Sources")
+            .appendingPathComponent("VerdictUIDemoScenarios")
+
+        let files = try FileManager.default.contentsOfDirectory(
+            at: sourceDir,
+            includingPropertiesForKeys: nil
+        )
+        let scenarioTypes = files
+            .map(\.lastPathComponent)
+            .filter { $0.hasSuffix("Scenario.swift") }
+            .map { $0.replacingOccurrences(of: ".swift", with: "") }
+            .sorted()
+
+        // A directory that yields nothing would make every assertion below vacuous,
+        // so the scan proving it found something is itself the first assertion.
+        XCTAssertFalse(
+            scenarioTypes.isEmpty,
+            "found no *Scenario.swift under \(sourceDir.path) — this test scanned nothing"
+        )
+        XCTAssertEqual(
+            scenarioTypes.count,
+            DemoScenarios.all.count,
+            "\(scenarioTypes.count) scenario file(s) on disk but \(DemoScenarios.all.count) "
+                + "in the catalog: \(scenarioTypes). A file that is never registered is "
+                + "never verified by any sweep, baseline, or demo run."
+        )
+    }
+
     func testTheCatalogHoldsThePinnedNumberOfScenarios() {
         XCTAssertEqual(
             DemoScenarios.all.count,
