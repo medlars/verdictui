@@ -445,3 +445,19 @@ python3.14 contracts/validate-contracts.py
 ```
 
 Then review the fixture diff as what it is — a change to a published contract.
+
+---
+
+## 6. Trust levels (inner loop vs middle loop)
+
+VerdictUI has two ways to act on a UI. They are not interchangeable, and a PASS
+from one is not evidence the other would agree.
+
+| Level | Mechanism | What it proves | What it does not prove |
+|-------|-----------|----------------|------------------------|
+| **Inner loop** (Wave 3) | `ProbeAction` mutates `ScenarioState` bindings registered at `.verdictProbe(..., action:)` sites — in-process, no events, no Accessibility permission | The scenario's own state → layout → semantic tree → rules path is consistent | That a real click/key would hit the same control, or that AppKit/AX agree with the probe |
+| **Middle loop** (Wave 8) | Real `CGEvent` / `AXUIElement` actions + external AX tree, reconciled against the in-process stream | The probe is not lying about what the OS exposes; hit-testing and AX roles match | Nothing about OS-level truths that only XCUITest can see (outer loop) |
+
+The inner loop is the product's fast channel. Divergence in the middle loop is the
+bug detector. An agent that only calls `ProbeAction` is trusting instrumentation;
+an agent that also cross-validates is trusting less.

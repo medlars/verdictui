@@ -2,6 +2,63 @@
 
 ## [Unreleased]
 
+### 2026-08-06
+
+- **Wave 3 complete.** Task 4 `Harness` (`perform` = tree → act → settle → tree →
+  diff → lint in one call; `run` batches with early exit) gained the verification
+  half it shipped without — 16 tests over every return path, including the act-
+  failure and settle-timeout paths that build their own `Verdict`. `stoppedEarly`
+  is pinned to mean *skipped work*, not failure.
+- Wave 3 Task 5: hostile settle suite — perpetual motion, deferred async mutation,
+  debounced input, rapid successive actions. Each carries a control, so "times out"
+  cannot be satisfied by an engine that times out on everything.
+- Wave 3 Task 6: **SLO 1 formally met and enforced.** `HarnessPerformanceTests`
+  measures act→settle→verdict at p50 19.9 ms / p95 20.9 ms (n=60) against the
+  100 ms budget, and PM `stage_runtime_bench` gates it. The stage fails on a
+  missing `SLO1-PERFORM` line or a zero executed-test count, because
+  `swift test --filter` exits 0 when it matches nothing.
+- Fixed an order-dependent flake in `testOscillatingLayoutTimesOutWithDeltaEvidence`:
+  its 4 ms mutation timer raced `LayoutSettle.pumpInterval` (5 ms), so a loaded run
+  loop could fit two quiet checks between ticks and the test accused the engine of
+  settling early. The interval now derives from `pumpInterval`.
+- Registered `pm-baselines.json` in `docs/FILE_REGISTRY.md` — ADR 2026-002 tracked
+  the file but never listed it, leaving the registry guard red on main.
+- **Fixed a lost-cancellation race in `VerdictClock.sleep(until:)` that hung the
+  entire test suite roughly one run in three.** `withTaskCancellationHandler`
+  invokes `onCancel` immediately on the cancelling thread — it does not wait for
+  the operation body to suspend. A `cancel()` landing between `sleep`'s
+  `Task.checkCancellation()` and its continuation registering therefore found an
+  empty `waiters` map, resumed nothing, and never fired again; the body then
+  registered a waiter releasable only by a 60-second virtual advance that never
+  came. The leaked continuation left `task.value` suspended forever, and because
+  XCTest runs an `async` test by blocking the *main* thread in
+  `invokeWithAsynchronousWait`, the whole `xctest` process wedged at 0 % CPU with
+  no VerdictUI frame on the stack — which is why it read as an XCTest fault
+  rather than ours. Cancellation is now recorded under the same lock that guards
+  `waiters`, so whichever side runs second resumes the continuation exactly once.
+  `testCancellationRacingRegistrationIsNeverLost` repeats the race 200 times
+  under an independent per-attempt timeout: it fails in ~5 s against the old code
+  and passes in 4 ms against the new, and it can never re-hang the suite.
+
+### 2026-08-05
+
+- Wave 3 Task 1 (settle engine foundations): `VerdictClock` (manual `Clock` with
+  `advance(by:)`), `SettlePolicy` (`.skipAnimations` default / `.runAnimations`),
+  `AnimationControl.apply`, and `OracleHost.applyStateChange` + `\.verdictClock`
+  environment injection. Animation control uses `Transaction(animation: nil)` —
+  not the unwritable `accessibilityReduceMotion` key.
+- Wave 3 Task 2: `Quiescence` / `OracleHost.settle(timeout:)` composes main-queue
+  drain, probe-recorder activity, tree stability, virtual-clock waiter census, and
+  `CATransaction.flush` on top of `LayoutSettle`. Timeout returns
+  `SettleResult.timedOut(lastDelta:)` and a FAIL `settle-timeout` verdict.
+- SLO 1 warm `currentTree()` gate aligned to `docs/slo.md` (< 100 ms p95); the
+  prior 50 ms Wave 2 stretch failed CI under load (~55 ms p95).
+- Wave 3 Task 3: `ProbeAction` in-process injection via `ScenarioState` bindings
+  and `.verdictProbe(..., action:)`; `OracleHost.apply(_:)`; `ToggleLayoutScenario`
+  driven by a real binding. Trust levels (inner vs Wave 8 real events) documented
+  in `docs/kernel.md`. Probe action registration runs during view evaluation (not
+  `onAppear`); toggle/unknown-probe guards are mutation-catalogued.
+
 ### 2026-08-04
 
 - `CLAUDE.md` is now pinned by `Tests/test_claude_md_ssot.py`. The page every session

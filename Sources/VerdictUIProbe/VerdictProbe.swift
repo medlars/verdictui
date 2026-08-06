@@ -349,6 +349,49 @@ extension View {
                 ProbeRecordReporter(id: id, role: role, text: text, attributes: attributes)
             }
     }
+
+    /// Like ``verdictProbe(_:role:text:attributes:)``, and registers an
+    /// in-process ``ProbeSiteAction`` on the harness-owned ``ScenarioState``
+    /// (installed as ``EnvironmentValues/verdictScenarioState``).
+    ///
+    /// Prefer constructing the binding from ``ScenarioState/boolBinding(_:default:)``
+    /// (or string/double/tap) with the same `id`, then passing it here so the
+    /// probe site and the action target cannot drift.
+    public func verdictProbe(
+        _ id: String,
+        role: Role = ProbeRecord.unclassifiedRole,
+        text: String? = nil,
+        attributes: [String: AttributeValue] = [:],
+        action: ProbeSiteAction
+    ) -> some View {
+        if let violation = ProbeRecord.idViolation(id) { preconditionFailure(violation) }
+        return probeLayout(id: id)
+            .background {
+                ProbeRecordReporter(id: id, role: role, text: text, attributes: attributes)
+            }
+            .background {
+                ProbeActionRegistrar(id: id, action: action)
+            }
+    }
+}
+
+/// Registers a ``ProbeSiteAction`` onto ``EnvironmentValues/verdictScenarioState``
+/// during view evaluation (not `onAppear`).
+///
+/// `onAppear` was too late: ``OracleHost/apply(_:)`` after `init`'s
+/// `layoutSubtreeIfNeeded()` still raced when registration waited for appear,
+/// and Task 4's `perform` must not depend on that ordering. Evaluating
+/// `register` in `body` runs whenever SwiftUI builds the probe — including the
+/// host's first layout pass. Inert when no host installed the state.
+private struct ProbeActionRegistrar: View {
+    let id: String
+    let action: ProbeSiteAction
+    @Environment(\.verdictScenarioState) private var state
+
+    var body: some View {
+        let _ = state?.register(probeID: id, action: action)
+        return Color.clear
+    }
 }
 
 // MARK: - Root modifier

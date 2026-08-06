@@ -313,6 +313,70 @@ MUTATIONS = [
         ),
         runner=Runner.PYTEST,
     ),
+    Mutation(
+        name="toggle action stops flipping the bool binding",
+        path="Sources/VerdictUIProbe/Scenario.swift",
+        old="bools[id] = !current",
+        new="bools[id] = current",
+        test="ActionInjectionTests/testToggleActionExpandsToggleLayoutScenario",
+    ),
+    Mutation(
+        name="unknown probe toggle is silently ignored instead of throwing",
+        path="Sources/VerdictUIProbe/Scenario.swift",
+        old="""\
+        guard let current = bools[id] else {
+            if strings[id] != nil || doubles[id] != nil || taps[id] != nil {
+                throw ProbeActionError.typeMismatch(id: id, expected: "bool")
+            }
+            throw ProbeActionError.unknownProbe(id)
+        }
+""",
+        new="""\
+        guard let current = bools[id] else {
+            return
+        }
+""",
+        test="ActionInjectionTests/testUnknownProbeIDThrowsWithEvidence",
+    ),
+    Mutation(
+        name="flow keeps running after a step FAILs instead of exiting early",
+        path="Sources/VerdictUIProbe/Harness.swift",
+        old="if step.status == .fail {",
+        new="if false {",
+        test="HarnessTests/testRunStopsEarlyOnTheFirstFailure",
+    ),
+    Mutation(
+        name="act-failure finding cites a probe id the agent never asked for",
+        path="Sources/VerdictUIProbe/Harness.swift",
+        old="nodeID: error.probeID,",
+        new='nodeID: "wrong-id",',
+        test="HarnessTests/testUnknownProbeIDBecomesAFailVerdictNamingTheProbe",
+    ),
+    Mutation(
+        name="settle stops censusing pending virtual-clock timers",
+        path="Sources/VerdictUIProbe/Settle.swift",
+        old="if clock.pendingWaiterCount > 0 { return nil }",
+        new="if false { return nil }",
+        test="HostileSettleTests/testDelayedMutationBlocksQuietUntilTheClockAdvances",
+    ),
+    Mutation(
+        name="quiet is accepted on a single check instead of two agreeing ones",
+        path="Sources/VerdictUIProbe/OracleHost.swift",
+        old="public nonisolated static let requiredAgreeingChecks = 2",
+        new="public nonisolated static let requiredAgreeingChecks = 1",
+        test="HostileSettleTests/testInfiniteAnimationTimesOutWithAFailVerdict",
+    ),
+    Mutation(
+        # Restores the lost-cancellation race: a `cancel()` that beats the
+        # continuation body to the lock leaves no mark, so the body registers a
+        # waiter nothing will ever resume. Unmutated, this hung the whole xctest
+        # process about one run in three.
+        name="a cancel arriving before registration is silently dropped again",
+        path="Sources/VerdictUIProbe/VerdictClock.swift",
+        old="cancelledBeforeRegistration.insert(id)",
+        new="()",
+        test="VerdictClockTests/testCancellationRacingRegistrationIsNeverLost",
+    ),
 ]
 
 # XCTest prints this once per suite plus once for the total; the largest count is
