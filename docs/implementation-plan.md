@@ -174,7 +174,9 @@ this alone would justify the project.
    - Delayed `Task { sleep; mutate }` → virtual clock advance surfaces the mutation before settle reports quiet.
    - Debounced text field (0.3 s) → `setText` + settle sees the post-debounce tree, not the intermediate.
    - Rapid double-tap → two atomic steps produce two clean deltas, no interleaving.
-6. **Benchmark harness** (`Tests/VerdictUIBenchTests/` + PM `stage_runtime_bench`):
+6. **Benchmark harness** (~~`Tests/VerdictUIBenchTests/`~~ → shipped as
+   `Tests/VerdictUIProbeTests/HarnessPerformanceTests.swift`, see `no.md` #11 —
+   `--filter` gives the isolation a separate target was wanted for; PM `stage_runtime_bench`):
    - Measure act→settle→verdict p50/p95 on demo scenarios; PM stage compares to `docs/slo.md` SLO 1 (<100 ms p95) and fails on regression >20%. Update pm-baselines.json.
 
 ### Exit gate
