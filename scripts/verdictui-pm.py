@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import shutil
 import subprocess
 import sys
@@ -49,6 +50,10 @@ TIMEOUT_STANDARD = 120
 # invocation layer (not Package.swift unsafeFlags) so downstream consumers of
 # the library are unaffected. CI mirrors these flags — keep the two in sync.
 SWIFT_STRICT_FLAGS = ["-Xswiftc", "-warnings-as-errors"]
+# SLO 1 from docs/slo.md. Kept here rather than read from the doc: a gate that
+# parses its own threshold out of prose fails open the moment the prose is
+# reworded. HarnessPerformanceTests carries the same number and both move together.
+SLO1_P95_BUDGET_MS = 100.0
 
 
 def _pm_log(message: str, level: str = "INFO") -> None:
@@ -299,6 +304,72 @@ class VerdictUIPM(PmBase):
             "detail": (r.stdout.strip() or r.stderr.strip() or "no output")[:300],
         }
 
+    def stage_runtime_bench(self) -> dict:
+        """SLO 1: act -> settle -> verdict p95 stays under its published budget.
+
+        `docs/slo.md` names this stage as SLO 1's measurement, and SLO 1 is the
+        product thesis in one number -- if the in-process cycle is not an order
+        of magnitude faster than a screenshot round trip, the product has no
+        reason to exist.
+
+        Reads the figure from `HarnessPerformanceTests`' `SLO1-PERFORM` line
+        rather than trusting the test's own exit code alone. The test asserts
+        its budget, so a green run already means "under 100 ms" -- but a run
+        that executed ZERO tests also exits 0 (`swift test --filter` does that
+        when the filter matches nothing), and a benchmark that silently stopped
+        running is exactly the failure a performance gate must not report as
+        health. So the summary line must be present AND parse AND be under
+        budget; a missing line is a failure, never a skip.
+        """
+        if shutil.which("swift") is None:
+            return {"passed": False, "detail": "swift not installed -- bench cannot be run"}
+        r = subprocess.run(  # noqa: S603 -- fixed argv built from constants
+            [
+                "swift",
+                "test",
+                *SWIFT_STRICT_FLAGS,
+                "--filter",
+                "HarnessPerformanceTests",
+            ],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=TIMEOUT_SWIFT_TEST,
+        )
+        output = r.stdout + r.stderr
+        if r.returncode != 0:
+            failure = next(
+                (line.strip() for line in output.splitlines() if "error:" in line),
+                (r.stderr.strip() or "no stderr"),
+            )
+            return {"passed": False, "detail": failure[:300]}
+
+        # A filter that matched nothing exits 0 having run no tests, so the
+        # executed count is checked before the figure is trusted.
+        executed = [int(m) for m in re.findall(r"Executed (\d+) test", output)]
+        if not executed or max(executed) == 0:
+            return {
+                "passed": False,
+                "detail": "the benchmark reported no executed tests -- filter is stale",
+            }
+
+        match = re.search(r"SLO1-PERFORM .*?p95=([0-9.]+)ms", output)
+        if match is None:
+            return {
+                "passed": False,
+                "detail": "no SLO1-PERFORM line in output -- the benchmark did not report",
+            }
+        p95 = float(match.group(1))
+        if p95 >= SLO1_P95_BUDGET_MS:
+            return {
+                "passed": False,
+                "detail": f"act->settle->verdict p95 {p95:.2f}ms over SLO 1's {SLO1_P95_BUDGET_MS}ms",
+            }
+        return {
+            "passed": True,
+            "detail": f"SLO 1 p95 {p95:.2f}ms < {SLO1_P95_BUDGET_MS}ms ({max(executed)} tests)",
+        }
+
     def stage_codewatch(self) -> dict:
         try:
             from pm_base_pm_stages import (  # type: ignore  # noqa: PLC0415 — deferred shared-libs import (skip sentinel pattern)
@@ -349,6 +420,7 @@ class VerdictUIPM(PmBase):
             ("stage_test_alongside", self.stage_test_alongside),
             ("stage_demo", self.stage_demo),
             ("stage_mutations", self.stage_mutations),
+            ("stage_runtime_bench", self.stage_runtime_bench),
             ("stage_lint", self.stage_lint),
             ("stage_codewatch", self.stage_codewatch),
             ("stage_issuewatch", self.stage_issuewatch),

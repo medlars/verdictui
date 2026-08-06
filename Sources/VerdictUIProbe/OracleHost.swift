@@ -312,6 +312,25 @@ public final class OracleHost {
     /// Settle budget ``currentTree()`` works within, in seconds.
     public let deadline: TimeInterval
 
+    /// Controllable clock installed into the hosted environment as
+    /// ``EnvironmentValues/verdictClock``. Scenario code that sleeps against it
+    /// advances only when a test (or later the settle engine) calls
+    /// ``VerdictClock/advance(by:)``.
+    public let clock: VerdictClock
+
+    /// Harness-owned scenario state — the same instance passed to every
+    /// `body(state:)` evaluation and the target of ``apply(_:)``.
+    public let state: ScenarioState
+
+    /// How ``applyStateChange(_:)`` wraps injected mutations. Defaults to
+    /// ``SettlePolicy/skipAnimations`` — Wave 3's animation control, not the
+    /// unwritable `accessibilityReduceMotion` pin.
+    public var settlePolicy: SettlePolicy
+
+    /// Count of `CATransaction.flush` calls performed by ``applyStateChange(_:)``
+    /// on this host. Tests pin the ``SettlePolicy/runAnimations`` path with it.
+    public private(set) var caTransactionFlushCount = 0
+
     /// The raw layout negotiations recorded below the root: proposals, answers,
     /// placements, per probe id.
     ///
@@ -322,6 +341,12 @@ public final class OracleHost {
     /// negotiations calls `recorder.reset()` first, which is safe — unlike
     /// resetting the whole sink, see ``currentTree()``.
     public var recorder: ProbeRecorder { sink.recorder }
+
+    /// Most recent tree delivered to the sink, if any.
+    ///
+    /// ``Harness`` reads this on the settle-timeout path so agents still get an
+    /// after-tree without forcing another ``currentTree()`` against a dead budget.
+    public var latestTree: SemanticNode? { sink.latestTree }
 
     /// Never added to a window, never ordered on screen. See the file header.
     private let hostingView: NSHostingView<AnyView>
@@ -345,13 +370,23 @@ public final class OracleHost {
     ///     that large is not a viewport, it is a mistake, and obeying it would
     ///     hang the caller.
     ///   - deadline: settle budget for ``currentTree()``, in seconds.
+    ///   - settlePolicy: animation control for ``applyStateChange(_:)``.
+    ///   - clock: virtual clock installed into the hosted environment. The host
+    ///     owns the default instance; tests that need a pre-advanced frontier
+    ///     can pass one in.
     public init<Scenario: VerdictScenario>(
         scenario: Scenario,
         viewport: Size? = nil,
-        deadline: TimeInterval = OracleHost.defaultDeadline
+        deadline: TimeInterval = OracleHost.defaultDeadline,
+        settlePolicy: SettlePolicy = .skipAnimations,
+        clock: VerdictClock = VerdictClock()
     ) {
         scenarioName = scenario.name
         self.deadline = deadline
+        self.settlePolicy = settlePolicy
+        self.clock = clock
+        let state = ScenarioState()
+        self.state = state
 
         let requested: Size
         if let viewport {
@@ -364,7 +399,9 @@ public final class OracleHost {
             let measuring = NSHostingView(
                 rootView: Self.pinned(
                     ScenarioRoot(scenario: scenario, state: ScenarioState()),
-                    sink: VerdictTreeSink()
+                    sink: VerdictTreeSink(),
+                    clock: clock,
+                    state: ScenarioState()
                 )
             )
             requested = Size(measuring.fittingSize)
@@ -377,7 +414,7 @@ public final class OracleHost {
         self.sink = sink
         hostingView = NSHostingView(
             rootView: Self.pinned(
-                ScenarioRoot(scenario: scenario, state: ScenarioState())
+                ScenarioRoot(scenario: scenario, state: state)
                     // Applied by the host, always, in both sizing paths, so
                     // `hostSize` *is* the viewport rather than an upper bound on
                     // it. Without it the root would be content-sized, the root
@@ -385,7 +422,9 @@ public final class OracleHost {
                     // does not fill, and a clamped host would not actually
                     // constrain the content it was clamped to protect.
                     .frame(width: resolved.size.width, height: resolved.size.height),
-                sink: sink
+                sink: sink,
+                clock: clock,
+                state: state
             )
         )
         hostingView.frame = CGRect(
@@ -494,7 +533,75 @@ public final class OracleHost {
 
     // MARK: - The hosted root
 
-    /// Wrap `view` in the verdict root and the pinned environment.
+    /// Apply an injected state mutation under the host's ``settlePolicy``.
+    ///
+    /// This is the Wave 3 Task 1 seam Task 4's `perform` will call before
+    /// settle: one place that owns `Transaction(animation: nil)` vs the
+    /// `CATransaction.flush` + run-loop pump path. It does not settle and does
+    /// not capture trees — that is later work.
+    public func applyStateChange(_ body: () -> Void) {
+        caTransactionFlushCount += AnimationControl.apply(settlePolicy, body)
+    }
+
+    /// Apply a ``ProbeAction`` to ``state`` under ``settlePolicy``.
+    ///
+    /// Forces one layout pass first so `.verdictProbe(..., action:)` sites and
+    /// ``ScenarioState`` binding factories have registered — otherwise a call
+    /// before any render fails with a false ``ProbeActionError/unknownProbe``.
+    /// Does not settle and does not capture trees — Task 4's `perform` wraps
+    /// this with settle + diff. Throws ``ProbeActionError`` when the probe has
+    /// no compatible binding.
+    public func apply(_ action: ProbeAction) throws {
+        hostingView.layoutSubtreeIfNeeded()
+        var thrown: (any Error)?
+        applyStateChange {
+            do {
+                try action.apply(to: state)
+            } catch {
+                thrown = error
+            }
+        }
+        if let thrown { throw thrown }
+    }
+
+    /// Wait until the hosted UI is quiescent, or until `timeout`.
+    ///
+    /// Composes main-queue drain, probe-recorder activity, tree stability,
+    /// virtual-clock waiter census, and a `CATransaction.flush` sample on top
+    /// of ``LayoutSettle`` — see ``Quiescence``. Default timeout is 2 seconds
+    /// (tighter than ``defaultDeadline`` because settle has more signals).
+    ///
+    /// - Returns: ``SettleResult/settled(after:)`` or
+    ///   ``SettleResult/timedOut(lastDelta:)``. Never hangs. On timeout, call
+    ///   ``timeoutVerdict(from:settleMs:)`` for the FAIL ``Verdict`` agents cite.
+    public func settle(
+        timeout: Duration = Quiescence.defaultTimeout
+    ) async -> SettleResult {
+        await Quiescence.settle(
+            view: hostingView,
+            sink: sink,
+            clock: clock,
+            beforeTree: sink.latestTree,
+            timeout: timeout
+        )
+    }
+
+    /// FAIL verdict for a ``SettleResult/timedOut(lastDelta:)``, or `nil` when
+    /// `result` was a settle. Uses the sink's latest tree as evidence.
+    public func timeoutVerdict(
+        from result: SettleResult,
+        settleMs: Double
+    ) -> Verdict? {
+        Quiescence.timeoutVerdict(
+            scenario: scenarioName,
+            result: result,
+            tree: sink.latestTree,
+            settleMs: settleMs
+        )
+    }
+
+    /// Wrap `view` in the verdict root, the pinned environment, and the
+    /// harness-owned virtual clock.
     ///
     /// The pins themselves live on ``SwiftUI/View/verdictPinnedEnvironment()``,
     /// which is where they are documented and where anything else that hosts a
@@ -502,13 +609,21 @@ public final class OracleHost {
     /// One definition, so a host that pins six of the seven values cannot exist.
     private static func pinned<Content: View>(
         _ view: Content,
-        sink: VerdictTreeSink
+        sink: VerdictTreeSink,
+        clock: VerdictClock,
+        state: ScenarioState
     ) -> AnyView {
         // `AnyView` so the class can stay non-generic while `NSHostingView` cannot.
         // It is layout-transparent — it forwards the proposal it receives and
         // reports the size its content returns — which the exact-frame tests in
         // `OracleHostTests` hold to.
-        AnyView(view.verdictRoot(into: sink).verdictPinnedEnvironment())
+        AnyView(
+            view
+                .verdictRoot(into: sink)
+                .verdictPinnedEnvironment()
+                .environment(\.verdictClock, clock)
+                .environment(\.verdictScenarioState, state)
+        )
     }
 
     /// The pinned locale. `en_US` because it is the locale the kernel's fixtures,
@@ -588,7 +703,7 @@ extension View {
 /// `body(state:)` on every invalidation, with the same state instance each time.
 private struct ScenarioRoot<Scenario: VerdictScenario>: View {
     let scenario: Scenario
-    let state: ScenarioState
+    @ObservedObject var state: ScenarioState
 
     var body: some View {
         scenario.body(state: state)
