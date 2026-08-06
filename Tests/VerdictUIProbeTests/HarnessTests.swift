@@ -105,6 +105,53 @@ final class HarnessTests: XCTestCase {
         )
     }
 
+    /// `settleMs` must mean ONE thing on every path: wall-clock actually spent
+    /// settling, and 0 when no settle ran.
+    ///
+    /// It used to mean four things — total elapsed including `currentTree`'s
+    /// own pump on the capture-failure path, a hardcoded 0 on both act-failure
+    /// paths despite real elapsed time, and the REQUESTED timeout (an assumed
+    /// value, not a measurement) on the settle-timeout path. A consumer
+    /// aggregating `settleMs` across steps was summing incommensurable
+    /// quantities, and the timeout path in particular reported a number nobody
+    /// measured.
+    @MainActor
+    func testSettleMsIsZeroWhenNoSettleRan() async {
+        let harness = Harness(
+            scenario: ToggleLayoutScenario(isExpanded: false),
+            viewport: ToggleLayoutScenario.recommendedViewport
+        )
+
+        // A rejected act returns before settle is ever called.
+        let step = await harness.perform(.toggle("no-such-probe"))
+
+        XCTAssertEqual(step.status, .fail)
+        XCTAssertEqual(
+            step.verdict.timing.settleMs, 0,
+            "no settle ran, so settleMs must be 0 — not elapsed time, not a budget"
+        )
+        // elapsedMs still measures the step, so the two are distinguishable.
+        XCTAssertGreaterThan(step.elapsedMs, 0)
+    }
+
+    /// On the happy path `settleMs` is a real measurement bounded by the step.
+    @MainActor
+    func testSettleMsIsMeasuredNotAssumedOnTheSettlePath() async throws {
+        let harness = Harness(
+            scenario: ToggleLayoutScenario(isExpanded: false),
+            viewport: ToggleLayoutScenario.recommendedViewport
+        )
+
+        let step = await harness.perform(.toggle(ToggleLayoutScenario.toggleProbeID))
+        let settleMs = try XCTUnwrap(step.verdict.timing.settleMs)
+
+        XCTAssertGreaterThan(settleMs, 0, "a settle that ran must report its cost")
+        XCTAssertLessThanOrEqual(
+            settleMs, step.elapsedMs,
+            "settleMs is part of the step, so it cannot exceed it"
+        )
+    }
+
     // MARK: - Act failure is a verdict, not a throw
 
     @MainActor
