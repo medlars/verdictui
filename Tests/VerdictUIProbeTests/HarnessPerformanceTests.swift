@@ -39,11 +39,21 @@ final class HarnessPerformanceTests: XCTestCase {
         autoreleasepool { super.invokeTest() }
     }
 
-    /// Act-and-observe cycles sampled. Sixty, so nearest-rank p95 (rank
-    /// `ceil(0.95 × 60)` = 57) sits on the fourth-slowest sample rather than on
-    /// the slowest — one unlucky scheduling hiccup must not become the reported
-    /// figure.
-    private static let sampleCount = 60
+    /// Act-and-observe cycles sampled.
+    ///
+    /// Raised 60 → 150 after the quiet floor moved p50 from ~20 ms to ~49 ms.
+    /// At n=60 the nearest-rank p95 sits on the 4th-slowest sample, so four
+    /// scheduling hiccups move it — measured across three runs it ranged
+    /// 50.6–87.8 ms (max 141 ms) on a p50 that never left 49 ms, and a
+    /// full-suite run breached the 100 ms SLO at 120 ms. At n=150 the same
+    /// three-run spread is 53.5–58.1 ms.
+    ///
+    /// This buys stability by measuring more, not by measuring less: the budget
+    /// is unchanged, the median is unchanged, and a genuine regression still
+    /// moves p95. The alternative — asserting on p50 and merely recording p95 —
+    /// would stop gating the tail, and the tail is what an agent actually waits
+    /// on when the tool is slow.
+    private static let sampleCount = 150
 
     /// SLO 1, in milliseconds. This is the published product target from
     /// `docs/slo.md`, not a machine-local stretch goal: the same 100 ms CI
