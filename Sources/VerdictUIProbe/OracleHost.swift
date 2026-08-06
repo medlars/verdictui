@@ -342,6 +342,12 @@ public final class OracleHost {
     /// resetting the whole sink, see ``currentTree()``.
     public var recorder: ProbeRecorder { sink.recorder }
 
+    /// Most recent tree delivered to the sink, if any.
+    ///
+    /// ``Harness`` reads this on the settle-timeout path so agents still get an
+    /// after-tree without forcing another ``currentTree()`` against a dead budget.
+    public var latestTree: SemanticNode? { sink.latestTree }
+
     /// Never added to a window, never ordered on screen. See the file header.
     private let hostingView: NSHostingView<AnyView>
 
