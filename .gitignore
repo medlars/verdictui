@@ -14,6 +14,10 @@ __pycache__/
 # refuses to start on a dirty tree, and that abort would be a lie.
 Tests/untracked_scan_probe_*.py
 .venv/
+# vexp MCP index cache — a 5.9 MB binary DB plus a lock file, regenerated
+# on demand. Swept in by a `git add -A` and caught by CI, not locally.
+.vexp/
+
 # Isolated SDD / agent worktrees (CIS-C0A083C5 — never share a working tree)
 .worktrees/
 # Subagent-driven-development scratch (briefs, reports, progress ledger)
