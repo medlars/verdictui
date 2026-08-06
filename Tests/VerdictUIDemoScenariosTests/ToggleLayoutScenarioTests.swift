@@ -15,9 +15,8 @@ final class ToggleLayoutScenarioTests: XCTestCase {
     /// pool the hosted AppKit hierarchies accumulate and wedge the suite.
     override func invokeTest() { autoreleasepool { super.invokeTest() } }
 
-    /// The second layout is reachable today, by construction, which is the whole
-    /// reason the state is an initializer argument in a wave with no action
-    /// injection.
+    /// The second layout is also reachable by construction (seeded
+    /// `isExpanded: true`); Wave 3 action injection covers the live flip path.
     @MainActor
     func testTheExpandedBranchRendersUnderTheSameName() async throws {
         let expanded = ToggleLayoutScenario(isExpanded: true)
