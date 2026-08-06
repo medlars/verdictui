@@ -218,6 +218,38 @@ class TestStageWrappers:
         assert not result["passed"]
         assert "cannot be verified" in result["detail"]
 
+    def test_stage_lint_reports_a_real_lint_failure(self, tmp_path, monkeypatch) -> None:
+        """The stage must FAIL on code ruff rejects, and name the reason.
+
+        Every other lint test checks the tool-missing path, the clean-repo path,
+        or greps the PM's own source for the argv it builds. None of them run
+        the stage against BROKEN code, so `stage_lint` could stop reporting
+        failures entirely and stay green — the gap was found by mutating the
+        stage's `returncode != 0` branch and watching the whole suite pass.
+        """
+        (tmp_path / "bad.py").write_text("import os\nx = = 1\n")
+        monkeypatch.setattr(_mod, "PROJECT_ROOT", tmp_path)
+        result = VerdictUIPM.__new__(VerdictUIPM).stage_lint()
+        assert not result["passed"], "ruff rejects this file; the stage must say so"
+        assert "ruff check" in result["detail"], result["detail"]
+
+    def test_stage_lint_reports_a_format_failure_distinctly(self, tmp_path, monkeypatch) -> None:
+        """Format drift must fail too, and be distinguishable from a lint error.
+
+        This is the half that was CI-only until this session: a locally-green PM
+        pushed a red build because the stage ran `check` without
+        `format --check`. A test that only proves SOME failure is caught would
+        not have noticed which of the two halves was missing.
+        """
+        # Valid Python that ruff-check accepts and ruff-format would rewrite.
+        (tmp_path / "ugly.py").write_text("x = {  'a':1,   'b':2 }\n")
+        monkeypatch.setattr(_mod, "PROJECT_ROOT", tmp_path)
+        result = VerdictUIPM.__new__(VerdictUIPM).stage_lint()
+        assert not result["passed"], "unformatted code must fail the stage"
+        assert "ruff format" in result["detail"], (
+            f"the detail must name WHICH half failed, got: {result['detail']}"
+        )
+
     def test_stage_lint_runs_clean_on_this_repo(self) -> None:
         pm = VerdictUIPM.__new__(VerdictUIPM)
         result = pm.stage_lint()

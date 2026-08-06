@@ -333,11 +333,31 @@ final class HostileSettleTests: XCTestCase {
             XCTFail("a UI that goes quiet must still settle, got \(result)")
             return
         }
+        // TWO assertions, because either alone is defeatable and in opposite
+        // directions (measured, both ways):
+        //
+        // - Derived-only (`after >= Duration.seconds(minimumQuietInterval)`)
+        //   moves WITH the constant: tuning the source floor down to 5 ms
+        //   weakens the assertion to match, and the test passes while the
+        //   guarantee is gone.
+        // - Hardcoded-only (`after >= .milliseconds(30)`) does not notice when
+        //   someone raises the constant and the two silently disagree.
+        //
+        // So: the engine must honour whatever floor it declares, AND that
+        // declared floor must not drop below the value this scenario was built
+        // around. The second is the one that fails when the floor is weakened.
+        let declared = Duration.seconds(LayoutSettle.minimumQuietInterval)
         XCTAssertGreaterThanOrEqual(
             after,
+            declared,
+            "settled after \(after), quicker than the \(declared) floor it declares"
+        )
+        XCTAssertGreaterThanOrEqual(
+            declared,
             .milliseconds(30),
-            "settled after \(after) — quicker than the quiet floor, so a late "
-                + "mutation would be missed"
+            "the quiet floor was lowered to \(declared) — this scenario's late "
+                + "mutation lands ~20 ms out, so a floor under 30 ms stops "
+                + "catching it and the honesty guarantee is quietly gone"
         )
 
         // The point of waiting: a mutation landing inside the floor is IN the

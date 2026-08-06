@@ -436,10 +436,10 @@ MUTATIONS = [
         # Removes the wall-clock floor, restoring "two agreeing checks" to a
         # single 5 ms window — the false quiet that let settle report a still
         # UI while a mutation was still pending.
-        name="settle believes quiet without a wall-clock floor again",
-        path="Sources/VerdictUIProbe/Settle.swift",
-        old="minimumQuiet: LayoutSettle.minimumQuietInterval",
-        new="minimumQuiet: 0",
+        name="the quiet floor is weakened below what the scenario needs",
+        path="Sources/VerdictUIProbe/OracleHost.swift",
+        old="public nonisolated static let minimumQuietInterval: TimeInterval = 0.030",
+        new="public nonisolated static let minimumQuietInterval: TimeInterval = 0.005",
         test="HostileSettleTests/testSettleWaitsOutAMutationScheduledBeyondOnePumpInterval",
     ),
     Mutation(
@@ -451,6 +451,18 @@ MUTATIONS = [
         old='        if not git_is_clean():\n            print("  ABORTED: the working tree changed mid-run")',
         new='        if False:\n            print("  ABORTED: the working tree changed mid-run")',
         test="Tests/test_mutation_check.py::TestMidRunTreeGuard::test_main_aborts_when_the_tree_goes_dirty_mid_run",
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
+        # stage_lint stops reporting any failure. Every pre-existing lint test
+        # checked the tool-missing path, the clean-repo path, or grepped the
+        # PM's own source for the argv it builds — none ran the stage against
+        # BROKEN code, so this mutation passed the whole suite.
+        name="stage_lint stops reporting lint and format failures",
+        path="scripts/verdictui-pm.py",
+        old='            if r.returncode != 0:\n                detail = (r.stdout.strip() or r.stderr.strip() or "no output")[:400]',
+        new='            if False:\n                detail = (r.stdout.strip() or r.stderr.strip() or "no output")[:400]',
+        test="Tests/test_verdictui_pm.py::TestStageWrappers::test_stage_lint_reports_a_format_failure_distinctly",
         runner=Runner.PYTEST,
     ),
 ]
