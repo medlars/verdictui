@@ -1,4 +1,4 @@
-# ADR 2026-004 — SLO 1 gates the median everywhere, the tail only where it means something
+# ADR 2026-004 — SLO 1 gates the median everywhere; the tail is recorded, never asserted
 
 **Date:** 2026-08-06
 **Status:** Active
@@ -28,8 +28,19 @@ diagnosis, kept here because the sampling change is still an improvement on its 
 ## Decision
 
 - **p50 is asserted in every environment** at half the budget (70 ms).
-- **p95 is asserted only in isolation**; under CI or a full-suite run it is *recorded*
-  as `SLO1-PERFORM-LOADED` without failing.
+- **p95 is RECORDED in every environment** as `SLO1-PERFORM-P95`, never asserted.
+
+  > **Amended same day, after the first version failed in production.** The
+  > original decision asserted p95 "only in isolation", detecting the environment
+  > by sniffing `CommandLine.arguments` for an XCTest filter. That detector is
+  > correct for `swift test` vs `swift test --filter` — and useless for the case
+  > that matters, because the PM invokes **`swift test --parallel`**, which spawns
+  > one xctest process *per test class*, each carrying its own `-XCTest <Class>`
+  > filter. The detector therefore read "isolated" at the exact moment every class
+  > on the machine was running at once. Measured: the PM run asserted and failed
+  > at **p95 106.7 ms with p50 at 51.2 ms**, and the session had already reported
+  > itself green. The general fault was inferring a property (machine load) from a
+  > proxy (argv shape) that does not carry it — the same defect shape as lesson 297.
 - Both figures are printed everywhere, so a regression stays visible in the log even
   where it is not fatal.
 - Everything that proves the benchmark actually **ran** — sample count, finiteness
@@ -56,12 +67,20 @@ diagnosis, kept here because the sampling change is still an improvement on its 
 - It still catches real regressions — tripling the settle floor to 90 ms fails the p50
   assertion in a **full-suite** run at 108 ms, naming the figure. Catalogued as a
   mutation row and verified NOTICED.
-- `isUnderFullSuiteLoad` reads `CommandLine.arguments` for the XCTest filter argument,
-  because this is a property of the **run**, not the machine — the same binary is both.
+- Both environment detectors (`isContinuousIntegration`, `isUnderFullSuiteLoad`) are
+  **deleted**. Nothing infers the environment any more, which is the point: p50 is
+  measured at 49.6–51.2 ms in every context observed — isolated, whole-suite, PM
+  parallel, and the breaching run itself — so it needs no environment awareness to
+  carry a hard gate.
+- Verified after the amendment: 3/3 `swift test --parallel --num-workers 1` runs green
+  (the PM's exact invocation), full suite green, and a tripled settle floor still fails
+  the p50 gate **under parallel** — so regression coverage survived the change.
 
 ## Rollback
 
-Delete the `p50` assertion and the `isUnderFullSuiteLoad` branch, restoring the
-unconditional p95 gate. Expect intermittent red on full-suite runs; the mutation row
-`the settle floor triples, tripling inner-loop latency` will still pass, so coverage of
-real regressions is retained either way.
+Replace the `SLO1-PERFORM-P95` print with an `XCTAssertLessThan(p95, performP95BudgetMs)`
+and delete the `p50` assertion. Expect intermittent red — measured p95 ranges 55–107 ms
+across environments on identical code. The mutation row `the settle floor triples,
+tripling inner-loop latency` passes either way, so coverage of real regressions is
+retained; what is lost is the gate's ability to distinguish a regression from
+contention, which is the whole reason for this ADR.
