@@ -15,6 +15,10 @@
   `SettleResult.timedOut(lastDelta:)` and a FAIL `settle-timeout` verdict.
 - SLO 1 warm `currentTree()` gate aligned to `docs/slo.md` (< 100 ms p95); the
   prior 50 ms Wave 2 stretch failed CI under load (~55 ms p95).
+- Wave 3 Task 3: `ProbeAction` in-process injection via `ScenarioState` bindings
+  and `.verdictProbe(..., action:)`; `OracleHost.apply(_:)`; `ToggleLayoutScenario`
+  driven by a real binding. Trust levels (inner vs Wave 8 real events) documented
+  in `docs/kernel.md`.
 
 ### 2026-08-04
 

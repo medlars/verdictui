@@ -1,55 +1,185 @@
 // VerdictUIProbe — SwiftUI instrumentation runtime.
 //
-// Wave 2 Task 4: what a caller hands the harness. A scenario is a name plus a
-// view — nothing more — because everything else the harness needs (the sink, the
-// coordinate space, the pinned environment, the host size) is the harness's job
-// to supply. A scenario author who has to remember to apply `.verdictRoot(into:)`
-// is an author who will forget, and the failure mode of forgetting is an empty
-// tree that looks like a passing verdict.
+// Wave 2 Task 4 + Wave 3 Task 3: a scenario is a name plus a view; the harness
+// owns the sink, coordinate space, pinned environment, and host size. Wave 3
+// stores action bindings on ``ScenarioState`` so `ProbeAction` can mutate the
+// same state the body reads.
+import Combine
 import SwiftUI
 
 /// The state handed to a scenario body on every evaluation.
 ///
-/// ### What it is in Wave 2
+/// One instance per ``OracleHost``, handed to every re-evaluation of the same
+/// scenario's body, never replaced between renders. A reference type so action
+/// injection can mutate bindings that survive re-render. `ObservableObject` so
+/// those mutations invalidate ``ScenarioRoot`` and SwiftUI rebuilds the tree.
 ///
-/// An empty, harness-owned box with a stable identity. That is deliberately all
-/// it is: the type exists now so the `body(state:)` signature does not have to
-/// change later, and so that the *lifetime* guarantee later waves depend on can
-/// be established and tested now — one `ScenarioState` per ``OracleHost``,
-/// handed to every re-evaluation of the same scenario's body, never replaced
-/// between renders.
+/// ### Action bindings
 ///
-/// A reference type for exactly that reason. A struct would be copied into each
-/// body evaluation, so nothing a later wave stores here could survive a
-/// re-render, and the guarantee would be untestable — there would be no identity
-/// to compare. `@MainActor` because SwiftUI evaluates bodies on the main actor
-/// and Wave 3 will mutate this from action injection, so isolating it to the
-/// actor that already owns it makes "no locks, no races" a compiler-checked claim
-/// rather than a comment.
-///
-/// ### What lands here later
-///
-/// - **Wave 3 (settle engine + action injection)**: bindings registered at probe
-///   sites, so `ProbeAction.tap("save")` mutates the scenario's own state
-///   in-process instead of synthesizing an event.
-/// - **Wave 5 (variant sweeps)**: named states and transitions, so
-///   `Sweep.walk(paths:)` can drive a scenario through a state machine and take a
-///   verdict per step.
-///
-/// Neither is modelled here. A speculative `actions` dictionary or a `variant`
-/// field would be API that nothing reads, tested by nothing, and shaped by a
-/// guess about a wave that has not been designed yet — and it would have to be
-/// changed anyway once Wave 3 discovers what a binding registration actually
-/// needs to carry.
+/// Call ``boolBinding(_:default:)``, ``stringBinding(_:default:)``,
+/// ``doubleBinding(_:default:)``, or ``registerTap(_:_:)`` from `body(state:)`
+/// (typically with the same id as `.verdictProbe`), or pass a
+/// ``ProbeSiteAction`` to `.verdictProbe(_:role:text:attributes:action:)`.
+/// ``ProbeAction`` then mutates those registrations in-process.
 @MainActor
-public final class ScenarioState {
-    /// Creates a state box.
-    ///
-    /// Public because a caller rendering a scenario body outside the harness — in
-    /// a `#Preview`, or in a unit test that only wants the view — needs one, and
-    /// making it internal would mean a scenario body could only ever be evaluated
-    /// by VerdictUI. There is nothing to configure and nothing to get wrong.
+public final class ScenarioState: ObservableObject {
+    private var bools: [String: Bool] = [:]
+    private var strings: [String: String] = [:]
+    private var doubles: [String: Double] = [:]
+    private var taps: [String: () -> Void] = [:]
+
     public init() {}
+
+    // MARK: - Binding factories
+
+    /// A bool binding keyed by probe id. The first call seeds `default`; later
+    /// calls reuse the stored value so a re-render does not reset user/actions.
+    public func boolBinding(
+        _ id: String,
+        default defaultValue: Bool = false
+    ) -> Binding<Bool> {
+        if bools[id] == nil {
+            objectWillChange.send()
+            bools[id] = defaultValue
+        }
+        return Binding(
+            get: { self.bools[id] ?? defaultValue },
+            set: {
+                self.objectWillChange.send()
+                self.bools[id] = $0
+            }
+        )
+    }
+
+    /// A string binding keyed by probe id.
+    public func stringBinding(
+        _ id: String,
+        default defaultValue: String = ""
+    ) -> Binding<String> {
+        if strings[id] == nil {
+            objectWillChange.send()
+            strings[id] = defaultValue
+        }
+        return Binding(
+            get: { self.strings[id] ?? defaultValue },
+            set: {
+                self.objectWillChange.send()
+                self.strings[id] = $0
+            }
+        )
+    }
+
+    /// A double binding keyed by probe id (sliders).
+    public func doubleBinding(
+        _ id: String,
+        default defaultValue: Double = 0
+    ) -> Binding<Double> {
+        if doubles[id] == nil {
+            objectWillChange.send()
+            doubles[id] = defaultValue
+        }
+        return Binding(
+            get: { self.doubles[id] ?? defaultValue },
+            set: {
+                self.objectWillChange.send()
+                self.doubles[id] = $0
+            }
+        )
+    }
+
+    /// Register a tap handler for a button-like probe.
+    public func registerTap(_ id: String, _ handler: @escaping () -> Void) {
+        taps[id] = handler
+    }
+
+    /// Install a ``ProbeSiteAction`` under `id` (used by `.verdictProbe(..., action:)`).
+    ///
+    /// For bool/text/slider, copies the current wrapped value into owned storage
+    /// so later ``ProbeAction`` mutations do not need to retain the `Binding`
+    /// (storing `Binding` values on the state object crashed headless hosts).
+    public func register(probeID id: String, action: ProbeSiteAction) {
+        switch action {
+        case .bool(let binding):
+            if bools[id] == nil {
+                objectWillChange.send()
+                bools[id] = binding.wrappedValue
+            }
+        case .text(let binding):
+            if strings[id] == nil {
+                objectWillChange.send()
+                strings[id] = binding.wrappedValue
+            }
+        case .slider(let binding):
+            if doubles[id] == nil {
+                objectWillChange.send()
+                doubles[id] = binding.wrappedValue
+            }
+        case .tap(let handler):
+            taps[id] = handler
+        }
+    }
+
+    // MARK: - ProbeAction performance
+
+    func performTap(_ id: String) throws {
+        if let handler = taps[id] {
+            objectWillChange.send()
+            handler()
+            return
+        }
+        if bools[id] != nil {
+            try performToggle(id)
+            return
+        }
+        throw ProbeActionError.unknownProbe(id)
+    }
+
+    func performToggle(_ id: String) throws {
+        guard let current = bools[id] else {
+            if strings[id] != nil || doubles[id] != nil || taps[id] != nil {
+                throw ProbeActionError.typeMismatch(id: id, expected: "bool")
+            }
+            throw ProbeActionError.unknownProbe(id)
+        }
+        objectWillChange.send()
+        bools[id] = !current
+    }
+
+    func performSetText(_ id: String, _ value: String) throws {
+        guard strings[id] != nil else {
+            if bools[id] != nil || doubles[id] != nil || taps[id] != nil {
+                throw ProbeActionError.typeMismatch(id: id, expected: "string")
+            }
+            throw ProbeActionError.unknownProbe(id)
+        }
+        objectWillChange.send()
+        strings[id] = value
+    }
+
+    func performSetSlider(_ id: String, _ value: Double) throws {
+        guard doubles[id] != nil else {
+            if bools[id] != nil || strings[id] != nil || taps[id] != nil {
+                throw ProbeActionError.typeMismatch(id: id, expected: "double")
+            }
+            throw ProbeActionError.unknownProbe(id)
+        }
+        objectWillChange.send()
+        doubles[id] = value
+    }
+}
+
+/// Installs the harness-owned ``ScenarioState`` so `.verdictProbe(..., action:)`
+/// can register bindings without threading `state` through every modifier.
+private struct VerdictScenarioStateKey: EnvironmentKey {
+    static let defaultValue: ScenarioState? = nil
+}
+
+extension EnvironmentValues {
+    /// The ``OracleHost``-owned scenario state, or `nil` outside a host.
+    public var verdictScenarioState: ScenarioState? {
+        get { self[VerdictScenarioStateKey.self] }
+        set { self[VerdictScenarioStateKey.self] = newValue }
+    }
 }
 
 /// One named, renderable subject for VerdictUI to verify.

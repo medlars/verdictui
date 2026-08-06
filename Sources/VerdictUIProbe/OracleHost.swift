@@ -318,6 +318,10 @@ public final class OracleHost {
     /// ``VerdictClock/advance(by:)``.
     public let clock: VerdictClock
 
+    /// Harness-owned scenario state — the same instance passed to every
+    /// `body(state:)` evaluation and the target of ``apply(_:)``.
+    public let state: ScenarioState
+
     /// How ``applyStateChange(_:)`` wraps injected mutations. Defaults to
     /// ``SettlePolicy/skipAnimations`` — Wave 3's animation control, not the
     /// unwritable `accessibilityReduceMotion` pin.
@@ -375,6 +379,8 @@ public final class OracleHost {
         self.deadline = deadline
         self.settlePolicy = settlePolicy
         self.clock = clock
+        let state = ScenarioState()
+        self.state = state
 
         let requested: Size
         if let viewport {
@@ -388,7 +394,8 @@ public final class OracleHost {
                 rootView: Self.pinned(
                     ScenarioRoot(scenario: scenario, state: ScenarioState()),
                     sink: VerdictTreeSink(),
-                    clock: clock
+                    clock: clock,
+                    state: ScenarioState()
                 )
             )
             requested = Size(measuring.fittingSize)
@@ -401,7 +408,7 @@ public final class OracleHost {
         self.sink = sink
         hostingView = NSHostingView(
             rootView: Self.pinned(
-                ScenarioRoot(scenario: scenario, state: ScenarioState())
+                ScenarioRoot(scenario: scenario, state: state)
                     // Applied by the host, always, in both sizing paths, so
                     // `hostSize` *is* the viewport rather than an upper bound on
                     // it. Without it the root would be content-sized, the root
@@ -410,7 +417,8 @@ public final class OracleHost {
                     // constrain the content it was clamped to protect.
                     .frame(width: resolved.size.width, height: resolved.size.height),
                 sink: sink,
-                clock: clock
+                clock: clock,
+                state: state
             )
         )
         hostingView.frame = CGRect(
@@ -529,6 +537,23 @@ public final class OracleHost {
         caTransactionFlushCount += AnimationControl.apply(settlePolicy, body)
     }
 
+    /// Apply a ``ProbeAction`` to ``state`` under ``settlePolicy``.
+    ///
+    /// Does not settle and does not capture trees — Task 4's `perform` wraps
+    /// this with settle + diff. Throws ``ProbeActionError`` when the probe has
+    /// no compatible binding.
+    public func apply(_ action: ProbeAction) throws {
+        var thrown: (any Error)?
+        applyStateChange {
+            do {
+                try action.apply(to: state)
+            } catch {
+                thrown = error
+            }
+        }
+        if let thrown { throw thrown }
+    }
+
     /// Wait until the hosted UI is quiescent, or until `timeout`.
     ///
     /// Composes main-queue drain, probe-recorder activity, tree stability,
@@ -575,7 +600,8 @@ public final class OracleHost {
     private static func pinned<Content: View>(
         _ view: Content,
         sink: VerdictTreeSink,
-        clock: VerdictClock
+        clock: VerdictClock,
+        state: ScenarioState
     ) -> AnyView {
         // `AnyView` so the class can stay non-generic while `NSHostingView` cannot.
         // It is layout-transparent — it forwards the proposal it receives and
@@ -586,6 +612,7 @@ public final class OracleHost {
                 .verdictRoot(into: sink)
                 .verdictPinnedEnvironment()
                 .environment(\.verdictClock, clock)
+                .environment(\.verdictScenarioState, state)
         )
     }
 
@@ -666,7 +693,7 @@ extension View {
 /// `body(state:)` on every invalidation, with the same state instance each time.
 private struct ScenarioRoot<Scenario: VerdictScenario>: View {
     let scenario: Scenario
-    let state: ScenarioState
+    @ObservedObject var state: ScenarioState
 
     var body: some View {
         scenario.body(state: state)
