@@ -377,6 +377,24 @@ MUTATIONS = [
         new="()",
         test="VerdictClockTests/testCancellationRacingRegistrationIsNeverLost",
     ),
+    Mutation(
+        # Actually DROPS the last catalog entry while its file stays on disk —
+        # the exact drift the three hand-maintained counts cannot see, since
+        # they only ever agree with each other. A comment-only edit here would
+        # score MISSED while changing nothing, which is a worse signal than no
+        # mutation at all.
+        name="a scenario file stops being registered in the catalog",
+        path="Sources/VerdictUIDemoScenarios/DemoScenarios.swift",
+        old="""\
+                make: { CleanSettingsScenario() }
+            ),
+        ]""",
+        new="""\
+                make: { CleanSettingsScenario() }
+            ),
+        ].dropLast()""",
+        test="DemoScenarioCatalogTests/testEveryScenarioFileOnDiskIsRegisteredInTheCatalog",
+    ),
 ]
 
 # XCTest prints this once per suite plus once for the total; the largest count is
