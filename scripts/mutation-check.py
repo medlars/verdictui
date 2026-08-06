@@ -442,6 +442,17 @@ MUTATIONS = [
         new="minimumQuiet: 0",
         test="HostileSettleTests/testSettleWaitsOutAMutationScheduledBeyondOnePumpInterval",
     ),
+    Mutation(
+        # Removes the mid-run clean-tree check, restoring the state where an
+        # edit landing during a ~30 minute sweep makes every later case measure
+        # a tree nobody intended and report SETUP FAILED as if a guard broke.
+        name="a tree going dirty mid-sweep is no longer noticed",
+        path="scripts/mutation-check.py",
+        old='        if not git_is_clean():\n            print("  ABORTED: the working tree changed mid-run")',
+        new='        if False:\n            print("  ABORTED: the working tree changed mid-run")',
+        test="Tests/test_mutation_check.py::TestMidRunTreeGuard::test_main_aborts_when_the_tree_goes_dirty_mid_run",
+        runner=Runner.PYTEST,
+    ),
 ]
 
 # XCTest prints this once per suite plus once for the total; the largest count is
@@ -639,6 +650,16 @@ def main(argv: list[str] | None = None) -> int:
     for mutation in MUTATIONS:
         print(f"\n[{mutation.name}]")
         print(f"  {mutation.path} :: {mutation.test}")
+        # Re-checked per mutation, not just once at the top. A full sweep runs
+        # for ~30 minutes, and an edit landing mid-run makes every case after it
+        # measure a tree nobody intended: the baseline stops building and the
+        # harness reports SETUP FAILED, which reads as a broken guard rather
+        # than as a dirty tree. Measured twice this session on concurrent doc
+        # edits. Aborting names the real cause instead of filing false gaps.
+        if not git_is_clean():
+            print("  ABORTED: the working tree changed mid-run")
+            print("mutation results are only valid on a tree that stays clean")
+            return 2
         if not check(mutation):
             failures.append(mutation.name)
 

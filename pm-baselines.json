@@ -4,7 +4,7 @@
   "metrics": {
     "build_time": 0,
     "test_time": 0,
-    "test_count": 314,
+    "test_count": 317,
     "warning_count": 0,
     "health_score": 100,
     "slo1_perform_p95_ms": 54.3,
