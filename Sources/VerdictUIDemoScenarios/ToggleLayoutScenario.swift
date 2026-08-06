@@ -4,28 +4,18 @@ import VerdictUIKernel
 import VerdictUIProbe
 
 /// **Planted defect**: none, in either state. This is the act-and-observe
-/// fixture, and its Wave 2 job is to be structurally interesting and
-/// deterministic rather than defective.
+/// fixture, and its job is to be structurally interesting and deterministic
+/// rather than defective.
 /// **Rules that must stay silent** in the default (collapsed) state: all of
 /// ``RuleEngine/standardRules``.
 ///
-/// ### Two layouts behind one Bool, and why the state is an initializer
-/// argument
+/// ### Two layouts behind one Bool
 ///
-/// Wave 2 has no action injection: nothing can flip a toggle between two
-/// verdicts yet, so a scenario whose second layout could only be reached by
-/// pressing something would have a second layout nobody could render or verify.
-/// Constructing the state instead — `ToggleLayoutScenario(isExpanded: true)` —
-/// makes both branches renderable *today*, which is what lets Wave 3 assert the
-/// thing it actually cares about: that driving the toggle through
-/// `ProbeAction.tap("advanced-toggle")` produces the tree this initializer
-/// already produces. Without that, the Wave 3 test would be comparing a
-/// post-action tree against nothing.
-///
-/// So the binding here is deliberately `.constant`, and deliberately temporary.
-/// Wave 3 replaces it with one registered on the harness-owned ``ScenarioState``
-/// and drives the same two layouts through an injected action; the probe ids
-/// below are the targets it will name, which is why they are worth pinning now.
+/// Wave 3 drives the toggle through ``ProbeAction/toggle(_:)`` /
+/// ``ProbeAction/tap(_:)`` against the binding registered on
+/// ``ScenarioState``. The initializer still accepts `isExpanded` so tests can
+/// seed either layout without an action (and so the expanded tree remains the
+/// oracle for "what tap should produce").
 ///
 /// ### Why the name does not vary with the state
 ///
@@ -34,8 +24,8 @@ import VerdictUIProbe
 /// different scenarios — so a Wave 3 delta would have nothing to diff against.
 /// The state is a property of the render, not of the scenario's identity.
 /// ``DemoScenarios/all`` therefore enumerates the collapsed state only; the
-/// expanded one is reachable through this initializer, by name, from any test
-/// that wants it.
+/// expanded one is reachable through this initializer or through an injected
+/// action.
 ///
 /// Both layouts are built to produce no findings: the toggle is framed at
 /// 260 x 28 pt (at the 28 pt macOS floor, which the rule reports only *below*),
@@ -45,6 +35,9 @@ public struct ToggleLayoutScenario: VerdictScenario, Sendable {
     /// Baseline key from Wave 5 onward — stable across both states, and not to
     /// be renamed.
     public static let scenarioName = "demo-toggle-layout"
+
+    /// Probe id of the toggle Wave 3 actions target.
+    public static let toggleProbeID = "advanced-toggle"
 
     /// The viewport both states are rendered at. Wide enough that no text is
     /// width-constrained in either branch.
@@ -59,8 +52,8 @@ public struct ToggleLayoutScenario: VerdictScenario, Sendable {
     /// Size of the button that appears in the expanded state.
     public static let actionButtonSize = Size(width: 140, height: 30)
 
-    /// Which layout to render. Wave 3 drives this through an injected action
-    /// instead; see the type's documentation.
+    /// Seed for the toggle binding on first ``ScenarioState/boolBinding(_:default:)``
+    /// call. After that, actions own the value.
     public let isExpanded: Bool
 
     public var name: String { Self.scenarioName }
@@ -73,25 +66,42 @@ public struct ToggleLayoutScenario: VerdictScenario, Sendable {
     }
 
     public func body(state: ScenarioState) -> some View {
+        ToggleLayoutView(
+            isOn: state.boolBinding(Self.toggleProbeID, default: isExpanded)
+        )
+    }
+}
+
+/// Nested so `@Binding` drives `if isOn` invalidation — reading
+/// `binding.wrappedValue` in the scenario body's `@ViewBuilder` was not a
+/// stable observation point under headless hosting.
+private struct ToggleLayoutView: View {
+    @Binding var isOn: Bool
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Toggle("Show advanced options", isOn: .constant(isExpanded))
+            Toggle("Show advanced options", isOn: $isOn)
                 .toggleStyle(.switch)
                 .frame(
-                    width: Self.toggleSize.width,
-                    height: Self.toggleSize.height,
+                    width: ToggleLayoutScenario.toggleSize.width,
+                    height: ToggleLayoutScenario.toggleSize.height,
                     alignment: .leading
                 )
-                .verdictProbe("advanced-toggle", role: .toggle)
+                .verdictProbe(
+                    ToggleLayoutScenario.toggleProbeID,
+                    role: .toggle,
+                    action: .bool($isOn)
+                )
 
-            if isExpanded {
+            if isOn {
                 Text("Cache size: 512 MB")
                     .verdictProbe("advanced-detail", role: .text, text: "Cache size: 512 MB")
 
                 Button("Clear cache") {}
                     .buttonStyle(.plain)
                     .frame(
-                        width: Self.actionButtonSize.width,
-                        height: Self.actionButtonSize.height
+                        width: ToggleLayoutScenario.actionButtonSize.width,
+                        height: ToggleLayoutScenario.actionButtonSize.height
                     )
                     .verdictProbe("clear-cache-button", role: .button)
             } else {

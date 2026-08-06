@@ -349,6 +349,44 @@ extension View {
                 ProbeRecordReporter(id: id, role: role, text: text, attributes: attributes)
             }
     }
+
+    /// Like ``verdictProbe(_:role:text:attributes:)``, and registers an
+    /// in-process ``ProbeSiteAction`` on the harness-owned ``ScenarioState``
+    /// (installed as ``EnvironmentValues/verdictScenarioState``).
+    ///
+    /// Prefer constructing the binding from ``ScenarioState/boolBinding(_:default:)``
+    /// (or string/double/tap) with the same `id`, then passing it here so the
+    /// probe site and the action target cannot drift.
+    public func verdictProbe(
+        _ id: String,
+        role: Role = ProbeRecord.unclassifiedRole,
+        text: String? = nil,
+        attributes: [String: AttributeValue] = [:],
+        action: ProbeSiteAction
+    ) -> some View {
+        if let violation = ProbeRecord.idViolation(id) { preconditionFailure(violation) }
+        return probeLayout(id: id)
+            .background {
+                ProbeRecordReporter(id: id, role: role, text: text, attributes: attributes)
+            }
+            .background {
+                ProbeActionRegistrar(id: id, action: action)
+            }
+    }
+}
+
+/// Registers a ``ProbeSiteAction`` onto ``EnvironmentValues/verdictScenarioState``
+/// during layout. Inert when no host installed the state (previews / unhosted views).
+private struct ProbeActionRegistrar: View {
+    let id: String
+    let action: ProbeSiteAction
+    @Environment(\.verdictScenarioState) private var state
+
+    var body: some View {
+        Color.clear
+            .onAppear { state?.register(probeID: id, action: action) }
+            .onChange(of: id) { _, _ in state?.register(probeID: id, action: action) }
+    }
 }
 
 // MARK: - Root modifier
