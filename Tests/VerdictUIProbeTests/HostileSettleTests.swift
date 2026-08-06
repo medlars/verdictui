@@ -300,6 +300,88 @@ final class HostileSettleTests: XCTestCase {
         }
     }
 
+    // MARK: - The quiet floor
+
+    /// Settle must not call the UI quiet before a mutation scheduled tens of
+    /// milliseconds out has had a chance to land.
+    ///
+    /// The agreement streak used to have no *time* floor: check 1 set the streak
+    /// to 1, one 5 ms pump followed, check 2 reached 2 and settled — so "two
+    /// agreeing checks" spanned a single 5 ms window. Measured before the fix:
+    /// with a mutation scheduled 40 ms out, settle returned
+    /// `settled(after: 0.0056s)` and the harness would have linted the
+    /// pre-mutation tree while asserting the UI was still. That is the exact
+    /// shape of lie the product's "never lie" claim rules out.
+    @MainActor
+    func testSettleWaitsOutAMutationScheduledBeyondOnePumpInterval() async throws {
+        let model = PerpetualMotionModel()
+        let host = OracleHost(
+            scenario: PerpetualMotionScenario(model: model),
+            viewport: Size(width: 200, height: 60)
+        )
+        let before = try await host.currentTree()
+
+        // Inside the quiet floor: this is the class of late work the floor is
+        // built to wait out. A timer scheduled BEYOND the floor is deliberately
+        // not claimed — see the assertion note below.
+        let timer = Timer(timeInterval: 0.020, repeats: false) { _ in model.phase += 1 }
+        RunLoop.main.add(timer, forMode: .common)
+        defer { timer.invalidate() }
+
+        let result = await host.settle(timeout: .seconds(2))
+        guard case .settled(let after) = result else {
+            XCTFail("a UI that goes quiet must still settle, got \(result)")
+            return
+        }
+        XCTAssertGreaterThanOrEqual(
+            after,
+            .milliseconds(30),
+            "settled after \(after) — quicker than the quiet floor, so a late "
+                + "mutation would be missed"
+        )
+
+        // The point of waiting: a mutation landing inside the floor is IN the
+        // tree we hand back, rather than arriving just after we called the UI
+        // quiet.
+        //
+        // Deliberately scoped to work landing WITHIN the floor. A 30 ms floor
+        // cannot promise anything about a mutation scheduled at 40 ms, and a
+        // test asserting otherwise would be asserting a guarantee the code does
+        // not make — it would pass only by accident of scheduling, then fail on
+        // a loaded machine. Work beyond the floor is what the timeout and Wave
+        // 8's independent witness are for, and `Quiescence`'s residual-risk note
+        // says so.
+        let tree = try await host.currentTree()
+        XCTAssertNotEqual(
+            tree, before,
+            "a mutation scheduled inside the quiet floor is missing from the settled tree"
+        )
+    }
+
+    /// The floor must not become a hang: a genuinely static UI still settles
+    /// promptly, just no faster than the floor.
+    @MainActor
+    func testTheQuietFloorDoesNotDelayAStaticSceneBeyondIt() async throws {
+        let host = OracleHost(
+            scenario: QuietBoxScenario(),
+            viewport: Size(width: 80, height: 40)
+        )
+        _ = try await host.currentTree()
+
+        let started = ContinuousClock.now
+        let result = await host.settle(timeout: .seconds(2))
+        let elapsed = started.duration(to: .now)
+
+        guard case .settled = result else {
+            XCTFail("a static scene must settle, got \(result)")
+            return
+        }
+        XCTAssertLessThan(
+            elapsed, .milliseconds(400),
+            "the quiet floor turned a static scene into a slow one (\(elapsed))"
+        )
+    }
+
     // MARK: - Never hang: deadline coverage
 
     /// Every hostile path above must return within a bounded multiple of its own

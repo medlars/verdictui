@@ -413,6 +413,16 @@ MUTATIONS = [
         new="guard true else { return false }",
         test="SemanticNodeTests/testANonFiniteRectIntersectsNothing",
     ),
+    Mutation(
+        # Removes the wall-clock floor, restoring "two agreeing checks" to a
+        # single 5 ms window — the false quiet that let settle report a still
+        # UI while a mutation was still pending.
+        name="settle believes quiet without a wall-clock floor again",
+        path="Sources/VerdictUIProbe/Settle.swift",
+        old="minimumQuiet: LayoutSettle.minimumQuietInterval",
+        new="minimumQuiet: 0",
+        test="HostileSettleTests/testSettleWaitsOutAMutationScheduledBeyondOnePumpInterval",
+    ),
 ]
 
 # XCTest prints this once per suite plus once for the total; the largest count is

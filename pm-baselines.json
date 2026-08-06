@@ -4,11 +4,11 @@
   "metrics": {
     "build_time": 0,
     "test_time": 0,
-    "test_count": 308,
+    "test_count": 314,
     "warning_count": 0,
     "health_score": 100,
-    "slo1_perform_p95_ms": 20.9,
-    "slo1_perform_p50_ms": 19.9,
+    "slo1_perform_p95_ms": 54.3,
+    "slo1_perform_p50_ms": 49.9,
     "slo1_budget_ms": 100
   }
 }
