@@ -560,6 +560,49 @@ class TestVerifyTargets:
         assert mod.verify_targets() == 1
 
 
+class TestMidRunTreeGuard:
+    """A sweep runs for ~30 minutes; the tree must stay clean for ALL of it.
+
+    `git_is_clean` was checked once at the top and then trusted. An edit landing
+    mid-run makes every case after it measure a tree nobody intended: the
+    baseline stops building and the harness prints SETUP FAILED, which reads as
+    a broken guard rather than as a dirty tree. That happened twice in one
+    session on concurrent doc edits, and the second time it filed a false
+    coverage gap against a mutation that was fine.
+    """
+
+    def test_main_aborts_when_the_tree_goes_dirty_mid_run(self, monkeypatch) -> None:
+        mod = _load()
+        calls = {"n": 0}
+
+        def _clean() -> bool:
+            # Clean for the entry check, dirty once the loop starts.
+            calls["n"] += 1
+            return calls["n"] <= 1
+
+        monkeypatch.setattr(mod, "git_is_clean", _clean)
+        # `check` must never run: the abort precedes it.
+        monkeypatch.setattr(
+            mod, "check", lambda _: pytest.fail("check ran after the tree went dirty")
+        )
+        assert mod.main([]) == 2
+
+    def test_a_clean_tree_still_reaches_the_mutations(self, monkeypatch) -> None:
+        """The control: without this, the test above would pass on a `main`
+        that aborted unconditionally."""
+        mod = _load()
+        monkeypatch.setattr(mod, "git_is_clean", lambda: True)
+        seen: list[str] = []
+
+        def _check(mutation) -> bool:
+            seen.append(mutation.name)
+            return True
+
+        monkeypatch.setattr(mod, "check", _check)
+        assert mod.main([]) == 0
+        assert len(seen) == len(mod.MUTATIONS), "not every mutation was reached"
+
+
 class TestMain:
     """Argument handling and the dirty-tree precondition."""
 
