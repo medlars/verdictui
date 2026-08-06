@@ -117,7 +117,8 @@ public enum Quiescence {
         let started = ContinuousClock.now
         let outcome = LayoutSettle.pump(
             view,
-            deadline: timeInterval(for: timeout)
+            deadline: timeInterval(for: timeout),
+            minimumQuiet: LayoutSettle.minimumQuietInterval
         ) {
             progressToken(sink: sink, clock: clock)
         }

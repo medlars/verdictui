@@ -55,6 +55,29 @@ public enum LayoutSettle {
     /// to read a `Double`.
     public nonisolated static let pumpInterval: TimeInterval = 0.005
 
+    /// Wall-clock span the token must hold before quiet is believed.
+    ///
+    /// ``requiredAgreeingChecks`` alone is a COUNT, and two checks are separated
+    /// by exactly one ``pumpInterval`` — so "agreed twice" used to mean "nothing
+    /// changed for 5 ms", which is not a claim worth making about a UI. Measured:
+    /// with a mutation scheduled 40 ms out, settle returned
+    /// `settled(after: 0.0056s)` and the caller would have linted the
+    /// pre-mutation tree while being told the UI was still.
+    ///
+    /// 30 ms is chosen against SLO 1's budget rather than against a theory: the
+    /// act→settle→verdict cycle measured p95 20.5 ms before this floor and the
+    /// SLO is 100 ms. It is a floor, not a guarantee — work landing after it is
+    /// still the timeout's job, and Wave 8's independent witness catches the rest.
+    ///
+    /// Applied by ``Quiescence/settle(view:sink:clock:beforeTree:timeout:)`` only,
+    /// not by ``OracleHost/currentTree()``. `currentTree` is a CAPTURE — it waits
+    /// for the layout it already has to stop moving — while `settle` is the call
+    /// that claims the UI is quiet, so that is where the claim has to be paid for.
+    /// Charging both would cost the floor three times per ``Harness/perform(_:)``
+    /// (capture, settle, capture): measured p95 109.9 ms against a 100 ms SLO,
+    /// i.e. a breach, versus 47 ms when only `settle` pays.
+    public nonisolated static let minimumQuietInterval: TimeInterval = 0.030
+
     /// How many consecutive checks must report the same token before the layout
     /// counts as settled.
     ///
@@ -116,21 +139,37 @@ public enum LayoutSettle {
     public static func pump(
         _ view: NSView,
         deadline: TimeInterval,
+        minimumQuiet: TimeInterval = 0,
         progress: () -> Int?
     ) -> Outcome {
         var previous: Int?
         var agreeingChecks = 0
         var iterations = 0
+        // When the current run of identical tokens began. Reset with the streak,
+        // so a token that changes restarts the clock as well as the count.
+        var quietSince: Date?
         let limit = Date().addingTimeInterval(deadline)
         while true {
             let token = progress()
             if let token {
-                agreeingChecks = token == previous ? agreeingChecks + 1 : 1
+                if token == previous {
+                    agreeingChecks += 1
+                } else {
+                    agreeingChecks = 1
+                    quietSince = Date()
+                }
             } else {
                 agreeingChecks = 0
+                quietSince = nil
             }
             previous = token
-            if agreeingChecks >= requiredAgreeingChecks {
+            // Both conditions: the count proves the token is stable across
+            // observations, the span proves it stayed stable long enough for
+            // work scheduled beyond one pump to have landed.
+            if agreeingChecks >= requiredAgreeingChecks,
+                let quietSince,
+                Date().timeIntervalSince(quietSince) >= minimumQuiet
+            {
                 return .settled(iterations: iterations)
             }
             if Date() >= limit {
