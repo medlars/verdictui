@@ -370,6 +370,45 @@ class VerdictUIPM(PmBase):
             "detail": f"SLO 1 p95 {p95:.2f}ms < {SLO1_P95_BUDGET_MS}ms ({max(executed)} tests)",
         }
 
+    def stage_pytest(self) -> dict:
+        """Run the Python suite CI has run since Wave 0 but the PM never did.
+
+        The PM's own correctness tests live in `Tests/*.py` — including the two
+        that pin `stage_demo`'s historical flag-after-target bug, the mutation
+        catalog's rot guards, and the FILE_REGISTRY parity checks. CI runs them;
+        this stage did not exist, so a local Grade A was strictly weaker than a
+        CI pass, which `stage_demo`'s own docstring calls "the wrong way round
+        for a pre-push gate".
+
+        Asserts on the summary line rather than the exit code alone: pytest
+        exits 0 when it collects NOTHING, so a broken marker or a moved test
+        directory would otherwise read as a fast, clean suite.
+        """
+        r = subprocess.run(  # noqa: S603 -- fixed argv built from constants
+            [sys.executable, "-m", "pytest", "Tests", "-q", "-p", "no:cacheprovider"],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=TIMEOUT_STANDARD,
+        )
+        output = r.stdout + r.stderr
+        match = re.search(r"(\d+) passed", output)
+        if match is None:
+            tail = output.strip().splitlines()
+            detail = tail[-1] if tail else "no output"
+            return {"passed": False, "detail": f"no pytest summary line: {detail}"[:300]}
+        passed = int(match.group(1))
+        if r.returncode != 0:
+            failing = [ln for ln in output.splitlines() if ln.startswith("FAILED")]
+            first = failing[0] if failing else output.strip().splitlines()[-1]
+            return {"passed": False, "detail": first[:300]}
+        if passed == 0:
+            return {
+                "passed": False,
+                "detail": "pytest collected 0 tests -- the suite is not being found",
+            }
+        return {"passed": True, "detail": f"{passed} Python tests PASS"}
+
     def stage_codewatch(self) -> dict:
         try:
             from pm_base_pm_stages import (  # type: ignore  # noqa: PLC0415 — deferred shared-libs import (skip sentinel pattern)
@@ -421,6 +460,7 @@ class VerdictUIPM(PmBase):
             ("stage_demo", self.stage_demo),
             ("stage_mutations", self.stage_mutations),
             ("stage_runtime_bench", self.stage_runtime_bench),
+            ("stage_pytest", self.stage_pytest),
             ("stage_lint", self.stage_lint),
             ("stage_codewatch", self.stage_codewatch),
             ("stage_issuewatch", self.stage_issuewatch),

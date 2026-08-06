@@ -855,3 +855,83 @@ class TestNoSleepsInHarnessSource:
             if self._PATTERN.search(line.split("//", 1)[0])
         ]
         assert offenders, "the sleep detector failed to notice a planted Thread.sleep"
+
+
+class TestStagePytest:
+    """The stage that closes the CI/PM inversion. Its failure paths matter more
+    than its happy one: it exists because a local Grade A used to be weaker
+    than a CI pass, and a version of it that silently passes would restore that
+    gap while looking like it had closed it."""
+
+    @staticmethod
+    def _pm():
+        return VerdictUIPM.__new__(VerdictUIPM)
+
+    @staticmethod
+    def _fake(monkeypatch, *, stdout: str, returncode: int = 0) -> None:
+        class _Result:
+            def __init__(self) -> None:
+                self.stdout = stdout
+                self.stderr = ""
+                self.returncode = returncode
+
+        monkeypatch.setattr(_mod.subprocess, "run", lambda *a, **k: _Result())
+
+    def test_the_real_suite_passes_and_the_count_is_reported(self) -> None:
+        """Runs the REAL stage against a subset, not the whole suite.
+
+        The unrestricted stage runs `Tests/`, which contains this file, which
+        contains this test — so calling it here re-enters the whole suite and
+        blows the stage's own timeout (measured: 120s, then a fail). Pointing it
+        at one leaf file keeps the subprocess, the summary parse, and the count
+        assertion real while removing only the recursion.
+        """
+        pm = self._pm()
+        real_run = _mod.subprocess.run
+
+        def _subset(argv, **kwargs):
+            # Replace the "Tests" target with a file that cannot re-enter.
+            argv = [("Tests/test_file_registry.py" if a == "Tests" else a) for a in argv]
+            return real_run(argv, **kwargs)
+
+        _mod.subprocess.run = _subset
+        try:
+            result = pm.stage_pytest()
+        finally:
+            _mod.subprocess.run = real_run
+        assert result["passed"], result["detail"]
+        assert "Python tests PASS" in result["detail"]
+
+    def test_zero_collected_fails_even_though_pytest_exits_zero(self, monkeypatch) -> None:
+        """`pytest` exits 0 when it collects nothing, so a broken marker or a
+        moved test directory would otherwise read as a fast, clean suite."""
+        self._fake(monkeypatch, stdout="0 passed in 0.01s\n")
+        result = self._pm().stage_pytest()
+        assert not result["passed"]
+        assert "0 tests" in result["detail"]
+
+    def test_a_missing_summary_line_fails_rather_than_passing(self, monkeypatch) -> None:
+        self._fake(monkeypatch, stdout="no tests ran in 0.01s\n")
+        result = self._pm().stage_pytest()
+        assert not result["passed"]
+        assert "no pytest summary" in result["detail"]
+
+    def test_a_failing_test_is_surfaced_by_name(self, monkeypatch) -> None:
+        self._fake(
+            monkeypatch,
+            stdout="FAILED Tests/test_x.py::TestY::test_z - AssertionError\n1 failed, 3 passed\n",
+            returncode=1,
+        )
+        result = self._pm().stage_pytest()
+        assert not result["passed"]
+        assert "test_z" in result["detail"]
+
+    def test_the_stage_is_registered_in_the_pipeline(self) -> None:
+        source = (_PROJECT_ROOT / "scripts" / "verdictui-pm.py").read_text()
+        assert '("stage_pytest", self.stage_pytest)' in source
+
+    def test_the_stage_runs_what_ci_runs(self) -> None:
+        """CI and the PM must not drift apart on WHICH suite they run — that
+        divergence is the whole reason this stage exists."""
+        workflow = (_PROJECT_ROOT / ".github" / "workflows" / "ci.yml").read_text()
+        assert "pytest Tests/" in workflow, "CI no longer runs Tests/ — update this stage with it"
