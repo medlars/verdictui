@@ -1,7 +1,7 @@
 # ADR 2026-002 — Track `pm-baselines.json` (do not gitignore it)
 
-**Date:** 2026-08-05  
-**Status:** Active  
+**Date:** 2026-08-05
+**Status:** Active
 **Author:** Wave 2 third review (end-of-session)
 
 ## Context
