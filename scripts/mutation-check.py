@@ -338,6 +338,20 @@ MUTATIONS = [
 """,
         test="ActionInjectionTests/testUnknownProbeIDThrowsWithEvidence",
     ),
+    Mutation(
+        name="flow keeps running after a step FAILs instead of exiting early",
+        path="Sources/VerdictUIProbe/Harness.swift",
+        old="if step.status == .fail {",
+        new="if false {",
+        test="HarnessTests/testRunStopsEarlyOnTheFirstFailure",
+    ),
+    Mutation(
+        name="act-failure finding cites a probe id the agent never asked for",
+        path="Sources/VerdictUIProbe/Harness.swift",
+        old="nodeID: error.probeID,",
+        new='nodeID: "wrong-id",',
+        test="HarnessTests/testUnknownProbeIDBecomesAFailVerdictNamingTheProbe",
+    ),
 ]
 
 # XCTest prints this once per suite plus once for the total; the largest count is
