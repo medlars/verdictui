@@ -366,6 +366,17 @@ MUTATIONS = [
         new="public nonisolated static let requiredAgreeingChecks = 1",
         test="HostileSettleTests/testInfiniteAnimationTimesOutWithAFailVerdict",
     ),
+    Mutation(
+        # Restores the lost-cancellation race: a `cancel()` that beats the
+        # continuation body to the lock leaves no mark, so the body registers a
+        # waiter nothing will ever resume. Unmutated, this hung the whole xctest
+        # process about one run in three.
+        name="a cancel arriving before registration is silently dropped again",
+        path="Sources/VerdictUIProbe/VerdictClock.swift",
+        old="cancelledBeforeRegistration.insert(id)",
+        new="()",
+        test="VerdictClockTests/testCancellationRacingRegistrationIsNeverLost",
+    ),
 ]
 
 # XCTest prints this once per suite plus once for the total; the largest count is

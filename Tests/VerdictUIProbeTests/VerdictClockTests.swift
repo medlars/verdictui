@@ -37,9 +37,25 @@ final class VerdictClockTests: XCTestCase {
             try await clock.sleep(for: .seconds(10))
             await flag.mark()
         }
-        // Let the sleep register its waiter before we advance.
-        await Task.yield()
-        await Task.yield()
+
+        // Wait for the waiter to actually register — `Task.yield()` does not do
+        // this, and using it here hung the whole suite. `sleep(for:)` computes
+        // its deadline as `now + duration` *inside the task body*, so an
+        // `advance` that lands first silently moves the target: at `now = 3` the
+        // deadline becomes 13, the two advances below total 11, and the waiter
+        // is never resumed. `task.value` then suspends forever and XCTest parks
+        // the main thread in `invokeWithAsynchronousWait`, wedging the process.
+        // Spinning on the observable count is the same synchronisation
+        // `SettleTests` uses, and it is a fact rather than a hope.
+        let registerDeadline = Date().addingTimeInterval(2)
+        while clock.pendingWaiterCount == 0, Date() < registerDeadline {
+            await Task.yield()
+        }
+        XCTAssertEqual(
+            clock.pendingWaiterCount,
+            1,
+            "the sleeper must register before the clock moves, or its deadline shifts"
+        )
 
         clock.advance(by: .seconds(3))
         try await Task.sleep(nanoseconds: 50_000_000)
@@ -68,6 +84,126 @@ final class VerdictClockTests: XCTestCase {
             XCTFail("unexpected error: \(error)")
         }
     }
+
+    /// Regression: a `cancel()` that lands *between* `sleep`'s cancellation
+    /// check and its continuation registering used to be lost entirely.
+    ///
+    /// `withTaskCancellationHandler` runs `onCancel` immediately on the
+    /// cancelling thread; it does not wait for the operation to suspend. So in
+    /// that window `onCancel` found no waiter to resume, and the body then
+    /// registered one that only a 60-second virtual advance could release —
+    /// which never came. The sleep stayed suspended, `task.value` never
+    /// returned, and XCTest's async wrapper parked the *main thread* in
+    /// `invokeWithAsynchronousWait`, hanging the entire test process at 0% CPU
+    /// about one run in three.
+    ///
+    /// Repeating the race is the point: a single attempt lands in the losing
+    /// interleaving only sometimes, so one iteration would be a test that
+    /// passes while the bug is present. Each iteration is independently bounded
+    /// by `withTimeout`, so a regression fails with a named assertion instead
+    /// of re-hanging the suite.
+    func testCancellationRacingRegistrationIsNeverLost() async throws {
+        for attempt in 0..<200 {
+            let clock = VerdictClock()
+            let task = Task {
+                try await clock.sleep(for: .seconds(60))
+            }
+            // No yield: cancelling immediately is what maximises the chance of
+            // landing inside the registration window.
+            task.cancel()
+
+            let outcome = try await Self.withTimeout(seconds: 5) {
+                await task.result
+            }
+            switch outcome {
+            case .success:
+                XCTFail("attempt \(attempt): cancelled sleep must not succeed")
+            case .failure(let error):
+                XCTAssertTrue(
+                    error is CancellationError,
+                    "attempt \(attempt): expected CancellationError, got \(error)"
+                )
+            }
+            XCTAssertEqual(
+                clock.pendingWaiterCount,
+                0,
+                "attempt \(attempt): cancelled sleep leaked a waiter"
+            )
+        }
+    }
+
+    /// Awaits `work`, throwing ``TimeoutError`` rather than hanging if it does
+    /// not finish in `seconds`.
+    ///
+    /// A task group is deliberately *not* used: the failure mode under test is
+    /// a permanently suspended continuation, and a group waits for every child
+    /// at scope exit. Cancelling the child that awaits the stuck task does not
+    /// resume the leaked continuation, so the group itself would hang — the
+    /// timeout helper would reproduce the very defect it exists to bound.
+    ///
+    /// An unstructured `Task` plus a continuation resumed by whichever side
+    /// finishes first has no such join: when the timeout wins, the observer
+    /// task is abandoned (it is cancelled, and the process exits at suite end)
+    /// and the test reports a named failure instead of wedging XCTest.
+    private static func withTimeout<T: Sendable>(
+        seconds: Double,
+        _ work: @escaping @Sendable () async -> T
+    ) async throws -> T {
+        let state = TimeoutState<T>()
+        let observer = Task { @Sendable in
+            let value = await work()
+            state.finish(.success(value))
+        }
+        let timer = Task { @Sendable in
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            state.finish(.failure(TimeoutError()))
+        }
+        defer {
+            observer.cancel()
+            timer.cancel()
+        }
+        return try await withCheckedThrowingContinuation { continuation in
+            state.attach(continuation)
+        }
+    }
+
+    /// Resolves a ``withTimeout(seconds:_:)`` continuation exactly once,
+    /// whichever of the two racing tasks reports first.
+    private final class TimeoutState<T: Sendable>: @unchecked Sendable {
+        private let lock = NSLock()
+        private var continuation: CheckedContinuation<T, any Error>?
+        private var result: Result<T, any Error>?
+        private var isResolved = false
+
+        func attach(_ continuation: CheckedContinuation<T, any Error>) {
+            let pending: Result<T, any Error>? = lock.withLock {
+                guard let result, !isResolved else {
+                    self.continuation = continuation
+                    return nil
+                }
+                isResolved = true
+                return result
+            }
+            if let pending { continuation.resume(with: pending) }
+        }
+
+        func finish(_ value: Result<T, any Error>) {
+            let waiting: CheckedContinuation<T, any Error>? = lock.withLock {
+                guard !isResolved else { return nil }
+                guard let continuation else {
+                    // Raced ahead of `attach`; leave the result for it.
+                    if result == nil { result = value }
+                    return nil
+                }
+                isResolved = true
+                self.continuation = nil
+                return continuation
+            }
+            waiting?.resume(with: value)
+        }
+    }
+
+    private struct TimeoutError: Error {}
 
     // MARK: - Environment + host seams
 

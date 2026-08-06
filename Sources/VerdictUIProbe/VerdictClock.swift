@@ -74,6 +74,22 @@ public final class VerdictClock: Clock, @unchecked Sendable {
     private var _now = Instant(offset: .zero)
     private var waiters: [UUID: Waiter] = [:]
 
+    /// Sleeps whose cancellation arrived before their continuation registered.
+    ///
+    /// `withTaskCancellationHandler` runs `onCancel` immediately on the
+    /// cancelling thread when the task is already cancelled — it does *not*
+    /// wait for the operation body to suspend. So a `cancel()` landing in the
+    /// window between ``sleep(until:tolerance:)``'s `Task.checkCancellation()`
+    /// and the continuation body's insert would find `waiters[id]` empty,
+    /// resume nothing, and never fire again — leaving the sleep suspended for
+    /// a virtual deadline no one will advance to. Recording the id here under
+    /// the same lock that guards `waiters` closes that window: whichever side
+    /// runs second sees the other's mark and resumes the continuation exactly
+    /// once. Measured, not theorised — the losing interleaving hung the whole
+    /// XCTest process (main thread parked in `invokeWithAsynchronousWait`,
+    /// every concurrency worker idle) in roughly one run in three.
+    private var cancelledBeforeRegistration: Set<UUID> = []
+
     public init() {}
 
     public var now: Instant {
@@ -125,21 +141,50 @@ public final class VerdictClock: Clock, @unchecked Sendable {
         if deadline <= now { return }
 
         let id = UUID()
+        // What the continuation body decided to do, resolved under the lock so
+        // it can never disagree with a concurrent `onCancel`.
+        enum Registration {
+            case resumeNow
+            case throwCancelled
+            case suspended
+        }
+        // A cancellation arriving after this sleep finished (resumed by
+        // `advance`, or already-past) leaves a mark no continuation body will
+        // ever consume. Harmless per-sleep, unbounded across a long session, so
+        // every exit from this scope clears its own id.
+        defer { withLock { _ in _ = cancelledBeforeRegistration.remove(id) } }
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
                 // Continuation bodies are synchronous — safe to lock here.
-                let alreadyPast = withLock { now -> Bool in
-                    if deadline <= now { return true }
+                let registration = withLock { now -> Registration in
+                    // Cancellation that beat us to the lock: consume the mark
+                    // and fail here, rather than registering a waiter nothing
+                    // will ever resume.
+                    if cancelledBeforeRegistration.remove(id) != nil {
+                        return .throwCancelled
+                    }
+                    if deadline <= now { return .resumeNow }
                     waiters[id] = Waiter(deadline: deadline, continuation: continuation)
-                    return false
+                    return .suspended
                 }
-                if alreadyPast {
+                switch registration {
+                case .resumeNow:
                     continuation.resume()
+                case .throwCancelled:
+                    continuation.resume(throwing: CancellationError())
+                case .suspended:
+                    break
                 }
             }
         } onCancel: {
             let cancelled = withLock { _ -> CheckedContinuation<Void, any Error>? in
-                waiters.removeValue(forKey: id)?.continuation
+                guard let waiter = waiters.removeValue(forKey: id) else {
+                    // The continuation has not registered yet. Leave a mark the
+                    // body will find; it resumes itself with the error.
+                    cancelledBeforeRegistration.insert(id)
+                    return nil
+                }
+                return waiter.continuation
             }
             cancelled?.resume(throwing: CancellationError())
         }
