@@ -4,6 +4,43 @@
 
 ### 2026-08-06
 
+**Wave 1–3 audit — three P0s, each reproduced before it was fixed.**
+
+- **A NaN frame passed all six lint rules.** Every comparison against NaN is
+  false, so `Rect.isEmpty` answered "this renders" and `intersects` — a negated
+  disjunction — answered "on screen". A button with a NaN frame produced
+  `status=pass, findings=0`; it now produces a `zero-size` error naming the node.
+  Fixed once in `Rect` (non-finite components, origin included, count as empty)
+  rather than in six rules, because it was one arithmetic fact with six
+  symptoms. NaN is what a broken layout actually produces, so the engine was
+  silent on exactly the shapes it exists to catch.
+- **`settle()` reported quiet 5.6 ms in, with a mutation pending 40 ms out.**
+  `requiredAgreeingChecks` is a count with no time dimension, and two checks are
+  one `pumpInterval` (5 ms) apart. `LayoutSettle.pump` now also requires the
+  quiet token to hold for `minimumQuietInterval` (30 ms), charged in `settle()`
+  alone — applying it inside `pump` unconditionally costs the floor three times
+  per `perform()` and measured p95 109.9 ms against a 100 ms SLO. **SLO 1 moves
+  from p95 20.9 ms to 53.8 ms**; the honesty is the reason.
+- **The Swift half of the mutation catalog was unguarded.** `--verify-targets`
+  checked only that the mutated text exists, never that the named witness test
+  does, so a renamed test left it reporting "all 31 targets resolve". The pytest
+  half had had a `--collect-only` existence check since Wave 2.
+
+Governance, from the same audit:
+
+- `stage_pytest` — CI ran the Python suite from Wave 0 and the PM never did, so
+  a local Grade A was strictly weaker than a CI pass and the PM's own
+  correctness tests were unreachable from the PM.
+- `stage_lint` now runs `ruff format --check` as CI does (this session pushed a
+  red build from a locally-green tree), and `stage_build`/`stage_test`/
+  `stage_lint` now fail **closed** when their tool is missing. The test that
+  pinned the lint fail-open as correct behaviour was rewritten.
+- The demo catalog is checked against the filesystem instead of three
+  hand-maintained counts that only ever agreed with each other.
+
+Mutation catalog 31 → 34 rows, each verified by hand with a byte-identical
+restore. 314 Swift + 168 Python tests.
+
 - **Wave 3 complete.** Task 4 `Harness` (`perform` = tree → act → settle → tree →
   diff → lint in one call; `run` batches with early exit) gained the verification
   half it shipped without — 16 tests over every return path, including the act-
