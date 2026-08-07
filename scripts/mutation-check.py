@@ -514,11 +514,32 @@ MUTATIONS = [
     Mutation(
         # Restores the other half: a rect that cannot be placed intersecting
         # everything, which is how a NaN node read as on-screen.
+        # Anchored on the line that FOLLOWS the guard, because `contains` now
+        # carries a byte-identical guard for the same reason and the bare
+        # target text stopped naming exactly one site (caught by
+        # `--verify-targets`, which is what that check is for). Two mutations
+        # sharing a target is not a near-miss — the harness refuses to run
+        # either, since it cannot say which site it broke.
         name="an unplaceable rect intersects everything again",
         path="Sources/VerdictUIKernel/SemanticNode.swift",
-        old="guard !isEmpty, !other.isEmpty else { return false }",
-        new="guard true else { return false }",
+        old=(
+            "guard !isEmpty, !other.isEmpty else { return false }\n        return !(other.x >= maxX"
+        ),
+        new="guard true else { return false }\n        return !(other.x >= maxX",
         test="SemanticNodeTests/testANonFiniteRectIntersectsNothing",
+    ),
+    Mutation(
+        # The same arithmetic fact one function down. Without the guard an
+        # INVERTED rect has maxX < x, so every inequality in `contains` holds
+        # for a rectangle sitting entirely outside it. Zero call sites today,
+        # which is why it is worth pinning now: the first Wave 5 clipping rule
+        # to reach for it would inherit a silent wrong answer, exactly as a NaN
+        # frame once passed all six rules through `intersects`.
+        name="a rect with no area contains things again",
+        path="Sources/VerdictUIKernel/SemanticNode.swift",
+        old=("guard !isEmpty, !other.isEmpty else { return false }\n        return other.x >= x"),
+        new="guard true else { return false }\n        return other.x >= x",
+        test="SemanticNodeTests/testContainsIsFalseForDegenerateRectanglesInBothDirections",
     ),
     Mutation(
         # Removes the wall-clock floor, restoring "two agreeing checks" to a
@@ -612,6 +633,24 @@ MUTATIONS = [
         old="        if shared == first.count - 1 && shared == second.count - 1 { return false }",
         new="        if false { return false }",
         test="VerdictUIKernelTests.ContentOverlapRuleTests/testDirectSiblingsAreLeftToSiblingOverlapRule",
+        runner=Runner.SWIFT,
+    ),
+    Mutation(
+        # The same widening one rule over. sibling-overlap had NO tolerance at
+        # all until this row's guard shipped, so a 0.01 pt sliver was an ERROR
+        # here and silently fine in content-overlap on identical geometry. The
+        # mutation restores the silencer direction rather than the missing-guard
+        # direction because a tolerance that can grow untested is the failure
+        # that outlives the fix: the test's second arm (a real 1 pt overlap)
+        # is what has to stay red.
+        name="sibling-overlap tolerance widens into silence",
+        path="Sources/VerdictUIKernel/Rules/SiblingOverlapRule.swift",
+        old="    public static let tolerance = 0.5",
+        new="    public static let tolerance = 50.0",
+        test=(
+            "VerdictUIKernelTests.SiblingOverlapRuleTests/"
+            "testSubPixelOverlapIsToleratedButRealOverlapIsStillCaught"
+        ),
         runner=Runner.SWIFT,
     ),
     Mutation(

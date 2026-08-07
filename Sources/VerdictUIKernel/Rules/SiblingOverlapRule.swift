@@ -15,6 +15,22 @@ import Foundation
 public struct SiblingOverlapRule: LintRule {
     public static let id = "sibling-overlap"
 
+    /// Overlap below this is float noise from layout arithmetic, not a defect.
+    ///
+    /// Deliberately spelled the same as ``ContentOverlapRule/tolerance``, and
+    /// equal to ``LintContext/truncationTolerance``'s default: the three judge
+    /// the same class of float artifact, so a hairline that one ignores and
+    /// another reports as an ERROR is the rules disagreeing about identical
+    /// geometry. A false positive here is not cosmetic — it teaches an agent to
+    /// discount overlap findings, which is worse than the rule not existing.
+    ///
+    /// A static rather than a ``LintContext`` knob, because making it tunable
+    /// changes a public type's shape for a value no caller has asked to tune.
+    /// If a third rule ever needs it, promote all three to one
+    /// `context.overlapTolerance` in a single commit rather than growing a
+    /// fourth spelling here.
+    public static let tolerance = 0.5
+
     public init() {}
 
     public func evaluate(_ root: SemanticNode, context: LintContext) -> [Finding] {
@@ -28,6 +44,10 @@ public struct SiblingOverlapRule: LintRule {
                     guard Self.isEligible(lower), Self.isEligible(upper) else { continue }
                     guard lower.zIndex == nil, upper.zIndex == nil else { continue }
                     guard let overlap = lower.frame.intersection(upper.frame) else { continue }
+                    // A shared edge or a hairline of float noise is not a collision.
+                    guard overlap.width > Self.tolerance, overlap.height > Self.tolerance else {
+                        continue
+                    }
                     let finding = context.makeFinding(
                         rule: Self.id,
                         node: upper,

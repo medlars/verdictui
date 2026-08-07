@@ -59,6 +59,40 @@ final class SiblingOverlapRuleTests: XCTestCase {
         )
     }
 
+    /// Sub-pixel overlap is float noise, not a layout defect — and this rule
+    /// must say so on the same terms ``ContentOverlapRule`` already does.
+    ///
+    /// The two rules judge the same class of evidence: two frames sharing
+    /// area. `ContentOverlapRule` ignores anything under 0.5 pt, matching
+    /// `TruncationRule`'s tolerance for the same float artifacts. This rule had
+    /// no tolerance at all, so a 0.01 pt sliver — well under a device pixel, and
+    /// routinely produced by SwiftUI's own rounding — was reported as an ERROR
+    /// by one rule and silently accepted by the other on identical geometry.
+    ///
+    /// A false positive here is not cosmetic: it trains an agent to discount
+    /// overlap findings, which is the same failure mode that makes a
+    /// false-positive rule worse than a missing one.
+    ///
+    /// Paired deliberately with a real overlap just past the threshold, so
+    /// "the rule stopped reporting anything" cannot satisfy this test.
+    func testSubPixelOverlapIsToleratedButRealOverlapIsStillCaught() {
+        // 0.01 pt of shared width — noise.
+        let noise = Fixture.root([box("a", x: 0), box("b", x: 59.99)])
+        XCTAssertTrue(
+            rule.evaluate(noise, context: Fixture.context()).isEmpty,
+            "0.01 pt is float noise, not a layout defect — and ContentOverlapRule "
+                + "already ignores it, so reporting it here makes the two rules "
+                + "disagree about identical geometry"
+        )
+
+        // Just past the tolerance — a real, if small, overlap.
+        let real = Fixture.root([box("a", x: 0), box("b", x: 59.0)])
+        XCTAssertEqual(
+            rule.evaluate(real, context: Fixture.context()).count, 1,
+            "1 pt of overlap is above the noise floor and must still be reported"
+        )
+    }
+
     func testEmptyOrInvisibleSiblingsAreIgnored() {
         var invisible = box("b", x: 50)
         invisible.isVisible = false

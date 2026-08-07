@@ -490,7 +490,17 @@ public struct Rect: Equatable, Codable, Sendable {
     }
 
     /// True when `other` lies entirely inside this rectangle (edges inclusive).
+    ///
+    /// A rectangle enclosing no area — zero or negative extent, or any
+    /// non-finite component — contains nothing and is contained by nothing.
+    /// The guard is the same one ``intersects(_:)`` carries, and for the same
+    /// reason: without it an INVERTED rect has `maxX < x`, so all four
+    /// inequalities below can hold for a rectangle sitting entirely outside it
+    /// (`Rect(x: 100, y: 100, width: -80, height: -80)` "contains" a box at
+    /// 30,30). Containment is a claim about area, so a shape with none cannot
+    /// make it in either direction.
     public func contains(_ other: Rect) -> Bool {
-        other.x >= x && other.y >= y && other.maxX <= maxX && other.maxY <= maxY
+        guard !isEmpty, !other.isEmpty else { return false }
+        return other.x >= x && other.y >= y && other.maxX <= maxX && other.maxY <= maxY
     }
 }
