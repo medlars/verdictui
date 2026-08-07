@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+### 2026-08-06 (later)
+
+**New rule `content-overlap` — the overflow no single container can be blamed for.**
+
+- **`sibling-overlap` was blind by construction to the most common real VStack
+  overflow.** It compares children of one parent, so a `Text` that outgrows its
+  row and covers the *next* row's text — different parents — was never compared,
+  and the engine returned PASS on a visibly broken screen. `ContentOverlapRule`
+  compares leaf content across unrelated branches, leaving ancestors, direct
+  siblings and containers themselves deliberately silent so ordinary nesting
+  does not report. Layering (`zIndex`, a `zstack` ancestor) is honoured along
+  the whole ancestor path. `RuleEngine.standardRules` is now **seven** rules.
+- **The docs rule-count no longer pins a literal.** A hand-written count
+  describes the moment someone last typed it, not the catalog; the test now
+  counts the document's own catalog headings, which also catches the reverse
+  drift a `contains` loop cannot see — a section for a rule that no longer
+  exists in the standard set.
+- Mutation catalog 38 → 42 rows. One of the four was UNNOTICED on the first
+  sweep and correctly so: the ancestry guard is unreachable from `evaluate`
+  (only leaves become subjects), so its witness was repointed to a direct seam
+  assertion. Verifying that a target's TEXT resolves is not verifying that the
+  named test can execute the branch.
+
 ### 2026-08-06
 
 **Wave 1–3 audit — three P0s, each reproduced before it was fixed.**
