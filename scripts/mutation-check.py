@@ -212,6 +212,52 @@ MUTATIONS = [
         ),
         runner=Runner.PYTEST,
     ),
+    # The bench stage gates the MEDIAN, not the tail. Three rows, because the
+    # decision has three independently-breakable halves and one row would let
+    # the other two rot silently.
+    Mutation(
+        # The regression direction. Without this the stage could stop failing
+        # altogether and the "does not fail on a contended tail" row below
+        # would still pass — a gate that never fails satisfies it perfectly.
+        name="the bench stage stops failing on a regressed median",
+        path="scripts/verdictui-pm.py",
+        old="if p50 >= SLO1_P50_BUDGET_MS:",
+        new="if False:",
+        test=(
+            "Tests/test_verdictui_pm.py::TestStageRuntimeBench::"
+            "test_a_regressed_median_fails_even_with_a_healthy_tail"
+        ),
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
+        # The false-positive direction — the actual 2026-08-07 defect restored
+        # verbatim. This is the row that would have caught it: the stage asserted
+        # a statistic that moves with machine load, so it failed at p95 105.51 ms
+        # on a healthy p50 of 49.09 ms.
+        name="the bench stage goes back to gating the contended tail",
+        path="scripts/verdictui-pm.py",
+        old="if p50 >= SLO1_P50_BUDGET_MS:",
+        new="if tail is not None and float(tail.group(1)) >= SLO1_P95_BUDGET_MS:",
+        test=(
+            "Tests/test_verdictui_pm.py::TestStageRuntimeBench::"
+            "test_a_contended_tail_does_not_fail_the_stage"
+        ),
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
+        # The two thresholds live in different languages and neither file can
+        # see the other, so their agreement is only real while something
+        # compares them. Moving one here must fail.
+        name="the PM's p50 budget drifts from the Swift test's",
+        path="scripts/verdictui-pm.py",
+        old="SLO1_P50_BUDGET_MS = 70.0",
+        new="SLO1_P50_BUDGET_MS = 85.0",
+        test=(
+            "Tests/test_verdictui_pm.py::TestStageRuntimeBench::"
+            "test_the_gated_budget_agrees_with_the_swift_test"
+        ),
+        runner=Runner.PYTEST,
+    ),
     # Wave 4 Task 1 — the macro target's isolation. All three of these are
     # manifest-shaped: they change no behaviour and break no Swift test, so
     # `swift test` is blind to every one of them. That is precisely why they

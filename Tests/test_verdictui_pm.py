@@ -780,7 +780,61 @@ class TestStageRuntimeBench:
         )
         result = self._pm().stage_runtime_bench()
         assert not result["passed"]
-        assert "140.50ms" in result["detail"]
+        assert "90.00ms" in result["detail"]
+
+    def test_a_contended_tail_does_not_fail_the_stage(self, monkeypatch) -> None:
+        """The figures below are a REAL measurement, not an invented shape:
+        the PM run of 2026-08-07 reported exactly this pair while two isolated
+        runs of the same commit gave p95 58.43 and 77.01 ms on an unchanged
+        p50. `HarnessPerformanceTests` already decided this — it records p95
+        and asserts p50, because p95 moves 56.7 -> 106.7 ms purely with
+        contention while p50 sits at 49.6-51.2 ms in every context observed.
+
+        The stage re-imposed the tail gate one level up, so the decision held
+        in the test and was reversed by its own consumer. A gate that fails
+        for load teaches its reader to ignore it, which is the failure mode
+        that makes a false positive worse than a missing check."""
+        self._fake_swift(
+            monkeypatch,
+            stdout="SLO1-PERFORM p50=49.09ms p95=105.51ms mean=50.00ms max=140.0ms n=150\n"
+            "Executed 2 tests, with 0 failures\n",
+        )
+        result = self._pm().stage_runtime_bench()
+        assert result["passed"], result["detail"]
+        # Recorded, so a human reading the log still sees the tail.
+        assert "105.51" in result["detail"]
+
+    def test_a_regressed_median_fails_even_with_a_healthy_tail(self, monkeypatch) -> None:
+        """The other direction, which is the one that matters: the median is
+        the load-stable statistic, so it is the one that can carry a claim
+        about the CODE. A p50 over its budget is a regression even when the
+        tail happens to look fine, and asserting only the tail would miss it.
+
+        Paired with the test above so 'the stage stopped failing' cannot
+        satisfy both — one demands PASS on a contended tail, the other demands
+        FAIL on a moved median."""
+        self._fake_swift(
+            monkeypatch,
+            stdout="SLO1-PERFORM p50=88.00ms p95=95.00ms mean=89.00ms max=99.0ms n=150\n"
+            "Executed 2 tests, with 0 failures\n",
+        )
+        result = self._pm().stage_runtime_bench()
+        assert not result["passed"]
+        assert "88.00ms" in result["detail"]
+
+    def test_a_missing_p50_fails_rather_than_falling_back_to_the_tail(self, monkeypatch) -> None:
+        """The gated figure must be the one parsed. A line carrying p95 but no
+        p50 means the reporting format moved under the stage, and reading
+        whichever number is present would silently re-point the gate at the
+        statistic this change exists to stop asserting."""
+        self._fake_swift(
+            monkeypatch,
+            stdout="SLO1-PERFORM p95=32.00ms mean=22.0ms n=150\n"
+            "Executed 2 tests, with 0 failures\n",
+        )
+        result = self._pm().stage_runtime_bench()
+        assert not result["passed"]
+        assert "did not report" in result["detail"]
 
     def test_a_missing_summary_line_fails_rather_than_passing_quietly(self, monkeypatch) -> None:
         """The benchmark ran tests but printed no figure. That is not health —
@@ -807,16 +861,42 @@ class TestStageRuntimeBench:
         assert not result["passed"]
 
     def test_budget_boundary_is_exclusive(self, monkeypatch) -> None:
-        """p95 exactly at the budget fails. SLO 1 reads '< 100 ms', so 100.00
-        is over, and pinning it here stops a later refactor turning `>=` into
-        `>` without anyone noticing."""
+        """p50 exactly at its budget fails. The budget reads '<', so a figure
+        landing on it is over, and pinning it here stops a later refactor
+        turning `>=` into `>` without anyone noticing.
+
+        Asserted on the GATED statistic. It formerly fed the boundary through
+        p95, which stopped testing the boundary the moment the gate moved --
+        a boundary test aimed at a recorded-only number cannot fail for the
+        reason it exists."""
         self._fake_swift(
             monkeypatch,
-            stdout=f"SLO1-PERFORM p50=50.0ms p95={_mod.SLO1_P95_BUDGET_MS:.2f}ms n=60\n"
+            stdout=f"SLO1-PERFORM p50={_mod.SLO1_P50_BUDGET_MS:.2f}ms p95=80.0ms n=150\n"
             "Executed 2 tests, with 0 failures\n",
         )
         result = self._pm().stage_runtime_bench()
         assert not result["passed"]
+
+    def test_the_gated_budget_agrees_with_the_swift_test(self) -> None:
+        """Two files hold this threshold and neither can see the other, so the
+        agreement is only real if something compares them. The Swift test
+        spells it `50 * 1.4`; the PM cannot import Swift, so the number is
+        duplicated and this test is the joint.
+
+        Without it, moving one and not the other gives a PM that passes a
+        median the test rejects (or the reverse) -- and the disagreement is
+        invisible from either side, which is exactly how the p95 gate survived
+        being retired in the test while the PM kept asserting it."""
+        source = (
+            _PROJECT_ROOT / "Tests" / "VerdictUIProbeTests" / "HarnessPerformanceTests.swift"
+        ).read_text()
+        match = re.search(r"performP50BudgetMs:\s*Double\s*=\s*([0-9.]+)\s*\*\s*([0-9.]+)", source)
+        assert match is not None, "performP50BudgetMs is no longer spelled as a product"
+        swift_budget = float(match.group(1)) * float(match.group(2))
+        assert swift_budget == _mod.SLO1_P50_BUDGET_MS, (
+            f"the Swift test asserts p50 < {swift_budget} ms but the PM gates at "
+            f"{_mod.SLO1_P50_BUDGET_MS} ms — one moved without the other"
+        )
 
     def test_swift_failure_is_surfaced_not_swallowed(self, monkeypatch) -> None:
         self._fake_swift(
