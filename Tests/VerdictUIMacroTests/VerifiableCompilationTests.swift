@@ -104,6 +104,39 @@ final class VerifiableCompilationTests: XCTestCase {
         )
     }
 
+    /// The shape that nearly shipped unprobed: a container carrying a modifier.
+    @Verifiable
+    struct ModifiedContainerRow: View {
+        var body: some View {
+            VStack {
+                Text("alpha")
+                Text("beta")
+            }.padding(7)
+        }
+    }
+
+    func testEveryElementInsideAModifiedContainerReachesTheTree() throws {
+        // `VStack { … }.padding()` is the commonest shape in real SwiftUI, and
+        // it was silently producing an EMPTY tree: the outer call is `.padding`,
+        // whose callee is a member access whose base holds the closure, and the
+        // walk was not recursing there. Every rule then reports PASS on a screen
+        // nobody instrumented.
+        //
+        // Asserted at RUNTIME rather than only in a snapshot, because the
+        // snapshot compares generated text and this failure is about what
+        // reaches the kernel.
+        let tree = try renderTree { sink in
+            AnyView(ModifiedContainerRow().verdictProbedBody(into: sink))
+        }
+        let lines = descriptors(of: tree)
+        for expected in ["alpha", "beta"] {
+            XCTAssertTrue(
+                lines.contains { $0.hasSuffix("|text|\(expected)") },
+                "'\(expected)' never reached the tree from inside a modified container: \(lines)"
+            )
+        }
+    }
+
     func testAnUnprobedElementIsProbedByTheMacroAlone() throws {
         // Wave 4 Task 2. The tree from a view carrying no manual probe must
         // still contain a node for its `Text`, with the text it renders and the

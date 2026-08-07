@@ -624,6 +624,19 @@ MUTATIONS = [
         test="VerdictUIMacroTests.VerifiableMacroTests/testAMultiStatementBodyIsReportedRatherThanSilentlyLeftUnprobed",
         runner=Runner.SWIFT,
     ),
+    Mutation(
+        # The walk stops recursing into a call's callee, so everything inside
+        # `VStack { … }.padding(7)` — the commonest shape in real SwiftUI — goes
+        # unprobed and the tree comes back empty. This shipped as a real bug and
+        # was caught only by testing the modified shape explicitly; a suite of
+        # unmodified containers stayed green throughout.
+        name="body walk skips everything inside a modified container",
+        path="Sources/VerdictUIMacros/BodyProbeWalk.swift",
+        old="            updated.calledExpression = rewriteChildren(of: call.calledExpression)",
+        new="            updated.calledExpression = call.calledExpression",
+        test="VerdictUIMacroTests.VerifiableCompilationTests/testEveryElementInsideAModifiedContainerReachesTheTree",
+        runner=Runner.SWIFT,
+    ),
 ]
 
 # XCTest prints this once per suite plus once for the total; the largest count is
