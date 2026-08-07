@@ -585,8 +585,13 @@ MUTATIONS = [
         # every real one — goes unprobed while a suite of bare elements passes.
         name="body walk fails to see an element through its modifiers",
         path="Sources/VerdictUIMacros/BodyProbeWalk.swift",
-        old="                return calleeIdentifier(of: base)\n            }\n            return nil\n        }\n        if let member = expression.as(MemberAccessExprSyntax.self), let base = member.base {\n            return calleeIdentifier(of: base)\n        }\n        return nil",
-        new="                return nil\n            }\n            return nil\n        }\n        if let member = expression.as(MemberAccessExprSyntax.self), let base = member.base {\n            return calleeIdentifier(of: base)\n        }\n        return nil",
+        # Single-line and uniquely anchored on purpose. The first version of this
+        # row was a multi-line block written to disambiguate a repeated `return
+        # calleeIdentifier(of: base)`, and the sweep scored it INCONCLUSIVE — the
+        # mutated source did not compile, so it measured nothing. A mutation that
+        # cannot build is not a weak witness, it is no witness.
+        old="        guard let callee = calleeIdentifier(of: expression) else { return nil }",
+        new="        guard let callee = expression.as(FunctionCallExprSyntax.self)?.calledExpression\n            .as(DeclReferenceExprSyntax.self)?.baseName.text else { return nil }",
         test="VerdictUIMacroTests.VerifiableMacroTests/testAModifiedElementIsStillRecognisedThroughItsChain",
         runner=Runner.SWIFT,
     ),
@@ -625,16 +630,31 @@ MUTATIONS = [
         runner=Runner.SWIFT,
     ),
     Mutation(
-        # The walk stops recursing into a call's callee, so everything inside
-        # `VStack { … }.padding(7)` — the commonest shape in real SwiftUI — goes
-        # unprobed and the tree comes back empty. This shipped as a real bug and
-        # was caught only by testing the modified shape explicitly; a suite of
-        # unmodified containers stayed green throughout.
-        name="body walk skips everything inside a modified container",
+        # `descendingChain` walks INTO a modifier-chain link to reach the
+        # element's children; making it probe instead leaves everything inside
+        # `VStack { … }.padding(7)` unprobed, which is how this shipped as a
+        # real bug. It exists as a named method precisely so this is ONE edit:
+        # its two call sites are jointly required, so while they were spelled
+        # inline every single-line mutation scored UNNOTICED on correct code.
+        #
+        # The witness is a SNAPSHOT, and specifically the modifier-chain one:
+        # making `descendingChain` probe wraps the element MID-CHAIN, which is
+        # what `testAModifiedElementIsStillRecognisedThroughItsChain` pins.
+        # `testElementsInsideAModifiedContainerAreStillProbed` — the obvious
+        # candidate by name — does NOT fail, and the witness was chosen by
+        # reading which tests the mutated build actually failed rather than by
+        # picking the one whose name matched the defect.
+        #
+        # No runtime test can witness this: the rendered tree still resolves the
+        # child through SwiftUI's own builder, so it is identical either way. A
+        # runtime test is the stronger oracle for "does this reach the kernel"
+        # and the weaker one for "did the macro emit the probe" — the layer has
+        # to match the claim.
+        name="body walk probes a modified container instead of descending it",
         path="Sources/VerdictUIMacros/BodyProbeWalk.swift",
-        old="            updated.calledExpression = rewriteChildren(of: call.calledExpression)",
-        new="            updated.calledExpression = call.calledExpression",
-        test="VerdictUIMacroTests.VerifiableCompilationTests/testEveryElementInsideAModifiedContainerReachesTheTree",
+        old="        rewriteChildren(of: expression)",
+        new="        rewrite(expression)",
+        test="VerdictUIMacroTests.VerifiableMacroTests/testAModifiedElementIsStillRecognisedThroughItsChain",
         runner=Runner.SWIFT,
     ),
 ]
