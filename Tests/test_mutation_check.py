@@ -147,6 +147,38 @@ class TestPytestRunner:
             if mutation.runner is mod.Runner.SWIFT:
                 assert "::" not in mutation.test, f"node id on a swift runner: {mutation.test}"
 
+    def test_the_bench_stage_gate_conditions_are_all_mutated(self) -> None:
+        """Every threshold comparison in `stage_runtime_bench` needs a row.
+
+        This stage decides SLO 1, the product thesis in one number, and it
+        shipped on 2026-08-07 asserting a statistic its own Swift test had
+        already retired — failing at p95 105.51 ms on a healthy p50 of
+        49.09 ms. Nothing caught that, because the catalog had no row for
+        WHICH figure the stage gates on: a guard can be wrong in both
+        directions (never failing, or failing for load) and the existing
+        rows see neither.
+
+        Asserts coverage of the CONDITIONS rather than a fixed count, so
+        adding a threshold to the stage fails this until it is mutated —
+        a count would merely need to be bumped."""
+        mod = _load()
+        pm_source = (_PROJECT_ROOT / "scripts" / "verdictui-pm.py").read_text()
+        stage = pm_source.split("def stage_runtime_bench")[1].split("\n    def ")[0]
+
+        conditions = [
+            line.strip()
+            for line in stage.splitlines()
+            if line.strip().startswith("if ") and "BUDGET_MS" in line
+        ]
+        assert conditions, "stage_runtime_bench compares against no budget at all"
+
+        mutated = {m.old for m in mod.MUTATIONS if m.path == "scripts/verdictui-pm.py"}
+        for condition in conditions:
+            assert condition in mutated, (
+                f"stage_runtime_bench gates on `{condition}` and no mutation breaks it — "
+                "an unmutated threshold is a gate nobody has shown can fail"
+            )
+
     def test_every_pytest_mutation_names_a_node_id_that_exists(self) -> None:
         # A `--filter`-style name would silently select nothing under pytest.
         mod = _load()
