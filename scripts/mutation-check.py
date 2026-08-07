@@ -480,11 +480,18 @@ MUTATIONS = [
         # content-overlap stops exempting ancestors, so every child overlapping
         # its own parent reports. Guards the rule against the false-positive
         # flood that would make it unusable on any real tree.
+        #
+        # The witness is the SEAM test, not the evaluate()-level one. This row
+        # first pointed at testContentInsideItsOwnAncestorsIsNotOverlap and came
+        # back UNNOTICED: only leaves become subjects, so no pair reaching
+        # isCrossBranch is ever ancestor-related and the branch is unreachable
+        # from the public entry point. A tree-level test can never kill this
+        # mutation — only a direct assertion on the guard can.
         name="content-overlap compares a node with its own ancestors",
         path="Sources/VerdictUIKernel/Rules/ContentOverlapRule.swift",
         old="        guard shared < first.count, shared < second.count else { return false }",
         new="        guard shared < first.count, shared < second.count else { return true }",
-        test="VerdictUIKernelTests.ContentOverlapRuleTests/testContentInsideItsOwnAncestorsIsNotOverlap",
+        test="VerdictUIKernelTests.ContentOverlapRuleTests/testAncestryIsRejectedAndUnrelatedBranchesAreAcceptedAtTheSeam",
         runner=Runner.SWIFT,
     ),
     Mutation(
