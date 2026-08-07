@@ -102,20 +102,7 @@ struct BodyProbeWalk {
     private mutating func rewriteChildren(of expression: ExprSyntax) -> ExprSyntax {
         if let call = expression.as(FunctionCallExprSyntax.self) {
             var updated = call
-            // The callee is walked, not just the arguments. In
-            // `VStack { … }.padding(7)` — the most common shape in real SwiftUI —
-            // the outer call is `.padding(7)`, whose callee is a member access
-            // whose BASE holds the `VStack` and its closure. Recursing only into
-            // arguments and trailing closures never reaches it, so everything
-            // inside the container was left unprobed while a test suite written
-            // with unmodified containers stayed green.
-            //
-            // `rewriteChildren` rather than `rewrite`: the callee position is
-            // not a view expression in its own right (a probe appended there
-            // would land inside the chain rather than around the element), and
-            // the element at its base is probed by THIS call's own recognition
-            // step, which reads through the chain.
-            updated.calledExpression = rewriteChildren(of: call.calledExpression)
+            updated.calledExpression = descendingChain(call.calledExpression)
             updated.arguments = LabeledExprListSyntax(
                 call.arguments.map { argument in
                     var copy = argument
@@ -136,18 +123,35 @@ struct BodyProbeWalk {
 
         if let member = expression.as(MemberAccessExprSyntax.self), let base = member.base {
             var updated = member
-            // `rewriteChildren`, never `rewrite`. A member access reached from
-            // here is a LINK IN A MODIFIER CHAIN, and the element at its base is
-            // the caller's own subject — recognition reads through the chain to
-            // find it. Probing here as well would wrap the element mid-chain
-            // (`VStack{…}.verdictProbe(…).padding(7)`) and then probe the whole
-            // chain again outside, giving one element two ids and making
-            // DuplicateProbeIDRule report the instrumentation as the defect.
-            updated.base = rewriteChildren(of: base)
+            updated.base = descendingChain(base)
             return ExprSyntax(updated)
         }
 
         return expression
+    }
+
+    /// Walks INTO a modifier-chain link to reach the element's children, without
+    /// probing anything at this position.
+    ///
+    /// `VStack { … }.padding(7)` — the most common shape in real SwiftUI — is
+    /// an outer `.padding(7)` call whose callee is a member access whose BASE
+    /// holds the `VStack` and its closure. Both the callee position and the
+    /// member's base sit on that path, so a walk that descends neither leaves
+    /// everything inside the container unprobed, and `@Verifiable` yields a tree
+    /// with a root and nothing under it. That shipped as a real bug.
+    ///
+    /// Never `rewrite`: a chain link is not a view expression in its own right.
+    /// A probe appended here would wrap the element MID-CHAIN and then the whole
+    /// chain would be probed again by the caller's recognition step, which reads
+    /// through modifiers — one element, two ids, and `DuplicateProbeIDRule`
+    /// reporting the instrumentation itself as the defect.
+    ///
+    /// Extracted so the guard is expressible as ONE edit. Both call sites are
+    /// required — reverting either alone leaves the expansion correct — so while
+    /// they were spelled inline no single-line mutation could witness this, and
+    /// the catalog row for it scored UNNOTICED while the code was right.
+    private mutating func descendingChain(_ expression: ExprSyntax) -> ExprSyntax {
+        rewriteChildren(of: expression)
     }
 
     /// Rewrites the statements a view-builder closure contains.
