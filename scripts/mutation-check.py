@@ -212,6 +212,48 @@ MUTATIONS = [
         ),
         runner=Runner.PYTEST,
     ),
+    # Wave 4 Task 1 — the macro target's isolation. All three of these are
+    # manifest-shaped: they change no behaviour and break no Swift test, so
+    # `swift test` is blind to every one of them. That is precisely why they
+    # need witnesses; the cost they impose (SwiftSyntax on every consumer's
+    # build) is invisible to a suite that only measures what the code does.
+    Mutation(
+        name="a shipping target is allowed to depend on SwiftSyntax",
+        path="Package.swift",
+        old='.target(name: "VerdictUIKernel", swiftSettings: strictSettings)',
+        new=(
+            '.target(name: "VerdictUIKernel", dependencies: '
+            '[.product(name: "SwiftSyntax", package: "swift-syntax")], '
+            "swiftSettings: strictSettings)"
+        ),
+        test=(
+            "Tests/test_macro_isolation.py::TestMacroTargetIsolation::"
+            "test_the_shipping_targets_never_reach_swiftsyntax"
+        ),
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
+        name="the macro plugin is demoted to a regular target",
+        path="Package.swift",
+        old='        .macro(\n            name: "VerdictUIMacros",',
+        new='        .target(\n            name: "VerdictUIMacros",',
+        test=(
+            "Tests/test_macro_isolation.py::TestMacroTargetIsolation::"
+            "test_the_plugin_is_declared_as_a_macro_target"
+        ),
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
+        name="the SwiftSyntax pin is loosened from exact to a range",
+        path="Package.swift",
+        old='exact: "603.0.2"',
+        new='from: "603.0.0"',
+        test=(
+            "Tests/test_macro_isolation.py::TestMacroTargetIsolation::"
+            "test_swiftsyntax_is_pinned_exactly"
+        ),
+        runner=Runner.PYTEST,
+    ),
     Mutation(
         name="an empty mutation catalog reports success",
         path="scripts/mutation-check.py",

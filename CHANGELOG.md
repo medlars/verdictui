@@ -2,6 +2,36 @@
 
 ## [Unreleased]
 
+### 2026-08-06 (Wave 4 Task 1)
+
+**`@Verifiable` — the macro target, kept optional by construction.**
+
+- **New targets.** `VerdictUIMacros` (a `.macro` compiler plugin) and
+  `VerdictUIMacroSupport` (the library a consumer imports), plus a
+  `VerdictUIMacroTests` target. `@Verifiable` attaches to a `View` struct and
+  generates `verdictProbedBody(into:)` — the view's own `body` wrapped in
+  `.verdictRoot(into:)`. The view's `body` is not rewritten, so a `@Verifiable`
+  view renders identically in an app and in a preview.
+- **Macros are an opt-in product, not a probe dependency.** SwiftSyntax is the
+  heaviest thing in the graph: a clean probe-only build is **9.48 s** against
+  **21.34 s** for the whole package. `VerdictUIMacroSupport` is therefore its own
+  product, so a probe-only consumer never resolves SwiftSyntax at all.
+  `Tests/test_macro_isolation.py` pins that structurally — no shipping target may
+  reach SwiftSyntax, the plugin must stay `.macro` (a plain `.target` would link
+  it in), and the dependency must stay pinned `exact`. None of those failures is
+  visible to `swift test`, because none of them changes behaviour.
+- **SwiftSyntax pinned `exact: "603.0.2"`**, verified building a plugin against
+  the local Swift 6.3.3 toolchain before it was written into the manifest. Majors
+  track the compiler, so a range would let a toolchain-coupled dependency move
+  under CI without a commit saying so.
+- **Misuse is diagnosed at the attachment site** — a non-struct or a type with no
+  `body` gets a named error there, rather than a compile failure inside generated
+  code the author cannot see. Each kind carries its own article, because two of
+  the six begin with a vowel and a hardcoded "a" produced "this is a enum".
+- Mutation catalog 42 → 45 rows, all three manifest-shaped and each verified
+  NOTICED with a byte-identical restore.
+- 332 → 344 Swift tests, 172 → 178 Python tests.
+
 ### 2026-08-06 (later)
 
 **New rule `content-overlap` — the overflow no single container can be blamed for.**

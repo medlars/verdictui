@@ -4,6 +4,14 @@
 //   VerdictUIKernel — platform-pure verdict engine (semantic tree, diff, lint, verdict schema).
 //                     MUST NOT import SwiftUI/AppKit (enforced by PM stage_architecture).
 //   VerdictUIProbe  — SwiftUI instrumentation runtime (Layout probes, preference keys, oracle host).
+//   VerdictUIMacros — compiler plugin (SwiftSyntax). Builds for the HOST toolchain and never
+//                     links into a shipping product; `.macro` rather than `.target` is what
+//                     keeps that true (Tests/test_macro_isolation.py pins it).
+//   VerdictUIMacroSupport — the library a consumer imports to get `@Verifiable`.
+//                     Deliberately a SEPARATE product from VerdictUIProbe: depending on it
+//                     drags in SwiftSyntax, the heaviest build-time cost in this package, so a
+//                     consumer wanting probes without macros must be able to say so.
+import CompilerPluginSupport
 import PackageDescription
 
 // Immaculate-build bar: complete strict-concurrency checking on every target so
@@ -23,12 +31,47 @@ let package = Package(
     products: [
         .library(name: "VerdictUIKernel", targets: ["VerdictUIKernel"]),
         .library(name: "VerdictUIProbe", targets: ["VerdictUIProbe"]),
+        // Opt-in. Naming it as its own product is the whole isolation mechanism:
+        // `VerdictUIProbe` stays buildable without resolving SwiftSyntax at all.
+        .library(name: "VerdictUIMacroSupport", targets: ["VerdictUIMacroSupport"]),
+    ],
+    dependencies: [
+        // Pinned `exact`, not `from`. SwiftSyntax majors track the compiler
+        // (6xx -> Swift 6.x), so this is a toolchain-coupled dependency and a
+        // range would let it move under CI without a commit saying so — the
+        // plan names version churn as this wave's top risk. 603.0.2 is the
+        // newest 603 tag and was verified to build a plugin against the local
+        // Swift 6.3.3 toolchain before being written here.
+        .package(url: "https://github.com/swiftlang/swift-syntax.git", exact: "603.0.2")
     ],
     targets: [
         .target(name: "VerdictUIKernel", swiftSettings: strictSettings),
         .target(
             name: "VerdictUIProbe",
             dependencies: ["VerdictUIKernel"],
+            swiftSettings: strictSettings
+        ),
+        // The compiler plugin. Runs at BUILD time in the host toolchain, so its
+        // SwiftSyntax dependency is a cost of compiling, never of shipping —
+        // `.macro` is what enforces that, and demoting it to `.target` would
+        // link SwiftSyntax into every downstream product.
+        //
+        // No `strictSettings`: the plugin is a build-time tool that never
+        // participates in the app's concurrency domain, and SwiftSyntax's own
+        // types are not all Sendable under complete checking.
+        .macro(
+            name: "VerdictUIMacros",
+            dependencies: [
+                .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
+                .product(name: "SwiftCompilerPlugin", package: "swift-syntax"),
+            ]
+        ),
+        // What a consumer imports. Declares `@Verifiable` and points it at the
+        // plugin; the expansion it generates calls into VerdictUIProbe, so the
+        // dependency arrow runs macro-support -> probe and never back.
+        .target(
+            name: "VerdictUIMacroSupport",
+            dependencies: ["VerdictUIMacros", "VerdictUIProbe", "VerdictUIKernel"],
             swiftSettings: strictSettings
         ),
         .target(
@@ -57,6 +100,20 @@ let package = Package(
         .testTarget(
             name: "VerdictUIDemoScenariosTests",
             dependencies: ["VerdictUIDemoScenarios"],
+            swiftSettings: strictSettings
+        ),
+        // Two dependencies, testing two different things. `VerdictUIMacros` +
+        // SwiftSyntaxMacrosTestSupport asserts the expansion TEXT; the
+        // `VerdictUIMacroSupport` import asserts that the expanded code
+        // COMPILES and renders — a snapshot test alone cannot see a macro that
+        // emits well-formed source referring to something that does not exist.
+        .testTarget(
+            name: "VerdictUIMacroTests",
+            dependencies: [
+                "VerdictUIMacros",
+                "VerdictUIMacroSupport",
+                .product(name: "SwiftSyntaxMacrosTestSupport", package: "swift-syntax"),
+            ],
             swiftSettings: strictSettings
         ),
     ]
