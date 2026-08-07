@@ -35,7 +35,13 @@ _SOURCE_SUFFIXES = frozenset({".swift", ".py", ".sh", ".json", ".toml"})
 # Everything tracked that is deliberately not source. Declared rather than
 # inferred so that a file type nobody has classified fails the run instead of
 # falling out of scope in silence — `.example` is `.env.example`.
-_NON_SOURCE_SUFFIXES = frozenset({".md", ".yml", ".example"})
+#
+# `.resolved` is `Package.resolved`: SwiftPM writes it, nobody edits it, and it
+# gets no registry row for the same reason a lockfile gets no design doc. It IS
+# tracked deliberately — the manifest pins swift-syntax exactly, and committing
+# the resolution is what makes a CI build reproduce the local one rather than
+# re-resolve into something else.
+_NON_SOURCE_SUFFIXES = frozenset({".md", ".yml", ".example", ".resolved"})
 
 # Extensionless files are classified by name, not by an empty suffix: `""` would
 # put a future `Makefile` or `Dockerfile` in the same bucket as `.gitignore` and
@@ -80,7 +86,7 @@ def _registered(heading: str, *, status: str | None = None) -> set[str]:
 
 
 def _tracked() -> set[str]:
-    """Every file git tracks, as repo-relative posix paths.
+    """Every file git tracks OR would track, as repo-relative posix paths.
 
     Asking git rather than walking a hardcoded list of directories is what makes
     this guard hold as the tree grows: a source file in a directory nobody
@@ -88,6 +94,18 @@ def _tracked() -> set[str]:
     products and generated artifacts for free — `pm-baselines.json` sits in the
     root, is never committed, and would otherwise read as an unregistered file.
     Matches `Agents/tests/test_file_registry_parity.py`, the fleet's prior art.
+
+    `--others --exclude-standard` is why the list includes files that are not
+    committed yet. Without it this guard could only see a file AFTER `git add`,
+    which puts it strictly behind the commit it is supposed to gate: on
+    2026-08-06 `Package.resolved` was written by SwiftPM, ran green through the
+    whole local suite because it was still untracked, and failed on CI the
+    moment the commit made it visible. A check that cannot observe a file until
+    the instant it stops being able to help is not early enough — and the
+    failure it produces is the confusing kind, green locally and red remotely,
+    which reads as a CI-environment fault rather than as a real finding.
+    Honouring `.gitignore` (`--exclude-standard`) keeps build products out, so
+    the set still means "files this repo is responsible for".
     """
     listed = subprocess.run(
         # `-z` because the newline form quotes and octal-escapes any path holding
@@ -95,7 +113,7 @@ def _tracked() -> set[str]:
         # comes back as `"Tests/caf\303\251.py"` (measured), which matches no
         # registry row, so the guard would report a file missing that is sitting
         # right there. Spaces alone are not quoted; the rest are.
-        ["git", "ls-files", "-z"],
+        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
         cwd=_PROJECT_ROOT,
         capture_output=True,
         text=True,
