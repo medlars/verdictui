@@ -181,6 +181,7 @@ and for `duplicate-probe-id` is the *first* occurrence of the colliding id.
 | `duplicate-probe-id` | error | the same non-empty probe `id` appears more than once in a tree |
 | `zero-size` | error for text-bearing and interactive roles, warning otherwise | a visible node has an empty frame |
 | `sibling-overlap` | error | two visible, non-empty sibling frames intersect without declared layering |
+| `content-overlap` | error | leaf content under two different parents intersects without declared layering |
 | `offscreen` | error | a visible, non-empty frame lies entirely outside the viewport |
 | `truncation` | error | text rendered fewer lines than it wanted, or a one-line text was given less width than it needs |
 | `tap-target` | error | a visible interactive node is smaller than `minimumTapTarget` in either dimension |
@@ -248,6 +249,35 @@ give the siblings disjoint frames, or declare the layering with .zIndex() so the
 
 **Suppress**: `verdict.suppress` on the later sibling, declare `.zIndex()` on
 either, label the parent `zstack`, or `disabledRules`.
+
+### `content-overlap`
+
+Fires when two pieces of **leaf content** under **different parents** intersect by
+more than 0.5 pt. This is the gap `sibling-overlap` cannot see: a `Text` that
+outgrows its row and covers the next row's text has no common parent whose layout
+could resolve it, so the sibling-scoped rule is blind to it by construction.
+
+Three structural relationships are deliberately silent, because each is ordinary
+layout rather than a defect:
+
+- a node and its own ancestors — every child overlaps its parent;
+- direct siblings — already `sibling-overlap`'s jurisdiction, so reporting them
+  here would bill one defect twice;
+- containers themselves — two overlapping rows whose content is disjoint is a
+  background band or a grouped header.
+
+Layering is honoured as in `sibling-overlap`, but along the whole ancestor path
+rather than at a single node: a `zIndex` anywhere on either path, or a shared
+`zstack` ancestor, reads as a deliberate paint order. A first row's title
+overflowing a 24 pt row into the second row's title:
+
+```text
+'second-title' overlaps 'first-title' by 200 x 16 pt — the two have different parents, so no single container's layout can resolve it
+give the containing rows enough height for their content, or truncate the overflowing content so it stays inside its row
+```
+
+**Suppress**: `verdict.suppress` on the lower node, declare `.zIndex()` on either
+path, or `disabledRules`.
 
 ### `offscreen`
 

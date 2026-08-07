@@ -476,6 +476,49 @@ MUTATIONS = [
         test="Tests/test_verdictui_pm.py::TestStageWrappers::test_stage_lint_reports_a_format_failure_distinctly",
         runner=Runner.PYTEST,
     ),
+    Mutation(
+        # content-overlap stops exempting ancestors, so every child overlapping
+        # its own parent reports. Guards the rule against the false-positive
+        # flood that would make it unusable on any real tree.
+        name="content-overlap compares a node with its own ancestors",
+        path="Sources/VerdictUIKernel/Rules/ContentOverlapRule.swift",
+        old="        guard shared < first.count, shared < second.count else { return false }",
+        new="        guard shared < first.count, shared < second.count else { return true }",
+        test="VerdictUIKernelTests.ContentOverlapRuleTests/testContentInsideItsOwnAncestorsIsNotOverlap",
+        runner=Runner.SWIFT,
+    ),
+    Mutation(
+        # content-overlap stops deferring direct siblings to sibling-overlap, so
+        # a single overlap is billed twice under two different rule names.
+        name="content-overlap double-bills direct siblings",
+        path="Sources/VerdictUIKernel/Rules/ContentOverlapRule.swift",
+        old="        if shared == first.count - 1 && shared == second.count - 1 { return false }",
+        new="        if false { return false }",
+        test="VerdictUIKernelTests.ContentOverlapRuleTests/testDirectSiblingsAreLeftToSiblingOverlapRule",
+        runner=Runner.SWIFT,
+    ),
+    Mutation(
+        # The sub-pixel tolerance widens far enough to swallow a real 20 pt
+        # overflow. A tolerance that can grow without failing a test is a
+        # silencer, so the control arm has to fail here.
+        name="content-overlap tolerance widens into silence",
+        path="Sources/VerdictUIKernel/Rules/ContentOverlapRule.swift",
+        old="    public static let tolerance = 0.5",
+        new="    public static let tolerance = 50.0",
+        test="VerdictUIKernelTests.ContentOverlapRuleTests/testSubPixelOverlapIsToleratedButRealOverlapIsNot",
+        runner=Runner.SWIFT,
+    ),
+    Mutation(
+        # Layering is checked only at the node itself rather than along the whole
+        # ancestor path, so a zIndex on a parent or grandparent stops reading as
+        # intent and deliberate ZStack layouts report as defects.
+        name="content-overlap checks layering only at the node, not the path",
+        path="Sources/VerdictUIKernel/Rules/ContentOverlapRule.swift",
+        old='        path.contains { $0.zIndex != nil || $0.role.identifier.lowercased() == "zstack" }',
+        new='        path.suffix(1).contains { $0.zIndex != nil || $0.role.identifier.lowercased() == "zstack" }',
+        test="VerdictUIKernelTests.ContentOverlapRuleTests/testDeclaredLayeringOnEitherNodeOrAnyAncestorIsIntent",
+        runner=Runner.SWIFT,
+    ),
 ]
 
 # XCTest prints this once per suite plus once for the total; the largest count is

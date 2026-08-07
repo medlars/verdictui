@@ -511,10 +511,13 @@ final class DuplicateProbeIDRuleTests: XCTestCase {
 
 final class StandardRuleSetTests: XCTestCase {
 
-    func testStandardRulesAreTheSixWave1RulesWithIDFirst() {
+    func testStandardRulesAreTheSevenRulesWithIDFirst() {
         XCTAssertEqual(
             RuleEngine.standardRules.map { type(of: $0).id },
-            ["duplicate-probe-id", "zero-size", "sibling-overlap", "offscreen", "truncation", "tap-target"]
+            [
+                "duplicate-probe-id", "zero-size", "sibling-overlap", "content-overlap",
+                "offscreen", "truncation", "tap-target",
+            ]
         )
     }
 

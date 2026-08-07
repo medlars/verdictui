@@ -127,6 +127,7 @@ public enum RuleEngine {
         DuplicateProbeIDRule(),
         ZeroSizeRule(),
         SiblingOverlapRule(),
+        ContentOverlapRule(),
         OffscreenRule(),
         TruncationRule(),
         TapTargetRule(),

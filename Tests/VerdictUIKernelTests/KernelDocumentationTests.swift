@@ -95,6 +95,36 @@ final class KernelDocumentationTests: XCTestCase {
         )
     }
 
+    /// A two-row list where the first row's text outgrows its row and runs into
+    /// the second row's text. The two texts have different parents, which is why
+    /// `sibling-overlap` cannot see this and `content-overlap` exists.
+    private func contentOverlapScenario() -> SemanticNode {
+        func row(_ id: String, y: Double, textHeight: Double) -> SemanticNode {
+            SemanticNode(
+                id: id,
+                role: .container,
+                frame: Rect(x: 0, y: y, width: 200, height: 24),
+                structuralPath: "root/container[\(Int(y / 24))]",
+                children: [
+                    SemanticNode(
+                        id: "\(id)-title",
+                        role: .text,
+                        frame: Rect(x: 0, y: y, width: 200, height: textHeight),
+                        text: id,
+                        structuralPath: "root/container[\(Int(y / 24))]/text[0]"
+                    )
+                ]
+            )
+        }
+        return SemanticNode(
+            id: "root",
+            role: .container,
+            frame: viewport,
+            structuralPath: "root",
+            children: [row("first", y: 0, textHeight: 40), row("second", y: 24, textHeight: 24)]
+        )
+    }
+
     private func offscreenScenario() -> SemanticNode {
         SemanticNode(
             id: "root",
@@ -157,6 +187,7 @@ final class KernelDocumentationTests: XCTestCase {
             (DuplicateProbeIDRule(), duplicateProbeIDScenario()),
             (ZeroSizeRule(), zeroSizeScenario()),
             (SiblingOverlapRule(), siblingOverlapScenario()),
+            (ContentOverlapRule(), contentOverlapScenario()),
             (OffscreenRule(), offscreenScenario()),
             (TruncationRule(), truncationScenario()),
             (TapTargetRule(), tapTargetScenario()),
@@ -296,10 +327,29 @@ final class KernelDocumentationTests: XCTestCase {
                 "docs/kernel.md does not document \(type(of: rule).id)"
             )
         }
+        // Counted from the document's own catalog headings rather than pinned to
+        // a literal. A hand-maintained number here describes the moment someone
+        // last typed it, not the catalog: it goes stale the instant a rule is
+        // added, and the failure it produces points at the count instead of at
+        // the missing section. Counting the headings also catches the reverse
+        // drift a `contains` loop cannot see — a section documenting a rule that
+        // no longer exists in the standard set.
+        let catalogRuleIDs = text
+            .split(separator: "\n")
+            .compactMap { line -> String? in
+                guard line.hasPrefix("### `"), line.hasSuffix("`") else { return nil }
+                return String(line.dropFirst("### `".count).dropLast())
+            }
+            .filter { id in RuleEngine.standardRules.contains { rule in type(of: rule).id == id } }
         XCTAssertEqual(
+            Set(catalogRuleIDs),
+            Set(RuleEngine.standardRules.map { type(of: $0).id }),
+            "docs/kernel.md's rule catalog and RuleEngine.standardRules disagree"
+        )
+        XCTAssertEqual(
+            catalogRuleIDs.count,
             RuleEngine.standardRules.count,
-            6,
-            "the rule catalog in docs/kernel.md is written for six rules"
+            "the rule catalog in docs/kernel.md documents a different number of rules"
         )
     }
 
