@@ -87,10 +87,65 @@ final class ContentOverlapRuleTests: XCTestCase {
     // MARK: - structural relationships that must never report
 
     func testContentInsideItsOwnAncestorsIsNotOverlap() {
-        // Every child overlaps its parent, and its grandparent. If ancestry were
-        // not exempt this single well-formed row would report twice.
-        let tree = root([row("row-a", y: 0)])
-        XCTAssertTrue(rule.evaluate(tree, context: context()).isEmpty)
+        // A single well-formed row must report nothing.
+        //
+        // On its own this assertion is NOT a test of the ancestry guard, and a
+        // mutation proved it: only leaves are collected as subjects, so a
+        // one-leaf tree compares zero pairs and passes whatever the guard does.
+        // The real subject is a leaf that shares its frame with a DEEPER leaf on
+        // its own branch — the case the guard has to answer — which needs a tree
+        // where an ancestor chain is long enough for two leaves to be related.
+        XCTAssertTrue(rule.evaluate(root([row("row-a", y: 0)]), context: context()).isEmpty)
+
+        // A label nested inside a card inside a section, all sharing one band of
+        // the screen: three levels of ancestry, every level overlapping the next.
+        // Only the innermost node is a leaf, so a correct rule reports nothing;
+        // a rule that compared related nodes would report on every level.
+        let deep = SemanticNode(
+            id: "section",
+            role: .container,
+            frame: Rect(x: 0, y: 0, width: 200, height: 100),
+            children: [
+                SemanticNode(
+                    id: "card",
+                    role: .container,
+                    frame: Rect(x: 0, y: 0, width: 200, height: 100),
+                    children: [
+                        SemanticNode(
+                            id: "label",
+                            role: .text,
+                            frame: Rect(x: 0, y: 0, width: 200, height: 100)
+                        )
+                    ]
+                )
+            ]
+        )
+        XCTAssertTrue(rule.evaluate(root([deep]), context: context()).isEmpty)
+    }
+
+    /// Directly exercises the ancestry branch that ``evaluate`` cannot reach.
+    ///
+    /// `isCrossBranch` is the guard the rule's correctness rests on, and through
+    /// the public entry point one of its two answers is unreachable: only leaves
+    /// become subjects, so no pair is ever ancestor-related. Left at that, the
+    /// branch would be untested code that *looks* covered — so it is asserted
+    /// here against paths built by hand, in both directions.
+    func testAncestryIsRejectedAndUnrelatedBranchesAreAcceptedAtTheSeam() {
+        let root = SemanticNode(id: "root", role: .container, frame: Self.viewport)
+        let rowA = SemanticNode(id: "row-a", role: .container, frame: Self.viewport)
+        let rowB = SemanticNode(id: "row-b", role: .container, frame: Self.viewport)
+        let textA = SemanticNode(id: "text-a", role: .text, frame: Self.viewport)
+        let textB = SemanticNode(id: "text-b", role: .text, frame: Self.viewport)
+
+        // A node against its own parent, and against its grandparent.
+        XCTAssertFalse(ContentOverlapRule.isCrossBranch([root, rowA], [root, rowA, textA]))
+        XCTAssertFalse(ContentOverlapRule.isCrossBranch([root], [root, rowA, textA]))
+        // Direct siblings belong to sibling-overlap.
+        XCTAssertFalse(ContentOverlapRule.isCrossBranch([root, textA], [root, textB]))
+        // Genuinely different branches — the case the rule exists for.
+        XCTAssertTrue(ContentOverlapRule.isCrossBranch([root, rowA, textA], [root, rowB, textB]))
+        // Different depths on different branches still count as cross-branch.
+        XCTAssertTrue(ContentOverlapRule.isCrossBranch([root, rowA, textA], [root, textB]))
     }
 
     func testDirectSiblingsAreLeftToSiblingOverlapRule() {
