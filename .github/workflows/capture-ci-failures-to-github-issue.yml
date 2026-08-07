@@ -1,0 +1,168 @@
+name: Capture CI Failures to GitHub Issue
+
+on:
+  workflow_run:
+    # GitHub requires workflow_run to list the workflows it watches — a trigger
+    # with no `workflows:` key is rejected by the validator as a "workflow file
+    # issue" (0.0s failure). List every workflow in this repo so a failure in
+    # any of them is captured. When adding a new workflow file, add its `name:`
+    # here too so it stays watched (F-053: KastTune's Relay Uptime Probe failed
+    # 11x with no issue filed because it was missing from a stale allow-list).
+    workflows:
+      - Check Pinned GitHub Actions for Updates
+      - CI
+    types:
+      - completed
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+
+jobs:
+  capture:
+    name: Capture failure logs → GitHub Issue
+    runs-on: ubuntu-latest
+    if: >-
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.name != 'Capture CI Failures to GitHub Issue'
+
+    steps:
+      - name: Only act on same-repo runs (not forks)
+        env:
+          HEAD_REPO_FULL_NAME: ${{ github.event.workflow_run.head_repository.full_name }}
+        run: |
+          if [ -n "$HEAD_REPO_FULL_NAME" ] && [ "$HEAD_REPO_FULL_NAME" != "${{ github.repository }}" ]; then
+            echo "Skipping: fork PR run ($HEAD_REPO_FULL_NAME)"
+            echo "SKIP=true" >> "$GITHUB_ENV"
+          fi
+
+      - name: Download failing run logs
+        if: env.SKIP != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh run view "${{ github.event.workflow_run.id }}" \
+            --repo "${{ github.repository }}" \
+            --log-failed > failure_log.txt 2>&1 || true
+          tail -c 6000 failure_log.txt > failure_log_tail.txt || true
+
+      # A GitHub Actions outage fails every workflow for reasons unrelated to the
+      # code: the runner cannot fetch actions, or the job is cancelled before any
+      # step runs and the log is empty. Both arrive here as
+      # workflow_run/completed/failure, indistinguishable from a real test
+      # failure, so without this guard an outage files ci-failure issues against
+      # healthy code — WatchTools#15 and kasttune#3 on 2026-08-06, and 84 bogus
+      # P1s in an earlier outage. Skipping is safe: a genuine failure recurs on
+      # the next push, whereas a bogus issue displaces real signal until someone
+      # reads it.
+      - name: Skip GitHub infrastructure failures
+        if: env.SKIP != 'true'
+        run: |
+          set -uo pipefail
+          if ! [ -s failure_log_tail.txt ]; then
+            echo "Skipping: empty failure log (job cancelled before any step ran)"
+            echo "SKIP=true" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          if grep -qiE 'Failed to resolve action download info|Service Unavailable|failed to get run|HTTP 404' failure_log_tail.txt; then
+            echo "Skipping: GitHub infrastructure failure, not a code failure"
+            echo "SKIP=true" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          echo "Failure looks code-related; continuing to file an issue."
+
+      - name: Find existing open capture issue for this workflow
+        if: env.SKIP != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          TITLE="CI failure: ${WORKFLOW_NAME} (${HEAD_BRANCH})"
+          EXISTING=$(gh issue list --repo "${{ github.repository }}" \
+            --label "ci-failure" --state open --search "in:title \"$TITLE\"" \
+            --json number --jq '.[0].number // empty')
+          echo "EXISTING_ISSUE=$EXISTING" >> "$GITHUB_ENV"
+          echo "ISSUE_TITLE=$TITLE" >> "$GITHUB_ENV"
+
+      # `gh issue create --label ci-failure` FAILS if the label does not exist,
+      # and a fresh repo has no such label. Repos that already capture only work
+      # because an older revision of this template created it once; dropping the
+      # step made the template silently un-adoptable by any new repo, which is
+      # exactly the population this rollout targets (CIS-C9E52618). --force makes
+      # it idempotent where the label is already present.
+      - name: Ensure ci-failure label exists
+        if: env.SKIP != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh label create ci-failure --repo "${{ github.repository }}" \
+            --color d73a4a --description "Automated: CI workflow failed on main" --force
+
+      - name: Open or update GitHub Issue
+        if: env.SKIP != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
+        run: |
+          BODY_FILE=$(mktemp)
+          {
+            echo "**Workflow:** ${WORKFLOW_NAME}"
+            echo "**Branch:** ${HEAD_BRANCH}"
+            echo "**Commit:** ${HEAD_SHA}"
+            echo "**Run:** ${RUN_URL}"
+            echo
+            echo '<details><summary>Failure log tail</summary>'
+            echo
+            echo '```'
+            cat failure_log_tail.txt 2>/dev/null || echo "(log unavailable)"
+            echo '```'
+            echo '</details>'
+          } > "$BODY_FILE"
+
+          if [ -n "$EXISTING_ISSUE" ]; then
+            gh issue comment "$EXISTING_ISSUE" --repo "${{ github.repository }}" --body-file "$BODY_FILE"
+          else
+            gh issue create --repo "${{ github.repository }}" \
+              --title "$ISSUE_TITLE" \
+              --label "ci-failure" \
+              --body-file "$BODY_FILE"
+          fi
+
+  close-on-green:
+    name: Close resolved ci-failure issues on success
+    runs-on: ubuntu-latest
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.name != 'Capture CI Failures to GitHub Issue'
+    permissions:
+      actions: read
+      issues: write
+    steps:
+      - name: Close matching open ci-failure issue for this workflow
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          # Match the exact title format the capture job uses:
+          # "CI failure: <WorkflowName> (<branch>)"
+          TITLE="CI failure: ${WORKFLOW_NAME} (${HEAD_BRANCH})"
+          ISSUE=$(gh issue list --repo "${{ github.repository }}" \
+            --label "ci-failure" --state open \
+            --search "in:title \"$TITLE\"" \
+            --json number --jq '.[0].number // empty')
+          if [ -n "$ISSUE" ]; then
+            RUN_URL="${{ github.event.workflow_run.html_url }}"
+            HEAD_SHA="${{ github.event.workflow_run.head_sha }}"
+            gh issue comment "$ISSUE" --repo "${{ github.repository }}" \
+              --body "CI recovered — latest \`${WORKFLOW_NAME}\` run on \`${HEAD_BRANCH}\` (\`${HEAD_SHA:0:8}\`) is **success**. ${RUN_URL}. Auto-closing." || true
+            gh issue close "$ISSUE" --repo "${{ github.repository }}" --reason completed || true
+            echo "Closed issue #$ISSUE"
+          else
+            echo "No open ci-failure issue for \"$TITLE\" — nothing to close."
+          fi
