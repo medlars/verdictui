@@ -52,7 +52,6 @@
 
 <!-- testwatch-gaps -->
 ## TestWatch Gaps (auto-generated — do not edit this block)
-- [ ] (P1) testwatch: add test for `SchemaError` in `contracts/validate-contracts.py` [NONE]
 - [ ] (P1) testwatch: add test for `display` in `scripts/kernel-symbol-audit.py` [NONE]
 - [ ] (P1) testwatch: add test for `total_gaps` in `scripts/kernel-symbol-audit.py` [NONE]
 - [ ] (P1) testwatch: add test for `Outcome` in `scripts/mutation-check.py` [NONE]
