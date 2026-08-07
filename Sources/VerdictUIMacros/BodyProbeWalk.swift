@@ -85,11 +85,13 @@ struct BodyProbeWalk {
         // Trivia is stripped from the element before the modifier is appended:
         // appending to the expression as-found puts the modifier after whatever
         // whitespace followed it — `Text("x") .verdictProbe(…)`, or across a
-        // newline with the closing brace's indentation between them. The
-        // enclosing indentation is not restored here; `VerifiableMacro` runs
-        // `.formatted()` over the finished expression, which re-derives every
-        // line from structure. Two mechanisms for one concern is how the stray
-        // space survived the first fix.
+        // newline with the closing brace's indentation between them.
+        //
+        // The element's surrounding indentation is NOT restored, and nothing
+        // downstream re-derives it — see the note in `VerifiableMacro.expansion`
+        // for why (`SwiftBasicFormat` cannot re-indent lifted code, measured).
+        // A multi-line body therefore keeps the indentation it had inside
+        // `body`, which the snapshot tests pin as-is.
         let bare = recursed.trimmed
         return
             "\(bare).verdictProbe(\(raw: id.quotedForSource), role: .\(raw: role)\(raw: textArgument))"
@@ -100,6 +102,20 @@ struct BodyProbeWalk {
     private mutating func rewriteChildren(of expression: ExprSyntax) -> ExprSyntax {
         if let call = expression.as(FunctionCallExprSyntax.self) {
             var updated = call
+            // The callee is walked, not just the arguments. In
+            // `VStack { … }.padding(7)` — the most common shape in real SwiftUI —
+            // the outer call is `.padding(7)`, whose callee is a member access
+            // whose BASE holds the `VStack` and its closure. Recursing only into
+            // arguments and trailing closures never reaches it, so everything
+            // inside the container was left unprobed while a test suite written
+            // with unmodified containers stayed green.
+            //
+            // `rewriteChildren` rather than `rewrite`: the callee position is
+            // not a view expression in its own right (a probe appended there
+            // would land inside the chain rather than around the element), and
+            // the element at its base is probed by THIS call's own recognition
+            // step, which reads through the chain.
+            updated.calledExpression = rewriteChildren(of: call.calledExpression)
             updated.arguments = LabeledExprListSyntax(
                 call.arguments.map { argument in
                     var copy = argument
@@ -120,7 +136,14 @@ struct BodyProbeWalk {
 
         if let member = expression.as(MemberAccessExprSyntax.self), let base = member.base {
             var updated = member
-            updated.base = rewrite(base)
+            // `rewriteChildren`, never `rewrite`. A member access reached from
+            // here is a LINK IN A MODIFIER CHAIN, and the element at its base is
+            // the caller's own subject — recognition reads through the chain to
+            // find it. Probing here as well would wrap the element mid-chain
+            // (`VStack{…}.verdictProbe(…).padding(7)`) and then probe the whole
+            // chain again outside, giving one element two ids and making
+            // DuplicateProbeIDRule report the instrumentation as the defect.
+            updated.base = rewriteChildren(of: base)
             return ExprSyntax(updated)
         }
 
