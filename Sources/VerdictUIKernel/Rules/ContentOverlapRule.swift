@@ -106,7 +106,11 @@ public struct ContentOverlapRule: LintRule {
     /// Both paths start at the same root, so the shared prefix is their common
     /// ancestry. Equal path lengths with a shared prefix of `count - 1` means one
     /// parent holds both — ``SiblingOverlapRule``'s case, not this rule's.
-    private static func isCrossBranch(_ first: [SemanticNode], _ second: [SemanticNode]) -> Bool {
+    /// Internal rather than private: through ``evaluate`` only leaves become
+    /// subjects, so no pair reaching here is ever ancestor-related and the
+    /// rejecting branch is unreachable from the public entry point. Tests assert
+    /// it directly instead, so it is covered rather than merely looking covered.
+    static func isCrossBranch(_ first: [SemanticNode], _ second: [SemanticNode]) -> Bool {
         var shared = 0
         while shared < first.count, shared < second.count,
             first[shared].identity == second[shared].identity,
