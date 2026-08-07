@@ -324,6 +324,14 @@ final class HostileSettleTests: XCTestCase {
         // Inside the quiet floor: this is the class of late work the floor is
         // built to wait out. A timer scheduled BEYOND the floor is deliberately
         // not claimed — see the assertion note below.
+        //
+        // A `Timer` on `RunLoop.main`, deliberately, and NOT
+        // `DispatchQueue.main.asyncAfter`. `LayoutSettle`'s pump advances time
+        // with `RunLoop.current.run(until:)` (OracleHost.swift:181), which
+        // services run-loop timers but does NOT drain queued main-queue work —
+        // so `asyncAfter` is the channel that gets starved here, not this one.
+        // Measured, after trying it the other way round: with `asyncAfter` the
+        // model still read `phase == 0` after settle returned.
         let timer = Timer(timeInterval: 0.020, repeats: false) { _ in model.phase += 1 }
         RunLoop.main.add(timer, forMode: .common)
         defer { timer.invalidate() }
@@ -371,6 +379,25 @@ final class HostileSettleTests: XCTestCase {
         // a loaded machine. Work beyond the floor is what the timeout and Wave
         // 8's independent witness are for, and `Quiescence`'s residual-risk note
         // says so.
+        // The mutation must have been APPLIED before the trees are compared.
+        // Asserted on the MODEL, because that is what the scheduled block
+        // writes: it separates "the mutation never ran" (a fixture fault) from
+        // "the mutation ran and settle missed it" (the defect this test exists
+        // to catch). Only the second should reach the tree comparison.
+        //
+        // This is not hypothetical bookkeeping. CI run 31199890306 failed the
+        // comparison below reporting "missing from the settled tree", and both
+        // printed trees carried `width: 20.0` — `phase` was 0 in each, so the
+        // mutation had never been applied and settle was being blamed for the
+        // fixture's no-op. Reproduced locally by pushing the timer's interval
+        // past the run: exit 1, same misleading message. Whatever starves the
+        // timer on a loaded runner, the failure now names the right subject.
+        XCTAssertEqual(
+            model.phase, 1,
+            "the scheduled mutation never ran, so this test can say nothing about "
+                + "settle — the fixture is at fault, not the engine"
+        )
+
         let tree = try await host.currentTree()
         XCTAssertNotEqual(
             tree, before,
