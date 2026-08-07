@@ -542,6 +542,28 @@ MUTATIONS = [
         test="HarnessPerformanceTests/testPerformCycleMeetsTheSLO1Gate",
     ),
     Mutation(
+        # The p50 gate is asserted on developer hardware and RECORDED on a
+        # shared runner (five CI medians on unchanged code spanned 74-120 ms
+        # against a 70 ms budget). INVERTING the lane predicate is the
+        # single-edit break that a healthy tree can witness: the local run then
+        # takes the record-only branch and stops asserting, while a run with
+        # CI set starts asserting the very figure it must not.
+        #
+        # Deliberately NOT `if true {`. That reads like the obvious mutation
+        # and is unfalsifiable on healthy code — the assertion simply never
+        # runs and everything passes, so the row would score UNNOTICED while
+        # the guard is fine (no.md #12: an assertion that both the correct and
+        # the broken implementation satisfy is not a weak test, it is not a
+        # test). The inversion is caught by a different assertion in the same
+        # test: `stage_runtime_bench` and the local lane both expect the
+        # SLO1-PERFORM-P50 recorded line to be ABSENT off-CI.
+        name="the SLO 1 lane predicate is inverted, gating CI and exempting dev",
+        path="Tests/VerdictUIProbeTests/HarnessPerformanceTests.swift",
+        old="private static var assertsP50Locally: Bool { !isSharedCIRunner }",
+        new="private static var assertsP50Locally: Bool { isSharedCIRunner }",
+        test="HarnessPerformanceTests/testTheP50GateIsAssertedOnDeveloperHardware",
+    ),
+    Mutation(
         # Removes the mid-run clean-tree check, restoring the state where an
         # edit landing during a ~30 minute sweep makes every later case measure
         # a tree nobody intended and report SETUP FAILED as if a guard broke.
