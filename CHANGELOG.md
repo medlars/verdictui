@@ -2,6 +2,50 @@
 
 ## [Unreleased]
 
+### 2026-08-07 (Wave 4 Task 2)
+
+**The body walk — `@Verifiable` now buys a semantic tree, not just a root.**
+
+- **`BodyProbeWalk`** rewrites a copy of the view's `body`, attaching
+  `.verdictProbe(id:role:text:)` to every recognised element (`Text`, `Button`,
+  `Toggle`, `TextField`, `SecureField`, `Image`, `List`). Ids come from source
+  structure — `Row.text.0`, `Row.image.0` — so they are stable across runs and
+  readable in a finding. An unprobed `Text("hello")` now reaches the kernel as a
+  `.text` node instead of vanishing into a bare root.
+- **Recognition is by callee identifier, through the modifier chain.**
+  `Text("x").padding().foregroundStyle(.red)` is still a `Text`; nearly every
+  real element carries modifiers, so a walk matching only bare calls would probe
+  almost nothing while passing a suite written with bare elements. Matching on
+  the parsed callee rather than on expression text is what keeps `myText(…)` from
+  being probed as a `Text` (lesson 213).
+- **An explicit probe always wins.** An element already carrying
+  `.verdictProbe` is left exactly as written — re-probing would give one element
+  two ids and make `DuplicateProbeIDRule` report the instrumentation itself as a
+  defect.
+- **A body the walk cannot rewrite is REPORTED, not silently passed through.**
+  A multi-statement `body` gets a named error at the attachment site. The
+  alternative — expanding to an unprobed passthrough — compiles, renders, and
+  yields a tree with a root and nothing under it, so every rule reports PASS on a
+  screen nobody instrumented. A false green is this product's worst failure.
+- **Only literal text is forwarded as `text:`.** An interpolated string is not
+  knowable at expansion time, and forwarding its source would put the literal
+  `\(name)` where `TruncationRule` reads what the user sees. A false value is
+  worse than an absent one, because the rule acts on it.
+- **`RoleVocabularyTests` pins the walk's role strings against the kernel's
+  `Role`.** The plugin cannot import `VerdictUIKernel` — it builds for the host
+  toolchain — so the roles it emits are string literals, and an unknown one
+  decodes to `Role.custom` rather than failing: silent loss of coverage, not a
+  compile error. The test target can see both modules, so that is where the two
+  spellings are made to meet (lesson 284).
+- **Known cosmetic limitation, measured rather than assumed.** A multi-line body
+  keeps the indentation it had inside `body`, because the expression is lifted
+  out of it. `SwiftBasicFormat.formatted()` was tried and removed: it supplies
+  trivia only where trivia is *absent*, so it indented the walk's new lines and
+  left the original closing brace untouched; stripping trivia first makes it emit
+  flat output. There is no re-indent facility in SwiftSyntax to reach for. The
+  snapshot pins what the macro actually emits.
+- **354 Swift + 178 Python tests, 50 mutation targets** (was 344 / 178 / 45).
+
 ### 2026-08-06 (Wave 4 Task 1)
 
 **`@Verifiable` — the macro target, kept optional by construction.**

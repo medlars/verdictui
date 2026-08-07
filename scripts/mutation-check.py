@@ -568,6 +568,62 @@ MUTATIONS = [
         test="VerdictUIKernelTests.ContentOverlapRuleTests/testDeclaredLayeringOnEitherNodeOrAnyAncestorIsIntent",
         runner=Runner.SWIFT,
     ),
+    Mutation(
+        # The walk stops honouring an existing probe, so a hand-probed element
+        # gets a second, generated id. `DuplicateProbeIDRule` then reports the
+        # instrumentation itself as a defect.
+        name="body walk re-probes an already-probed element",
+        path="Sources/VerdictUIMacros/BodyProbeWalk.swift",
+        old="        if Self.carriesExplicitProbe(expression) {",
+        new="        if false {",
+        test="VerdictUIMacroTests.VerifiableMacroTests/testAnElementThatAlreadyHasAProbeIsNotProbedAgain",
+        runner=Runner.SWIFT,
+    ),
+    Mutation(
+        # Recognition stops looking through the modifier chain, so any element
+        # carrying a `.padding()` or a `.foregroundStyle()` — which is nearly
+        # every real one — goes unprobed while a suite of bare elements passes.
+        name="body walk fails to see an element through its modifiers",
+        path="Sources/VerdictUIMacros/BodyProbeWalk.swift",
+        old="                return calleeIdentifier(of: base)\n            }\n            return nil\n        }\n        if let member = expression.as(MemberAccessExprSyntax.self), let base = member.base {\n            return calleeIdentifier(of: base)\n        }\n        return nil",
+        new="                return nil\n            }\n            return nil\n        }\n        if let member = expression.as(MemberAccessExprSyntax.self), let base = member.base {\n            return calleeIdentifier(of: base)\n        }\n        return nil",
+        test="VerdictUIMacroTests.VerifiableMacroTests/testAModifiedElementIsStillRecognisedThroughItsChain",
+        runner=Runner.SWIFT,
+    ),
+    Mutation(
+        # An interpolated string is forwarded as `text:`, putting the literal
+        # source `\\(name)` where TruncationRule reads what the user sees. A
+        # false value is worse than an absent one — the rule acts on it.
+        name="body walk forwards an interpolated string as literal text",
+        path="Sources/VerdictUIMacros/BodyProbeWalk.swift",
+        old="                literal.segments.count == 1,",
+        new="                literal.segments.count >= 1,",
+        test="VerdictUIMacroTests.VerifiableMacroTests/testAnInterpolatedStringIsNotForwardedAsText",
+        runner=Runner.SWIFT,
+    ),
+    Mutation(
+        # The per-role counter stops advancing, so every element of a role gets
+        # the SAME id. Ids are what TreeDiff matches on and what Wave 5's
+        # baselines key on, so a collision silently merges two elements.
+        name="body walk mints a colliding id for every element of a role",
+        path="Sources/VerdictUIMacros/BodyProbeWalk.swift",
+        old="        counts[role] = index + 1",
+        new="        counts[role] = index",
+        test="VerdictUIMacroTests.VerifiableMacroTests/testTheIdIsDerivedFromTheTypeNameAndTheElementsPosition",
+        runner=Runner.SWIFT,
+    ),
+    Mutation(
+        # A body the walk cannot rewrite silently expands to an unprobed
+        # passthrough instead of reporting. It compiles, renders, and yields a
+        # tree with a root and nothing under it, so every rule reports PASS on
+        # a screen nobody instrumented.
+        name="macro accepts a multi-statement body and probes nothing",
+        path="Sources/VerdictUIMacros/VerifiableMacro.swift",
+        old="                Diagnostic(node: node, message: VerdictMacroDiagnostic.bodyIsNotASingleExpression)",
+        new="                Diagnostic(node: node, message: VerdictMacroDiagnostic.noBodyMember)",
+        test="VerdictUIMacroTests.VerifiableMacroTests/testAMultiStatementBodyIsReportedRatherThanSilentlyLeftUnprobed",
+        runner=Runner.SWIFT,
+    ),
 ]
 
 # XCTest prints this once per suite plus once for the total; the largest count is

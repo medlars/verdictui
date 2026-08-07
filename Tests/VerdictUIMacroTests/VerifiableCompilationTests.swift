@@ -38,6 +38,17 @@ final class VerifiableCompilationTests: XCTestCase {
         }
     }
 
+    /// A view carrying NO manual probe at all — the adoption claim of the whole
+    /// wave: two tokens (`@Verifiable`, and later `#VerdictScenario`) buy full
+    /// verification. If the walk does not run, this view's tree is a bare root
+    /// with nothing under it.
+    @Verifiable
+    struct UnprobedRow: View {
+        var body: some View {
+            Text("hello")
+        }
+    }
+
     /// The same view, instrumented by hand. `verdictProbedBody` is written out
     /// as the macro would generate it — this is the differential twin.
     struct HandProbedRow: View {
@@ -91,6 +102,58 @@ final class VerifiableCompilationTests: XCTestCase {
             descriptors(of: macroTree).contains { $0.contains("row-label") },
             "The macro-probed tree has no 'row-label' node: \(descriptors(of: macroTree))"
         )
+    }
+
+    func testAnUnprobedElementIsProbedByTheMacroAlone() throws {
+        // Wave 4 Task 2. The tree from a view carrying no manual probe must
+        // still contain a node for its `Text`, with the text it renders and the
+        // `.text` role — otherwise `@Verifiable` buys a root and nothing else,
+        // and every rule in the kernel has nothing to evaluate.
+        let tree = try renderTree { sink in
+            AnyView(UnprobedRow().verdictProbedBody(into: sink))
+        }
+        let lines = descriptors(of: tree)
+        XCTAssertTrue(
+            lines.contains { $0.hasSuffix("|text|hello") },
+            "No generated probe for the unprobed Text. Tree was: \(lines)"
+        )
+    }
+
+    func testAGeneratedIdIsALegalProbeId() throws {
+        // `verdictProbe` PRECONDITIONS on the id, so an illegal generated id
+        // crashes the consumer's process instead of producing a finding. That
+        // makes it the one macro defect no rule can report, which is why it is
+        // asserted against the kernel's own judgement rather than against a
+        // shape this test invents.
+        let tree = try renderTree { sink in
+            AnyView(UnprobedRow().verdictProbedBody(into: sink))
+        }
+        var ids: [String] = []
+        func collect(_ node: SemanticNode) {
+            ids.append(node.id)
+            node.children.forEach(collect)
+        }
+        collect(tree)
+        // Two node kinds are not the macro's output and must not be asserted on:
+        // the root's own container, which `verdictRoot` reports with an EMPTY
+        // id, and unprobed nodes, which `SemanticNode.identity` names from their
+        // structural path with an `@` prefix. Filtered by what those ids LOOK
+        // like rather than by position — the first version of this test dropped
+        // the first node on the assumption it was always the root, and with a
+        // single probe the assembler makes the PROBE the root, so it dropped the
+        // only node under test and reported "cannot discriminate" while the
+        // walk was working.
+        let generated = ids.filter { !$0.hasPrefix("@") && !$0.isEmpty }
+        XCTAssertFalse(
+            generated.isEmpty,
+            "No probed node at all, so this test cannot discriminate: \(ids)"
+        )
+        for id in generated {
+            XCTAssertNil(
+                ProbeRecord.idViolation(id),
+                "Generated id '\(id)' is illegal: \(ProbeRecord.idViolation(id) ?? "")"
+            )
+        }
     }
 
     // MARK: - Helpers
