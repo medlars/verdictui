@@ -300,6 +300,62 @@ final class SemanticNodeTests: XCTestCase {
         XCTAssertFalse(a.contains(b))
     }
 
+    /// A rectangle that encloses no area contains nothing, and is contained by
+    /// nothing — the same arithmetic fact ``Rect/intersects(_:)`` already
+    /// encodes.
+    ///
+    /// Without the guard, an INVERTED rect (negative width or height) has
+    /// `maxX < x`, so the four inequalities in `contains` can all hold for a
+    /// rectangle sitting entirely outside it: `Rect(x: 100, y: 100, width:
+    /// -80, height: -80).contains(Rect(x: 30, y: 30, width: 5, height: 5))`
+    /// answers `true`. A NaN component is worse in the other direction — every
+    /// comparison against NaN is false, so a NaN container contains nothing,
+    /// including itself, and a NaN candidate is never contained.
+    ///
+    /// There are ZERO call sites today. That is exactly why it is worth fixing
+    /// now: the first clipping or containment rule to reach for this would
+    /// inherit a silent wrong answer, and the same shape already shipped once —
+    /// a NaN frame passed all six rules because `intersects` was a negated
+    /// disjunction (the Wave 1-3 audit's P0-1).
+    func testContainsIsFalseForDegenerateRectanglesInBothDirections() {
+        let sane = Rect(x: 0, y: 0, width: 100, height: 100)
+        let inside = Rect(x: 30, y: 30, width: 5, height: 5)
+
+        // Inverted container: maxX/maxY fall BEHIND x/y, so a rectangle well
+        // outside satisfies every inequality.
+        let inverted = Rect(x: 100, y: 100, width: -80, height: -80)
+        XCTAssertFalse(
+            inverted.contains(inside),
+            "a rectangle with negative extent encloses no area, so it contains nothing"
+        )
+        XCTAssertFalse(
+            inverted.contains(inverted),
+            "not even itself — it has no area to enclose"
+        )
+
+        // Zero extent is the boundary case of the same fact.
+        let zero = Rect(x: 0, y: 0, width: 0, height: 0)
+        XCTAssertFalse(zero.contains(zero), "an empty rectangle contains nothing")
+
+        // A degenerate CANDIDATE is not inside anything either: "is contained"
+        // is a claim about area, and it has none.
+        XCTAssertFalse(
+            sane.contains(inverted),
+            "a rectangle that cannot be placed is not inside a real one"
+        )
+
+        // Non-finite components, the shape that shipped a false PASS before.
+        let nan = Rect(x: .nan, y: .nan, width: .nan, height: .nan)
+        XCTAssertFalse(nan.contains(inside))
+        XCTAssertFalse(sane.contains(nan))
+        XCTAssertFalse(nan.contains(nan))
+
+        // The real containment answers are unchanged — a guard that also broke
+        // the working path would be a worse trade than the bug.
+        XCTAssertTrue(sane.contains(inside))
+        XCTAssertTrue(sane.contains(sane), "edges are inclusive")
+    }
+
     func testSizeAndRectSurviveCodableRoundTrip() throws {
         let size = Size(width: 28, height: 28)
         XCTAssertEqual(try JSONDecoder().decode(Size.self, from: try JSONEncoder().encode(size)), size)
