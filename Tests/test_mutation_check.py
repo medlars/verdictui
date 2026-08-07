@@ -16,6 +16,7 @@ here is a pytest collection pass, which runs no test bodies.
 
 import hashlib
 import importlib.util
+import os
 import re
 import subprocess
 import sys
@@ -136,6 +137,74 @@ class TestPytestRunner:
         assert "pytest" in argv
         assert "Tests/test_x.py::TestY::test_z" in argv
         assert argv[argv.index("-p") + 1] == "no:cacheprovider"
+
+    def test_a_mutated_module_is_not_served_from_stale_bytecode(self, tmp_path) -> None:
+        """A pytest witness must judge the source the harness just wrote, not a
+        cached compile of what was there a moment ago.
+
+        Six pytest mutations target `scripts/verdictui-pm.py` in sequence, and
+        each one writes the file, runs pytest, and restores it. Tests load that
+        module with `spec_from_file_location`, which honours `__pycache__`, and
+        CPython validates that cache on **mtime plus size** at one-second
+        granularity. Two rows landing in the same second therefore serve the
+        PREVIOUS row's bytecode: the mutation is on disk, the test judges the
+        unmutated constant, and the row reports UNNOTICED.
+
+        That is the expensive direction. UNNOTICED reads as "this guard is not
+        covered" and invites someone to rewrite a guard that works — the same
+        class of wasted hour `no.md` #14 records, where a sweep verdict
+        contradicted a direct measurement and the apparatus was at fault. It is
+        also a RACE, so it moves between runs: exactly one of the six went
+        UNNOTICED on 2026-08-07 and re-running that row alone said NOTICED.
+
+        This test reproduces the race deterministically by writing two versions
+        of a module inside one second and asserting the second read sees the
+        second version.
+        """
+        mod = _load()
+        module = tmp_path / "subject.py"
+        reader = tmp_path / "test_reader.py"
+        reader.write_text(
+            "import importlib.util, sys\n"
+            f"spec = importlib.util.spec_from_file_location('subject', {str(module)!r})\n"
+            "m = importlib.util.module_from_spec(spec)\n"
+            "sys.modules['subject'] = m\n"
+            "spec.loader.exec_module(m)\n"
+            "def test_budget():\n"
+            "    assert m.BUDGET == 70.0, f'read {m.BUDGET}'\n"
+        )
+
+        # Through `run_named_test`, NOT a hand-written argv: the flag under test
+        # lives in that function, so a test spelling its own command line would
+        # stay red however the harness is fixed — it would be measuring itself.
+        # `REPO` is rebound because the harness runs every command with
+        # `cwd=REPO`, and the subject module lives in the tmp tree.
+        mod.REPO = tmp_path
+
+        # Both versions are 14 bytes, so SIZE cannot separate them, and both are
+        # stamped with the SAME mtime so the second cannot either. That stamp is
+        # what makes this deterministic instead of a coin flip: pytest's ~0.9 s
+        # startup pushes two natural writes into different seconds most of the
+        # time, which would let the test pass against the unfixed harness — and
+        # a control that passes either way is not a test (`no.md` #12). The
+        # sweep hits the same collision by running six rows back-to-back against
+        # one file; measured on 2026-08-07 as mtimes ...352.32 and ...352.78,
+        # identical to the second, with the mutated module read as unmutated.
+        stamp = (1_700_000_000, 1_700_000_000)
+
+        module.write_text("BUDGET = 70.0\n")
+        os.utime(module, stamp)
+        first = mod.run_named_test(str(reader), mod.Runner.PYTEST)
+        assert first.returncode == 0, f"the unmutated baseline must pass: {first.stdout}"
+
+        module.write_text("BUDGET = 85.0\n")
+        os.utime(module, stamp)
+        second = mod.run_named_test(str(reader), mod.Runner.PYTEST)
+        assert second.returncode != 0, (
+            "the mutated module was judged as unmutated — pytest served a stale "
+            "__pycache__ compile, so this row would report UNNOTICED for a guard "
+            f"that works. stdout: {second.stdout}"
+        )
 
     def test_no_swift_mutation_carries_a_pytest_node_id(self) -> None:
         # The mirror of the check below. `swift test --filter` treats a node id

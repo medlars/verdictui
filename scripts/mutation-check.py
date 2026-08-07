@@ -635,6 +635,17 @@ MUTATIONS = [
         test="VerdictUIKernelTests.ContentOverlapRuleTests/testDirectSiblingsAreLeftToSiblingOverlapRule",
         runner=Runner.SWIFT,
     ),
+    # NOT MUTATED: the `-B` on the pytest argv in `run_named_test`. A mutation's
+    # `old=` must name the text it replaces, and the only text that identifies
+    # that flag is the argv itself — which this catalog would then contain
+    # verbatim, in the very file it mutates. `--verify-targets` counts two sites
+    # and refuses the row, correctly: the harness could not say which one it
+    # broke. Three one-line anchors and one line-spanning anchor were tried; the
+    # line-spanning one needs a wrap that `ruff format` immediately collapses,
+    # so it would rot on the next format run. The guard is covered instead by
+    # `test_a_mutated_module_is_not_served_from_stale_bytecode`, which was
+    # confirmed to FAIL with `-B` removed and PASS with it present — the control
+    # a mutation row would have provided, run by hand. See `no.md` #16.
     Mutation(
         # The same widening one rule over. sibling-overlap had NO tolerance at
         # all until this row's guard shipped, so a 0.01 pt sliver was an ERROR
@@ -810,12 +821,25 @@ def run_named_test(test: str, runner: Runner = Runner.SWIFT) -> subprocess.Compl
     """The one test invocation this script makes, spelled once per runner.
 
     Baseline and mutated runs must differ only in the state of the source, so
-    they go through the same argv rather than two copies of it.
+    they go through the same argv rather than two copies of it — and the runner
+    must read that source fresh, which is what `-B` on the pytest path buys.
     """
     if runner is Runner.PYTEST:
         # `-p no:cacheprovider` so a mutation run leaves no `.pytest_cache`
         # behind for the final clean-tree check to trip over.
-        return run([sys.executable, "-m", "pytest", test, "-q", "-p", "no:cacheprovider"])
+        #
+        # `-B` because the witness must judge the source this harness just
+        # wrote. Six pytest rows target `scripts/verdictui-pm.py` in sequence,
+        # and the tests load it via `spec_from_file_location`, which honours
+        # `__pycache__`. CPython validates that cache on mtime PLUS SIZE at
+        # one-second granularity, so two rows landing in the same second serve
+        # the previous row's bytecode — the mutation sits on disk while the
+        # test reads the unmutated constant, and the row reports UNNOTICED for
+        # a guard that works. That is the expensive direction: it reads as
+        # "untested" and invites rewriting correct code. Measured 2026-08-07,
+        # when exactly one of the six went UNNOTICED and re-running that row
+        # alone said NOTICED — a race, so it moves between runs.
+        return run([sys.executable, "-B", "-m", "pytest", test, "-q", "-p", "no:cacheprovider"])
     return run(["swift", "test", "--filter", test, "-Xswiftc", "-warnings-as-errors"])
 
 
