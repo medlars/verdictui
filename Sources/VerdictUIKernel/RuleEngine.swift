@@ -133,6 +133,24 @@ public enum RuleEngine {
         TapTargetRule(),
     ]
 
+    /// Identifier of the structural vacuity guard. Not a ``LintRule`` id: no
+    /// rule with this name exists, and naming it in ``LintContext/disabledRules``
+    /// does nothing.
+    public static let vacuousVerdictRule = "vacuous-verdict"
+
+    /// Whether any node in the tree carries a probe id.
+    ///
+    /// Depth-first over the whole tree, not just the root's children: a probe
+    /// nested under unprobed containers is still an observation. The root itself
+    /// never counts — it is synthesized by `verdictRoot` and is always present,
+    /// so counting it would make every tree look observed.
+    private static func containsProbedNode(_ node: SemanticNode) -> Bool {
+        for child in node.children {
+            if !child.id.isEmpty || containsProbedNode(child) { return true }
+        }
+        return false
+    }
+
     /// Evaluate `rules` against `root` and return the verdict.
     ///
     /// Findings are ordered by rule, then by the rule's own traversal order, so
@@ -154,6 +172,35 @@ public enum RuleEngine {
         var findings: [Finding] = []
         let clock = ContinuousClock()
         let elapsed = clock.measure {
+            // STRUCTURAL, not a rule, and evaluated before them. Every rule
+            // iterates children, so a tree with no probed node yields zero
+            // findings, and zero findings derives to PASS -- the engine
+            // announcing a screen is fine on the strength of having observed
+            // nothing. Measured 2026-08-08 on a real app view hosted without
+            // probes: squeezed to an eighth of its width, visibly broken, PASS
+            // with an empty findings array.
+            //
+            // A LintRule would be the natural home and is the wrong one:
+            // `disabledRules` could switch it off, and the one guard whose
+            // absence is invisible must not be opt-out. Deliberately NOT routed
+            // through `makeFinding`, because that consults per-node suppression
+            // -- there is no node to suppress on here, and a tree-level
+            // suppression key would reopen the hole from the other side.
+            if !containsProbedNode(root) {
+                findings.append(
+                    Finding(
+                        rule: vacuousVerdictRule,
+                        severity: .error,
+                        nodeID: root.evidenceLabel,
+                        message:
+                            "no probed nodes reached the kernel, so no rule could observe "
+                            + "anything — this verdict is vacuous, not clean",
+                        suggestion:
+                            "attach .verdictProbe(_:role:text:) to the elements this "
+                            + "scenario is meant to verify, or apply @Verifiable to the view"
+                    )
+                )
+            }
             for rule in rules where !context.disabledRules.contains(type(of: rule).id) {
                 findings.append(contentsOf: rule.evaluate(root, context: context))
             }

@@ -119,12 +119,40 @@ rule set and evaluate trees concurrently.
 1. `duplicate-probe-id`
 2. `zero-size`
 3. `sibling-overlap`
-4. `offscreen`
-5. `truncation`
-6. `tap-target`
+4. `content-overlap`
+5. `offscreen`
+6. `truncation`
+7. `tap-target`
 
 `duplicate-probe-id` runs first because an id collision undermines the evidence
 every other rule produces about the same tree.
+
+### The vacuity guard — `vacuous-verdict`
+
+Before any rule runs, `RuleEngine.run` checks that the tree contains at least one
+**probed** node, and emits an `error` finding under the id `vacuous-verdict` when
+it does not.
+
+This is deliberately **not** a `LintRule`, and it is the only check in the kernel
+that is not:
+
+- Every rule iterates children. A tree with no probed nodes produces zero
+  findings, and zero findings derives to `PASS` — the engine announcing that a
+  screen is fine on the strength of having observed nothing. Measured 2026-08-08
+  against a real app view hosted without probes: squeezed to an eighth of its
+  intended width and visibly broken, it returned `PASS` with an empty findings
+  array.
+- A rule can be switched off through `LintContext.disabledRules`. The one check
+  whose absence is invisible must not be opt-out, so naming `vacuous-verdict`
+  there does nothing.
+- It does not route through `LintContext.makeFinding`, because that consults
+  per-node suppression and there is no offending node to suppress on. A
+  tree-level suppression key would reopen the hole from the other side.
+
+The root itself never counts as a probe: it is synthesized by `verdictRoot` and is
+always present, so counting it would make every tree look observed. The search is
+depth-first over the whole tree, since a probe nested under unprobed containers is
+still an observation.
 
 `RuleEngine.run(rules:on:context:includeTree:)` evaluates the rules and packages the
 findings as a `Verdict`. Findings are ordered by rule, then by the rule's own

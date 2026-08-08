@@ -191,6 +191,27 @@ MUTATIONS = [
         test="ScenarioTests/testOneHostHandsEveryReEvaluationTheSameScenarioState",
     ),
     Mutation(
+        # The false-clean failure mode: with the guard inverted, a tree carrying
+        # no probes yields zero findings and derives to PASS. Measured on a real
+        # app view before the guard existed -- squeezed to an eighth of its
+        # width, visibly broken, reported PASS with findings: [].
+        name="a probeless tree is reported clean again",
+        path="Sources/VerdictUIKernel/RuleEngine.swift",
+        old="            if !containsProbedNode(root) {",
+        new="            if false {",
+        test="VerdictUIKernelTests/testAProbelessTreeCannotProduceAPassVerdict",
+    ),
+    Mutation(
+        # The search must cover the WHOLE tree. Restricting it to the root's
+        # direct children makes a probe nested under an unprobed container
+        # invisible, so a correctly-instrumented screen reports vacuous.
+        name="the probe search stops at the root's direct children",
+        path="Sources/VerdictUIKernel/RuleEngine.swift",
+        old="            if !child.id.isEmpty || containsProbedNode(child) { return true }",
+        new="            if !child.id.isEmpty { return true }",
+        test="VerdictUIKernelTests/testAProbeNestedDeepCountsAsObservation",
+    ),
+    Mutation(
         # Mutates the MANIFEST, because the floor is the thing consumers collide
         # with. A .v14 floor makes SwiftPM refuse every consumer pinned lower and
         # blame the PRODUCT rather than the one API responsible, so nothing in
