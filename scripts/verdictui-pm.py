@@ -5,10 +5,12 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path.home() / "Projects/shared-libs/pm-base"))
@@ -34,6 +36,10 @@ _logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PROJECT_NAME = "VerdictUI"
 
+_SWIFT_MODULE_CACHE = PROJECT_ROOT / ".build" / "clang-module-cache"
+_SWIFT_MODULE_CACHE.mkdir(parents=True, exist_ok=True)
+os.environ.setdefault("CLANG_MODULE_CACHE_PATH", str(_SWIFT_MODULE_CACHE))
+
 __all__ = ["PROJECT_ROOT", "PROJECT_NAME", "VerdictUIPM"]
 
 sys.path.insert(0, str(Path.home() / "Projects/shared-libs/release-tools"))
@@ -50,6 +56,7 @@ TIMEOUT_STANDARD = 120
 # invocation layer (not Package.swift unsafeFlags) so downstream consumers of
 # the library are unaffected. CI mirrors these flags — keep the two in sync.
 SWIFT_STRICT_FLAGS = ["-Xswiftc", "-warnings-as-errors"]
+SWIFT_PM_FLAGS = ["--disable-sandbox"]
 # SLO 1 from docs/slo.md. Kept here rather than read from the doc: a gate that
 # parses its own threshold out of prose fails open the moment the prose is
 # reworded. HarnessPerformanceTests carries the same number and both move together.
@@ -68,15 +75,68 @@ def _pm_log(message: str, level: str = "INFO") -> None:
     _logger.log(getattr(logging, level, logging.INFO), message)
 
 
+# Where `_swift_runner` stashes the unwrapped sweep on the shared-libs module.
+# Spelled once so the read, the write, and the test agree by construction.
+_RAW_KILL_ATTR = "_verdictui_raw_kill_zombie_swift_processes"
+
+
+def _clear_project_swiftpm_lock_files(project_root: Path) -> int:
+    build_token = str(project_root / ".build").replace("/", "_")
+    removed = 0
+    for path in Path(tempfile.gettempdir()).glob(f"*{build_token}*.lock"):
+        try:
+            path.unlink()
+            removed += 1
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            _pm_log(f"Could not remove SwiftPM lock sentinel {path}: {exc}", "WARN")
+    return removed
+
+
 def _swift_runner():  # noqa: ANN201 — heterogeneous tuple of shared-libs callables
     """Lazy import of swift_runner — keeps hook-snapshot imports of this module fast."""
-    from swift_runner import (  # type: ignore  # noqa: PLC0415 — lazy on purpose (startup cost)
-        kill_zombie_swift_processes,
-        run_swift_build,
-        run_swift_test,
+    import swift_runner  # type: ignore  # noqa: PLC0415 — lazy on purpose (startup cost)
+
+    # Stash the ORIGINAL under a private name so a repeat call wraps the real
+    # sweep rather than the wrapper a previous call installed -- otherwise each
+    # invocation adds a layer and the TimeoutExpired handlers nest. Assigned via
+    # setattr because the name is injected at runtime: `swift_runner` does not
+    # declare it, so attribute syntax is a type error even though the read on
+    # the line above is fine (CIS-9EC205DF).
+    raw_kill = getattr(
+        swift_runner,
+        _RAW_KILL_ATTR,
+        swift_runner.kill_zombie_swift_processes,
+    )
+    setattr(swift_runner, _RAW_KILL_ATTR, raw_kill)
+
+    def kill_zombie_swift_processes(project_root: Path) -> list[int]:
+        try:
+            return raw_kill(project_root)
+        except subprocess.TimeoutExpired as e:
+            removed = _clear_project_swiftpm_lock_files(project_root)
+            _pm_log(
+                f"Swift zombie sweep skipped after {e.timeout}s timeout while inspecting locks",
+                "WARN",
+            )
+            if removed:
+                _pm_log(f"Removed {removed} stale SwiftPM lock sentinel(s)", "WARN")
+            return []
+
+    swift_runner.kill_zombie_swift_processes = kill_zombie_swift_processes
+    swift_runner.run_swift_build.__globals__["kill_zombie_swift_processes"] = (
+        kill_zombie_swift_processes
+    )
+    swift_runner.run_swift_test.__globals__["kill_zombie_swift_processes"] = (
+        kill_zombie_swift_processes
     )
 
-    return kill_zombie_swift_processes, run_swift_build, run_swift_test
+    return (
+        kill_zombie_swift_processes,
+        swift_runner.run_swift_build,
+        swift_runner.run_swift_test,
+    )
 
 
 class VerdictUIPM(PmBase):
@@ -104,7 +164,7 @@ class VerdictUIPM(PmBase):
             lock_dir=_LOCK_DIR,
             log=_pm_log,
             timeout=TIMEOUT_SWIFT_BUILD,
-            extra_flags=["--build-tests", *SWIFT_STRICT_FLAGS],
+            extra_flags=[*SWIFT_PM_FLAGS, "--build-tests", *SWIFT_STRICT_FLAGS],
         )
 
     def stage_test(self) -> dict:
@@ -119,7 +179,7 @@ class VerdictUIPM(PmBase):
             log=_pm_log,
             timeout=TIMEOUT_SWIFT_TEST,
             min_test_count=1,
-            extra_flags=SWIFT_STRICT_FLAGS,
+            extra_flags=[*SWIFT_PM_FLAGS, *SWIFT_STRICT_FLAGS],
         )
 
     def stage_floor(self) -> dict:
@@ -274,17 +334,18 @@ class VerdictUIPM(PmBase):
         """
         if shutil.which("swift") is None:
             return {"passed": False, "detail": "swift not installed — demo cannot be run"}
-        # Flags go BEFORE the target name. `swift run VerdictUIDemo -Xswiftc ...`
-        # passes everything after the target to the executable as argv, so the
-        # strict flags would be silently dropped — and, because the resulting
-        # build configuration differs from `stage_build`'s, the whole package
-        # would be recompiled here rather than reusing those products.
+        demo = PROJECT_ROOT / ".build" / "debug" / "VerdictUIDemo"
+        if not demo.exists():
+            return {
+                "passed": False,
+                "detail": ".build/debug/VerdictUIDemo missing -- run stage_build first",
+            }
         r = subprocess.run(  # noqa: S603 — fixed argv built from constants
-            ["swift", "run", *SWIFT_STRICT_FLAGS, "VerdictUIDemo"],
+            [str(demo)],
             cwd=PROJECT_ROOT,
             capture_output=True,
             text=True,
-            timeout=TIMEOUT_SWIFT_BUILD,
+            timeout=TIMEOUT_STANDARD,
         )
         if r.returncode != 0:
             return {"passed": False, "detail": (r.stderr.strip() or "no stderr")[:300]}
@@ -365,6 +426,7 @@ class VerdictUIPM(PmBase):
             [
                 "swift",
                 "test",
+                *SWIFT_PM_FLAGS,
                 *SWIFT_STRICT_FLAGS,
                 "--filter",
                 "HarnessPerformanceTests",

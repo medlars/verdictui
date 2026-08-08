@@ -4,10 +4,12 @@ import contextlib
 import importlib.util
 import io
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -157,12 +159,76 @@ class TestStageContracts:
 
 
 class TestStageBuild:
+    def test_swift_module_cache_is_project_local(self) -> None:
+        cache_path = Path(os.environ["CLANG_MODULE_CACHE_PATH"])
+        assert cache_path.is_relative_to(_PROJECT_ROOT / ".build")
+
     def test_missing_package_swift_fails(self, tmp_path, monkeypatch) -> None:
         monkeypatch.setattr(_mod, "PROJECT_ROOT", tmp_path)
         pm = VerdictUIPM.__new__(VerdictUIPM)
         result = pm.stage_build()
         assert not result["passed"]
         assert "Package.swift" in result["detail"]
+
+    def test_swift_runner_tolerates_timed_out_lock_sweep(self, monkeypatch) -> None:
+        def raw_kill(_project_root: Path) -> list[int]:
+            raise subprocess.TimeoutExpired(cmd="lsof", timeout=5)
+
+        def run_swift_build() -> None:
+            return None
+
+        def run_swift_test() -> None:
+            return None
+
+        fake = types.SimpleNamespace(
+            kill_zombie_swift_processes=raw_kill,
+            run_swift_build=run_swift_build,
+            run_swift_test=run_swift_test,
+        )
+        monkeypatch.setitem(sys.modules, "swift_runner", fake)
+
+        safe_kill, build, test = _mod._swift_runner()
+
+        assert safe_kill(_PROJECT_ROOT) == []
+        assert build.__globals__["kill_zombie_swift_processes"] is safe_kill
+        assert test.__globals__["kill_zombie_swift_processes"] is safe_kill
+        assert getattr(fake, _mod._RAW_KILL_ATTR) is raw_kill
+
+    def test_the_pm_script_is_pyright_clean(self) -> None:
+        # The runtime tests above monkeypatch `swift_runner`, so they pass
+        # whether or not the real module declares the names this script assigns
+        # to it. Only a type check can see that, and CI runs one -- so without
+        # this the PM script can go red on CI from a green local suite
+        # (CIS-9EC205DF).
+        if shutil.which("pyright") is None:
+            pytest.skip("pyright not installed")
+        proc = subprocess.run(
+            ["pyright", "--outputjson", str(_PROJECT_ROOT / "scripts/verdictui-pm.py")],
+            capture_output=True,
+            text=True,
+            cwd=_PROJECT_ROOT,
+            check=False,
+        )
+        summary = json.loads(proc.stdout)["summary"]
+        assert summary["errorCount"] == 0, proc.stdout
+
+    def test_timed_out_lock_sweep_clears_project_lock_sentinels(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        project = tmp_path / "Project"
+        project.mkdir()
+        token = str(project / ".build").replace("/", "_")
+        stale = tmp_path / f"{token}.lock"
+        unrelated = tmp_path / "_other_project_.build.lock"
+        stale.write_text("stale\n")
+        unrelated.write_text("keep\n")
+        monkeypatch.setattr(_mod.tempfile, "gettempdir", lambda: str(tmp_path))
+
+        removed = _mod._clear_project_swiftpm_lock_files(project)
+
+        assert removed == 1
+        assert not stale.exists()
+        assert unrelated.exists()
 
 
 class TestSkipSentinel:
@@ -261,16 +327,18 @@ class TestStageWrappers:
         result = pm.stage_floor()
         assert result["passed"], result["detail"]
 
-    def test_stage_demo_puts_build_flags_before_the_target_name(self, monkeypatch) -> None:
-        """`swift run TARGET -Xswiftc ...` hands the flags to the executable.
+    def test_stage_demo_runs_the_built_executable_not_swiftpm(self, tmp_path, monkeypatch) -> None:
+        """The demo stage launches the product already built by `stage_build`.
 
-        Everything after the target name is the executable's argv, so flags
-        placed there are silently dropped — and because the resulting build
-        configuration differs from `stage_build`'s, the package is recompiled
-        instead of reusing those products. The demo ignores argv, so nothing
-        fails; the strict-warnings guarantee just quietly stops holding.
+        Re-entering `swift run` here re-plans the package, can wait on SwiftPM
+        locks, and can hang in the repair sandbox. This stage's job is only to
+        prove the demo executable launches and emits valid JSON.
         """
         seen: list[list[str]] = []
+        demo = tmp_path / ".build" / "debug" / "VerdictUIDemo"
+        demo.parent.mkdir(parents=True)
+        demo.write_text("#!/bin/sh\n")
+        monkeypatch.setattr(_mod, "PROJECT_ROOT", tmp_path)
 
         def _fake_run(argv, **_kwargs):
             seen.append(argv)
@@ -280,10 +348,15 @@ class TestStageWrappers:
         pm = VerdictUIPM.__new__(VerdictUIPM)
         assert pm.stage_demo()["passed"]
 
-        argv = seen[0]
-        target = argv.index("VerdictUIDemo")
-        assert "-Xswiftc" in argv, argv
-        assert argv.index("-Xswiftc") < target, f"flags must precede the target: {argv}"
+        assert seen == [[str(demo)]]
+
+    def test_stage_demo_fails_when_the_built_executable_is_missing(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        monkeypatch.setattr(_mod, "PROJECT_ROOT", tmp_path)
+        result = VerdictUIPM.__new__(VerdictUIPM).stage_demo()
+        assert not result["passed"]
+        assert "stage_build" in result["detail"]
 
     def test_stage_demo_fails_on_an_empty_verdict_array(self, monkeypatch) -> None:
         # `[]` is valid JSON and would otherwise read as success while
