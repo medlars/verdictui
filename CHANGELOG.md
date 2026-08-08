@@ -2,6 +2,41 @@
 
 ## [Unreleased]
 
+### 2026-08-08 (correctness pass — every open P1 closed)
+
+**Fixed**
+
+- **The settle engine's waiter census is now one observation, not two.**
+  `Quiescence.progressToken` read `clock.pendingWaiterCount` for its
+  early-return guard and again to hash it, with a `CATransaction.flush()`
+  between — so a virtual-clock waiter registering in that window produced a
+  token hashing a count the guard had never seen. Never a wrong verdict (the
+  next check self-corrects), but an incoherent one.
+- **`HostileSettleTests` no longer races its own fixture.** The test scheduled
+  its mutation 20 ms out against a 30 ms quiet floor, leaving 10 ms of slack; on
+  a loaded CI runner the timer fired after `settle()` returned but before
+  `currentTree()`, reddening `main`. The engine was never at fault — a
+  starved-timer control fails *both* assertions, while CI showed only the phase
+  one. The mutation is now scheduled 5 ms out instead of 20 ms — still well
+  inside the floor, so the test's claim is unchanged, but jitter can no longer
+  push the fire past `settle` — and the tree is captured before `phase` is read.
+- **The PM script type-checks again.** `_swift_runner` stashes the unwrapped
+  zombie sweep under a runtime-injected attribute; assigning it with attribute
+  syntax is a type error pyright cannot see past, and CI type-checks that file —
+  so a green local suite went red remotely. Now assigned via `setattr`, with the
+  name spelled once.
+- **The `stage_demo` branch tests establish their own preconditions.** Three
+  tests mocked `subprocess.run` but never created the built executable whose
+  absence short-circuits the stage, so they passed only on a machine where
+  `swift build` had already run.
+
+**Internal**
+
+- Swift `--disable-sandbox` on PM-owned invocations, a `TimeoutExpired` guard
+  around the `lsof` lock sweep (shared-libs catches only `OSError`), a
+  project-local clang module cache, and `stage_demo` invoking the built binary
+  instead of re-entering SwiftPM.
+
 ### 2026-08-07 (Wave 4 Task 2)
 
 **The body walk — `@Verifiable` now buys a semantic tree, not just a root.**
