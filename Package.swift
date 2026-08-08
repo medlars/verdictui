@@ -26,7 +26,14 @@ let strictSettings: [SwiftSetting] = [
 let package = Package(
     name: "VerdictUI",
     platforms: [
-        .macOS(.v14)
+        // macOS 13, not 14. SwiftPM refuses a dependency whose floor is higher
+        // than the consuming package's, and it names the PRODUCT rather than the
+        // API responsible — so a floor raised for one call silently locks out
+        // every app pinned lower, for a reason nothing in this repo reports.
+        // LaunchGate targets .v13 and could not resolve VerdictUI at all until
+        // `verdictNamedCoordinateSpace()` split the one macOS 14 call site.
+        // Raising this again needs a no.md entry naming the API that forced it.
+        .macOS(.v13)
     ],
     products: [
         .library(name: "VerdictUIKernel", targets: ["VerdictUIKernel"]),
