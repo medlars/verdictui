@@ -332,7 +332,16 @@ final class HostileSettleTests: XCTestCase {
         // so `asyncAfter` is the channel that gets starved here, not this one.
         // Measured, after trying it the other way round: with `asyncAfter` the
         // model still read `phase == 0` after settle returned.
-        let timer = Timer(timeInterval: 0.020, repeats: false) { _ in model.phase += 1 }
+        // 5 ms, not 20. The floor is 30 ms, so 20 ms left only 10 ms of slack —
+        // enough on idle hardware, not enough on a shared CI runner, where the
+        // timer fires LATE: after `settle()` returns but before `currentTree()`.
+        // That produced a 395-only failure across four `main` runs
+        // (31199890306, 31230022315, 31231041419, 31235423483) while the tree
+        // comparison below passed, which is the signature of a fixture race
+        // rather than a settle defect — a starved-timer control fails BOTH.
+        // The mutation still lands well inside the floor, so what the test
+        // claims is unchanged; only the jitter budget grows (CTS-153D8F8A).
+        let timer = Timer(timeInterval: 0.005, repeats: false) { _ in model.phase += 1 }
         RunLoop.main.add(timer, forMode: .common)
         defer { timer.invalidate() }
 
@@ -392,13 +401,22 @@ final class HostileSettleTests: XCTestCase {
         // fixture's no-op. Reproduced locally by pushing the timer's interval
         // past the run: exit 1, same misleading message. Whatever starves the
         // timer on a loaded runner, the failure now names the right subject.
+        // ORDER MATTERS, and it is the other half of the CTS-153D8F8A fix.
+        // Reading `model.phase` BEFORE `currentTree()` samples it at the one
+        // instant a late timer has not yet fired, so a mutation that lands
+        // between the two reads is reported as "never ran" — the fixture
+        // blaming itself for a race rather than for a no-op. Capturing the tree
+        // first closes that window: by the time phase is read, any timer that
+        // was going to fire has, and a phase of 0 then genuinely means the
+        // block never ran.
+        let tree = try await host.currentTree()
+
         XCTAssertEqual(
             model.phase, 1,
             "the scheduled mutation never ran, so this test can say nothing about "
                 + "settle — the fixture is at fault, not the engine"
         )
 
-        let tree = try await host.currentTree()
         XCTAssertNotEqual(
             tree, before,
             "a mutation scheduled inside the quiet floor is missing from the settled tree"
