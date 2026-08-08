@@ -123,7 +123,18 @@ jobs:
             echo "SKIP=true" >> "$GITHUB_ENV"
             exit 0
           fi
-          if grep -qiE 'Failed to resolve action download info|Service Unavailable|failed to get run|HTTP 404' failure_log_tail.txt; then
+          # Match the RUNNER SAYING it failed, not a test QUOTING the words.
+          # 'Service Unavailable', 'HTTP 404' and 'failed to get run' are also
+          # ordinary English inside test output: the assertion
+          #   FAILED test_api.py::test_503 - assert 'Service Unavailable' == 'OK'
+          # is a genuine code failure, and the old unanchored pattern skipped it --
+          # making the capture unable to fail for ANY test asserting on an HTTP
+          # error string. That is the fail-open direction, and it is silent: a
+          # suppressed real failure produces no signal anywhere.
+          # Runner diagnostics carry '##[error]' or a line-leading 'Error:'; gh
+          # --log-failed prefixes every line with '<job>\t<step>\t<ts> ', so anchor
+          # on that separator rather than '^'.
+          if grep -qiE 'Failed to resolve action download info|(##\[error\]|[[:space:]]Error:)[[:space:]]*(Service Unavailable|failed to get run)|(##\[error\]|[[:space:]]Error:)[^|]*HTTP 404' failure_log_tail.txt; then
             echo "Skipping: GitHub infrastructure failure, not a code failure"
             echo "SKIP=true" >> "$GITHUB_ENV"
             exit 0
