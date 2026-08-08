@@ -72,7 +72,7 @@ jobs:
 
       - name: Ruff (lint + format drift)
         run: |
-          pip install --quiet ruff
+          pip install --quiet ruff==0.15.21
           ruff check .
           ruff format --check .
 
