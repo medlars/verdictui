@@ -49,15 +49,21 @@ jobs:
           # (WatchTools#15, 2026-08-06). Retry the transient a bounded number
           # of times; every other outcome (including genuinely empty logs from
           # a cancelled job) falls through to the infra-failure guard below.
-          for attempt in 1 2 3; do
+          attempts=4
+          for attempt in $(seq 1 "$attempts"); do
             gh run view "${{ github.event.workflow_run.id }}" \
               --repo "${{ github.repository }}" \
               --log-failed > failure_log.txt 2>&1 || true
             if ! grep -q "is still in progress" failure_log.txt; then
               break
             fi
-            echo "logs not ready (attempt $attempt/3) — waiting 30s"
-            sleep 30
+            # Only wait when another fetch will follow. Sleeping after the LAST
+            # attempt discards a log that became ready during that wait, which
+            # skips a run we could have captured.
+            if [ "$attempt" -lt "$attempts" ]; then
+              echo "logs not ready (attempt $attempt/$attempts) — waiting 30s"
+              sleep 30
+            fi
           done
           # Retries exhausted and the logs still are not available. The file now
           # holds GitHub's "still in progress" placeholder, which is NOT the
