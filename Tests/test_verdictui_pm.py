@@ -358,9 +358,26 @@ class TestStageWrappers:
         assert not result["passed"]
         assert "stage_build" in result["detail"]
 
-    def test_stage_demo_fails_on_an_empty_verdict_array(self, monkeypatch) -> None:
+    @staticmethod
+    def _built_demo(tmp_path, monkeypatch) -> None:
+        """Satisfy stage_demo's built-executable precondition.
+
+        The stage returns early when `.build/debug/VerdictUIDemo` is absent, so
+        the tests below — which mock `subprocess.run` to exercise the branches
+        AFTER that check — never reached their subject on a runner where nothing
+        is built. They passed locally purely because a previous `swift build`
+        had left the binary there: green locally, red on CI, which is the worst
+        shape a real gap can take because it reads as an environment fault.
+        """
+        monkeypatch.setattr(_mod, "PROJECT_ROOT", tmp_path)
+        demo = tmp_path / ".build" / "debug" / "VerdictUIDemo"
+        demo.parent.mkdir(parents=True, exist_ok=True)
+        demo.touch()
+
+    def test_stage_demo_fails_on_an_empty_verdict_array(self, tmp_path, monkeypatch) -> None:
         # `[]` is valid JSON and would otherwise read as success while
         # reporting a catalog of nothing.
+        self._built_demo(tmp_path, monkeypatch)
         monkeypatch.setattr(
             _mod.subprocess,
             "run",
@@ -371,7 +388,8 @@ class TestStageWrappers:
         assert not result["passed"]
         assert "non-empty" in result["detail"]
 
-    def test_stage_demo_fails_when_stdout_is_not_json(self, monkeypatch) -> None:
+    def test_stage_demo_fails_when_stdout_is_not_json(self, tmp_path, monkeypatch) -> None:
+        self._built_demo(tmp_path, monkeypatch)
         monkeypatch.setattr(
             _mod.subprocess,
             "run",
@@ -382,7 +400,10 @@ class TestStageWrappers:
         assert not result["passed"]
         assert "not valid JSON" in result["detail"]
 
-    def test_stage_demo_surfaces_a_nonzero_exit_with_its_stderr(self, monkeypatch) -> None:
+    def test_stage_demo_surfaces_a_nonzero_exit_with_its_stderr(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        self._built_demo(tmp_path, monkeypatch)
         monkeypatch.setattr(
             _mod.subprocess,
             "run",
