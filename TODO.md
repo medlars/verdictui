@@ -53,8 +53,6 @@
 
 <!-- testwatch-gaps -->
 ## TestWatch Gaps (auto-generated — do not edit this block)
-- [ ] (P1) testwatch: add test for `display` in `scripts/kernel-symbol-audit.py` [NONE]
-- [ ] (P1) testwatch: add test for `total_gaps` in `scripts/kernel-symbol-audit.py` [NONE]
 - [ ] (P1) testwatch: add test for `Outcome` in `scripts/mutation-check.py` [NONE]
 - [ ] (P1) testwatch: add test for `Runner` in `scripts/mutation-check.py` [NONE]
 - [ ] (P2) testwatch: add test for `capture` in `.github/workflows/capture-ci-failures-to-github-issue.yml` [live]

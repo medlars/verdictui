@@ -2,6 +2,32 @@
 
 ## [Unreleased]
 
+### 2026-08-08 (usable by other packages, and it can no longer pass on nothing)
+
+**Added**
+
+- **`vacuous-verdict` — a verdict may only report PASS about a tree it could
+  actually observe.** Every rule iterates children, so a view carrying no
+  `.verdictProbe` produced zero findings and derived to `PASS` — the engine
+  announcing a screen is fine on the strength of having looked at nothing.
+  Measured against a real app view hosted without probes: squeezed to an eighth
+  of its intended width, visibly broken, `PASS` with an empty findings array.
+  `RuleEngine.run` now emits an `error` finding when no probed node is present.
+
+  It is deliberately **not** a `LintRule`: `LintContext.disabledRules` could
+  switch it off, and the one check whose absence is invisible must not be
+  opt-out. The root does not count as a probe (it is synthesized and always
+  present), and the search is depth-first, so a probe nested under unprobed
+  containers still counts as an observation.
+
+**Fixed**
+
+- **The package can be consumed by apps targeting macOS 13.** A single call to
+  the macOS 14 `.coordinateSpace(.named(_:))` overload forced the whole manifest
+  to `.v14`, and SwiftPM refuses any consumer pinned lower — naming the *product*
+  rather than the API, so nothing in this repo could report it. Split by
+  availability in `verdictNamedCoordinateSpace()`; floor lowered to `.macOS(.v13)`.
+
 ### 2026-08-08 (correctness pass — every open P1 closed)
 
 **Fixed**
