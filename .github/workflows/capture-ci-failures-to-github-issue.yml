@@ -42,9 +42,23 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh run view "${{ github.event.workflow_run.id }}" \
-            --repo "${{ github.repository }}" \
-            --log-failed > failure_log.txt 2>&1 || true
+          # workflow_run fires on 'completed', but GitHub may still be
+          # finalising the log archive — a single fetch then returns
+          # "run <id> is still in progress; logs will be available when..."
+          # and THAT text lands in the issue body as if it were the failure
+          # (WatchTools#15, 2026-08-06). Retry the transient a bounded number
+          # of times; every other outcome (including genuinely empty logs from
+          # a cancelled job) falls through to the infra-failure guard below.
+          for attempt in 1 2 3; do
+            gh run view "${{ github.event.workflow_run.id }}" \
+              --repo "${{ github.repository }}" \
+              --log-failed > failure_log.txt 2>&1 || true
+            if ! grep -q "is still in progress" failure_log.txt; then
+              break
+            fi
+            echo "logs not ready (attempt $attempt/3) — waiting 30s"
+            sleep 30
+          done
           tail -c 6000 failure_log.txt > failure_log_tail.txt || true
 
       # A GitHub Actions outage fails every workflow for reasons unrelated to the
