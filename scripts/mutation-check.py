@@ -191,14 +191,27 @@ MUTATIONS = [
         test="ScenarioTests/testOneHostHandsEveryReEvaluationTheSameScenarioState",
     ),
     Mutation(
-        name="the demo stage puts its build flags after the target name",
+        name="the demo stage re-enters SwiftPM instead of running the built executable",
         path="scripts/verdictui-pm.py",
-        old='["swift", "run", *SWIFT_STRICT_FLAGS, "VerdictUIDemo"]',
-        new='["swift", "run", "VerdictUIDemo", *SWIFT_STRICT_FLAGS]',
+        old="[str(demo)]",
+        new='["swift", "run", str(demo)]',
         test=(
             "Tests/test_verdictui_pm.py::TestStageWrappers::"
-            "test_stage_demo_puts_build_flags_before_the_target_name"
+            "test_stage_demo_runs_the_built_executable_not_swiftpm"
         ),
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
+        # The mutation is the ORIGINAL defect (CIS-9EC205DF), not merely a
+        # different spelling: `setattr` -> attribute syntax WITH a type-ignore is
+        # also pyright-clean, so that variant is correctly UNNOTICED -- both
+        # honestly satisfy the test's claim. Dropping the suppression entirely is
+        # what the guard exists to catch, so that is what this row mutates to.
+        name="the runtime attribute stash stops being type-checkable",
+        path="scripts/verdictui-pm.py",
+        old="    setattr(swift_runner, _RAW_KILL_ATTR, raw_kill)",
+        new="    swift_runner._verdictui_raw_kill_zombie_swift_processes = raw_kill",
+        test=("Tests/test_verdictui_pm.py::TestStageBuild::test_the_pm_script_is_pyright_clean"),
         runner=Runner.PYTEST,
     ),
     Mutation(

@@ -4,6 +4,7 @@
 <!-- none -->
 
 ## P1 — High Priority
+- [ ] (2026-08-08) (P1) PM/stage_runtime_bench: direct `subprocess.run(swift test --filter HarnessPerformanceTests ...)` can hang after the full Swift suite in the managed repair sandbox. Evidence: `python3.14 scripts/verdictui-pm.py --quick` on 2026-08-08 reached `stage_runtime_bench` after `stage_test` rechecked clean, then required KeyboardInterrupt inside `subprocess.py communicate()`. Fix by moving the bench stage onto the shared streaming Swift runner/lock wrapper and updating its Python tests.
 - [x] (2026-08-04) (P1) CEO/stage_build: swift build FAIL: ming: Verdict.Timing(evaluateMs: elapsed.milliseconds)
     |                                          
 - [x] (2026-08-04) (P1) CEO/stage_build: swift build FAIL: o' in call
@@ -84,7 +85,6 @@
 - [ ] (P2) testwatch: add test for `_report` in `scripts/kernel-symbol-audit.py` [NONE]
 - [ ] (P2) testwatch: add test for `_scan_file` in `scripts/kernel-symbol-audit.py` [NONE]
 - [ ] (P2) testwatch: add test for `_type_symbol` in `scripts/kernel-symbol-audit.py` [NONE]
-- [ ] (P2) testwatch: add test for `_swift_runner` in `scripts/verdictui-pm.py` [NONE]
 - [ ] (P2) testwatch: add test for `stage_ai_artifacts` in `scripts/verdictui-pm.py` [NONE]
 - [ ] (P2) testwatch: add test for `stage_capabilitywatch` in `scripts/verdictui-pm.py` [NONE]
 - [ ] (P2) testwatch: add test for `stage_cis_health` in `scripts/verdictui-pm.py` [NONE]
