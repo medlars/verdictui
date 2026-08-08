@@ -37,6 +37,35 @@ jobs:
             echo "SKIP=true" >> "$GITHUB_ENV"
           fi
 
+      # A run can conclude 'failure' while every job in it was CANCELLED or
+      # SKIPPED — that is an ABSENCE of evidence, not evidence of failure.
+      # Measured: kasttune run 31120579162 concluded failure with one job
+      # 'probe' at conclusion=cancelled and ZERO steps executed; it filed a P1
+      # (CIS-AB3CABDF) against a subject that was verified healthy
+      # (relay.kasttune.com/healthz -> 200). Step count is the discriminator
+      # between "no runner ever picked this up" and "the code failed": a real
+      # failure runs steps and produces a verdict.
+      - name: Skip runs carrying no verdict (all jobs cancelled/skipped)
+        if: env.SKIP != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          VERDICTS=$(gh api \
+            "repos/${{ github.repository }}/actions/runs/${{ github.event.workflow_run.id }}/jobs" \
+            --jq '[.jobs[] | select(.conclusion == "failure" or .conclusion == "timed_out")] | length' \
+            2>/dev/null || echo "unknown")
+          if [ "$VERDICTS" = "0" ]; then
+            echo "Skipping: no job reached a failure verdict (all cancelled/skipped)"
+            echo "SKIP=true" >> "$GITHUB_ENV"
+          elif [ "$VERDICTS" = "unknown" ]; then
+            # Could not observe the jobs API. Do NOT skip on an unobserved
+            # premise — fall through and let the log-based guards decide, so a
+            # real failure is still captured (a check that cannot see its
+            # subject must not return the success value).
+            echo "Jobs API unavailable; deferring to log-based guards."
+          fi
+
       - name: Download failing run logs
         if: env.SKIP != 'true'
         env:
