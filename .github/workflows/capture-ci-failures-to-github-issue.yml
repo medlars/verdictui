@@ -59,6 +59,15 @@ jobs:
             echo "logs not ready (attempt $attempt/3) — waiting 30s"
             sleep 30
           done
+          # Retries exhausted and the logs still are not available. The file now
+          # holds GitHub's "still in progress" placeholder, which is NOT the
+          # failure — filing it would reproduce the defect the retry exists to
+          # prevent (WatchTools#15). Skip instead: a genuine failure recurs on
+          # the next push, whereas a placeholder issue displaces real signal.
+          if grep -q "is still in progress" failure_log.txt; then
+            echo "logs never became available — skipping issue creation"
+            echo "SKIP=true" >> "$GITHUB_ENV"
+          fi
           tail -c 6000 failure_log.txt > failure_log_tail.txt || true
 
       # A GitHub Actions outage fails every workflow for reasons unrelated to the
