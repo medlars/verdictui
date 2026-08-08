@@ -22,3 +22,7 @@ Tests/untracked_scan_probe_*.py
 .worktrees/
 # Subagent-driven-development scratch (briefs, reports, progress ledger)
 .superpowers/
+# Claude Code hook runtime state (live turn counters, per-session scratch).
+# Machine-local and rewritten every turn, so it is a build artifact rather than
+# work product — the DIR-031 exception, as KastTune and SagaMail already treat it.
+.claude/
