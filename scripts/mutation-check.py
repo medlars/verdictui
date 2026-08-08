@@ -454,9 +454,13 @@ MUTATIONS = [
         test="HarnessTests/testUnknownProbeIDBecomesAFailVerdictNamingTheProbe",
     ),
     Mutation(
+        # Re-anchored when the count became a single `pendingWaiters` sample:
+        # it used to read `clock.pendingWaiterCount` inline here AND again below
+        # the CATransaction.flush, so a waiter registering between the two made
+        # the token hash a count the guard never saw (CTS-8DDE6D09).
         name="settle stops censusing pending virtual-clock timers",
         path="Sources/VerdictUIProbe/Settle.swift",
-        old="if clock.pendingWaiterCount > 0 { return nil }",
+        old="if pendingWaiters > 0 { return nil }",
         new="if false { return nil }",
         test="HostileSettleTests/testDelayedMutationBlocksQuietUntilTheClockAdvances",
     ),

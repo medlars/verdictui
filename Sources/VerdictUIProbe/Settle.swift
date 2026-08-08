@@ -85,7 +85,13 @@ public enum Quiescence {
         sink: VerdictTreeSink,
         clock: VerdictClock
     ) -> Int? {
-        if clock.pendingWaiterCount > 0 { return nil }
+        // Sampled ONCE. Reading it again below the flush would let a waiter
+        // registering in between produce a token that hashes a count the guard
+        // never saw -- two reads of one moving quantity, reported as if they
+        // were the same observation. Self-correcting on the next check, so this
+        // was never a wrong verdict, only an incoherent one (CTS-8DDE6D09).
+        let pendingWaiters = clock.pendingWaiterCount
+        if pendingWaiters > 0 { return nil }
         guard sink.latestTree != nil else { return nil }
         // Force pending CA commits through before we sample. Not a true idle
         // probe — see the type's residual-risk note.
@@ -94,7 +100,7 @@ public enum Quiescence {
         hasher.combine(sink.updateCount)
         hasher.combine(sink.recorder.measurements.count)
         hasher.combine(sink.recorder.placements.count)
-        hasher.combine(clock.pendingWaiterCount)
+        hasher.combine(pendingWaiters)
         return hasher.finalize()
     }
 
