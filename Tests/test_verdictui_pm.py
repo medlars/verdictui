@@ -87,6 +87,38 @@ class TestLoadsWithoutSharedLibs:
         assert "shared-libs pm-base unavailable" in result.stderr
 
 
+class TestDeploymentFloor:
+    """The floor a CONSUMER collides with, not one this repo can see alone.
+
+    SwiftPM refuses a dependency whose minimum platform is higher than the
+    consuming package's, and the error names the product rather than the one
+    API responsible — so a floor raised past the fleet's apps makes VerdictUI
+    unusable by them for a reason nothing here would ever report. LaunchGate
+    targets macOS 13; a v14 floor locked it out entirely.
+    """
+
+    def test_the_package_floor_stays_at_the_lowest_fleet_target(self) -> None:
+        manifest = (_PROJECT_ROOT / "Package.swift").read_text()
+        assert ".macOS(.v13)" in manifest, (
+            "the deployment floor moved above macOS 13 — that silently locks out "
+            "every consumer pinned lower (LaunchGate is .v13). Raising it needs a "
+            "no.md entry naming the API that forced it."
+        )
+
+    def test_no_source_file_hard_codes_a_macos_14_only_api(self) -> None:
+        # `.coordinateSpace(.named(_:))` is the macOS 14 spelling; the deprecated
+        # `.coordinateSpace(name:)` is the 13-compatible one. Either is fine
+        # BEHIND an availability check -- what breaks a v13 consumer is calling
+        # the new form unguarded, which is exactly what this file used to do.
+        probe = (_PROJECT_ROOT / "Sources/VerdictUIProbe/VerdictProbe.swift").read_text()
+        if ".coordinateSpace(.named(" in probe:
+            assert "if #available(macOS 14" in probe, (
+                "VerdictProbe.swift calls the macOS 14 .coordinateSpace(.named:) "
+                "overload without an #available guard — this is the single line "
+                "that has historically forced the whole package to macOS 14"
+            )
+
+
 class TestStageArchitecture:
     """Kernel purity: VerdictUIKernel must never import SwiftUI/AppKit/CG/UIKit."""
 

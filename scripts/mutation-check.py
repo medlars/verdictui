@@ -191,6 +191,21 @@ MUTATIONS = [
         test="ScenarioTests/testOneHostHandsEveryReEvaluationTheSameScenarioState",
     ),
     Mutation(
+        # Mutates the MANIFEST, because the floor is the thing consumers collide
+        # with. A .v14 floor makes SwiftPM refuse every consumer pinned lower and
+        # blame the PRODUCT rather than the one API responsible, so nothing in
+        # this repo would report it -- LaunchGate (.v13) was locked out entirely.
+        name="the package floor rises above the lowest fleet target again",
+        path="Package.swift",
+        old="        .macOS(.v13)",
+        new="        .macOS(.v14)",
+        test=(
+            "Tests/test_verdictui_pm.py::TestDeploymentFloor::"
+            "test_the_package_floor_stays_at_the_lowest_fleet_target"
+        ),
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
         name="the demo stage re-enters SwiftPM instead of running the built executable",
         path="scripts/verdictui-pm.py",
         old="[str(demo)]",

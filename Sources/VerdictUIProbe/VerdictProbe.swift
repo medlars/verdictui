@@ -32,6 +32,32 @@ public enum VerdictRootCoordinateSpace {
     public static let name = "verdict-root"
 }
 
+extension View {
+    /// Declare the verdict-root coordinate space on whichever SwiftUI this host runs.
+    ///
+    /// The ONE reason this package could not be consumed below macOS 14. The
+    /// `.coordinateSpace(.named(_:))` overload is 14+, and calling it unguarded
+    /// pushed the whole manifest to `.v14` — which SwiftPM then refuses to
+    /// resolve for any consumer pinned lower, naming the *product* rather than
+    /// the one line responsible. LaunchGate (`.macOS(.v13)`) was locked out
+    /// entirely by this single call.
+    ///
+    /// Both spellings declare the same named space, and the reader side
+    /// (`GeometryProxy.frame(in: .named(_:))`) is macOS 12+, so it never needed
+    /// a split. `@ViewBuilder` + `if #available` rather than a bare deprecated
+    /// call, because this package builds with `-warnings-as-errors`: using the
+    /// 13-era overload unconditionally is a deprecation warning on 14+, i.e. a
+    /// build failure here.
+    @ViewBuilder
+    func verdictNamedCoordinateSpace() -> some View {
+        if #available(macOS 14, *) {
+            coordinateSpace(.named(VerdictRootCoordinateSpace.name))
+        } else {
+            coordinateSpace(name: VerdictRootCoordinateSpace.name)
+        }
+    }
+}
+
 // MARK: - Records
 
 /// What one probe reports about itself during a layout pass.
@@ -418,7 +444,7 @@ struct VerdictRootModifier: ViewModifier {
             // outside the `.coordinateSpace` view is not a descendant of it and
             // could not resolve the name.
             .background { VerdictViewportReporter() }
-            .coordinateSpace(.named(VerdictRootCoordinateSpace.name))
+            .verdictNamedCoordinateSpace()
             .onPreferenceChange(VerdictProbeKey.self) { snapshot in
                 deliver(snapshot, to: sink)
             }
