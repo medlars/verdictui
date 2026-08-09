@@ -728,7 +728,9 @@ class VerdictUIPM(PmBase):
 
     def publish_to_dashboard(self, status: dict) -> None:
         try:
-            getattr(super(), "publish_to_dashboard")(status)
+            # type: ignore — pyright binds PmBase to the CI fallback stub above,
+            # which has no publish_to_dashboard; the real base class does.
+            super().publish_to_dashboard(status)  # type: ignore[misc]
         except PermissionError as e:
             _pm_log(f"Dashboard publish skipped: {e}", "WARN")
 
