@@ -1278,6 +1278,16 @@ class TestStagePytest:
         workflow = (_PROJECT_ROOT / ".github" / "workflows" / "ci.yml").read_text()
         assert "pytest Tests/" in workflow, "CI no longer runs Tests/ — update this stage with it"
 
+    def test_ci_python_meets_pm_base_requires(self) -> None:
+        """Lint PM scripts installs pm-base (Requires-Python >=3.14). A 3.13
+        runner fails at `pip install` before any assertion can run — measured
+        on main run 31317809175 after aa6c39c."""
+        workflow = (_PROJECT_ROOT / ".github" / "workflows" / "ci.yml").read_text()
+        assert 'python-version: "3.14"' in workflow or "python-version: '3.14'" in workflow, (
+            "python-scripts job must use Python >=3.14 so pm-base installs"
+        )
+        assert "Install pm_base" in workflow, "CI must still install pm_base for PM tests"
+
 
 class TestStagesFailClosedWithoutTheirTool:
     """A stage whose tool is missing must FAIL, never pass with "skipped".
