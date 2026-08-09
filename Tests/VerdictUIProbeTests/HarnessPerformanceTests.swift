@@ -96,7 +96,8 @@ final class HarnessPerformanceTests: XCTestCase {
     /// per-cycle PASS, non-empty delta — so a benchmark that stopped running
     /// is still a hard failure in both environments.
     private static var isSharedCIRunner: Bool {
-        ProcessInfo.processInfo.environment["CI"] != nil
+        let environment = ProcessInfo.processInfo.environment
+        return environment["CI"] != nil || environment["VERDICTUI_RECORD_TIMING_ONLY"] != nil
     }
 
     /// Whether the p50 budget is ASSERTED in this process rather than recorded.
@@ -272,7 +273,7 @@ final class HarnessPerformanceTests: XCTestCase {
         // (the CI job itself), the claim being pinned does not apply and the
         // recorded-line branch is correct.
         try XCTSkipIf(
-            ProcessInfo.processInfo.environment["CI"] != nil,
+            Self.isSharedCIRunner,
             "the assertion lane is only claimed off a shared runner"
         )
 
