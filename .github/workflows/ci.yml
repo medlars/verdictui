@@ -76,6 +76,24 @@ jobs:
           ruff check .
           ruff format --check .
 
+      # Tests/test_verdictui_pm.py imports pm_report_helpers from pm-base, a
+      # PRIVATE sibling repo no runner checks out. Without this the assertions do
+      # not fail — they SKIP behind an importorskip guard, so CI stays green
+      # while checking nothing (CTS-0E24FFF0).
+      - name: Set up pm-base deploy key
+        uses: webfactory/ssh-agent@dc588b651fe13675774614f8e6a936a468676387 # v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.PM_BASE_DEPLOY_KEY }}
+
+      # Pinned to an immutable COMMIT — never @main, never a tag: a branch moves
+      # under you and a tag can be re-pointed, so either lets two runs of
+      # identical source resolve different library code (gov-v2 S11). 81fc7c2 is
+      # verified to CONTAIN pm_report_helpers.py and to be reachable from
+      # pm-base main; pinning and containment are separate assertions and only
+      # the first fails loudly (pm-base docs/CI-DEPLOY-KEYS.md).
+      - name: Install pm_base
+        run: pip install "git+ssh://git@github.com/medlars/pm-base.git@81fc7c2820445edd67513da35b11d29f2ab38e99"
+
       - name: Python test suite (PM + kernel symbol audit)
         run: |
           pip install --quiet pytest
