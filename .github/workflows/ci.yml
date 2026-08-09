@@ -43,6 +43,11 @@ jobs:
     name: Secret scan (gitleaks)
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # gitleaks-action lists PR commits via the API; without pull-requests:read
+    # that call 403s under default_workflow_permissions=read (measured PR #5).
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - name: Checkout (full history for scan)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
