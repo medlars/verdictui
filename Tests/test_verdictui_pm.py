@@ -269,6 +269,37 @@ class TestSkipSentinel:
         assert result["passed"]
         assert "skipped: shared-libs unavailable" in result["detail"]
 
+    def test_external_store_unavailable_is_reported_as_skip(self) -> None:
+        result = VerdictUIPM._skip_unavailable_external_store(
+            {"passed": False, "detail": "IssueWatch skipped: unable to open database file"}
+        )
+
+        assert result["passed"]
+        assert "external store unavailable" in result["detail"]
+
+    def test_stage_test_exports_record_only_timing_only_during_swift_run(self, monkeypatch) -> None:
+        observed = []
+
+        def run_swift_test(**_kwargs):
+            observed.append(os.environ.get(_mod.TIMING_RECORD_ONLY_ENV))
+            return {
+                "passed": True,
+                "detail": "swift test passed",
+                "output": "Executed 1 test, with 0 failures\n",
+                "test_count": 1,
+            }
+
+        monkeypatch.delenv(_mod.TIMING_RECORD_ONLY_ENV, raising=False)
+        monkeypatch.setattr(_mod.shutil, "which", lambda _: "/usr/bin/swift")
+        monkeypatch.setattr(_mod, "_timing_record_only_environment", lambda: True)
+        monkeypatch.setattr(_mod, "_run_streamed_swift_test", run_swift_test)
+
+        result = VerdictUIPM.__new__(VerdictUIPM).stage_test()
+
+        assert result["passed"], result["detail"]
+        assert observed == ["1"]
+        assert os.environ.get(_mod.TIMING_RECORD_ONLY_ENV) is None
+
 
 class TestDefineStages:
     def test_quick_pipeline_contains_all_mandatory_stages(self) -> None:
@@ -877,16 +908,62 @@ class TestStageRuntimeBench:
 
     @staticmethod
     def _fake_swift(monkeypatch, *, stdout: str, returncode: int = 0) -> None:
-        """Replace the swift subprocess with a canned result."""
+        """Replace the streaming Swift runner with a canned result."""
 
-        class _Result:
-            def __init__(self) -> None:
-                self.stdout = stdout
-                self.stderr = ""
-                self.returncode = returncode
+        def run_swift_test(**_kwargs):
+            executed = [int(m) for m in re.findall(r"Executed (\d+) test", stdout)]
+            return {
+                "passed": returncode == 0,
+                "detail": "swift test failed" if returncode else "swift test passed",
+                "output": stdout,
+                "test_count": max(executed, default=0),
+            }
 
         monkeypatch.setattr(_mod.shutil, "which", lambda _: "/usr/bin/swift")
-        monkeypatch.setattr(_mod.subprocess, "run", lambda *a, **k: _Result())
+        monkeypatch.setattr(_mod, "_timing_record_only_environment", lambda: False)
+        monkeypatch.setattr(_mod, "_run_streamed_swift_test", run_swift_test)
+
+    def test_uses_the_streaming_serial_runner_with_the_benchmark_filter(self, monkeypatch) -> None:
+        calls = []
+
+        def run_swift_test(**kwargs):
+            calls.append(kwargs)
+            return {
+                "passed": True,
+                "detail": "swift test passed",
+                "output": "SLO1-PERFORM p50=20.03ms p95=32.23ms n=3\n"
+                "Executed 3 tests, with 0 failures\n",
+                "test_count": 3,
+            }
+
+        monkeypatch.setattr(_mod.shutil, "which", lambda _: "/usr/bin/swift")
+        monkeypatch.setattr(_mod, "_timing_record_only_environment", lambda: False)
+        monkeypatch.setattr(_mod, "_run_streamed_swift_test", run_swift_test)
+
+        result = self._pm().stage_runtime_bench()
+
+        assert result["passed"], result["detail"]
+        assert len(calls) == 1
+        kwargs = calls[0]
+        assert kwargs["timeout"] == _mod.TIMEOUT_SWIFT_TEST
+        assert kwargs["min_test_count"] == 1
+        assert kwargs["log_name"] == "swift-runtime-bench-latest.log"
+        assert "--parallel" not in kwargs["extra_flags"]
+        assert "--filter" in kwargs["extra_flags"]
+        assert "HarnessPerformanceTests" in kwargs["extra_flags"]
+
+    def test_over_budget_records_in_a_constrained_timing_environment(self, monkeypatch) -> None:
+        self._fake_swift(
+            monkeypatch,
+            stdout="SLO1-PERFORM p50=118.00ms p95=160.50ms mean=120.00ms max=200.0ms n=150\n"
+            "Executed 2 tests, with 0 failures\n",
+        )
+        monkeypatch.setattr(_mod, "_timing_record_only_environment", lambda: True)
+
+        result = self._pm().stage_runtime_bench()
+
+        assert result["passed"], result["detail"]
+        assert "recorded in constrained timing environment" in result["detail"]
 
     def test_under_budget_passes_and_reports_the_figure(self, monkeypatch) -> None:
         self._fake_swift(
@@ -1143,6 +1220,29 @@ class TestStagePytest:
             _mod.subprocess.run = real_run
         assert result["passed"], result["detail"]
         assert "Python tests PASS" in result["detail"]
+
+    def test_the_real_suite_uses_the_pytest_timeout_not_the_standard_timeout(
+        self, monkeypatch
+    ) -> None:
+        calls = []
+
+        class _Result:
+            stdout = "1 passed in 0.01s\n"
+            stderr = ""
+            returncode = 0
+
+        def _run(*args, **kwargs):
+            calls.append((args, kwargs))
+            return _Result()
+
+        monkeypatch.setattr(_mod.subprocess, "run", _run)
+
+        result = self._pm().stage_pytest()
+
+        assert result["passed"], result["detail"]
+        assert calls
+        assert calls[0][1]["timeout"] == _mod.TIMEOUT_PYTEST
+        assert _mod.TIMEOUT_PYTEST > _mod.TIMEOUT_STANDARD
 
     def test_zero_collected_fails_even_though_pytest_exits_zero(self, monkeypatch) -> None:
         """`pytest` exits 0 when it collects nothing, so a broken marker or a

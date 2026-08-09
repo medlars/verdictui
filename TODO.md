@@ -4,7 +4,7 @@
 <!-- none -->
 
 ## P1 — High Priority
-- [ ] (2026-08-08) (P1) PM/stage_runtime_bench: direct `subprocess.run(swift test --filter HarnessPerformanceTests ...)` can hang after the full Swift suite in the managed repair sandbox. Evidence: `python3.14 scripts/verdictui-pm.py --quick` on 2026-08-08 reached `stage_runtime_bench` after `stage_test` rechecked clean, then required KeyboardInterrupt inside `subprocess.py communicate()`. Fix by moving the bench stage onto the shared streaming Swift runner/lock wrapper and updating its Python tests.
+- [x] (2026-08-08) (P1) PM/stage_runtime_bench: direct `subprocess.run(swift test --filter HarnessPerformanceTests ...)` can hang after the full Swift suite in the managed repair sandbox. Evidence: `python3.14 scripts/verdictui-pm.py --quick` on 2026-08-08 reached `stage_runtime_bench` after `stage_test` rechecked clean, then required KeyboardInterrupt inside `subprocess.py communicate()`. Fixed by moving the bench stage onto a project-local streaming serial Swift runner with the shared SwiftPM command lock and pinning it with `Tests/test_verdictui_pm.py::TestStageRuntimeBench::test_uses_the_streaming_serial_runner_with_the_benchmark_filter`.
 - [x] (2026-08-04) (P1) CEO/stage_build: swift build FAIL: ming: Verdict.Timing(evaluateMs: elapsed.milliseconds)
     |                                          
 - [x] (2026-08-04) (P1) CEO/stage_build: swift build FAIL: o' in call
@@ -55,12 +55,11 @@
 ## TestWatch Gaps (auto-generated — do not edit this block)
 - [ ] (P1) testwatch: add test for `Outcome` in `scripts/mutation-check.py` [NONE]
 - [ ] (P1) testwatch: add test for `Runner` in `scripts/mutation-check.py` [NONE]
-- [ ] (P2) testwatch: add test for `capture` in `.github/workflows/capture-ci-failures-to-github-issue.yml` [live]
+- [ ] (P1) testwatch: add test for `publish_to_dashboard` in `scripts/verdictui-pm.py` [NONE]
 - [ ] (P2) testwatch: add test for `close-on-green` in `.github/workflows/capture-ci-failures-to-github-issue.yml` [live]
 - [ ] (P2) testwatch: add test for `check-pinned-actions` in `.github/workflows/check-pinned-actions.yml` [live]
 - [ ] (P2) testwatch: add test for `python-scripts` in `.github/workflows/ci.yml` [live]
 - [ ] (P2) testwatch: add test for `secret-scan` in `.github/workflows/ci.yml` [live]
-- [ ] (P2) testwatch: add test for `swift` in `.github/workflows/ci.yml` [live]
 - [ ] (P2) testwatch: add test for `_check_array` in `contracts/validate-contracts.py` [NONE]
 - [ ] (P2) testwatch: add test for `_check_fixtures` in `contracts/validate-contracts.py` [NONE]
 - [ ] (P2) testwatch: add test for `_check_object` in `contracts/validate-contracts.py` [NONE]
@@ -83,13 +82,13 @@
 - [ ] (P2) testwatch: add test for `_report` in `scripts/kernel-symbol-audit.py` [NONE]
 - [ ] (P2) testwatch: add test for `_scan_file` in `scripts/kernel-symbol-audit.py` [NONE]
 - [ ] (P2) testwatch: add test for `_type_symbol` in `scripts/kernel-symbol-audit.py` [NONE]
+- [ ] (P2) testwatch: add test for `_swift_timing_environment` in `scripts/verdictui-pm.py` [NONE]
 - [ ] (P2) testwatch: add test for `stage_ai_artifacts` in `scripts/verdictui-pm.py` [NONE]
 - [ ] (P2) testwatch: add test for `stage_capabilitywatch` in `scripts/verdictui-pm.py` [NONE]
 - [ ] (P2) testwatch: add test for `stage_cis_health` in `scripts/verdictui-pm.py` [NONE]
 - [ ] (P2) testwatch: add test for `stage_codewatch` in `scripts/verdictui-pm.py` [NONE]
 - [ ] (P2) testwatch: add test for `stage_issuewatch` in `scripts/verdictui-pm.py` [NONE]
 - [ ] (P2) testwatch: add test for `stage_last20` in `scripts/verdictui-pm.py` [NONE]
-- [ ] (P2) testwatch: add test for `stage_test` in `scripts/verdictui-pm.py` [NONE]
 - [ ] (P2) testwatch: add test for `stage_test_alongside` in `scripts/verdictui-pm.py` [NONE]
 - [ ] (P2) testwatch: add test for `stage_todo_review` in `scripts/verdictui-pm.py` [NONE]
 <!-- /testwatch-gaps -->
