@@ -41,11 +41,36 @@ struct BodyProbeWalk {
         "List": "list",
     ]
 
+    /// Roles whose elements a verdict must be able to NAME, not merely locate.
+    ///
+    /// Interactive controls only. A `Text` with no literal (`Text(title)`) is
+    /// not warned about: its label is its content, which the runtime probe
+    /// measures directly, so nothing is lost. A button's label lives inside a
+    /// closure the macro cannot evaluate, so if it is not a literal the verdict
+    /// has no name for it at all.
+    static let rolesRequiringALabel: Set<String> = ["button", "toggle"]
+
     /// The type the ids are namespaced under — the view's own name.
     let typeName: String
 
     /// Per-role counters, so two `Text`s in one body get `.text.0` and `.text.1`.
     private var counts: [String: Int] = [:]
+
+    /// Explicit ids already seen, so a second use of one can be reported.
+    ///
+    /// Only ids the author WROTE go in here. Generated ids cannot collide with
+    /// each other by construction (the counter guarantees it) and the walk must
+    /// not accuse the author of a collision it minted itself.
+    private var explicitIDs: Set<String> = []
+
+    /// Lint findings collected during the walk, for the caller to diagnose.
+    ///
+    /// Accumulated rather than diagnosed in place because the walk has no
+    /// `MacroExpansionContext` — it is a pure syntax-to-syntax transform, which
+    /// is what lets `assertMacroExpansion` and the scenario macro drive it
+    /// identically. The macro that owns the context turns these into
+    /// `Diagnostic`s at the node each finding names.
+    private(set) var findings: [ProbeLintFinding] = []
 
     init(typeName: String) {
         self.typeName = typeName
@@ -74,6 +99,7 @@ struct BodyProbeWalk {
         // observed, so every rule reports PASS about content nobody
         // instrumented and no layer anywhere reports the gap.
         if Self.carriesExplicitProbe(recursed) {
+            noteExplicitID(of: recursed)
             return recursed
         }
 
@@ -84,6 +110,20 @@ struct BodyProbeWalk {
         let index = counts[role, default: 0]
         counts[role] = index + 1
         let id = "\(typeName).\(role).\(index)"
+
+        // An interactive element the verdict can point at but cannot NAME.
+        //
+        // The wave plan calls this "no derivable ID", which measurement showed
+        // is not the case — the id is derived fine. What is missing is the
+        // accessible LABEL: `Button(action:) { Image(…) }` has no literal of
+        // its own, so `text:` is absent, `TruncationRule` has nothing to read,
+        // no assertion can reference the button by what it says, and a human
+        // reading the verdict sees an anonymous control among several.
+        if Self.rolesRequiringALabel.contains(role), Self.literalTextArgument(of: recursed) == nil {
+            findings.append(
+                ProbeLintFinding(node: Syntax(recursed), kind: .interactiveElementHasNoLabel(id: id))
+            )
+        }
 
         // A literal string argument is forwarded as `text:` so `TextMetrics`
         // has the string it needs. Only a literal: an interpolated or computed
@@ -104,6 +144,53 @@ struct BodyProbeWalk {
         let bare = recursed.trimmed
         return
             "\(bare).verdictProbe(\(raw: id.quotedForSource), role: .\(raw: role)\(raw: textArgument))"
+    }
+
+    /// Records an author-written probe id, reporting a second use of one.
+    ///
+    /// An id is what every layer downstream matches on — `TreeDiff` pairs nodes
+    /// by it, `DuplicateProbeIDRule` reports on it, Wave 5's baselines key on it
+    /// — so two elements sharing one are merged into a single node for every
+    /// consumer. The kernel catches this at runtime; catching it here is
+    /// strictly stronger, because the compiler sees every `@Verifiable` view on
+    /// every build while a runtime rule needs the view rendered in a scenario
+    /// somebody remembered to write.
+    ///
+    /// The finding names the SECOND occurrence: the first is where the id was
+    /// legitimately introduced, and pointing there sends the reader to a line
+    /// that is not the mistake.
+    private mutating func noteExplicitID(of expression: ExprSyntax) {
+        guard let id = Self.explicitProbeID(in: expression) else { return }
+        if !explicitIDs.insert(id).inserted {
+            findings.append(
+                ProbeLintFinding(node: Syntax(expression), kind: .duplicateExplicitID(id: id))
+            )
+        }
+    }
+
+    /// The literal id string of the `.verdictProbe` in this chain, if it has one.
+    ///
+    /// Returns `nil` for a non-literal id (`verdictProbe(someConstant)`), which
+    /// is not a defect the macro can judge: the value is unknown at expansion
+    /// time, and reporting a collision it cannot see — or staying silent about
+    /// one it cannot rule out — are both honest only if the walk says nothing.
+    static func explicitProbeID(in expression: ExprSyntax) -> String? {
+        if let call = expression.as(FunctionCallExprSyntax.self) {
+            if let member = call.calledExpression.as(MemberAccessExprSyntax.self),
+                member.declName.baseName.text == "verdictProbe",
+                let first = call.arguments.first, first.label == nil,
+                let literal = first.expression.as(StringLiteralExprSyntax.self),
+                literal.segments.count == 1,
+                let segment = literal.segments.first?.as(StringSegmentSyntax.self)
+            {
+                return segment.content.text
+            }
+            return explicitProbeID(in: ExprSyntax(call.calledExpression))
+        }
+        if let member = expression.as(MemberAccessExprSyntax.self), let base = member.base {
+            return explicitProbeID(in: base)
+        }
+        return nil
     }
 
     /// Rewrites the closure bodies and argument expressions inside `expression`,
@@ -182,7 +269,12 @@ struct BodyProbeWalk {
     /// probed children make the tree look observed, and `vacuous-verdict` (which
     /// fires only when NO probed node exists) cannot see it, so every rule
     /// reports PASS about content nobody instrumented.
-    private mutating func rewriteStatements(
+    /// Internal rather than private: `#VerdictScenario` walks a trailing
+    /// closure's statements directly and must enter through this same door. It
+    /// had its own local map until Task 5, which carried the Task 4 conditional
+    /// defect independently — one rule, two implementations, and neither test
+    /// could see the other's copy.
+    mutating func rewriteStatements(
         _ statements: CodeBlockItemListSyntax
     ) -> CodeBlockItemListSyntax {
         CodeBlockItemListSyntax(
@@ -347,6 +439,30 @@ struct BodyProbeWalk {
             return baseCall(of: base)
         }
         return nil
+    }
+}
+
+extension CodeBlockItemListSyntax {
+    /// This list re-indented for interpolation into a generated template.
+    ///
+    /// The walk preserves each statement's leading trivia because INSIDE A
+    /// CLOSURE it is load-bearing — it is the only token separating `in` from
+    /// the first statement (`no.md` #24). At the TOP of a list being re-templated
+    /// somewhere else it is the opposite: the template supplies the indent
+    /// before the interpolation point, and the statements' original trivia was
+    /// measured against a position they no longer occupy, so keeping it doubles
+    /// the indentation of every statement after the first.
+    ///
+    /// So each statement is trimmed and re-separated by a single newline; the
+    /// template's own interpolation indent then applies uniformly. Only the
+    /// statements' OWN leading trivia is touched — trivia nested inside a
+    /// statement (a closure's, where it matters) is untouched.
+    var reindentedForTemplate: CodeBlockItemListSyntax {
+        CodeBlockItemListSyntax(
+            enumerated().map { index, item in
+                item.with(\.leadingTrivia, index == 0 ? [] : .newline)
+            }
+        )
     }
 }
 

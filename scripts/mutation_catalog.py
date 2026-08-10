@@ -808,13 +808,60 @@ MUTATIONS = [
         runner=Runner.SWIFT,
     ),
     Mutation(
+        # The duplicate-id check stops reporting, so two elements sharing an
+        # author-written id compile clean. Every layer downstream matches on the
+        # id — TreeDiff pairs nodes by it, a baseline keys on it — so the two
+        # elements silently merge into one node.
+        #
+        # `insert` still runs so the set is still populated; only the REPORT is
+        # suppressed, which is the honest mutation: deleting the insert would
+        # also break the walk's own bookkeeping and could fail for a second,
+        # unrelated reason.
+        name="two elements sharing an explicit probe id stop being reported",
+        path="Sources/VerdictUIMacros/BodyProbeWalk.swift",
+        old="        if !explicitIDs.insert(id).inserted {",
+        new="        if false, !explicitIDs.insert(id).inserted {",
+        test=(
+            "VerdictUIMacroTests.VerifiableMacroTests/testTwoElementsSharingAnExplicitIdIsAnError"
+        ),
+        runner=Runner.SWIFT,
+    ),
+    Mutation(
+        # The unlabelled-interactive warning stops firing, so a button the
+        # verdict can locate but cannot NAME passes review silently. Nothing
+        # downstream can recover the label: it lives inside a closure the macro
+        # never evaluates, so the node reaches the kernel with no text at all.
+        name="an interactive element with no label stops being warned about",
+        path="Sources/VerdictUIMacros/BodyProbeWalk.swift",
+        old="        if Self.rolesRequiringALabel.contains(role), Self.literalTextArgument(of: recursed) == nil {",
+        new="        if false, Self.literalTextArgument(of: recursed) == nil {",
+        test=(
+            "VerdictUIMacroTests.VerifiableMacroTests/"
+            "testAnInteractiveElementWithNoLabelIsAWarningCarryingAFixIt"
+        ),
+        runner=Runner.SWIFT,
+    ),
+    Mutation(
         # An interpolated string is forwarded as `text:`, putting the literal
         # source `\\(name)` where TruncationRule reads what the user sees. A
         # false value is worse than an absent one — the rule acts on it.
         name="body walk forwards an interpolated string as literal text",
         path="Sources/VerdictUIMacros/BodyProbeWalk.swift",
-        old="                literal.segments.count == 1,",
-        new="                literal.segments.count >= 1,",
+        # Two lines, because Task 5's `explicitProbeID` extractor introduced a
+        # second `literal.segments.count == 1,` in this file and a one-line
+        # anchor began self-matching. The following line differs between the two
+        # sites (`literal.segments.first?…!= nil` here, `let segment = …` there),
+        # so the pair is unique. Safe as a multi-line anchor where `no.md` #16's
+        # was not: that one relied on a wrap `ruff format` collapses, and ruff
+        # does not touch Swift.
+        old=(
+            "                literal.segments.count == 1,\n"
+            "                literal.segments.first?.as(StringSegmentSyntax.self) != nil"
+        ),
+        new=(
+            "                literal.segments.count >= 1,\n"
+            "                literal.segments.first?.as(StringSegmentSyntax.self) != nil"
+        ),
         test="VerdictUIMacroTests.VerifiableMacroTests/testAnInterpolatedStringIsNotForwardedAsText",
         runner=Runner.SWIFT,
     ),
@@ -954,10 +1001,25 @@ MUTATIONS = [
         # Witness is the expansion snapshot, not the render test that also
         # covers this: SwiftPM does not re-expand macros in a consuming target
         # whose own sources are unchanged (`no.md` #23).
+        # Re-anchored in Task 5. This row targeted the scenario macro's own
+        # local map over expression items; that map was DELETED because it was
+        # a second implementation of the walk and carried the Task 4 conditional
+        # defect independently. The guard it protects is unchanged — a scenario
+        # that declares a conformance but probes nothing — so the row now points
+        # at the shared entry both macros use.
         name="scenario macro declares a conformance without probing its body",
         path="Sources/VerdictUIMacros/VerdictScenarioMacro.swift",
-        old="                copy.item = .expr(walk.rewrite(expression))",
-        new="                _ = walk.rewrite(expression)\n                copy.item = .expr(expression)",
+        # `walk` is still driven, and discarded. The obvious mutation — dropping
+        # the call entirely — leaves `var walk` never mutated, which is an ERROR
+        # under -warnings-as-errors, so the build fails and the row scores on the
+        # compiler's verdict instead of the suite's. Measured: it reported
+        # NOTICED having executed zero tests. Same trap as the Task 3 row; a
+        # mutation that cannot compile is not a witness.
+        old="        let probedStatements = walk.rewriteStatements(closure.statements).reindentedForTemplate",
+        new=(
+            "        _ = walk.rewriteStatements(closure.statements)\n"
+            "        let probedStatements = closure.statements.reindentedForTemplate"
+        ),
         test=(
             "VerdictUIMacroTests.VerdictScenarioMacroTests/"
             "testTheScenarioBodyIsProbedByTheSameWalkAsAView"
