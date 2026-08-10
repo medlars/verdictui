@@ -12,6 +12,7 @@ import SwiftSyntaxMacros
 @main
 struct VerdictUIMacroPlugin: CompilerPlugin {
     let providingMacros: [any Macro.Type] = [
-        VerifiableMacro.self
+        VerifiableMacro.self,
+        VerdictScenarioMacro.self,
     ]
 }
