@@ -64,10 +64,34 @@ jobs:
 
               return actions
 
+          def _resolve_tag_commit(action: str, tag: str, token: str) -> str:
+              """Resolve a release tag to the commit SHA it points at.
+
+              releases/latest.target_commitish is often the branch name
+              ("main"), not a commit — comparing that to a SHA pin always
+              looks outdated. Resolve refs/tags/<tag> (and peel annotated
+              tags) so we compare commit-to-commit.
+              """
+              url = f"https://api.github.com/repos/{action}/git/ref/tags/{tag}"
+              req = urllib.request.Request(url)
+              req.add_header('Authorization', f'token {token}')
+              req.add_header('Accept', 'application/vnd.github.v3+json')
+              with urllib.request.urlopen(req, timeout=10) as response:
+                  ref = json.loads(response.read().decode())
+              obj = ref['object']
+              if obj.get('type') == 'tag':
+                  turl = f"https://api.github.com/repos/{action}/git/tags/{obj['sha']}"
+                  treq = urllib.request.Request(turl)
+                  treq.add_header('Authorization', f'token {token}')
+                  treq.add_header('Accept', 'application/vnd.github.v3+json')
+                  with urllib.request.urlopen(treq, timeout=10) as response:
+                      tag_obj = json.loads(response.read().decode())
+                  return tag_obj['object']['sha']
+              return obj['sha']
+
           def get_latest_version(action: str, token: str) -> Dict:
-              """Get latest version info for an action using GitHub API."""
+              """Get latest RELEASE tag commit for an action (not floating main)."""
               try:
-                  # Use GitHub API to get latest release/tag
                   url = f"https://api.github.com/repos/{action}/releases/latest"
                   req = urllib.request.Request(url)
                   req.add_header('Authorization', f'token {token}')
@@ -75,11 +99,15 @@ jobs:
 
                   with urllib.request.urlopen(req, timeout=10) as response:
                       release = json.loads(response.read().decode())
-                      return {
-                          'tag': release.get('tag_name', ''),
-                          'sha': release.get('target_commitish', ''),
-                          'published': release.get('published_at', '')
-                      }
+                  tag = release.get('tag_name', '')
+                  if not tag:
+                      return None
+                  sha = _resolve_tag_commit(action, tag, token)
+                  return {
+                      'tag': tag,
+                      'sha': sha,
+                      'published': release.get('published_at', '')
+                  }
               except urllib.error.HTTPError as e:
                   if e.code == 404:
                       print(f"Info: {action} has no releases (may use tags)")
