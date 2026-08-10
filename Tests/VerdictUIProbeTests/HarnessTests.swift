@@ -152,6 +152,72 @@ final class HarnessTests: XCTestCase {
         )
     }
 
+    /// The third path, and the one that resisted four earlier attempts: on a
+    /// settle TIMEOUT, `settleMs` must be a measurement rather than the budget
+    /// that was requested.
+    ///
+    /// Why the obvious assertions cannot pin this (`no.md` #12): `> 0` and
+    /// `<= elapsedMs` are satisfied by a returned budget as readily as by a
+    /// measurement, so a test built on them passes against both the correct and
+    /// the broken implementation — which is not a weak test, it is not a test.
+    /// The discriminator is the OVERSHOOT. A settle that gives up at its
+    /// deadline has, by then, spent strictly MORE than the deadline: it must
+    /// notice the expiry and unwind. An implementation echoing the budget
+    /// reports exactly 150.0 for a 150 ms budget and can never exceed it, so
+    /// `settleMs > budget` separates the two and nothing else here does.
+    /// Measured before it was asserted: 150.65 ms against 150 ms, and 600.59 ms
+    /// against 600 ms.
+    ///
+    /// The fixture matters as much as the assertion. Earlier attempts used a
+    /// perpetually-moving layout, which never reaches this branch at all: the
+    /// `currentTree()` capture that runs BEFORE the settle has its own 3 s
+    /// deadline, throws against a layout that never settles, and takes the
+    /// host-error path — so the number under test was 3002 ms of capture cost
+    /// against a 120 ms budget, and the test was silently exercising a
+    /// different path than its name claimed. ``LateMotionScenario`` is static
+    /// until tapped, so the first capture settles cleanly and only the settle
+    /// AFTER the act runs to the caller's deadline.
+    @MainActor
+    func testSettleMsIsMeasuredNotAssumedOnTheTimeoutPath() async throws {
+        // Two budgets, because one alone cannot distinguish a measurement from
+        // a constant that happens to sit near it.
+        for budget in [Duration.milliseconds(150), .milliseconds(600)] {
+            let model = LateMotionModel()
+            let harness = Harness(
+                scenario: LateMotionScenario(model: model),
+                viewport: Size(width: 200, height: 60)
+            )
+
+            let step = await harness.perform(.tap(LateMotionScenario.probeID), timeout: budget)
+            model.stop()
+
+            let budgetMs = Double(budget.components.seconds) * 1000
+                + Double(budget.components.attoseconds) / 1e15
+            let settleMs = try XCTUnwrap(
+                step.verdict.timing.settleMs,
+                "a settle that timed out still ran, so it must report its cost"
+            )
+
+            // Establishes that this is the timeout path at all. Without it the
+            // test would pass on a run that settled cleanly, where the
+            // overshoot claim below is vacuous.
+            XCTAssertEqual(
+                step.verdict.findings.map(\.rule), [Quiescence.timeoutRule],
+                "the fixture must reach the settle-timeout branch, got "
+                    + "\(step.verdict.findings.map(\.rule))"
+            )
+            XCTAssertGreaterThan(
+                settleMs, budgetMs,
+                "settleMs \(settleMs) does not exceed the \(budgetMs) ms budget — it is the "
+                    + "budget being echoed back, not the time actually spent"
+            )
+            XCTAssertLessThanOrEqual(
+                settleMs, step.elapsedMs,
+                "settleMs is part of the step, so it cannot exceed it"
+            )
+        }
+    }
+
     // MARK: - Act failure is a verdict, not a throw
 
     @MainActor

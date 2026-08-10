@@ -638,6 +638,21 @@ MUTATIONS = [
         test="HarnessPerformanceTests/testTheP50GateIsAssertedOnDeveloperHardware",
     ),
     Mutation(
+        # `settleMs` on the settle-TIMEOUT path reverts to reporting the
+        # REQUESTED budget instead of the time actually spent. Four earlier
+        # attempts at this guard all passed under mutation, because `> 0` and
+        # `<= elapsedMs` are satisfied by a budget as readily as by a
+        # measurement (no.md #12). The witness discriminates on the OVERSHOOT:
+        # a settle that gives up at its deadline has spent strictly more than
+        # the deadline, while an echoed budget reports exactly 150.0 for a
+        # 150 ms budget. Hand-verified: 2 failures naming both budgets.
+        name="settleMs on the timeout path reports the budget, not the measurement",
+        path="Sources/VerdictUIProbe/Harness.swift",
+        old="        let settleMs = settleStarted.duration(to: .now).asMilliseconds",
+        new="        let settleMs = timeout.asMilliseconds",
+        test="HarnessTests/testSettleMsIsMeasuredNotAssumedOnTheTimeoutPath",
+    ),
+    Mutation(
         # The PM-side half of the same lane. Every marker test asserts a marker
         # turns record-only ON, and `if True` satisfies all of them -- measured
         # 2026-08-09 at 199/199 passing with the guard fully defeated. That is
