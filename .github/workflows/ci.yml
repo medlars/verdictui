@@ -27,6 +27,7 @@ jobs:
         run: swift build --build-tests -Xswiftc -warnings-as-errors
 
       - name: Test (zero-warning)
+        id: tests
         run: swift test -Xswiftc -warnings-as-errors
 
       # DemoReportTests exercises the executable's body in-process; this catches
@@ -38,6 +39,83 @@ jobs:
         run: |
           set -o pipefail
           swift run VerdictUIDemo | python3 -c "import sys, json; json.load(sys.stdin)"
+
+      # ── Governance V2 S20: typed run-v2 evidence ─────────────────────────
+      #
+      # SHADOW STAGE (S10 rollback contract): additive, non-required, decides
+      # nothing. Cutting over to an authoritative consumer is later work —
+      # add -> shadow -> compare -> cut over -> retire.
+      - name: Check out governance-v2
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          repository: medlars/projects-shared
+          path: .gov-v2
+          ref: main
+          ssh-key: ${{ secrets.SHARED_LIBS_DEPLOY_KEY }}
+        continue-on-error: true
+        id: govv2
+
+      # Runs on a RED run too (`!cancelled()`): evidence that exists only when
+      # everything passed cannot describe a failure, which is when it matters.
+      - name: Emit run-v2 evidence (shadow)
+        if: ${{ !cancelled() && hashFiles('.gov-v2/governance-v2/scripts/emit_run_evidence.py') != '' }}
+        env:
+          GOV_V2: ${{ github.workspace }}/.gov-v2/governance-v2
+          RUN_URL: github://${{ github.repository }}/actions/runs/${{ github.run_id }}
+          OUTCOME_STAGE: ${{ steps.tests.outcome }}
+        run: |
+          set -o pipefail
+          python - <<'PYGEN' > /tmp/stages.json
+          import json, os
+          # A SKIPPED step reports outcome '' — mapped to UNKNOWN, never to a
+          # pass. "Did not run" and "ran and succeeded" must not collapse.
+          outcome = os.environ.get("OUTCOME_STAGE", "")
+          state = {"success": "PASS", "failure": "FAIL"}.get(outcome, "UNKNOWN")
+          score = {"success": 100.0, "failure": 0.0}.get(outcome)
+          print(json.dumps([{
+              "stage_id": "tests", "required": True, "applicable": True,
+              "state": state, "score": score,
+              "reason_code": "ok" if state == "PASS" else "no_evidence",
+              "duration_s": 0.0,
+              "evidence_refs": [{"kind": "log", "locator": os.environ["RUN_URL"]}],
+              "evaluator_version": "swift-test/6.3",
+          }]))
+          PYGEN
+          python "$GOV_V2/scripts/emit_run_evidence.py" \
+            --project verdictui \
+            --repo "${{ github.repository }}" \
+            --commit-sha "${{ github.sha }}" \
+            --branch "${{ github.ref_name }}" \
+            --runner-kind ci \
+            --runner-identity "github-actions/run/${{ github.run_id }}" \
+            --os "$RUNNER_OS" \
+            --python-version "$(python -c 'import platform;print(platform.python_version())')" \
+            --registry-version "projects-shared@${{ github.sha }}" \
+            --stages-file /tmp/stages.json \
+            --out evidence/run-v2.json
+
+      # Deliberately NOT guarded by hashFiles — a verifier conditioned on the
+      # same expression as the thing it verifies skips in exactly the case it
+      # exists to catch, and is unfalsifiable for its own defect (lesson 224).
+      - name: Verify run-v2 evidence was produced
+        if: ${{ !cancelled() }}
+        run: |
+          if [ ! -s evidence/run-v2.json ]; then
+            echo "::error::evidence missing. The emit step did not run or wrote nothing."
+            echo "Most likely the governance-v2 checkout failed: this repo needs a"
+            echo "SHARED_LIBS_DEPLOY_KEY (read-only deploy key) on medlars/projects-shared."
+            echo "A green build that ships no evidence is the false green this program removes."
+            exit 1
+          fi
+          echo "run-v2 evidence present: $(wc -c < evidence/run-v2.json) bytes"
+
+      - name: Upload run-v2 evidence
+        if: ${{ !cancelled() && hashFiles('.gov-v2/governance-v2/scripts/emit_run_evidence.py') != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: run-evidence
+          path: evidence/run-v2.json
+          if-no-files-found: error
 
   secret-scan:
     name: Secret scan (gitleaks)
