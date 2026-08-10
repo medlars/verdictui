@@ -2,6 +2,49 @@
 
 ## [Unreleased]
 
+### 2026-08-10 (scenarios declare themselves, and an explicit probe stops swallowing its subtree)
+
+**Added**
+
+- **`#VerdictScenario("name") { … }`** — a freestanding macro expanding to a
+  `VerdictScenario`-conforming struct whose `body(state:)` is the trailing
+  closure, probed by the same `BodyProbeWalk` `@Verifiable` uses. Together the
+  two macros are the wave's adoption claim: an unverified view becomes fully
+  verifiable by adding two tokens.
+
+  It must be written at **type** scope, and that is a language constraint rather
+  than a style choice: the generated type name derives from an author-written
+  string, so the macro declares `names: arbitrary`, and the compiler rejects
+  arbitrary names at global scope outright.
+
+- **`ScenarioEntry` / `ScenarioRegistry`** — static registration for scenario
+  discovery (Wave 6's `verdictui list`). The entry erases *construction*, not
+  the scenario, because `OracleHost` is generic over `Scenario: VerdictScenario`
+  so the `Body` type survives into the hosted tree and `any VerdictScenario`
+  cannot satisfy that constraint. Registration is a list you write, never a
+  runtime scan: Swift has no load-time hook a value type can register from, and
+  reflection breaks under dead-code stripping and makes the scenario set depend
+  on link order. A test pins the cost — an unregistered scenario is absent — so
+  the tradeoff cannot be quietly "fixed" into reflection.
+
+**Fixed**
+
+- **An explicit `.verdictProbe` on a container no longer swallows everything
+  inside it.** `BodyProbeWalk.rewrite` returned the un-recursed expression when
+  an element already carried a probe, so a hand-probed container produced a tree
+  of exactly one node with no content — measured as
+  `["outer-container|container|"]`. This is worse than the empty tree the
+  `vacuous-verdict` guard exists for: that guard fires only when no probed node
+  exists, and the container's own probe makes the tree look observed, so every
+  rule reports PASS about content nobody instrumented. Suppression is now
+  positional — recurse first, then decline to probe this position.
+
+  The finding that outlives the bug is about the **witness**: SwiftPM rebuilds
+  the plugin but does not re-expand macros in a consuming target whose own
+  sources are unchanged, so a render test executes the previous expansion and
+  passes against a broken plugin. A macro mutation row must name an expansion
+  snapshot. Recorded as `no.md` #23.
+
 ### 2026-08-10 (text that wraps past intent is now reported, and the timing gate stops failing for the machine)
 
 **Added**
