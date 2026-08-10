@@ -2,6 +2,55 @@
 
 ## [Unreleased]
 
+### 2026-08-10 (Wave 4 complete — and the wave's headline claim was false until today)
+
+**Fixed**
+
+- **The two macros now compose.** Writing the test for the exit gate's claim —
+  "a previously unprobed view gains full verification by adding exactly two
+  tokens" — falsified it. A `@Verifiable` view rendered through a
+  `#VerdictScenario` produced a tree with **no probed node at all** and a verdict
+  of `vacuous-verdict`: the generated `verdictProbedBody` was never called by
+  anything, and the scenario walk correctly declines to probe an opaque custom
+  view. Fixed by ADR 2026-009 — `@Verifiable` also generates
+  `verdictProbedContent` (no root) and conforms the type to `VerifiableView`;
+  the walk wraps opaque view constructions in `verdictProbing(_:)`, whose two
+  overloads resolve at compile time. No reflection, and a non-verifiable view
+  costs nothing.
+
+**Added**
+
+- `docs/adoption.md` — three tiers (macro / manual / hybrid), composition,
+  compile-time diagnostics, a limitations table, migration steps, and the
+  measured build cost. It **leads with probe placement**, because a probe
+  outside a `.frame(width:)` measures the frame and makes truncation invisible
+  — verified both ways on a real consumer view.
+- `TwoTokenAdoptionTests` — the exit-gate claim asserted rather than described,
+  including a source-level guard that the fixture view stays unadorned. Without
+  it, "exactly two tokens" is unenforced.
+- A vocabulary-scale differential: macro tree ≡ hand-probed tree across all five
+  recognised element kinds, with a node-count control so two empty trees cannot
+  pass it.
+- `runtime_witness_reason` on `Mutation` — a declared, length-checked per-row
+  opt-out from the snapshot-witness rule (`no.md` #23), plus a tripwire test
+  asserting how many rows use it. An undeclared escape hatch would let that rule
+  decay to nothing while the suite stayed green.
+
+**Measured**
+
+- Build cost, cold and back to back: probe alone **24.03 s**, macro support
+  alone **20.71 s**, whole package **29.44 s**. Macros cost a probe consumer
+  **~5.4 s (+22%)** — not the tripling the plan assumed. SwiftSyntax is not the
+  heaviest thing in this package; SwiftUI/AppKit is.
+
+**Documented**
+
+- `no.md` #26 — a stale macro expansion after a byte-identical RESTORE reads as
+  a regression in correct code, which is the most expensive of the three
+  costumes this trap wears.
+- `no.md` #27 — `VerdictPreviewAdapter` is not built and cannot be: `#Preview`
+  content is only reachable through underscored SwiftUI SPI.
+
 ### 2026-08-10 (compile-time lint — and the plan's second diagnostic described a defect that does not exist)
 
 **Added**

@@ -104,6 +104,22 @@ struct BodyProbeWalk {
         }
 
         guard let role = Self.recognisedRole(of: recursed) else {
+            // An opaque custom view — `MyRow()`. The walk cannot probe it (it
+            // runs on syntax, so it has no idea what the type renders) and must
+            // not guess a role, but it CAN hand the decision to the compiler:
+            // `verdictProbing(_:)` has two overloads and picks the probed one
+            // when the type conforms to `VerifiableView`, which `@Verifiable`
+            // adds. That is what makes the two macros compose.
+            //
+            // Without this the wave's headline claim was FALSE. Measured
+            // 2026-08-10: a `@Verifiable` view rendered through a
+            // `#VerdictScenario` produced a tree with no probed node at all —
+            // the generated `verdictProbedBody` was never called by anything —
+            // so the verdict was `vacuous-verdict` on exactly the two-token
+            // composition the exit gate names.
+            if Self.isOpaqueViewConstruction(recursed) {
+                return "verdictProbing(\(recursed.trimmed))"
+            }
             return recursed
         }
 
@@ -391,6 +407,36 @@ struct BodyProbeWalk {
             return calleeIdentifier(of: base)
         }
         return nil
+    }
+
+    /// Whether `expression` constructs an opaque custom view the walk should
+    /// hand to `verdictProbing(_:)`.
+    ///
+    /// True for a bare `MyRow()` or `MyRow(title: x)` — a capitalised
+    /// initialiser call with no view-builder closure. Three exclusions, each
+    /// load-bearing:
+    ///
+    /// - **Anything carrying a closure** (`VStack { … }`, `MyList { row }`) is a
+    ///   CONTAINER. Its children have already been walked and probed by the
+    ///   recursion above, and wrapping the container would hide those probes
+    ///   behind a `verdictProbing` that returns the whole subtree unchanged for
+    ///   a non-conforming type — trading real probes for a maybe.
+    /// - **A lowercase callee** is a function call, not a type construction
+    ///   (`makeRow()`), and its result is not a nominal view type the
+    ///   conformance can be checked on.
+    /// - **A modifier chain** (`MyRow().padding()`) is excluded because the
+    ///   probed content must sit INSIDE the modifiers the author wrote — the
+    ///   frame a rule measures is the modified one. Wrapping the whole chain
+    ///   would measure the probe against the unmodified view.
+    static func isOpaqueViewConstruction(_ expression: ExprSyntax) -> Bool {
+        guard let call = expression.as(FunctionCallExprSyntax.self),
+            call.trailingClosure == nil,
+            call.additionalTrailingClosures.isEmpty,
+            let name = call.calledExpression.as(DeclReferenceExprSyntax.self)
+        else {
+            return false
+        }
+        return name.baseName.text.first?.isUppercase == true
     }
 
     /// Whether `expression` already has a `.verdictProbe` anywhere in its chain.

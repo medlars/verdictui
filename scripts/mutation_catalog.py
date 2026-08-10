@@ -808,6 +808,37 @@ MUTATIONS = [
         runner=Runner.SWIFT,
     ),
     Mutation(
+        # The two macros stop composing. With the wrap removed, an opaque custom
+        # view renders its ORDINARY body inside a scenario, so a `@Verifiable`
+        # view reached through `#VerdictScenario` produces a tree with no probed
+        # node — `vacuous-verdict`, which is the wave's headline claim failing in
+        # its worst form. Measured before the fix existed.
+        #
+        # Witnessed by the RUNTIME test rather than an expansion snapshot, which
+        # is the exception to no.md #23 and is deliberate: the defect is about
+        # what the compiler RESOLVES `verdictProbing` to, and a snapshot cannot
+        # see an overload choice. Both the macro plugin AND the consuming test
+        # file are rebuilt here because `verdictProbing` lives in the support
+        # library, not the plugin, so the stale-expansion trap does not apply.
+        name="the two macros stop composing over a custom view",
+        path="Sources/VerdictUIMacros/BodyProbeWalk.swift",
+        old='                return "verdictProbing(\\(recursed.trimmed))"',
+        new="                return recursed",
+        test=(
+            "VerdictUIMacroTests.TwoTokenAdoptionTests/"
+            "testTheTwoTokensBuyAVerdictThatCanSeeTheContent"
+        ),
+        runtime_witness_reason=(
+            "The defect is which OVERLOAD of verdictProbing the compiler resolves, and a "
+            "snapshot compares generated text, so it cannot observe an overload choice. "
+            "no.md #23's stale-expansion trap does not apply: verdictProbing lives in the "
+            "SUPPORT LIBRARY, not the plugin, so the consuming target recompiles against it "
+            "normally. Hand-verified NOTICED (exit 1, 1 test executed) with a byte-identical "
+            "restore."
+        ),
+        runner=Runner.SWIFT,
+    ),
+    Mutation(
         # The duplicate-id check stops reporting, so two elements sharing an
         # author-written id compile clean. Every layer downstream matches on the
         # id — TreeDiff pairs nodes by it, a baseline keys on it — so the two

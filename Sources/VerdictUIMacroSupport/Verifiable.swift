@@ -48,9 +48,55 @@ import SwiftUI
 ///   must be a single expression. All three are reported at the attachment site
 ///   rather than as an error inside generated code, which an author cannot see
 ///   or fix.
-@attached(member, names: named(verdictProbedBody))
+@attached(member, names: named(verdictProbedBody), named(verdictProbedContent))
+@attached(extension, conformances: VerifiableView)
 public macro Verifiable() =
     #externalMacro(module: "VerdictUIMacros", type: "VerifiableMacro")
+
+/// A view whose probed content `@Verifiable` has generated.
+///
+/// The conformance is what lets the two macros COMPOSE. `#VerdictScenario`
+/// cannot know whether `MyRow()` is verifiable — a macro runs on syntax, before
+/// type checking, so a custom subview is opaque to it by design. Rather than
+/// guess, the scenario walk emits `verdictProbing(MyRow())`, and the two
+/// overloads of that function resolve at COMPILE time: the constrained one for
+/// a conforming view, the passthrough for everything else.
+///
+/// Without this, the wave's headline claim was false. Measured 2026-08-10: a
+/// `@Verifiable` view rendered through a `#VerdictScenario` produced a tree with
+/// **no probed node at all** — `verdictProbedBody` was generated and nothing
+/// ever called it — so the verdict was `vacuous-verdict` on the very
+/// composition the exit gate names.
+public protocol VerifiableView: View {
+    associatedtype VerdictProbedContent: View
+
+    /// This view's `body`, probed, with no root installed.
+    ///
+    /// No root here on purpose: a view rendered inside a scenario is already
+    /// under `OracleHost`'s root, and nesting `verdictRoot` is unsupported —
+    /// the inner viewport reaches the outer collector, which then measures every
+    /// frame against the wrong rectangle.
+    @MainActor var verdictProbedContent: VerdictProbedContent { get }
+}
+
+/// Renders `view`'s probed content when it is verifiable, and `view` unchanged
+/// otherwise.
+///
+/// Two overloads, resolved by the compiler on whether the concrete type
+/// conforms. This is the whole composition mechanism, and it is deliberately not
+/// a runtime type check: `#VerdictScenario` wraps every unrecognised call
+/// expression in it, so the cost of a non-verifiable view must be exactly zero
+/// and the answer must be knowable without reflection.
+@MainActor @ViewBuilder
+public func verdictProbing<V: VerifiableView>(_ view: V) -> some View {
+    view.verdictProbedContent
+}
+
+/// The passthrough overload — see ``verdictProbing(_:)-8xk1a``.
+@MainActor @ViewBuilder
+public func verdictProbing<V: View>(_ view: V) -> some View {
+    view
+}
 
 /// Declares a named, verifiable scenario from a view expression.
 ///
