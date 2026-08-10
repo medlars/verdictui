@@ -33,4 +33,9 @@ extraPaths = [
     "../shared-libs/release-tools",
     "../shared-libs",
     "Tests",
+    # `scripts` for `mutation_catalog` / `mutation_catalog_types`, which
+    # `mutation-check.py` imports after a `sys.path.insert` on its own
+    # directory — that directory holds hyphenated filenames, so it cannot be a
+    # package, and pyright does not replicate the runtime insert.
+    "scripts",
 ]

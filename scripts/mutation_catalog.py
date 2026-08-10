@@ -843,4 +843,21 @@ MUTATIONS = [
         new="guard metrics.idealLineCount > 1 else { return nil }",
         test="ExcessiveWrapRuleTests/testOrdinaryTwoLineWrappingIsNotReported",
     ),
+    Mutation(
+        # The harness stops noticing that something else wrote to the file while
+        # its witness ran, and classifies the result anyway. Measured with the
+        # guard removed: it prints NOTICED for a row whose subject had been
+        # rewritten mid-run — a confident verdict about a tree nobody intended,
+        # which is exactly how a working guard gets reported as untested
+        # (`no.md` #14, CTS-8795E0FE).
+        name="a mid-run write to the mutated file no longer aborts the row",
+        path="scripts/mutation-check.py",
+        old="        if sha256(path) != expected_mutated:",
+        new="        if False:",
+        test=(
+            "Tests/test_mutation_check.py::TestPerRowTreeOwnership"
+            "::test_a_write_during_the_witness_run_aborts_rather_than_scoring"
+        ),
+        runner=Runner.PYTEST,
+    ),
 ]
