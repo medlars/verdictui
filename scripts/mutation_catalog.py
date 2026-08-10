@@ -860,4 +860,19 @@ MUTATIONS = [
         ),
         runner=Runner.PYTEST,
     ),
+    Mutation(
+        # The detector stops comparing TIME and reports every modified file.
+        # That is the failure mode the control exists for: identical to
+        # `git status`, useless as a signal, and noisy enough that the real
+        # stale-buffer case would be ignored among the false ones.
+        name="the stale-buffer detector reports any dirty file",
+        path="scripts/stale-buffer-check.py",
+        old="        if mtime < committed:",
+        new="        if True:",
+        test=(
+            "Tests/test_stale_buffer_check.py::TestStaleBufferDetection"
+            "::test_an_ordinary_fresh_edit_is_not_reported"
+        ),
+        runner=Runner.PYTEST,
+    ),
 ]

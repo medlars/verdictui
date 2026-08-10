@@ -556,6 +556,33 @@ class VerdictUIPM(PmBase):
             "detail": (r.stdout.strip() or r.stderr.strip() or "no output")[:300],
         }
 
+    def stage_stale_buffer(self) -> dict:
+        """No tracked file was overwritten by a stale editor buffer.
+
+        Observed four times during Wave 2 (CIS-638133AE): an IDE holds a file
+        open, an agent edits and commits it, and the editor later re-saves its
+        own older buffer over the top. The tree then differs from HEAD with
+        nothing in the log to say why, and every measurement after that — a
+        mutation restore, this grade — describes bytes nobody chose.
+
+        `git status` cannot separate that from ordinary work in progress. The
+        mtime can: a file you just edited is NEWER than the commit touching it,
+        a stale buffer necessarily OLDER.
+        """
+        script = PROJECT_ROOT / "scripts" / "stale-buffer-check.py"
+        if not script.exists():
+            return {"passed": False, "detail": "stale-buffer-check.py not found"}
+        r = subprocess.run(  # noqa: S603 — fixed argv built from constants
+            [sys.executable, str(script)],
+            capture_output=True,
+            text=True,
+            timeout=TIMEOUT_STANDARD,
+        )
+        return {
+            "passed": r.returncode == 0,
+            "detail": (r.stdout.strip() or r.stderr.strip() or "no output")[:300],
+        }
+
     def stage_runtime_bench(self) -> dict:
         """SLO 1: the act -> settle -> verdict MEDIAN stays under its budget.
 
@@ -771,6 +798,7 @@ class VerdictUIPM(PmBase):
             ("stage_test_alongside", self.stage_test_alongside),
             ("stage_demo", self.stage_demo),
             ("stage_mutations", self.stage_mutations),
+            ("stage_stale_buffer", self.stage_stale_buffer),
             ("stage_runtime_bench", self.stage_runtime_bench),
             ("stage_pytest", self.stage_pytest),
             ("stage_lint", self.stage_lint),
