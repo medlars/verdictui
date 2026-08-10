@@ -87,7 +87,7 @@ jobs:
       # not fail — they SKIP behind an importorskip guard, so CI stays green
       # while checking nothing (CTS-0E24FFF0).
       - name: Set up pm-base deploy key
-        uses: webfactory/ssh-agent@dc588b651fe13675774614f8e6a936a468676387 # v0.9.0
+        uses: webfactory/ssh-agent # v0.10.0@dc588b651fe13675774614f8e6a936a468676387 # v0.9.0
         with:
           ssh-private-key: ${{ secrets.PM_BASE_DEPLOY_KEY }}
 
