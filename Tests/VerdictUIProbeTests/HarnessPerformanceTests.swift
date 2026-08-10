@@ -95,10 +95,10 @@ final class HarnessPerformanceTests: XCTestCase {
     /// still runs every correctness assertion here — sample count, finiteness,
     /// per-cycle PASS, non-empty delta — so a benchmark that stopped running
     /// is still a hard failure in both environments.
-    private static var isSharedCIRunner: Bool {
-        let environment = ProcessInfo.processInfo.environment
-        return environment["CI"] != nil || environment["VERDICTUI_RECORD_TIMING_ONLY"] != nil
-    }
+    /// Delegates to ``ConstrainedTimingEnvironment``, which spells the marker
+    /// class ONCE. This file used to carry its own copy, and the three timing
+    /// suites had already diverged — only this one honoured `CI` (`no.md` #17).
+    private static var isSharedCIRunner: Bool { ConstrainedTimingEnvironment.isActive }
 
     /// Whether the p50 budget is ASSERTED in this process rather than recorded.
     ///

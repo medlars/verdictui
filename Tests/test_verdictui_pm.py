@@ -87,6 +87,102 @@ class TestLoadsWithoutSharedLibs:
         assert "shared-libs pm-base unavailable" in result.stderr
 
 
+class TestPMCLI:
+    def test_main_dispatches_query_without_running_pipeline(self, monkeypatch, capsys) -> None:
+        def fail_run_pipeline(*_args, **_kwargs):
+            raise AssertionError("query must not run the PM pipeline")
+
+        monkeypatch.setattr(VerdictUIPM, "run_pipeline", fail_run_pipeline)
+
+        assert (
+            _mod.main(
+                [
+                    "query",
+                    "risk",
+                    "--file",
+                    "Tests/VerdictUIProbeTests/HarnessPerformanceTests.swift",
+                ]
+            )
+            == 0
+        )
+
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["query"] == "risk"
+        assert payload["risk"] == "high"
+        assert payload["file"] == "Tests/VerdictUIProbeTests/HarnessPerformanceTests.swift"
+
+    def test_unknown_cli_argument_fails_instead_of_running_quick(self, monkeypatch) -> None:
+        def fail_run_pipeline(*_args, **_kwargs):
+            raise AssertionError("unknown CLI args must not run the PM pipeline")
+
+        monkeypatch.setattr(VerdictUIPM, "run_pipeline", fail_run_pipeline)
+
+        with pytest.raises(SystemExit) as exc:
+            _mod.main(["--definitely-not-a-mode"])
+
+        assert exc.value.code == 2
+
+    def test_query_coverage_lists_python_and_swift_tests(self, capsys) -> None:
+        pm = VerdictUIPM.__new__(VerdictUIPM)
+
+        assert pm.run_query("coverage", file_path="scripts/verdictui-pm.py") == 0
+
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["query"] == "coverage"
+        assert "Tests/test_verdictui_pm.py" in payload["tests"]
+        assert "Tests/VerdictUIProbeTests/HarnessPerformanceTests.swift" in payload["tests"]
+
+    def test_query_why_failed_reads_cached_status(self, tmp_path, capsys) -> None:
+        status_file = tmp_path / "pm-last-status.json"
+        status_file.write_text(
+            json.dumps(
+                {
+                    "failed_stages": ["stage_runtime_bench"],
+                    "stages": {
+                        "stage_runtime_bench": {
+                            "passed": False,
+                            "detail": "p50 over budget",
+                        }
+                    },
+                }
+            )
+        )
+        pm = VerdictUIPM.__new__(VerdictUIPM)
+        pm.status_file = status_file
+
+        assert pm.run_query("why-failed", stage="stage_runtime_bench") == 0
+
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["failed_stages"] == ["stage_runtime_bench"]
+        assert payload["detail"]["detail"] == "p50 over budget"
+
+    def test_query_why_failed_derives_failed_stages_from_cached_stage_map(
+        self, tmp_path, capsys
+    ) -> None:
+        status_file = tmp_path / "pm-last-status.json"
+        status_file.write_text(
+            json.dumps(
+                {
+                    "stages": {
+                        "stage_build": {"passed": True, "detail": "ok"},
+                        "stage_runtime_bench": {
+                            "passed": False,
+                            "detail": "p50 over budget",
+                        },
+                    },
+                }
+            )
+        )
+        pm = VerdictUIPM.__new__(VerdictUIPM)
+        pm.status_file = status_file
+
+        assert pm.run_query("why-failed", stage="stage_runtime_bench") == 0
+
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["failed_stages"] == ["stage_runtime_bench"]
+        assert payload["detail"]["detail"] == "p50 over budget"
+
+
 class TestDeploymentFloor:
     """The floor a CONSUMER collides with, not one this repo can see alone.
 
@@ -195,6 +291,29 @@ class TestStageBuild:
         cache_path = Path(os.environ["CLANG_MODULE_CACHE_PATH"])
         assert cache_path.is_relative_to(_PROJECT_ROOT / ".build")
 
+    def test_stage_build_uses_project_local_swiftpm_caches(self, monkeypatch) -> None:
+        calls = []
+
+        def run_swift_build(*_args, **kwargs):
+            calls.append(kwargs)
+            return {"passed": True, "detail": "swift build PASS", "output": ""}
+
+        monkeypatch.setattr(_mod.shutil, "which", lambda _: "/usr/bin/swift")
+        monkeypatch.setattr(
+            _mod, "_swift_runner", lambda: (lambda _root: [], run_swift_build, None)
+        )
+
+        result = VerdictUIPM.__new__(VerdictUIPM).stage_build()
+
+        assert result["passed"], result["detail"]
+        flags = calls[0]["extra_flags"]
+        assert "--cache-path" in flags
+        assert "--config-path" in flags
+        assert "--manifest-cache" in flags
+        assert str(_PROJECT_ROOT / ".build" / "swiftpm-cache") in flags
+        assert str(_PROJECT_ROOT / ".build" / "swiftpm-config") in flags
+        assert "local" in flags
+
     def test_missing_package_swift_fails(self, tmp_path, monkeypatch) -> None:
         monkeypatch.setattr(_mod, "PROJECT_ROOT", tmp_path)
         pm = VerdictUIPM.__new__(VerdictUIPM)
@@ -276,6 +395,47 @@ class TestSkipSentinel:
 
         assert result["passed"]
         assert "external store unavailable" in result["detail"]
+
+    def test_timing_record_only_honors_explicit_marker_environment(self, monkeypatch) -> None:
+        for name in _mod.CONSTRAINED_TIMING_ENV_MARKERS:
+            monkeypatch.delenv(name, raising=False)
+
+        monkeypatch.setenv(_mod.TIMING_RECORD_ONLY_ENV, "1")
+
+        assert _mod._timing_record_only_environment()
+
+    def test_timing_record_only_detects_codex_repair_sandbox(self, monkeypatch) -> None:
+        for name in _mod.CONSTRAINED_TIMING_ENV_MARKERS:
+            monkeypatch.delenv(name, raising=False)
+
+        monkeypatch.setenv("CODEX_CI", "1")
+
+        assert _mod._timing_record_only_environment()
+
+    def test_timing_record_only_treats_marker_presence_as_active(self, monkeypatch) -> None:
+        for name in _mod.CONSTRAINED_TIMING_ENV_MARKERS:
+            monkeypatch.delenv(name, raising=False)
+
+        monkeypatch.setenv("CI", "")
+
+        assert _mod._timing_record_only_environment()
+
+    def test_unmarked_writable_host_still_asserts_its_timings(self, monkeypatch, tmp_path) -> None:
+        """The negative control, and the only direction that can fail usefully.
+
+        Every other test here asserts a marker turns record-only ON, and an
+        implementation returning True unconditionally satisfies all of them --
+        measured: it passed 199/199. That defect is silent in the expensive
+        direction, because record-only means the p50 budget is enforced
+        NOWHERE while every suite stays green (no.md #12, #15).
+        """
+        for name in _mod.CONSTRAINED_TIMING_ENV_MARKERS:
+            monkeypatch.delenv(name, raising=False)
+        # The other input the predicate reads: an unwritable SwiftPM cache also
+        # means record-only, so a developer-hardware claim must pin both.
+        monkeypatch.setattr(_mod.Path, "home", classmethod(lambda _cls: tmp_path))
+
+        assert not _mod._timing_record_only_environment()
 
     def test_stage_test_exports_record_only_timing_only_during_swift_run(self, monkeypatch) -> None:
         observed = []
@@ -1099,6 +1259,31 @@ class TestStageRuntimeBench:
         assert swift_budget == _mod.SLO1_P50_BUDGET_MS, (
             f"the Swift test asserts p50 < {swift_budget} ms but the PM gates at "
             f"{_mod.SLO1_P50_BUDGET_MS} ms — one moved without the other"
+        )
+
+    def test_the_swift_and_python_timing_lanes_agree(self) -> None:
+        """The same marker class is spelled in two languages that cannot read
+        each other, so the agreement is only real if something compares them.
+
+        A marker present on one side only is silent in the expensive direction:
+        the forgetful side keeps ASSERTING a median the host cannot hold, which
+        is the Codex-sandbox failure (`no.md` #17) -- p50 167.50 ms against a
+        70 ms budget on source measuring ~49 ms, and three P1 tickets for a
+        regression that did not exist. Same joint as
+        ``test_the_gated_budget_agrees_with_the_swift_test``, one level up: that
+        pins the number, this pins the set of hosts it applies to.
+        """
+        source = (
+            _PROJECT_ROOT / "Tests" / "VerdictUIProbeTests" / "ConstrainedTimingEnvironment.swift"
+        ).read_text()
+        block = re.search(r"static let markers = \[(.*?)\]", source, re.DOTALL)
+        assert block is not None, "ConstrainedTimingEnvironment.markers is no longer a list literal"
+        swift_markers = set(re.findall(r'"([^"]+)"', block.group(1)))
+
+        assert swift_markers == set(_mod.CONSTRAINED_TIMING_ENV_MARKERS), (
+            f"Swift marks {sorted(swift_markers)} as timing-constrained but the PM marks "
+            f"{sorted(_mod.CONSTRAINED_TIMING_ENV_MARKERS)} — a host in one set and not the "
+            "other asserts a budget it cannot hold, or exempts one it can"
         )
 
     def test_swift_failure_is_surfaced_not_swallowed(self, monkeypatch) -> None:
