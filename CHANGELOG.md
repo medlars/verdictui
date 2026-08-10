@@ -2,6 +2,44 @@
 
 ## [Unreleased]
 
+### 2026-08-10 (the edge shapes Task 4 names — two of four were broken, not merely uncovered)
+
+**Fixed**
+
+- **`@ViewBuilder` conditional content is probed.** An `if` or `switch` inside a
+  view builder is a *statement*, not an expression, and `BodyProbeWalk` rewrote
+  only statements that were expressions — so every element in every branch went
+  uninstrumented. The container's other probed children keep the tree looking
+  observed, so `vacuous-verdict` (which fires only when no probed node exists)
+  could not see it and every rule reported PASS about content nobody measured.
+  `if`, `else`, `else if` chains and `switch` cases are now walked.
+
+- **`ForEach` expands to source that compiles.** A probed statement is
+  re-inserted `.trimmed`, and the statement's own leading trivia is the only
+  thing separating a closure's `in` from its first statement — so `{ row in` +
+  `Text(…)` became `{ row inText(…)`, and `@Verifiable` was unusable on any view
+  containing a `ForEach`. Trivia is now carried across. No existing test used a
+  closure *with a signature*, which is why this shipped green.
+
+**Added**
+
+- Expansion snapshots for the four shapes the wave plan names and this repo had
+  not pinned: `ForEach`, `@ViewBuilder` conditional, `switch` case, and a nested
+  custom view (a negative assertion — `MyRow()` stays opaque by design — paired
+  with a probed sibling so the test can fail for its own reason).
+- Compilation tests for the `ForEach` and conditional shapes, which read the
+  rendered tree rather than generated text; the `ForEach` one is also the guard
+  that the expansion builds at all.
+- Two mutation rows, both witnessed by expansion snapshots per `no.md` #23 and
+  hand-verified NOTICED in both directions with byte-identical restores.
+
+**Changed**
+
+- Four existing expansion snapshots re-pinned: preserving statement trivia
+  changes the *indentation* of generated multi-line bodies (probes, ids, roles
+  and text are byte-identical). The lifted-body indentation note now records
+  trivia preservation as the operative cause.
+
 ### 2026-08-10 (scenarios declare themselves, and an explicit probe stops swallowing its subtree)
 
 **Added**

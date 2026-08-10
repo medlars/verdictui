@@ -229,6 +229,87 @@ final class VerifiableCompilationTests: XCTestCase {
         }
     }
 
+    /// A `ForEach` — the shape whose expansion did not compile at all.
+    ///
+    /// The probe is attached to a statement inside a closure that has a
+    /// SIGNATURE, and the first statement's leading trivia is the only thing
+    /// separating `in` from it. Dropping that trivia produced `{ row inText(…)`,
+    /// so this type is the guard: if the walk stops preserving it, this target
+    /// does not build and no assertion below is even reached.
+    @Verifiable
+    struct ForEachRow: View {
+        var body: some View {
+            ForEach(["x", "y"], id: \.self) { item in
+                Text(item)
+            }
+        }
+    }
+
+    func testEveryForEachElementReachesTheTree() throws {
+        // Compiling is most of the claim, but not all of it: an expansion could
+        // compile while leaving the loop body unprobed, which is the silent
+        // false-green rather than the loud build failure. So the tree is read.
+        //
+        // The assertion is on the probed NODES, not on their text, and the first
+        // draft got that wrong in a way worth recording. `Text(item)` takes a
+        // variable, so `literalTextArgument` declines to forward it — correctly,
+        // since a macro cannot know a runtime value and inventing one would put
+        // a false string where `TruncationRule` reads a real one. A test
+        // demanding that text would have been demanding a fabrication.
+        //
+        // Both iterations share one id because the walk numbers SYNTAX positions
+        // and a loop body is a single position, so the count is what separates
+        // "the walk ran" from "the walk skipped the closure": one node per
+        // iteration means the probe is inside the loop.
+        let tree = try renderTree { sink in
+            AnyView(ForEachRow().verdictProbedBody(into: sink))
+        }
+        let lines = descriptors(of: tree)
+        XCTAssertEqual(
+            lines.filter { $0.hasPrefix("ForEachRow.text.0|text|") }.count,
+            2,
+            "The ForEach body was not probed once per iteration: \(lines)"
+        )
+    }
+
+    /// A `@ViewBuilder` conditional — content the walk could not see at all.
+    @Verifiable
+    struct ConditionalRow: View {
+        let isOn: Bool
+        var body: some View {
+            VStack {
+                if isOn {
+                    Text("branch-on")
+                } else {
+                    Text("branch-off")
+                }
+            }
+        }
+    }
+
+    func testTheRenderedConditionalBranchIsProbed() throws {
+        // An `if` inside a `@ViewBuilder` is a STATEMENT, and the walk rewrote
+        // only statements that were expressions — so every element in every
+        // branch went unprobed while the surrounding container's other children
+        // made the tree look observed. `vacuous-verdict` cannot see that (it
+        // fires only when NO probed node exists), so every rule reported PASS
+        // about branch content nobody instrumented.
+        //
+        // BOTH branches are rendered, in two hosts, because a walk that probed
+        // only the first arm would satisfy a single-branch assertion — the `else`
+        // arm is a separate syntax position and needs its own witness.
+        for (isOn, expected) in [(true, "branch-on"), (false, "branch-off")] {
+            let tree = try renderTree { sink in
+                AnyView(ConditionalRow(isOn: isOn).verdictProbedBody(into: sink))
+            }
+            let lines = descriptors(of: tree)
+            XCTAssertTrue(
+                lines.contains { $0.hasSuffix("|text|\(expected)") },
+                "'\(expected)' never reached the tree from a conditional branch: \(lines)"
+            )
+        }
+    }
+
     // MARK: - Helpers
 
     /// Renders a view windowlessly and returns the tree it delivered.

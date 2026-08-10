@@ -166,14 +166,103 @@ struct BodyProbeWalk {
     /// Rewrites the statements a view-builder closure contains.
     private mutating func rewriteClosure(_ closure: ClosureExprSyntax) -> ClosureExprSyntax {
         var updated = closure
-        updated.statements = CodeBlockItemListSyntax(
-            closure.statements.map { item in
-                guard let expression = item.item.as(ExprSyntax.self) else { return item }
+        updated.statements = rewriteStatements(closure.statements)
+        return updated
+    }
+
+    /// Rewrites every statement in a view-builder block.
+    ///
+    /// Two statement shapes matter and only one of them is an expression. A bare
+    /// `Text("x")` is a `CodeBlockItem` whose item IS an expression, and it is
+    /// rewritten directly. An `if` or a `switch` inside a `@ViewBuilder` is a
+    /// STATEMENT — the builder turns it into a view, but the syntax tree has no
+    /// expression at that position — so a walk that handled only the first left
+    /// every element in every branch unprobed. That is this product's worst
+    /// defect shape and it is silent: the branch renders, the container's other
+    /// probed children make the tree look observed, and `vacuous-verdict` (which
+    /// fires only when NO probed node exists) cannot see it, so every rule
+    /// reports PASS about content nobody instrumented.
+    private mutating func rewriteStatements(
+        _ statements: CodeBlockItemListSyntax
+    ) -> CodeBlockItemListSyntax {
+        CodeBlockItemListSyntax(
+            statements.map { item in
                 var copy = item
-                copy.item = .expr(rewrite(expression))
+                switch item.item {
+                case .expr(let expression):
+                    // The item's own leading trivia is what separates it from
+                    // whatever precedes it — a newline and indentation, or the
+                    // single space after a closure's `in`. `rewrite` returns a
+                    // `.trimmed` expression, so that trivia must be carried
+                    // across here or the two tokens are glued together:
+                    // `{ row in` + `Text(…)` became `{ row inText(…)`, which is
+                    // not Swift, so `@Verifiable` on any view containing a
+                    // `ForEach` produced an expansion that could not compile.
+                    let rewritten = rewrite(expression)
+                    copy.item = .expr(
+                        rewritten.with(\.leadingTrivia, expression.leadingTrivia)
+                    )
+                case .stmt(let statement):
+                    copy.item = .stmt(rewriteStatement(statement))
+                case .decl:
+                    // A `let` inside a body the walk accepted cannot occur —
+                    // `bodyResultExpression` requires a single-expression body —
+                    // but a nested closure may hold one, and it holds no views.
+                    break
+                }
                 return copy
             }
         )
+    }
+
+    /// Rewrites the view-builder branches a statement contains.
+    ///
+    /// `if` and `switch` are separate syntax nodes with no shared supertype to
+    /// match once, so each is handled explicitly and a shape that is neither is
+    /// returned untouched rather than guessed at.
+    private mutating func rewriteStatement(_ statement: StmtSyntax) -> StmtSyntax {
+        if let expressionStatement = statement.as(ExpressionStmtSyntax.self) {
+            if let ifExpression = expressionStatement.expression.as(IfExprSyntax.self) {
+                var updated = expressionStatement
+                updated.expression = ExprSyntax(rewriteIf(ifExpression))
+                return StmtSyntax(updated)
+            }
+            if let switchExpression = expressionStatement.expression.as(SwitchExprSyntax.self) {
+                var updated = expressionStatement
+                var copy = switchExpression
+                copy.cases = SwitchCaseListSyntax(
+                    switchExpression.cases.map { element in
+                        guard case .switchCase(let switchCase) = element else { return element }
+                        var caseCopy = switchCase
+                        caseCopy.statements = rewriteStatements(switchCase.statements)
+                        return .switchCase(caseCopy)
+                    }
+                )
+                updated.expression = ExprSyntax(copy)
+                return StmtSyntax(updated)
+            }
+        }
+        return statement
+    }
+
+    /// Rewrites both arms of an `if`, following `else if` chains to their end.
+    ///
+    /// The `else` arm is itself an `IfExprSyntax` in an `else if`, so recursing
+    /// through it is what keeps the third and later branches from being the only
+    /// unprobed ones — a defect that a two-branch test cannot see.
+    private mutating func rewriteIf(_ expression: IfExprSyntax) -> IfExprSyntax {
+        var updated = expression
+        updated.body.statements = rewriteStatements(expression.body.statements)
+        switch expression.elseBody {
+        case .codeBlock(let block):
+            var copy = block
+            copy.statements = rewriteStatements(block.statements)
+            updated.elseBody = .codeBlock(copy)
+        case .ifExpr(let nested):
+            updated.elseBody = .ifExpr(rewriteIf(nested))
+        case .none:
+            break
+        }
         return updated
     }
 

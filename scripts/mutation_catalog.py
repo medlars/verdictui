@@ -766,6 +766,48 @@ MUTATIONS = [
         runner=Runner.SWIFT,
     ),
     Mutation(
+        # The statement leading trivia is dropped, so a probed statement is
+        # glued to whatever precedes it. In a closure WITH A SIGNATURE that is
+        # the `in` keyword — `{ row in` + `Text(…)` becomes `{ row inText(…)`,
+        # which is not Swift, so `@Verifiable` on any view containing a
+        # `ForEach` expands to source that cannot compile.
+        #
+        # Witnessed by the expansion snapshot rather than by the ForEach RENDER
+        # test, for the reason recorded in no.md #23 AND for a second one that
+        # is specific to this mutation: a non-compiling expansion in the
+        # consuming target scores INCONCLUSIVE, which measures nothing. The
+        # snapshot test expands the macro in-process, so it observes the broken
+        # source as a text mismatch instead of as a build failure.
+        name="body walk drops the trivia separating a statement from its closure signature",
+        path="Sources/VerdictUIMacros/BodyProbeWalk.swift",
+        old="                        rewritten.with(\\.leadingTrivia, expression.leadingTrivia)",
+        new="                        rewritten",
+        test=(
+            "VerdictUIMacroTests.VerifiableMacroTests/"
+            "testElementsInsideAForEachAreProbedAndTheClosureSurvives"
+        ),
+        runner=Runner.SWIFT,
+    ),
+    Mutation(
+        # `@ViewBuilder` conditional content stops being walked, so every element
+        # in every `if`/`switch` branch goes unprobed. The container's other
+        # probed children keep the tree looking observed, so `vacuous-verdict`
+        # (which fires only when NO probed node exists) cannot see it and every
+        # rule reports PASS about content nobody instrumented.
+        #
+        # `case .stmt` is kept and made a no-op rather than deleted, so the
+        # switch stays exhaustive and the mutation compiles — a mutation that
+        # cannot build scores on the compiler's verdict instead of the suite's.
+        name="body walk leaves ViewBuilder conditional content unprobed",
+        path="Sources/VerdictUIMacros/BodyProbeWalk.swift",
+        old="                    copy.item = .stmt(rewriteStatement(statement))",
+        new="                    copy.item = .stmt(statement)",
+        test=(
+            "VerdictUIMacroTests.VerifiableMacroTests/testElementsInsideAConditionalBranchAreProbed"
+        ),
+        runner=Runner.SWIFT,
+    ),
+    Mutation(
         # An interpolated string is forwarded as `text:`, putting the literal
         # source `\\(name)` where TruncationRule reads what the user sees. A
         # false value is worse than an absent one — the rule acts on it.
