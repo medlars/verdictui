@@ -9,6 +9,7 @@
 | [2026-005](2026-005-vacuity-guard-is-structural-not-a-rule.md) | The vacuity guard is structural, never a `LintRule` | 2026-08-08 | Active | kernel, honesty, false-pass |
 | [2026-006](2026-006-deployment-floor-tracks-the-lowest-fleet-target.md) | The deployment floor tracks the lowest fleet target, not the newest API | 2026-08-08 | Active | packaging, adoption, consumers |
 | [2026-007](2026-007-mutation-catalog-lives-outside-the-harness.md) | The mutation catalog lives outside the harness it drives | 2026-08-10 | Active | mutations, tooling, self-reference |
+| [2026-008](2026-008-scenario-registration-is-a-static-list.md) | Scenario registration is a static list, not a runtime scan | 2026-08-10 | Active | macros, registry, adoption |
 
 > Use the `/adr` skill to create new entries. Each ADR is `YYYY-NNN-slug.md`.
 > ProbeLayout.measure's optional-vs-reduce choice is recorded in `no.md` entry 10
