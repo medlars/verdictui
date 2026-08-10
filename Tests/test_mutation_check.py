@@ -704,6 +704,70 @@ class TestMidRunTreeGuard:
         assert len(seen) == len(mod.MUTATIONS), "not every mutation was reached"
 
 
+class TestPerRowTreeOwnership:
+    """`main`'s clean-tree check is a PRECONDITION, not an invariant.
+
+    It is evaluated between rows, so a write landing DURING a row's test run is
+    invisible to it — and that is the window that matters, because a row's test
+    run is where all the time goes. The harness then classifies a result
+    produced against a file nobody intended and prints UNNOTICED, which reads as
+    "your guard is untested" and invites rewriting correct code. That cost about
+    an hour on 2026-08-07 (`no.md` #14, CTS-8795E0FE).
+    """
+
+    @staticmethod
+    def _mutation(mod, tmp_path):
+        target = tmp_path / "subject.swift"
+        target.write_text("let guardValue = 1\n")
+        return target, mod.Mutation(
+            name="probe",
+            path="subject.swift",
+            old="let guardValue = 1",
+            new="let guardValue = 2",
+            test="Fake/testSomething",
+        )
+
+    def test_a_write_during_the_witness_run_aborts_rather_than_scoring(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        mod = _load()
+        target, mutation = self._mutation(mod, tmp_path)
+        monkeypatch.setattr(mod, "resolve_in_repo", lambda _: target)
+        monkeypatch.setattr(mod, "target_problem", lambda _: None)
+        monkeypatch.setattr(mod, "baseline_problem", lambda _: None)
+
+        def _run_and_meddle(_test, _runner):
+            # Exactly what a concurrent editor save or sibling agent does: write
+            # to the file the harness is holding, while its witness runs.
+            target.write_text("let guardValue = 99\n")
+            return subprocess.CompletedProcess([], 1, "Executed 1 test", "")
+
+        monkeypatch.setattr(mod, "run_named_test", _run_and_meddle)
+
+        with pytest.raises(SystemExit) as exc:
+            mod.check(mutation)
+
+        assert exc.value.code == 3, "a tree we do not own must abort, not produce a verdict"
+
+    def test_an_untouched_file_still_produces_its_verdict(self, monkeypatch, tmp_path) -> None:
+        """The control. Without it, the test above is satisfied by a harness
+        that aborts on every row — which would report the same exit code while
+        verifying nothing at all."""
+        mod = _load()
+        target, mutation = self._mutation(mod, tmp_path)
+        monkeypatch.setattr(mod, "resolve_in_repo", lambda _: target)
+        monkeypatch.setattr(mod, "target_problem", lambda _: None)
+        monkeypatch.setattr(mod, "baseline_problem", lambda _: None)
+        monkeypatch.setattr(
+            mod,
+            "run_named_test",
+            lambda _t, _r: subprocess.CompletedProcess([], 1, "Executed 1 test", ""),
+        )
+
+        assert mod.check(mutation) is True
+        assert target.read_text() == "let guardValue = 1\n", "the file must be restored"
+
+
 class TestMain:
     """Argument handling and the dirty-tree precondition."""
 

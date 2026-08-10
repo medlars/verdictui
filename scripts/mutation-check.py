@@ -194,7 +194,11 @@ def target_problem(mutation: Mutation) -> str | None:
 
 
 def check(mutation: Mutation) -> bool:
-    """Baseline, apply, run, require failure, restore. True when verified."""
+    """Baseline, apply, run, require failure, restore. True when verified.
+
+    Also aborts if anything but this harness wrote to the file while the witness
+    was running — the verdict would otherwise describe a tree nobody intended.
+    """
     if problem := target_problem(mutation):
         print(f"  SETUP FAILED: {problem}")
         return False
@@ -206,9 +210,27 @@ def check(mutation: Mutation) -> bool:
     original = path.read_text()
     before = sha256(path)
 
-    path.write_text(original.replace(mutation.old, mutation.new))
+    mutated = original.replace(mutation.old, mutation.new)
+    path.write_text(mutated)
+    expected_mutated = hashlib.sha256(mutated.encode()).hexdigest()
     try:
-        outcome, reason = classify(run_named_test(mutation.test, mutation.runner), mutation.runner)
+        result = run_named_test(mutation.test, mutation.runner)
+
+        # The tree is not ours for the length of the run. An editor save, a
+        # concurrent pytest, a sibling agent's `git checkout` -- any write to
+        # THIS file while the witness ran means the witness judged something
+        # other than the mutation, and the harness cannot tell which. Reporting
+        # that as UNNOTICED is the expensive direction: it reads as "your guard
+        # is untested" and invites rewriting correct code, which cost about an
+        # hour on 2026-08-07 (`no.md` #14). A verdict we cannot stand behind is
+        # not a verdict, so this aborts rather than scoring the row.
+        if sha256(path) != expected_mutated:
+            print("  ABORTED: the file changed while its witness was running")
+            print(f"  {mutation.path} was written by something other than this harness")
+            print("  re-run in the foreground with an exclusive tree (no.md #14)")
+            raise SystemExit(3)
+
+        outcome, reason = classify(result, mutation.runner)
         print(f"  {outcome.value} ({reason})")
         return outcome is Outcome.NOTICED
     finally:
