@@ -2,6 +2,50 @@
 
 ## [Unreleased]
 
+### 2026-08-10 (text that wraps past intent is now reported, and the timing gate stops failing for the machine)
+
+**Added**
+
+- **`excessive-wrap` — text wrapping far past the width it was designed for.**
+  `truncation` fires only when characters are LOST, and SwiftUI wraps rather
+  than clips, so a label spilling onto five lines in a header produced no
+  finding at all. Measured on a real screen: `intrinsicWidth 335.0` inside an
+  82 pt frame across five lines, `findings: []`. Narrow windows, long localized
+  strings and accessibility text sizes all produce this and none of them clip.
+
+  The threshold is **measured, not chosen**, and the measurement changed the
+  design. Hosting one 13 pt string at seven widths gave ordinary two-line wraps
+  at intrinsic/frame ratios 1.54, 1.88 and 2.00, while the defect sits at 3.88 —
+  and `Internationalization` at 58 pt is ratio 2.00 on two lines, *higher* than
+  a normal case. A ratio threshold cannot separate normal from defect; line
+  count can. The rule gates on `LintContext.maximumWrappedLines` (default 3)
+  and reports the ratio only as evidence. Severity is `warning`, not `error`:
+  a paragraph is allowed to wrap and the rule cannot know intent.
+
+- **`stage_stale_buffer`** — detects a tracked file overwritten by a stale
+  editor buffer, a failure that had struck four times and left the working tree
+  silently different from HEAD. `git status` cannot separate it from ordinary
+  work in progress; an mtime *older* than the commit that touched the file can.
+
+**Fixed**
+
+- **The SLO 1 gate no longer fails for the environment.** A Codex repair
+  sandbox was not recognised as timing-constrained, so it asserted a 70 ms
+  median and measured 167 ms, then 394 ms, on source that runs at ~49 ms —
+  three P1 tickets describing a regression that did not exist. The marker class
+  had also drifted across three test suites and is now spelled once, with a
+  cross-language test pinning the Swift and Python halves together.
+
+- **The mutation harness aborts instead of guessing.** A write landing while a
+  row's witness ran was previously classified anyway; with the guard removed it
+  prints `NOTICED` for a row whose subject something else had rewritten. It now
+  exits 3 and names the file.
+
+- **`.github/scripts/create-actions-update-issue.cjs`** — the pinned-actions
+  workflow had always ended by calling this file, and it had never existed. The
+  weekly check failed with `MODULE_NOT_FOUND` at precisely the moment it had
+  something to report.
+
 ### 2026-08-08 (usable by other packages, and it can no longer pass on nothing)
 
 **Added**
