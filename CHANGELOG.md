@@ -2,6 +2,48 @@
 
 ## [Unreleased]
 
+### 2026-08-10 (compile-time lint — and the plan's second diagnostic described a defect that does not exist)
+
+**Added**
+
+- **Duplicate explicit probe id → error.** Two elements in one view sharing an
+  author-written id are reported at the second occurrence. Every layer
+  downstream matches on the id — `TreeDiff` pairs nodes by it, a baseline keys
+  on it — so a collision silently merges two elements into one. The kernel
+  already caught this at runtime; the compiler sees every `@Verifiable` view on
+  every build, where a runtime rule needs the view rendered in a scenario
+  somebody remembered to write.
+
+- **Interactive element with no label → warning, with a fix-it.** Measured
+  rather than taken from the plan, which calls this "no derivable ID": the id
+  derives fine. What is missing is `text:` — the accessible label — because a
+  `Button(action:) { Image(…) }` has no literal of its own. The element can be
+  located but not *named*, so `TruncationRule` has nothing to read and a human
+  reading the verdict sees an anonymous control. A warning, not an error: this
+  is ordinary correct SwiftUI, and refusing to compile it would make
+  `@Verifiable` reject working code. The fix-it inserts a probe with an EMPTY
+  label for the author to fill — a guessed one would write a plausible wrong
+  name into the one field a human reads to identify the control.
+
+- Both diagnostics travel with `BodyProbeWalk`, so `#VerdictScenario` emits them
+  too. A defect reported through one macro and silent through the other would be
+  a difference with no reason an author could see.
+
+**Fixed**
+
+- **Conditional content in a `#VerdictScenario` body was unprobed.** The
+  scenario macro had its own local map over expression items — a second
+  implementation of the walk — so it carried the `@ViewBuilder`-statement defect
+  independently, and fixing the view macro left it broken and green. Both macros
+  now enter through `rewriteStatements`.
+
+**Changed**
+
+- Statement lists lifted into a generated template are re-indented
+  (`reindentedForTemplate`). Statement trivia is load-bearing inside a closure
+  (it separates `in` from the first statement) and is doubled indentation at the
+  top of a re-templated list.
+
 ### 2026-08-10 (the edge shapes Task 4 names — two of four were broken, not merely uncovered)
 
 **Fixed**

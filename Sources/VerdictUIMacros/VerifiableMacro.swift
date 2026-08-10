@@ -91,6 +91,20 @@ public struct VerifiableMacro: MemberMacro {
         // silent drift.
         let probedBody = walk.rewrite(bodyExpression).trimmed
 
+        // Compile-time lint (Wave 4 Task 5). The walk is the only pass that sees
+        // every element together with its author-written ids and labels, so it
+        // collects findings and they are diagnosed here, where the context is.
+        //
+        // Emitted even when a finding is an ERROR, and the expansion still
+        // proceeds: a duplicate id is a real defect but the generated body is
+        // otherwise correct, and returning `[]` here would replace one clear
+        // diagnostic with a cascade of "no member 'verdictProbedBody'" errors
+        // at every call site — the deeper-in-generated-code failure this file's
+        // other diagnostics exist to avoid.
+        for finding in walk.findings {
+            context.diagnose(finding.diagnostic)
+        }
+
         // `verdictProbedBody` rather than a rewritten `body`: a member macro
         // cannot replace an existing member, and generating a second `body`
         // would be a redeclaration error. The harness reaches the probed tree

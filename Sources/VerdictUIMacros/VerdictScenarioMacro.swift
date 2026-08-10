@@ -67,14 +67,26 @@ public struct VerdictScenarioMacro: DeclarationMacro {
         // uses, namespaced under the generated type so ids read
         // `CheckoutScenario.text.0` — the same shape a probed view produces.
         var walk = BodyProbeWalk(typeName: typeName)
-        let probedStatements = CodeBlockItemListSyntax(
-            closure.statements.map { item in
-                guard let expression = item.item.as(ExprSyntax.self) else { return item }
-                var copy = item
-                copy.item = .expr(walk.rewrite(expression))
-                return copy
-            }
-        )
+        // Routed through `rewriteStatements` rather than mapping expression
+        // items here. A local map was what this file did, and it carried the
+        // Task 4 defect independently: a `@ViewBuilder` `if`/`switch` is a
+        // STATEMENT, so every element in every branch of a scenario body went
+        // unprobed. Two spellings of one walk is two places for that to be
+        // wrong, and the scenario copy had no test that could see it.
+        // Re-indented, because these statements are being lifted into the
+        // template below rather than left where the author wrote them. The walk
+        // preserves statement trivia since inside a closure it separates `in`
+        // from the first statement (`no.md` #24); here that same trivia was
+        // measured against a position the statements no longer occupy.
+        let probedStatements = walk.rewriteStatements(closure.statements).reindentedForTemplate
+
+        // The same lint the view macro emits. Sharing the walk is what makes an
+        // element instrumented identically through either macro; sharing its
+        // findings is what stops a defect being reported through one and silent
+        // through the other.
+        for finding in walk.findings {
+            context.diagnose(finding.diagnostic)
+        }
 
         // `state` is named in the signature but not necessarily used by a body
         // that has no bindings, so it is spelled `_ state:` — an unused
