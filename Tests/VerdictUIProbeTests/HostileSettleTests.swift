@@ -20,9 +20,10 @@ final class HostileSettleTests: XCTestCase {
         autoreleasepool { super.invokeTest() }
     }
 
-    private static var recordsTimingOnly: Bool {
-        ProcessInfo.processInfo.environment["VERDICTUI_RECORD_TIMING_ONLY"] != nil
-    }
+    /// Delegates to ``ConstrainedTimingEnvironment`` — the marker class spelled
+    /// once. This copy previously omitted `CI`, so the same run recorded here
+    /// and asserted in `HarnessPerformanceTests` (`no.md` #17).
+    private static var recordsTimingOnly: Bool { ConstrainedTimingEnvironment.isActive }
 
     // MARK: - 1. Infinite animation must time out, naming what moved
 

@@ -638,6 +638,27 @@ MUTATIONS = [
         test="HarnessPerformanceTests/testTheP50GateIsAssertedOnDeveloperHardware",
     ),
     Mutation(
+        # The PM-side half of the same lane. Every marker test asserts a marker
+        # turns record-only ON, and `if True` satisfies all of them -- measured
+        # 2026-08-09 at 199/199 passing with the guard fully defeated. That is
+        # the expensive direction: record-only everywhere means the p50 budget
+        # is enforced NOWHERE while the suite reads green, so the gate stops
+        # being a gate without one test noticing (no.md #12, #15).
+        #
+        # Unlike the Swift row above, `if True` IS the right mutation here:
+        # the predicate returns a value rather than guarding an assertion, so
+        # a healthy tree can witness it through the negative control.
+        name="every host is treated as timing-constrained, so p50 gates nothing",
+        path="scripts/verdictui-pm.py",
+        old="    if any(name in os.environ for name in CONSTRAINED_TIMING_ENV_MARKERS):",
+        new="    if True:",
+        test=(
+            "Tests/test_verdictui_pm.py::TestSkipSentinel"
+            "::test_unmarked_writable_host_still_asserts_its_timings"
+        ),
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
         # Removes the mid-run clean-tree check, restoring the state where an
         # edit landing during a ~30 minute sweep makes every later case measure
         # a tree nobody intended and report SETUP FAILED as if a guard broke.

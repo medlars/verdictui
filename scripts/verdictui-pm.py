@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import contextlib
 import json
 import logging
@@ -26,9 +27,12 @@ except ImportError as _imp_err:
     logging.getLogger(__name__).warning("pm_base unavailable (%s) — stages disabled", _imp_err)
 
     class PmBase:  # type: ignore[no-redef]
-        def run_pipeline(self, mode: str = "quick") -> None:
+        def run_pipeline(
+            self, *, mode: str = "quick", fix: bool = False, no_cache: bool = False
+        ) -> None:
             # Fails CLOSED on purpose: reporting a pass would make "shared-libs
             # missing" indistinguishable from "the PM ran and passed" (Lesson 239).
+            _ = fix, no_cache
             if mode not in ("quick", "full"):
                 raise ValueError(f"invalid mode: {mode!r}")
             raise SystemExit("shared-libs pm-base unavailable — PM cannot run here")
@@ -42,6 +46,10 @@ PROJECT_NAME = "VerdictUI"
 _SWIFT_MODULE_CACHE = PROJECT_ROOT / ".build" / "clang-module-cache"
 _SWIFT_MODULE_CACHE.mkdir(parents=True, exist_ok=True)
 os.environ.setdefault("CLANG_MODULE_CACHE_PATH", str(_SWIFT_MODULE_CACHE))
+_SWIFTPM_SHARED_CACHE = PROJECT_ROOT / ".build" / "swiftpm-cache"
+_SWIFTPM_CONFIG = PROJECT_ROOT / ".build" / "swiftpm-config"
+_SWIFTPM_SHARED_CACHE.mkdir(parents=True, exist_ok=True)
+_SWIFTPM_CONFIG.mkdir(parents=True, exist_ok=True)
 
 __all__ = ["PROJECT_ROOT", "PROJECT_NAME", "VerdictUIPM"]
 
@@ -60,7 +68,15 @@ TIMEOUT_PYTEST = 240
 # invocation layer (not Package.swift unsafeFlags) so downstream consumers of
 # the library are unaffected. CI mirrors these flags — keep the two in sync.
 SWIFT_STRICT_FLAGS = ["-Xswiftc", "-warnings-as-errors"]
-SWIFT_PM_FLAGS = ["--disable-sandbox"]
+SWIFT_PM_FLAGS = [
+    "--disable-sandbox",
+    "--cache-path",
+    str(_SWIFTPM_SHARED_CACHE),
+    "--config-path",
+    str(_SWIFTPM_CONFIG),
+    "--manifest-cache",
+    "local",
+]
 # SLO 1 from docs/slo.md. Kept here rather than read from the doc: a gate that
 # parses its own threshold out of prose fails open the moment the prose is
 # reworded. HarnessPerformanceTests carries the same number and both move together.
@@ -74,6 +90,12 @@ SLO1_P95_BUDGET_MS = 100.0
 # `performP50BudgetMs`; the two move together.
 SLO1_P50_BUDGET_MS = 70.0
 TIMING_RECORD_ONLY_ENV = "VERDICTUI_RECORD_TIMING_ONLY"
+CONSTRAINED_TIMING_ENV_MARKERS = (
+    "CI",
+    TIMING_RECORD_ONLY_ENV,
+    "CODEX_CI",
+    "CODEX_SANDBOX",
+)
 
 
 def _pm_log(message: str, level: str = "INFO") -> None:
@@ -101,6 +123,8 @@ def _clear_project_swiftpm_lock_files(project_root: Path) -> int:
 
 def _timing_record_only_environment() -> bool:
     """True when this host can run tests but cannot produce comparable timings."""
+    if any(name in os.environ for name in CONSTRAINED_TIMING_ENV_MARKERS):
+        return True
     swiftpm_paths = (
         Path.home() / "Library" / "org.swift.swiftpm",
         Path.home() / "Library" / "Caches" / "org.swift.swiftpm",
@@ -728,7 +752,7 @@ class VerdictUIPM(PmBase):
 
     def publish_to_dashboard(self, status: dict) -> None:
         try:
-            # type: ignore — pyright binds PmBase to the CI fallback stub above,
+            # Pyright binds PmBase to the CI fallback stub above,
             # which has no publish_to_dashboard; the real base class does.
             super().publish_to_dashboard(status)  # type: ignore[misc]
         except PermissionError as e:
@@ -773,8 +797,99 @@ class VerdictUIPM(PmBase):
         )
         return stages
 
+    def run_query(
+        self,
+        kind: str,
+        *,
+        file_path: str | None = None,
+        stage: str | None = None,
+    ) -> int:
+        payload: dict[str, object] = {"project": PROJECT_NAME, "query": kind}
+        if kind == "risk":
+            target = file_path or ""
+            payload["file"] = target
+            payload["risk"] = (
+                "high"
+                if target.startswith(("Sources/", "Tests/VerdictUIProbeTests/"))
+                or target == "scripts/verdictui-pm.py"
+                else "medium"
+                if target.endswith((".py", ".swift"))
+                else "low"
+            )
+            payload["notes"] = [
+                "Run the focused Swift or pytest target for the touched file.",
+                "Run scripts/verdictui-pm.py --quick before declaring the repair done.",
+            ]
+        elif kind == "coverage":
+            target = file_path or ""
+            payload["file"] = target
+            payload["tests"] = sorted(
+                str(path.relative_to(PROJECT_ROOT))
+                for root in (PROJECT_ROOT / "Tests",)
+                for path in root.rglob("*")
+                if path.name.startswith("test_") or path.name.endswith("Tests.swift")
+            )
+        elif kind == "why-failed":
+            payload["stage"] = stage
+            try:
+                status = json.loads(self.status_file.read_text())
+            except FileNotFoundError:
+                payload["error"] = "No cached PM status; run --quick first"
+                print(json.dumps(payload, indent=2, sort_keys=True))
+                return 1
+            except (json.JSONDecodeError, OSError) as exc:
+                payload["error"] = f"Cached PM status is unreadable: {exc}"
+                print(json.dumps(payload, indent=2, sort_keys=True))
+                return 1
+            stages = status.get("stages", {})
+            cached_failed = status.get("failed_stages")
+            if isinstance(cached_failed, list):
+                payload["failed_stages"] = cached_failed
+            elif isinstance(stages, dict):
+                payload["failed_stages"] = [
+                    name
+                    for name, result in stages.items()
+                    if isinstance(result, dict) and result.get("passed") is False
+                ]
+            else:
+                payload["failed_stages"] = []
+            payload["detail"] = (
+                stages.get(stage or "", {}) if isinstance(stages, dict) and stage else {}
+            )
+        else:
+            payload["error"] = f"Unknown query kind: {kind}"
+            print(json.dumps(payload, indent=2, sort_keys=True))
+            return 2
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="VerdictUI PM")
+    mode_group = parser.add_mutually_exclusive_group()
+    mode_group.add_argument("--quick", action="store_true", help="Run the quick PM gate")
+    mode_group.add_argument("--full", action="store_true", help="Run the full PM gate")
+    mode_group.add_argument(
+        "--fix", action="store_true", help="Run quick mode with auto-fix enabled"
+    )
+    parser.add_argument("command", nargs="?", choices=["query"])
+    parser.add_argument("query_kind", nargs="?")
+    parser.add_argument("--file")
+    parser.add_argument("--stage")
+    args = parser.parse_args(argv)
+
+    pm = VerdictUIPM()
+    if args.command == "query":
+        if not args.query_kind:
+            parser.error("query requires one of: risk, coverage, why-failed")
+        return pm.run_query(args.query_kind, file_path=args.file, stage=args.stage)
+
+    mode = "full" if args.full else "quick"
+    status = pm.run_pipeline(mode=mode, fix=args.fix)
+    if status is None:
+        return 1
+    return 0 if status["all_passed"] else 1
+
 
 if __name__ == "__main__":
-    pm = VerdictUIPM()
-    mode = "full" if "--full" in sys.argv else "quick"
-    pm.run_pipeline(mode=mode)
+    raise SystemExit(main())

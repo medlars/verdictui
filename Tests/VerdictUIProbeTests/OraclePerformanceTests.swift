@@ -66,9 +66,7 @@ final class OraclePerformanceTests: XCTestCase {
     /// Managed repair sandboxes can execute the probe tests while denying
     /// SwiftPM's user caches, which makes wall-clock timing incomparable to
     /// developer hardware. Keep measurement integrity there, but record budgets.
-    private static var recordsTimingOnly: Bool {
-        ProcessInfo.processInfo.environment["VERDICTUI_RECORD_TIMING_ONLY"] != nil
-    }
+    private static var recordsTimingOnly: Bool { ConstrainedTimingEnvironment.isActive }
 
     // MARK: - SLO 1
 
