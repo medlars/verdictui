@@ -899,4 +899,55 @@ MUTATIONS = [
         ),
         runner=Runner.PYTEST,
     ),
+    Mutation(
+        # `#VerdictScenario` declares the conformance but stops PROBING the
+        # body, so a macro-declared scenario renders to a root with nothing
+        # under it and every rule reports PASS on an uninstrumented screen.
+        #
+        # `_ = walk.rewrite(...)` is kept so the mutation still COMPILES: the
+        # obvious deletion leaves `walk` unused, which is an error under
+        # `-warnings-as-errors`, and a mutation that fails to build never runs
+        # a test — it would score on the compiler's verdict, not the suite's.
+        #
+        # Witness is the expansion snapshot, not the render test that also
+        # covers this: SwiftPM does not re-expand macros in a consuming target
+        # whose own sources are unchanged (`no.md` #23).
+        name="scenario macro declares a conformance without probing its body",
+        path="Sources/VerdictUIMacros/VerdictScenarioMacro.swift",
+        old="                copy.item = .expr(walk.rewrite(expression))",
+        new="                _ = walk.rewrite(expression)\n                copy.item = .expr(expression)",
+        test=(
+            "VerdictUIMacroTests.VerdictScenarioMacroTests/"
+            "testTheScenarioBodyIsProbedByTheSameWalkAsAView"
+        ),
+        runner=Runner.SWIFT,
+    ),
+    Mutation(
+        # The `Scenario` suffix stops being appended, so a scenario named
+        # "Text" generates `struct Text` — which shadows SwiftUI's `Text`
+        # inside its own expansion, making every element in the body resolve
+        # to the scenario itself.
+        name="generated scenario type name drops its suffix",
+        path="Sources/VerdictUIMacros/VerdictScenarioMacro.swift",
+        old='        return out + "Scenario"',
+        new="        return out",
+        test=(
+            "VerdictUIMacroTests.VerdictScenarioMacroTests/testTheScenarioSuffixIsAlwaysAppended"
+        ),
+        runner=Runner.SWIFT,
+    ),
+    Mutation(
+        # A duplicate registration is silently dropped instead of reported, so
+        # two scenarios file verdicts under one name and one of them vanishes
+        # from a run with nothing anywhere saying so.
+        name="registry hides duplicate scenario names",
+        path="Sources/VerdictUIProbe/ScenarioRegistry.swift",
+        old="                duplicates.insert(name)",
+        new="                _ = name",
+        test=(
+            "VerdictUIMacroTests.VerdictScenarioCompilationTests/"
+            "testDuplicateNamesAreReportedRatherThanSilentlyDropped"
+        ),
+        runner=Runner.SWIFT,
+    ),
 ]
