@@ -830,4 +830,17 @@ MUTATIONS = [
         ),
         runner=Runner.PYTEST,
     ),
+    Mutation(
+        # The rule stops discriminating and reports EVERY wrap. That is the
+        # failure mode the measurements ruled out: two-line wraps at ratios
+        # 1.54/1.88/2.00 are ordinary, and a rule reporting them would be
+        # switched off within a day. The witness is the control test, not the
+        # positive one — the positive still passes with the budget removed,
+        # because an over-reporting rule also reports the real defect.
+        name="excessive-wrap reports ordinary two-line wrapping",
+        path="Sources/VerdictUIKernel/Rules/ExcessiveWrapRule.swift",
+        old="guard metrics.idealLineCount > context.maximumWrappedLines else { return nil }",
+        new="guard metrics.idealLineCount > 1 else { return nil }",
+        test="ExcessiveWrapRuleTests/testOrdinaryTwoLineWrappingIsNotReported",
+    ),
 ]
