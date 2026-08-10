@@ -48,6 +48,18 @@ public struct LintContext: Sendable {
     /// Slack, in points, before a width shortfall counts as truncation. Absorbs
     /// sub-pixel layout rounding so a 0.001 pt shortfall is not a defect.
     public var truncationTolerance: Double
+    /// Lines a text may wrap onto before ``ExcessiveWrapRule`` reports it.
+    ///
+    /// Three, i.e. a fourth line is the finding. Chosen from measurement rather
+    /// than taste — hosting one 13 pt string at seven widths gave two-line
+    /// wraps at intrinsic/frame ratios 1.54, 1.88 and 2.00, all of them
+    /// ordinary, and the defect that prompted the rule (a header subtitle at
+    /// 82 pt) wrapped onto FIVE. Line count is the discriminating variable and
+    /// the ratio is not: `Internationalization` at 58 pt has ratio 2.00 and
+    /// wraps to two lines, which is fine, while the real defect sits at 3.88.
+    /// A rule keyed on ratio alone would report the first and could not
+    /// separate them.
+    public var maximumWrappedLines: Int
     /// Per-rule severity replacement, e.g. demote `tap-target` to a warning.
     public var severityOverrides: [String: Finding.Severity]
     /// Rules skipped entirely by ``RuleEngine/run(rules:on:context:)``.
@@ -58,6 +70,7 @@ public struct LintContext: Sendable {
         viewport: Rect,
         minimumTapTarget: Size = LintContext.macOSMinimumTapTarget,
         truncationTolerance: Double = 0.5,
+        maximumWrappedLines: Int = 3,
         severityOverrides: [String: Finding.Severity] = [:],
         disabledRules: Set<String> = []
     ) {
@@ -65,6 +78,7 @@ public struct LintContext: Sendable {
         self.viewport = viewport
         self.minimumTapTarget = minimumTapTarget
         self.truncationTolerance = truncationTolerance
+        self.maximumWrappedLines = maximumWrappedLines
         self.severityOverrides = severityOverrides
         self.disabledRules = disabledRules
     }
@@ -130,6 +144,7 @@ public enum RuleEngine {
         ContentOverlapRule(),
         OffscreenRule(),
         TruncationRule(),
+        ExcessiveWrapRule(),
         TapTargetRule(),
     ]
 

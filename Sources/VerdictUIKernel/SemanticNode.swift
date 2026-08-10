@@ -407,6 +407,11 @@ extension Double {
     /// Point measurement rendered for finding messages: `44`, `212.5`.
     /// Whole numbers lose their `.0` so a message reads "28 x 28 pt".
     var pointsDescription: String { AttributeValue.format(self) }
+
+    /// A dimensionless ratio for finding messages, to one decimal place —
+    /// enough to tell 1.5 from 3.9, and no more precision than a layout ratio
+    /// can honestly carry. Used by ``ExcessiveWrapRule``.
+    var ratioDescription: String { String(format: "%.1f", self) }
 }
 
 /// Platform-pure size (CoreGraphics-free, see `no.md` #5).

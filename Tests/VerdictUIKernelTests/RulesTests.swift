@@ -395,6 +395,143 @@ final class TruncationRuleTests: XCTestCase {
     }
 }
 
+// MARK: - excessive-wrap
+
+/// The threshold here is not taste. Hosting one 13 pt string at seven widths
+/// through the real probe gave: two-line wraps at intrinsic/frame ratios 1.54,
+/// 1.88 and 2.00 (all ordinary), a three-line wrap at 2.28, and the defect that
+/// prompted the rule at 3.88 across five lines. `Internationalization` at 58 pt
+/// sits at ratio 2.00 on two lines — so a ratio threshold cannot separate a
+/// normal wrap from the defect, and the line count can. Every case below is one
+/// of those measurements.
+final class ExcessiveWrapRuleTests: XCTestCase {
+    private let rule = ExcessiveWrapRule()
+
+    private func text(
+        _ id: String,
+        width: Double,
+        intrinsicWidth: Double,
+        lines: Int,
+        rendered: Int? = nil
+    ) -> SemanticNode {
+        SemanticNode(
+            id: id,
+            role: .text,
+            frame: Rect(x: 0, y: 0, width: width, height: 20),
+            text: "Launch apps once the network is actually reachable",
+            textMetrics: TextMetrics(
+                intrinsicWidth: intrinsicWidth,
+                renderedLineCount: rendered ?? lines,
+                idealLineCount: lines
+            )
+        )
+    }
+
+    func testTextWrappingFarPastItsFrameIsAWarning() throws {
+        // The measured reproduction: 314 pt of text in an 81 pt frame, 5 lines.
+        let node = text("subtitle", width: 81, intrinsicWidth: 314, lines: 5)
+
+        let finding = try XCTUnwrap(
+            rule.evaluate(Fixture.root([node]), context: Fixture.context()).first
+        )
+
+        // `warning`, not `error`: a paragraph is allowed to wrap, and this rule
+        // cannot know intent. It is a strong smell, not a proof.
+        XCTAssertEqual(finding.severity, .warning)
+        XCTAssertEqual(finding.rule, "excessive-wrap")
+        XCTAssertEqual(
+            finding.message,
+            "'subtitle' wraps onto 5 lines — it needs 314 pt but was given 81 pt (3.9x)"
+        )
+        XCTAssertEqual(
+            finding.suggestion,
+            "widen the frame, shorten the text, or accept the wrap with .lineLimit(5)"
+        )
+    }
+
+    /// The control, and the reason the rule exists in this shape. Without it,
+    /// "fires on excessive wrap" is satisfied by a rule that fires on ALL
+    /// wrapping — which would report every two-line label in the fleet and be
+    /// switched off within a day.
+    func testOrdinaryTwoLineWrappingIsNotReported() {
+        let node = text("subtitle", width: 204, intrinsicWidth: 314, lines: 2)
+
+        XCTAssertTrue(
+            rule.evaluate(Fixture.root([node]), context: Fixture.context()).isEmpty,
+            "a two-line wrap is ordinary layout, not a defect"
+        )
+    }
+
+    /// The second control, and the one a ratio-based rule fails. This node's
+    /// intrinsic/frame ratio is 2.00 — HIGHER than the 1.88 two-line case — yet
+    /// it wraps onto two lines and is fine. Measured from `Internationalization`
+    /// at 58 pt.
+    func testAHighWidthRatioOnTwoLinesIsNotReported() {
+        let node = text("word", width: 58, intrinsicWidth: 116, lines: 2)
+
+        XCTAssertTrue(
+            rule.evaluate(Fixture.root([node]), context: Fixture.context()).isEmpty,
+            "ratio 2.0 across two lines is normal — keying on ratio would false-positive here"
+        )
+    }
+
+    func testTheLineBudgetIsTheBoundaryNotTheFirstLineOver() {
+        let atBudget = text("at", width: 138, intrinsicWidth: 314, lines: 3)
+        let overBudget = text("over", width: 100, intrinsicWidth: 314, lines: 4)
+
+        XCTAssertTrue(
+            rule.evaluate(Fixture.root([atBudget]), context: Fixture.context()).isEmpty,
+            "three lines is the budget, so three lines must pass"
+        )
+        XCTAssertEqual(
+            rule.evaluate(Fixture.root([overBudget]), context: Fixture.context()).count, 1,
+            "a fourth line is the finding"
+        )
+    }
+
+    func testTheBudgetIsHonouredFromTheContext() {
+        let node = text("subtitle", width: 81, intrinsicWidth: 314, lines: 5)
+        var context = Fixture.context()
+        context.maximumWrappedLines = 8
+
+        XCTAssertTrue(
+            rule.evaluate(Fixture.root([node]), context: context).isEmpty,
+            "the rule must read the budget it is given, not a constant of its own"
+        )
+    }
+
+    /// A clipped text reports FEWER rendered lines than it wants, and reading
+    /// the rendered count would let the clipping hide the wrap — `truncation`
+    /// and this rule would fight over one node and the quieter answer would win.
+    func testAWrapThatIsAlsoClippedIsStillReported() {
+        let node = text("subtitle", width: 81, intrinsicWidth: 314, lines: 6, rendered: 2)
+
+        XCTAssertEqual(
+            rule.evaluate(Fixture.root([node]), context: Fixture.context()).count, 1,
+            "the text still WANTS six lines — clipping it does not make the wrap acceptable"
+        )
+    }
+
+    func testANodeWithoutTextMetricsIsSkippedRatherThanGuessedAt() {
+        let node = SemanticNode(
+            id: "plain",
+            role: .text,
+            frame: Rect(x: 0, y: 0, width: 40, height: 20),
+            text: "no metrics"
+        )
+
+        XCTAssertTrue(rule.evaluate(Fixture.root([node]), context: Fixture.context()).isEmpty)
+    }
+
+    /// A zero-width frame is `zero-size`'s finding, and dividing by it would put
+    /// `inf` in this rule's evidence string.
+    func testAZeroWidthFrameIsLeftToTheZeroSizeRule() {
+        let node = text("collapsed", width: 0, intrinsicWidth: 314, lines: 5)
+
+        XCTAssertTrue(rule.evaluate(Fixture.root([node]), context: Fixture.context()).isEmpty)
+    }
+}
+
 // MARK: - tap-target
 
 final class TapTargetRuleTests: XCTestCase {
@@ -545,12 +682,15 @@ final class DuplicateProbeIDRuleTests: XCTestCase {
 
 final class StandardRuleSetTests: XCTestCase {
 
-    func testStandardRulesAreTheSevenRulesWithIDFirst() {
+    /// Order matters as much as membership: `duplicate-probe-id` runs FIRST
+    /// because every later rule's evidence cites node ids, and ambiguous ids
+    /// make that evidence unfollowable.
+    func testStandardRulesAreTheEightRulesWithIDFirst() {
         XCTAssertEqual(
             RuleEngine.standardRules.map { type(of: $0).id },
             [
                 "duplicate-probe-id", "zero-size", "sibling-overlap", "content-overlap",
-                "offscreen", "truncation", "tap-target",
+                "offscreen", "truncation", "excessive-wrap", "tap-target",
             ]
         )
     }

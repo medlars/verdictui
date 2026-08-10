@@ -340,8 +340,10 @@ Two distinct defects:
    absorbs sub-pixel layout rounding so a 0.001 pt shortfall is not a defect.
 
 Multi-line text narrower than its intrinsic width is *wrapping*, not truncation, and
-is deliberately not reported — that case is the single largest source of false
-positives in layout linting.
+is deliberately not reported by this rule — undifferentiated wrap reporting is the
+single largest source of false positives in layout linting. Wrapping that goes far
+past intent is `excessive-wrap`'s finding, which separates the two by line count
+rather than by width.
 
 A one-line `title` needing 212 pt in a 120 pt frame:
 
@@ -352,6 +354,42 @@ increase frame width to >= intrinsicWidth 212 pt, or allow wrapping
 
 **Suppress**: `verdict.suppress` on the text node, or `disabledRules`. Widening the
 tolerance is not a suppression path — it changes what counts as a defect everywhere.
+
+### `excessive-wrap`
+
+Fires when a text's `idealLineCount` exceeds `maximumWrappedLines` (default `3`).
+Severity is `warning`, not `error`: a paragraph is allowed to wrap and this rule
+cannot know intent, so it reports a strong smell rather than a proof.
+
+The second-order blind spot behind the unprobed-view one. `truncation` fires only
+when characters are LOST; SwiftUI wraps rather than clips, so `renderedLineCount`
+and `idealLineCount` are equal and it is silent by construction. Measured on a real
+screen: `intrinsicWidth 335.0` inside an 82 pt frame across five lines, `findings:
+[]`. Narrow windows, long localized strings, and accessibility text sizes all
+produce this and none of them clip.
+
+**Why line count and not the width ratio.** Hosting one 13 pt string at seven widths
+through the real probe gave ordinary two-line wraps at intrinsic/frame ratios 1.54,
+1.88 and 2.00, while the defect that prompted the rule sits at 3.88. A ratio
+threshold below 2.00 reports the normal cases; one above it still cannot tell a
+wide-ratio two-line wrap from a narrow-ratio five-line one. `Internationalization`
+at 58 pt is the case that settles it — ratio 2.00, two lines, perfectly fine. Line
+count separates them, so the ratio appears only as evidence in the message.
+
+The rule reads `idealLineCount` — the count the text WANTS — not the rendered count.
+A text that both wraps excessively and is then clipped would otherwise have its wrap
+hidden behind the truncation, with the two rules fighting over one node and the
+quieter answer winning.
+
+A `subtitle` needing 314 pt in an 81 pt frame:
+
+```text
+'subtitle' wraps onto 5 lines — it needs 314 pt but was given 81 pt (3.9x)
+widen the frame, shorten the text, or accept the wrap with .lineLimit(5)
+```
+
+**Suppress**: `verdict.suppress` on the text node, `disabledRules`, or raise
+`maximumWrappedLines` if the surface is genuinely prose.
 
 ### `tap-target`
 

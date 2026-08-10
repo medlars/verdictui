@@ -57,7 +57,7 @@
 <!-- testwatch-gaps -->
 ## TestWatch Gaps (auto-generated — do not edit this block)
 - [ ] (P1) testwatch: add test for `Outcome` in `scripts/mutation-check.py` [NONE]
-- [ ] (P1) testwatch: add test for `Runner` in `scripts/mutation-check.py` [NONE]
+- [ ] (P1) testwatch: add test for `Runner` in `scripts/mutation_catalog_types.py` [NONE]
 - [ ] (P1) testwatch: add test for `publish_to_dashboard` in `scripts/verdictui-pm.py` [NONE]
 - [ ] (P2) testwatch: add test for `close-on-green` in `.github/workflows/capture-ci-failures-to-github-issue.yml` [live]
 - [ ] (P2) testwatch: add test for `check-pinned-actions` in `.github/workflows/check-pinned-actions.yml` [live]
