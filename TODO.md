@@ -99,3 +99,4 @@
 - [ ] (P1) testwatch-hook: no test file references `kernel_symbol_audit` — add tests for `scripts/kernel-symbol-audit.py`
 - [ ] (P1) testwatch-hook: no test file references `mutation_check` — add tests for `scripts/mutation-check.py`
 - [ ] (P1) testwatch-hook: no test file references `stale_buffer_check` — add tests for `scripts/stale-buffer-check.py`
+- [ ] (P1) testwatch-hook: no test file references `verdictui_swift_runner` — add tests for `scripts/verdictui_swift_runner.py`
