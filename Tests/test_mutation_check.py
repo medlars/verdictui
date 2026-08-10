@@ -248,6 +248,29 @@ class TestPytestRunner:
                 "an unmutated threshold is a gate nobody has shown can fail"
             )
 
+    def test_every_macro_mutation_is_witnessed_by_an_expansion_snapshot(self) -> None:
+        # A macro row whose witness is a RENDER test cannot fail for the defect
+        # it exists to catch. SwiftPM rebuilds the `.macro` target but does NOT
+        # re-expand macros in a consuming target whose own sources are
+        # unchanged, so the test binary keeps the PREVIOUS expansion and passes
+        # against a broken plugin.
+        #
+        # Measured 2026-08-10 in four quadrants (no.md #23): mutated plugin +
+        # untouched test file PASSES; mutated + `touch`ed fails naming both
+        # swallowed elements; restored is green with a byte-identical restore.
+        # The render test is the layer that LOOKS like the strongest evidence,
+        # which is exactly why a row must not rest on it.
+        mod = _load()
+        macro_rows = [m for m in mod.MUTATIONS if m.path.startswith("Sources/VerdictUIMacros/")]
+        assert macro_rows, "the macro guards lost their mutations"
+        for mutation in macro_rows:
+            suite = mutation.test.split("/")[0]
+            assert suite.endswith("MacroTests"), (
+                f"macro row {mutation.name!r} is witnessed by {mutation.test!r}, which is not "
+                "an expansion-snapshot suite — a render test executes the previous expansion "
+                "and passes against a broken plugin (no.md #23)"
+            )
+
     def test_every_pytest_mutation_names_a_node_id_that_exists(self) -> None:
         # A `--filter`-style name would silently select nothing under pytest.
         mod = _load()
