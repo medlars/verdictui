@@ -273,7 +273,7 @@ MUTATIONS = [
         old="if p50 >= SLO1_P50_BUDGET_MS:",
         new="if False:",
         test=(
-            "Tests/test_verdictui_pm.py::TestStageRuntimeBench::"
+            "Tests/test_verdictui_bench.py::TestStageRuntimeBench::"
             "test_a_regressed_median_fails_even_with_a_healthy_tail"
         ),
         runner=Runner.PYTEST,
@@ -288,7 +288,7 @@ MUTATIONS = [
         old="if p50 >= SLO1_P50_BUDGET_MS:",
         new="if tail is not None and float(tail.group(1)) >= SLO1_P95_BUDGET_MS:",
         test=(
-            "Tests/test_verdictui_pm.py::TestStageRuntimeBench::"
+            "Tests/test_verdictui_bench.py::TestStageRuntimeBench::"
             "test_a_contended_tail_does_not_fail_the_stage"
         ),
         runner=Runner.PYTEST,
@@ -302,7 +302,7 @@ MUTATIONS = [
         old="SLO1_P50_BUDGET_MS = 70.0",
         new="SLO1_P50_BUDGET_MS = 85.0",
         test=(
-            "Tests/test_verdictui_pm.py::TestStageRuntimeBench::"
+            "Tests/test_verdictui_bench.py::TestStageRuntimeBench::"
             "test_the_gated_budget_agrees_with_the_swift_test"
         ),
         runner=Runner.PYTEST,

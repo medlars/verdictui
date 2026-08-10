@@ -61,6 +61,7 @@
 - [ ] (P1) testwatch: add test for `publish_to_dashboard` in `scripts/verdictui-pm.py` [NONE]
 - [ ] (P2) testwatch: add test for `close-on-green` in `.github/workflows/capture-ci-failures-to-github-issue.yml` [live]
 - [ ] (P2) testwatch: add test for `check-pinned-actions` in `.github/workflows/check-pinned-actions.yml` [live]
+- [ ] (P2) testwatch: add test for `python-scripts` in `.github/workflows/ci.yml` [live]
 - [ ] (P2) testwatch: add test for `secret-scan` in `.github/workflows/ci.yml` [live]
 - [ ] (P2) testwatch: add test for `_check_array` in `contracts/validate-contracts.py` [NONE]
 - [ ] (P2) testwatch: add test for `_check_fixtures` in `contracts/validate-contracts.py` [NONE]
@@ -91,6 +92,7 @@
 - [ ] (P2) testwatch: add test for `stage_codewatch` in `scripts/verdictui-pm.py` [NONE]
 - [ ] (P2) testwatch: add test for `stage_issuewatch` in `scripts/verdictui-pm.py` [NONE]
 - [ ] (P2) testwatch: add test for `stage_last20` in `scripts/verdictui-pm.py` [NONE]
+- [ ] (P2) testwatch: add test for `stage_pytest` in `scripts/verdictui-pm.py` [NONE]
 - [ ] (P2) testwatch: add test for `stage_test_alongside` in `scripts/verdictui-pm.py` [NONE]
 - [ ] (P2) testwatch: add test for `stage_todo_review` in `scripts/verdictui-pm.py` [NONE]
 <!-- /testwatch-gaps -->
