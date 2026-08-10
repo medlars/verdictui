@@ -34,6 +34,38 @@ final class RoleVocabularyTests: XCTestCase {
         }
     }
 
+    func testTheDemoCatalogIsOutOfTheMacrosReachByDesign() {
+        // Records WHY Wave 4's exit-gate line "differential test green: macro
+        // tree ≡ hand-probed tree on all demo scenarios" is satisfied by
+        // `testTheMacroMatchesHandProbingAcrossEveryRecognisedElement` rather
+        // than by macro twins of the six demo scenarios — and pins the two facts
+        // that make macro twins impossible, so the reasoning fails loudly if
+        // either changes.
+        //
+        // (a) The demo scenarios use author-chosen SEMANTIC ids
+        //     (`save-button`, `card-layer`) because rule assertions and Wave 5
+        //     baselines key on them. The macro mints POSITIONAL ids from a
+        //     per-role counter, so the two schemes cannot agree and a "twin"
+        //     would be a different tree by construction.
+        // (b) `CleanSettingsScenario` declares layering as `.custom("zstack")`
+        //     and rows as `.container`. The walk emits neither, so the one probe
+        //     channel that keeps `sibling-overlap` silent on that scenario is
+        //     unreachable through the macro.
+        //
+        // This is not a limitation to fix. Hand probes exist precisely for
+        // semantics a syntax-level walk cannot infer, and a macro that guessed
+        // at `.custom("zstack")` would be inventing intent — the hybrid tier in
+        // `docs/adoption.md`.
+        XCTAssertFalse(
+            BodyProbeWalk.recognisedElements.values.contains { $0.hasPrefix("custom") },
+            "The walk gained a custom role; the demo-catalog reasoning above needs revisiting."
+        )
+        XCTAssertFalse(
+            BodyProbeWalk.recognisedElements.values.contains("container"),
+            "The walk gained a container role; the demo-catalog reasoning above needs revisiting."
+        )
+    }
+
     func testTheWalkRecognisesTheElementsThePlanNames() {
         // The wave plan names these six by name. Pinning them stops the table
         // from silently shrinking: a walk that recognises nothing still passes

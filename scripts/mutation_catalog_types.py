@@ -35,3 +35,13 @@ class Mutation:
     # `swift test --filter` pattern, or a pytest node id when `runner` is PYTEST.
     test: str
     runner: Runner = Runner.SWIFT
+    # Why this macro row may be witnessed by a RUNTIME test instead of an
+    # expansion snapshot. Empty for every other row.
+    #
+    # `no.md` #23: SwiftPM rebuilds a `.macro` target but does NOT re-expand
+    # macros in a consuming target whose own sources are unchanged, so a render
+    # test executes the PREVIOUS expansion and passes against a broken plugin.
+    # A macro row must therefore name a snapshot — unless the mutated behaviour
+    # is not in the expansion at all, which is a real case and needs saying out
+    # loud rather than being argued in a comment nothing checks.
+    runtime_witness_reason: str = ""

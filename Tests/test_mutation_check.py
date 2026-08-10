@@ -265,11 +265,46 @@ class TestPytestRunner:
         assert macro_rows, "the macro guards lost their mutations"
         for mutation in macro_rows:
             suite = mutation.test.split("/")[0]
+            if mutation.runtime_witness_reason:
+                # An explicit, per-row opt-out. Legitimate when the mutated
+                # behaviour is not IN the expansion — a change to the support
+                # library the expansion merely calls into is rebuilt normally,
+                # so the stale-expansion trap does not apply. Required to be
+                # stated on the row rather than argued in a comment, so the
+                # exception is data the guard can see rather than prose it
+                # cannot.
+                assert len(mutation.runtime_witness_reason) >= 40, (
+                    f"macro row {mutation.name!r} opts out of the snapshot-witness rule with a "
+                    "reason too short to be one; say what makes the runtime test able to fail here"
+                )
+                continue
             assert suite.endswith("MacroTests"), (
                 f"macro row {mutation.name!r} is witnessed by {mutation.test!r}, which is not "
                 "an expansion-snapshot suite — a render test executes the previous expansion "
-                "and passes against a broken plugin (no.md #23)"
+                "and passes against a broken plugin (no.md #23). If the mutated behaviour is "
+                "not in the expansion, set `runtime_witness_reason` saying why."
             )
+
+    def test_a_runtime_witness_opt_out_is_rare_and_declared(self) -> None:
+        # The control for the opt-out above. Without it, `runtime_witness_reason`
+        # is an escape hatch that can be pasted onto every macro row until the
+        # snapshot-witness rule protects nothing and the suite still reads green
+        # — the always-true predicate shape of no.md #17.
+        #
+        # One is the count today. This is a tripwire, not a budget: a second
+        # legitimate opt-out should raise it deliberately, with the reasoning
+        # written down, rather than arriving unnoticed.
+        mod = _load()
+        opted_out = [
+            m
+            for m in mod.MUTATIONS
+            if m.path.startswith("Sources/VerdictUIMacros/") and m.runtime_witness_reason
+        ]
+        assert len(opted_out) == 1, (
+            "the number of macro rows witnessed by a runtime test changed; each one weakens "
+            f"the no.md #23 rule, so raise this deliberately. Opted out: "
+            f"{[m.name for m in opted_out]}"
+        )
 
     def test_every_pytest_mutation_names_a_node_id_that_exists(self) -> None:
         # A `--filter`-style name would silently select nothing under pytest.

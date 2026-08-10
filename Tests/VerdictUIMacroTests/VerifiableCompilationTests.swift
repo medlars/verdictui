@@ -310,6 +310,99 @@ final class VerifiableCompilationTests: XCTestCase {
         }
     }
 
+    // MARK: - The differential, across the vocabulary the macro covers
+
+    /// Every recognised element in one view, probed by the macro alone.
+    ///
+    /// The wave's exit gate asks for "macro tree ≡ hand-probed tree on all demo
+    /// scenarios". Taken literally that is not constructible, and the reason is
+    /// a DESIGN property rather than a gap — see
+    /// `testTheDemoCatalogIsOutOfTheMacrosReachByDesign`. This is the honest
+    /// form of the same claim: the differential runs over every element the walk
+    /// recognises, which is the population the macro can actually be equivalent
+    /// on.
+    @Verifiable
+    struct MacroVocabularyRow: View {
+        @State private var flag = false
+        @State private var entry = ""
+
+        var body: some View {
+            VStack {
+                Text("label")
+                Button("press") {}
+                Toggle("switch", isOn: $flag)
+                TextField("field", text: $entry)
+                Image("picture")
+            }
+        }
+    }
+
+    /// The same view with the probes written out by hand, exactly as the macro
+    /// generates them — ids, roles and forwarded text included.
+    struct HandProbedVocabularyRow: View {
+        @State private var flag = false
+        @State private var entry = ""
+
+        var body: some View {
+            VStack {
+                Text("label")
+                    .verdictProbe("MacroVocabularyRow.text.0", role: .text, text: "label")
+                Button("press") {}
+                    .verdictProbe("MacroVocabularyRow.button.0", role: .button, text: "press")
+                Toggle("switch", isOn: $flag)
+                    .verdictProbe("MacroVocabularyRow.toggle.0", role: .toggle, text: "switch")
+                TextField("field", text: $entry)
+                    .verdictProbe(
+                        "MacroVocabularyRow.textField.0", role: .textField, text: "field")
+                Image("picture")
+                    .verdictProbe("MacroVocabularyRow.image.0", role: .image, text: "picture")
+            }
+        }
+
+        func verdictProbedBody(into sink: VerdictTreeSink) -> some View {
+            body.verdictRoot(into: sink)
+        }
+    }
+
+    func testTheMacroMatchesHandProbingAcrossEveryRecognisedElement() throws {
+        // The differential at vocabulary scale. The single-`Text` version above
+        // proves the mechanism; this proves it for every element the walk claims
+        // to handle, which is where a per-element mistake in the role table or
+        // the id counter would actually show up.
+        //
+        // A per-element table would be tidier and would NOT catch the counter:
+        // the ids are per-role and order-stable across the whole body, so five
+        // elements in one view is the shape that can fail on numbering.
+        let macroTree = try renderTree { sink in
+            AnyView(MacroVocabularyRow().verdictProbedBody(into: sink))
+        }
+        let handTree = try renderTree { sink in
+            AnyView(HandProbedVocabularyRow().verdictProbedBody(into: sink))
+        }
+
+        XCTAssertEqual(
+            descriptors(of: macroTree),
+            descriptors(of: handTree),
+            """
+            The macro-probed tree diverged from its hand-probed twin across the \
+            recognised vocabulary. The macro's whole promise is that it is a \
+            shorthand for the manual spelling.
+            """
+        )
+        // The vacuity control: two empty trees are equal, so the comparison
+        // above passes on a walk that probed nothing (no.md #12).
+        //
+        // Six, not seven: the root container plus the five elements. The `VStack`
+        // gets no node of its own because the walk does not probe containers —
+        // measured, after this assertion was first written as 7 from reasoning
+        // and the run corrected it (no.md #24: measure, do not predict).
+        XCTAssertEqual(
+            descriptors(of: macroTree).count,
+            6,
+            "Expected the root container and five probed elements: \(descriptors(of: macroTree))"
+        )
+    }
+
     // MARK: - Helpers
 
     /// Renders a view windowlessly and returns the tree it delivered.
