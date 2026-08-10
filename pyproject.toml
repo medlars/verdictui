@@ -24,4 +24,13 @@ typeCheckingMode = "basic"
 # The PM imports pm_base via a runtime sys.path.insert that static analysis can't
 # see; extraPaths gives pyright the same resolution so PmBase is a known base class.
 # Relative to project root (sibling repo layout under ~/Projects).
-extraPaths = ["../shared-libs/pm-base", "../shared-libs/release-tools", "../shared-libs"]
+# `Tests` is here for `pm_test_support`, which the split test files import as a
+# bare module. pytest puts a test file's own directory on sys.path (rootdir
+# insertion), so it resolves at RUN time; pyright has no such rule and reports a
+# missing import unless told the same thing.
+extraPaths = [
+    "../shared-libs/pm-base",
+    "../shared-libs/release-tools",
+    "../shared-libs",
+    "Tests",
+]
