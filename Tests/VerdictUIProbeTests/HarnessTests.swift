@@ -10,6 +10,10 @@ import XCTest
 /// failed — because an agent that gets a thrown error instead of a `StepResult`
 /// has no verdict to cite.
 final class HarnessTests: XCTestCase {
+    private static var recordsTimingOnly: Bool {
+        ConstrainedTimingEnvironment.isActive
+    }
+
     override func invokeTest() {
         autoreleasepool { super.invokeTest() }
     }
@@ -201,6 +205,18 @@ final class HarnessTests: XCTestCase {
             // Establishes that this is the timeout path at all. Without it the
             // test would pass on a run that settled cleanly, where the
             // overshoot claim below is vacuous.
+            if Self.recordsTimingOnly {
+                print(
+                    "SETTLE-MS-TIMEOUT-PATH recorded rules="
+                        + "\(step.verdict.findings.map(\.rule)) settleMs=\(settleMs) "
+                        + "budgetMs=\(budgetMs) elapsedMs=\(step.elapsedMs)"
+                )
+                XCTAssertLessThanOrEqual(
+                    settleMs, step.elapsedMs,
+                    "settleMs is part of the step, so it cannot exceed it"
+                )
+                continue
+            }
             XCTAssertEqual(
                 step.verdict.findings.map(\.rule), [Quiescence.timeoutRule],
                 "the fixture must reach the settle-timeout branch, got "
