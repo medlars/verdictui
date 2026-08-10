@@ -53,20 +53,29 @@ struct BodyProbeWalk {
 
     /// Rewrites `expression`, returning it with probes attached.
     mutating func rewrite(_ expression: ExprSyntax) -> ExprSyntax {
-        // Already probed by hand: leave the whole expression alone, including
-        // anything nested inside it. An explicit probe wins over a generated
-        // one — that is the documented contract, and re-probing an already
-        // probed element would give one view two ids and make
-        // `DuplicateProbeIDRule` fire on the macro's own output.
-        if Self.carriesExplicitProbe(expression) {
-            return expression
-        }
-
         // Recurse first, so children of an unrecognised container still get
         // probed. `VStack { Text("a") }` is not itself recognised, and if the
         // walk stopped at unrecognised nodes the body's entire contents would
         // be invisible.
         let recursed = rewriteChildren(of: expression)
+
+        // Already probed by hand: keep this POSITION as the author wrote it.
+        // An explicit probe wins over a generated one — that is the documented
+        // contract, and re-probing an already probed element would give one
+        // view two ids and make `DuplicateProbeIDRule` fire on the macro's own
+        // output.
+        //
+        // Suppression is positional and nothing more. Returning `expression`
+        // here — the un-recursed original — would also swallow everything
+        // NESTED inside it, so `VStack { Text("a") }.verdictProbe("box")` gave
+        // a tree of exactly one node with no content. That is the worst defect
+        // shape this product has: `vacuous-verdict` fires only when NO probed
+        // node exists, and the container's own probe makes the tree look
+        // observed, so every rule reports PASS about content nobody
+        // instrumented and no layer anywhere reports the gap.
+        if Self.carriesExplicitProbe(recursed) {
+            return recursed
+        }
 
         guard let role = Self.recognisedRole(of: recursed) else {
             return recursed

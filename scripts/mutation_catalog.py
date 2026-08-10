@@ -720,9 +720,33 @@ MUTATIONS = [
         # instrumentation itself as a defect.
         name="body walk re-probes an already-probed element",
         path="Sources/VerdictUIMacros/BodyProbeWalk.swift",
-        old="        if Self.carriesExplicitProbe(expression) {",
+        old="        if Self.carriesExplicitProbe(recursed) {",
         new="        if false {",
         test="VerdictUIMacroTests.VerifiableMacroTests/testAnElementThatAlreadyHasAProbeIsNotProbedAgain",
+        runner=Runner.SWIFT,
+    ),
+    Mutation(
+        # Suppression stops being POSITIONAL and swallows the subtree: an
+        # explicit probe on a container makes everything nested inside it
+        # invisible, so the tree is one node with no content. `vacuous-verdict`
+        # cannot catch that — the container's own probe makes the tree look
+        # observed — so every rule reports PASS about uninstrumented content.
+        #
+        # The witness is the EXPANSION SNAPSHOT, not the runtime render test
+        # that also covers this behaviour. SwiftPM rebuilds the plugin but does
+        # not re-expand macros in a consuming target whose own sources are
+        # unchanged, so a render test keeps the PREVIOUS expansion and passes
+        # under this mutation (measured: passes mutated, fails once the test
+        # file is touched). A macro row must therefore name a test in the
+        # module that expands the macro at build time.
+        name="explicit probe on a container swallows its children",
+        path="Sources/VerdictUIMacros/BodyProbeWalk.swift",
+        old="            return recursed\n        }\n\n        guard let role",
+        new="            return expression\n        }\n\n        guard let role",
+        test=(
+            "VerdictUIMacroTests.VerifiableMacroTests/"
+            "testAnExplicitProbeOnAContainerDoesNotSwallowItsChildren"
+        ),
         runner=Runner.SWIFT,
     ),
     Mutation(

@@ -189,6 +189,46 @@ final class VerifiableCompilationTests: XCTestCase {
         }
     }
 
+    /// A container carrying an explicit probe, with unprobed elements inside it.
+    @Verifiable
+    struct HandProbedContainerRow: View {
+        var body: some View {
+            VStack {
+                Text("inner-alpha")
+                Text("inner-beta")
+            }.verdictProbe("outer-container", role: .container)
+        }
+    }
+
+    func testElementsNestedInsideAHandProbedContainerAreStillProbed() throws {
+        // The false-green this product exists to prevent, in its most dangerous
+        // form. An explicit `.verdictProbe` on an OUTER container made the walk
+        // return the entire expression untouched — including everything nested
+        // inside it — so a screen whose author probed the container by hand got
+        // a tree with ONE node and no content.
+        //
+        // `vacuous-verdict` cannot catch this: that guard fires when the tree
+        // carries no probed node at all, and here the container's own probe
+        // makes the tree look observed. Every rule then reports PASS about
+        // content nobody instrumented, and nothing anywhere reports the gap.
+        // An explicit probe must suppress probing AT THAT POSITION only, never
+        // recursion into children.
+        let tree = try renderTree { sink in
+            AnyView(HandProbedContainerRow().verdictProbedBody(into: sink))
+        }
+        let lines = descriptors(of: tree)
+        XCTAssertTrue(
+            lines.contains { $0.contains("outer-container") },
+            "The hand-written container probe was lost: \(lines)"
+        )
+        for expected in ["inner-alpha", "inner-beta"] {
+            XCTAssertTrue(
+                lines.contains { $0.hasSuffix("|text|\(expected)") },
+                "'\(expected)' was swallowed by the container's explicit probe: \(lines)"
+            )
+        }
+    }
+
     // MARK: - Helpers
 
     /// Renders a view windowlessly and returns the tree it delivered.
