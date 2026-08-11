@@ -1108,6 +1108,17 @@ MUTATIONS = [
         test="BaselinesTests/testSuppressionOnALiveNodeSilencesItsDrift",
     ),
     Mutation(
+        # The host ignores the variant and pins its baseline instead, so every
+        # sweep cell renders identically while reporting a different name -- a
+        # matrix that runs, produces a full report, and measures one thing N
+        # times. Silent in the worst direction: the grid reads clean.
+        name="a sweep variant is ignored and every cell renders the baseline",
+        path="Sources/VerdictUIProbe/OracleHost.swift",
+        old="            .environment(\\.layoutDirection, overriding?.layoutDirection ?? .leftToRight)",
+        new="            .environment(\\.layoutDirection, .leftToRight)",
+        test="SweepTests/testVariantsActuallyChangeTheRenderedTree",
+    ),
+    Mutation(
         # The Swift witness stops judging the plugin the harness just wrote.
         # SwiftPM rebuilds a `.macro` plugin but does NOT re-expand macros in a
         # consuming target whose own sources are unchanged, so a RUNTIME witness
