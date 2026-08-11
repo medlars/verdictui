@@ -1,4 +1,5 @@
 import SwiftUI
+import VerdictUIDemoScenarios
 import XCTest
 
 @testable import VerdictUIKernel
@@ -17,6 +18,101 @@ import XCTest
 /// failure is completely silent, so a test that only checked "N cells came back"
 /// would pass against it.
 final class SweepTests: XCTestCase {
+
+    // MARK: - The wave's timing budget
+
+    /// The exit gate's matrix, spelled once: 3 locales × 2 type sizes × 2
+    /// colour schemes = 12 cells.
+    private static var gateVariants: [Variant] {
+        Sweep<CleanSettingsScenario>.matrix(
+            locales: ["en_US", "de_DE", "ar_SA"],
+            colorSchemes: [.light, .dark],
+            dynamicTypeSizes: [.medium, .accessibility3]
+        )
+    }
+
+    /// Wall-clock ceiling for the gate matrix, in milliseconds.
+    ///
+    /// The plan's exit gate names 5 s, and that number is kept rather than
+    /// tightened to the measurement. Five consecutive runs of the real matrix
+    /// measured **208.8 / 112.2 / 122.7 / 130.6 / 133.4 ms** — roughly 25×
+    /// under budget — and a gate re-cut to, say, 250 ms would fail for a busy
+    /// neighbour rather than for a regression, which is precisely the defect
+    /// `no.md` #13 records about the p95 gate that blocked a PM at 105 ms on a
+    /// 49 ms median. The published budget is a PRODUCT commitment; the headroom
+    /// is reported in the failure message so a real regression is legible as
+    /// one even while it passes.
+    private static let gateBudgetMs: Double = 5_000
+
+    /// The whole gate matrix renders inside the published budget.
+    ///
+    /// ### Why the first run is included rather than discarded
+    ///
+    /// Run 1 measured 208.8 ms against a 112–133 ms steady state — SwiftUI and
+    /// AppKit warm caches on first host construction. A benchmark would drop it
+    /// as noise. This is not a benchmark: it is the claim a user experiences,
+    /// and the first sweep of a session is the one they wait for. Discarding it
+    /// would measure a state the product is rarely in.
+    ///
+    /// ### Why this asserts on every lane
+    ///
+    /// Unlike SLO 1's p50 (`no.md` #15), this budget is not lane-split. The
+    /// margin is ~25×, so even the constrained hosts that span 62% on the
+    /// harness benchmark cannot cross it without something being genuinely
+    /// broken — and a test that would only fail on a real defect is exactly the
+    /// one that should keep asserting everywhere. The measured elapsed time is
+    /// printed either way, so a shared runner still contributes a reading.
+    @MainActor
+    func testTheGateMatrixRendersInsideItsBudget() async throws {
+        let variants = Self.gateVariants
+        XCTAssertEqual(
+            variants.count,
+            12,
+            "the exit gate names 3 locales × 2 type sizes × 2 schemes; a matrix that is not 12 "
+                + "cells is not the matrix the budget was measured against"
+        )
+
+        let sweep = Sweep(scenario: CleanSettingsScenario(), variants: variants)
+        let started = ContinuousClock.now
+        let report = await sweep.run()
+        let elapsedMs = Self.milliseconds(since: started)
+
+        print("SWEEP-BUDGET cells=\(report.cells.count) elapsedMs=\(elapsedMs)")
+
+        // A sweep that failed to render every cell would finish fast and look
+        // excellent, so the count and the errors are asserted BEFORE the clock.
+        // Time is only meaningful for a run that did the work.
+        XCTAssertEqual(
+            report.cells.count,
+            variants.count,
+            "the sweep returned \(report.cells.count) cells for \(variants.count) variants — a "
+                + "timing figure for a partial matrix measures nothing"
+        )
+        let unmeasured = report.cells.filter { $0.verdict == nil }
+        XCTAssertTrue(
+            unmeasured.isEmpty,
+            "\(unmeasured.count) cell(s) produced no verdict, so this run was faster than a "
+                + "real one by exactly the work it skipped: "
+                + "\(unmeasured.map { "\($0.variant.name): \($0.error ?? "no error recorded")" })"
+        )
+
+        XCTAssertLessThan(
+            elapsedMs,
+            Self.gateBudgetMs,
+            "the \(variants.count)-cell gate matrix took \(elapsedMs) ms against a "
+                + "\(Self.gateBudgetMs) ms budget. Five reference runs on developer hardware "
+                + "measured 208.8/112.2/122.7/130.6/133.4 ms, so this is roughly "
+                + "\(Int(elapsedMs / 133.0))× the steady-state figure — look for a per-cell "
+                + "host that stopped being reused or a settle that started timing out"
+        )
+    }
+
+    /// Milliseconds elapsed since `start`, from a monotonic clock.
+    private static func milliseconds(since start: ContinuousClock.Instant) -> Double {
+        let elapsed = ContinuousClock.now - start
+        let components = elapsed.components
+        return Double(components.seconds) * 1_000 + Double(components.attoseconds) / 1e15
+    }
 
     /// A scenario whose layout is a visible function of the environment.
     ///
