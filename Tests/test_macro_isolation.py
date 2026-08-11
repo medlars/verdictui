@@ -64,6 +64,15 @@ _SWIFTSYNTAX_FREE_TARGETS = frozenset(
         "VerdictUIKernelTests",
         "VerdictUIProbeTests",
         "VerdictUIDemoScenariosTests",
+        # Wave 6's CLI. SwiftSyntax-free DELIBERATELY, and this is the
+        # load-bearing half of the classification: `verdictui` is the binary a
+        # user installs, so a dependency arrow from it to the macro plugin
+        # would link the heaviest build-time cost in the package into a
+        # shipping product. The CLI verifies scenarios that a macro may have
+        # generated; it never expands one.
+        "VerdictUICLICore",
+        "VerdictUICLICoreTests",
+        "verdictui",
     }
 )
 

@@ -41,6 +41,8 @@ let package = Package(
         // Opt-in. Naming it as its own product is the whole isolation mechanism:
         // `VerdictUIProbe` stays buildable without resolving SwiftSyntax at all.
         .library(name: "VerdictUIMacroSupport", targets: ["VerdictUIMacroSupport"]),
+        // Wave 6. The binary an agent or a human runs.
+        .executable(name: "verdictui", targets: ["verdictui"]),
     ],
     dependencies: [
         // Pinned `exact`, not `from`. SwiftSyntax majors track the compiler
@@ -49,7 +51,12 @@ let package = Package(
         // plan names version churn as this wave's top risk. 603.0.2 is the
         // newest 603 tag and was verified to build a plugin against the local
         // Swift 6.3.3 toolchain before being written here.
-        .package(url: "https://github.com/swiftlang/swift-syntax.git", exact: "603.0.2")
+        .package(url: "https://github.com/swiftlang/swift-syntax.git", exact: "603.0.2"),
+        // Wave 6's CLI. A range rather than `exact`: argument-parser is not
+        // toolchain-coupled the way SwiftSyntax is, and pinning it exactly
+        // would make this package refuse to resolve alongside any consumer
+        // that already depends on a different 1.x.
+        .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.3.0"),
     ],
     targets: [
         .target(name: "VerdictUIKernel", swiftSettings: strictSettings),
@@ -91,9 +98,37 @@ let package = Package(
             dependencies: ["VerdictUIDemoScenarios", "VerdictUIProbe", "VerdictUIKernel"],
             swiftSettings: strictSettings
         ),
+        // Wave 6's CLI, split in two ON PURPOSE. Everything that decides
+        // anything lives in `VerdictUICLICore` — a plain library a test target
+        // can import and call — and the `verdictui` executable is a thin
+        // `main.swift` that parses argv and hands over. The split exists
+        // because nothing inside an executableTarget is reachable from any test
+        // in the same package, so logic living there is verified only by its
+        // own pass count, which is zero (LaunchGate CIS-5178E04D: 65 controls,
+        // 0 executable by any test, 206 tests green).
+        .target(
+            name: "VerdictUICLICore",
+            dependencies: [
+                "VerdictUIKernel",
+                "VerdictUIProbe",
+                "VerdictUIDemoScenarios",
+                .product(name: "ArgumentParser", package: "swift-argument-parser"),
+            ],
+            swiftSettings: strictSettings
+        ),
+        .executableTarget(
+            name: "verdictui",
+            dependencies: ["VerdictUICLICore"],
+            swiftSettings: strictSettings
+        ),
         .testTarget(
             name: "VerdictUIKernelTests",
             dependencies: ["VerdictUIKernel"],
+            swiftSettings: strictSettings
+        ),
+        .testTarget(
+            name: "VerdictUICLICoreTests",
+            dependencies: ["VerdictUICLICore", "VerdictUIDemoScenarios"],
             swiftSettings: strictSettings
         ),
         .testTarget(
