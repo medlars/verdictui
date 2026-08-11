@@ -1264,13 +1264,21 @@ MUTATIONS = [
         # leaving login" false-green, reported as a clean path table.
         name="a walk stops verifying arrival and only lints",
         path="Sources/VerdictUIProbe/StateMachine.swift",
+        # The `new` still CALLS evaluate and merely discards its result, rather
+        # than deleting the statement. Deleting it leaves `tree`, `context` and
+        # `machineState` unused, which is an ERROR under -warnings-as-errors, so
+        # the row fails to BUILD and scores INCONCLUSIVE having executed zero
+        # tests -- measured here on 2026-08-11, the fourth occurrence of the
+        # shape `no.md` #25 records. Discarding the result keeps every binding
+        # live and breaks exactly the behaviour under test: arrival is computed
+        # and then thrown away.
         old=(
             "            findings.append(\n"
             "                contentsOf: machineState.expectations.evaluate(in: tree, "
             "context: context)\n"
             "            )"
         ),
-        new="            _ = machineState",
+        new=("            _ = machineState.expectations.evaluate(in: tree, context: context)"),
         test=(
             "VerdictUIProbeTests.StateMachineTests/"
             "testArrivingInADifferentStateThanTheGraphClaimsIsAFailure"

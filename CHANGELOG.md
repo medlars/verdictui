@@ -2,6 +2,66 @@
 
 ## [Unreleased]
 
+### 2026-08-11 (Wave 5 Task 5 — state-machine scenarios, and a mutation row that proved nothing)
+
+**Added**
+
+- **`ScenarioStateMachine` + `Harness.walk`** (`Sources/VerdictUIProbe/StateMachine.swift`)
+  — a screen described as named states plus the transitions between them, walked
+  one path at a time with a verdict per step.
+
+  The load-bearing decision is that a state carries an `ExpectationSet` and
+  **arrival is checked, not assumed**. A machine whose states are only names
+  produces a walk that applies every action, settles every time, and reports PASS
+  while the UI never left the first screen — "walked login → dashboard →
+  settings" as a clean path table, with no layer anywhere able to notice. So a
+  state with no expectations is **rejected at construction**, along with three
+  other structural defects that each yield a walk which *runs and reports*
+  rather than one that can fail: a transition to an undefined state, a duplicate
+  state name, and two edges leaving one state on the same action.
+
+  The entry state is checked **before** any action, because a scenario that does
+  not start where the machine claims would otherwise blame its first
+  *transition* — sending debugging at an innocent action while the real defect
+  goes unnamed. Multi-path walks build a fresh harness per path, since a path
+  beginning where the previous one ended is not the path the caller asked for.
+
+- `ProbeAction.description` — hand-spelled rather than derived from the enum,
+  because it is both the transition label in evidence and the ambiguity key a
+  machine validates on, and an interpolated case is a compiler detail that would
+  not survive a toolchain upgrade. The *value* is part of it, so typing two
+  different strings into one field is two edges rather than one collision.
+
+**Fixed**
+
+- A mutation row added in this same session scored **INCONCLUSIVE — the mutation
+  did not compile**: deleting the `findings.append(contentsOf:)` statement left
+  `tree`, `context` and `machineState` unused, which is an *error* under
+  `-warnings-as-errors`. The row therefore executed zero tests while looking like
+  a row. This is the fourth occurrence of the shape `no.md` #25 records. The `new`
+  now calls `evaluate` and discards its result, keeping every binding live while
+  breaking exactly the behaviour under test; hand-verified red (1 test, 3
+  failures, citing zero findings) and green (21 tests, 0 failures) with a
+  byte-identical restore.
+
+**Found by the engine, in its own fixture**
+
+- The first `PanelScenario` probed a bare `Text` as `role: .button`, which
+  measured 28×16 pt, and `TapTargetRule` failed the transition step against the
+  28×28 pt macOS minimum. The walk was right and the fixture was wrong — which is
+  also the proof that a walk step carries its **lint** findings alongside its
+  arrival check rather than only the latter.
+
+**Measured**
+
+- 552 Swift + 220 Python tests, 0 failures, zero warnings under
+  `-warnings-as-errors`; PM quick **Grade A (100.0)**.
+- Full mutation sweep on a clean exclusive tree: **92 rows, 84 NOTICED,
+  0 UNNOTICED, 8 INCONCLUSIVE**, exit 0, byte-identical restore. One
+  INCONCLUSIVE was this session's and is fixed; the other **seven are
+  pre-existing and unproven** — tracked as CTS-D0942526 rather than left
+  implicit behind a "0 UNNOTICED" headline.
+
 ### 2026-08-11 (Wave 5 Task 1 — rule library v2, and a harness that was lying about coverage)
 
 **Added**
