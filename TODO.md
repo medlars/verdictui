@@ -58,6 +58,7 @@
 <!-- testwatch-gaps -->
 ## TestWatch Gaps (auto-generated — do not edit this block)
 - [ ] (P1) testwatch: add test for `Outcome` in `scripts/mutation-check.py` [NONE]
+- [ ] (P1) testwatch: add test for `refresh_macro_expansions` in `scripts/mutation-check.py` [NONE]
 - [ ] (P1) testwatch: add test for `Runner` in `scripts/mutation_catalog_types.py` [NONE]
 - [ ] (P1) testwatch: add test for `last_commit_time` in `scripts/stale-buffer-check.py` [NONE]
 - [ ] (P1) testwatch: add test for `modified_tracked_files` in `scripts/stale-buffer-check.py` [NONE]
