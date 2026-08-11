@@ -630,8 +630,8 @@ MUTATIONS = [
         # BROKEN code, so this mutation passed the whole suite.
         name="stage_lint stops reporting lint and format failures",
         path="scripts/verdictui-pm.py",
-        old='            if r.returncode != 0:\n                detail = (r.stdout.strip() or r.stderr.strip() or "no output")[:400]',
-        new='            if False:\n                detail = (r.stdout.strip() or r.stderr.strip() or "no output")[:400]',
+        old="            if r.returncode != 0:\n                detail = (r.stdout.strip() or r.stderr.strip() or NO_OUTPUT)[:400]",
+        new="            if False:\n                detail = (r.stdout.strip() or r.stderr.strip() or NO_OUTPUT)[:400]",
         test="Tests/test_verdictui_pm.py::TestStageWrappers::test_stage_lint_reports_a_format_failure_distinctly",
         runner=Runner.PYTEST,
     ),
