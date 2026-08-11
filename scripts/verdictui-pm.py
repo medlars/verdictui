@@ -269,6 +269,13 @@ def _run_streamed_swift_test(
     swift_failures = len(re.findall(r"Test run with \d+ tests? (?:in \d+ suites? )?failed", output))
     test_count = max(exec_count, swift_count)
     fail_count = max(exec_failures, swift_failures)
+    # Whether ANY runner summary line was produced. A failure count read from a
+    # log with no summary is inferred, not reported: the parser saw some test
+    # STARTS and derived a count from what never completed. `stage_runtime_bench`
+    # already fails closed when its `SLO1-PERFORM` line is absent; this is the
+    # same rule for the test runner (CIS-B3CE1A2C, lessons 202/206 — could-not-
+    # observe must not be reported as observed-and-bad).
+    has_summary = bool(exec_matches) or swift_summary is not None
 
     if returncode == 0 and fail_count == 0 and test_count >= min_test_count:
         _pm_log(f"Tests: PASS — {test_count} tests", "INFO")
@@ -278,6 +285,58 @@ def _run_streamed_swift_test(
             "output": output,
             "test_count": test_count,
         }
+    # Checked BEFORE the count and failure branches, not merely before the
+    # generic one. A NEGATIVE returncode is a signal, not a verdict: Python
+    # reports a process killed by signal N as -N, so -9 means the OS (or an OOM
+    # killer, or a memory-pressure sweep) terminated the runner mid-flight, and
+    # the tests that had already run say nothing about the ones that never got
+    # to start. The partial log a killed run leaves behind routinely contains
+    # both a low test count and real-looking failures, so placing this check
+    # after either of those branches lets a terminated run be reported as
+    # "1 failure(s) in 3 tests" — measured 2026-08-10 at load 163, and
+    # indistinguishable in the report from a genuine regression (CIS-B3CE1A2C).
+    # Grading a killed run as a failure sends the next session hunting a bug
+    # that does not exist; grading it as a pass would be worse. It is neither.
+    if returncode < 0:
+        signal_name = signal.Signals(-returncode).name
+        _pm_log(
+            f"Tests: INCONCLUSIVE — runner killed by {signal_name} after {test_count} tests",
+            "WARN",
+        )
+        return {
+            "passed": False,
+            "inconclusive": True,
+            "detail": (
+                f"swift test was killed by {signal_name} (exit {returncode}) after "
+                f"{test_count} test(s) — the run was terminated, not failed, so this says "
+                f"nothing about the code. Re-run on an unloaded machine."
+            ),
+            "output": output,
+            "test_count": test_count,
+        }
+
+    # A failure count with NO summary line is inferred, never reported: the
+    # parser saw test STARTS and derived a count from what never completed, so
+    # the number describes the truncation rather than the code. The issue's own
+    # example is the shape — "1 failure(s) in 3 tests" from a log containing
+    # zero `Executed N tests` lines and zero `error:` lines.
+    if not has_summary and fail_count > 0:
+        _pm_log(
+            f"Tests: INCONCLUSIVE — {fail_count} failure(s) inferred with no runner summary",
+            "WARN",
+        )
+        return {
+            "passed": False,
+            "inconclusive": True,
+            "detail": (
+                f"swift test produced no runner summary line, so the {fail_count} "
+                f"failure(s) reported here were inferred from incomplete output rather "
+                f"than reported by the runner. The run did not finish; it did not fail."
+            ),
+            "output": output,
+            "test_count": test_count,
+        }
+
     if test_count < min_test_count:
         _pm_log(
             f"Tests: FAIL — only {test_count} tests ran (expected {min_test_count}+)",
@@ -538,6 +597,82 @@ class VerdictUIPM(PmBase):
                 "detail": f"expected a non-empty array, got {verdicts!r}"[:300],
             }
         return {"passed": True, "detail": f"{len(verdicts)} verdicts, valid JSON"}
+
+    def stage_cli_smoke(self) -> dict:
+        """Build `verdictui` and exercise its documented exit codes.
+
+        `swift test` does not build executable PRODUCTS, so the whole CLI suite
+        can be green while the shipped binary refuses to start — measured on
+        2026-08-11, when 8/8 library tests passed against a binary that failed
+        at launch with "Asynchronous root command needs availability
+        annotation" (no.md #32). A stage that only ran the test suite would have
+        reported that build as clean.
+
+        All three codes are asserted rather than only the passing one: a binary
+        that returns 1 for everything satisfies any check that looks solely at
+        the failure path, and the 1-vs-2 distinction is the tool's whole
+        contract with an agent.
+        """
+        if shutil.which("swift") is None:
+            return {"passed": False, "detail": "swift not installed — CLI cannot be built"}
+
+        build = subprocess.run(  # noqa: S603 — fixed argv built from constants
+            ["swift", "build", "--product", "verdictui", *SWIFT_PM_FLAGS, *SWIFT_STRICT_FLAGS],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=TIMEOUT_SWIFT_BUILD,
+        )
+        if build.returncode != 0:
+            detail = (build.stderr.strip() or build.stdout.strip() or NO_OUTPUT)[:300]
+            return {"passed": False, "detail": f"verdictui failed to build: {detail}"}
+
+        binary = PROJECT_ROOT / ".build" / "debug" / "verdictui"
+        if not binary.exists():
+            return {"passed": False, "detail": f"{binary} missing after a successful build"}
+
+        # Run in a scratch directory: `baseline` writes under the working
+        # directory, and a smoke check must never touch the repo's own
+        # verdict-baselines or its audit log.
+        with tempfile.TemporaryDirectory(prefix="verdictui-cli-smoke-") as scratch:
+            expectations = [
+                (["list"], 0, "list must succeed"),
+                (["verify", "demo-clean-settings"], 0, "the clean scenario must PASS"),
+                (["verify", "demo-offscreen-button"], 1, "a planted defect must FAIL with 1"),
+                (["verify", "no-such-scenario"], 2, "an unverifiable request must exit 2"),
+            ]
+            for argv, expected, why in expectations:
+                run = subprocess.run(  # noqa: S603 — argv from the table above
+                    [str(binary), *argv],
+                    cwd=scratch,
+                    capture_output=True,
+                    text=True,
+                    timeout=TIMEOUT_STANDARD,
+                )
+                if run.returncode != expected:
+                    return {
+                        "passed": False,
+                        "detail": (
+                            f"`verdictui {' '.join(argv)}` exited {run.returncode}, "
+                            f"expected {expected} — {why}. "
+                            f"stderr: {(run.stderr.strip() or NO_OUTPUT)[:200]}"
+                        ),
+                    }
+                # stdout is a machine contract on every path that produces a
+                # verdict, including the failing one.
+                if expected in (0, 1) and run.stdout.strip():
+                    try:
+                        json.loads(run.stdout)
+                    except json.JSONDecodeError as e:
+                        return {
+                            "passed": False,
+                            "detail": f"`verdictui {' '.join(argv)}` stdout is not JSON: {e}",
+                        }
+
+        return {
+            "passed": True,
+            "detail": f"{len(expectations)} CLI invocations, exit codes 0/1/2 as documented",
+        }
 
     def stage_mutations(self) -> dict:
         """Every mutation in `scripts/mutation-check.py` still names real source.
@@ -804,6 +939,7 @@ class VerdictUIPM(PmBase):
             ("stage_last20", self.stage_last20),
             ("stage_test_alongside", self.stage_test_alongside),
             ("stage_demo", self.stage_demo),
+            ("stage_cli_smoke", self.stage_cli_smoke),
             ("stage_mutations", self.stage_mutations),
             ("stage_stale_buffer", self.stage_stale_buffer),
             ("stage_runtime_bench", self.stage_runtime_bench),
