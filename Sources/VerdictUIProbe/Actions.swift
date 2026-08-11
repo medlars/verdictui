@@ -35,6 +35,31 @@ public enum ProbeAction {
         }
     }
 
+    /// Stable, readable form used in step evidence and as a transition's
+    /// identity within a ``ScenarioStateMachine``.
+    ///
+    /// Spelled by hand rather than derived from the enum: an interpolated case
+    /// is a compiler detail that may change between toolchains, and a walk
+    /// report keyed on it would not survive a Swift upgrade — the same reason
+    /// ``Variant/describe(_:)-(DynamicTypeSize)`` spells its vocabulary out.
+    ///
+    /// The VALUE is part of the description for `setText`/`setSlider` because
+    /// two transitions that differ only in what they type are two different
+    /// moves; omitting it would make them collide as one ambiguous edge.
+    /// ``custom`` cannot describe its closure, so it is identified by probe id
+    /// alone — two custom transitions leaving one state with the same id are
+    /// genuinely indistinguishable here, and the machine reports that as an
+    /// ambiguity rather than picking one by declaration order.
+    public var description: String {
+        switch self {
+        case .tap(let id): "tap(\(id))"
+        case .setText(let id, let value): "setText(\(id), \"\(value)\")"
+        case .toggle(let id): "toggle(\(id))"
+        case .setSlider(let id, let value): "setSlider(\(id), \(value))"
+        case .custom(let id, _): "custom(\(id))"
+        }
+    }
+
     /// Apply this action to `state`. Throws ``ProbeActionError`` when the probe
     /// has no compatible binding registered.
     @MainActor
