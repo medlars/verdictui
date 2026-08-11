@@ -21,6 +21,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -870,3 +871,93 @@ class TestMain:
         monkeypatch.setattr(mod, "git_is_clean", lambda: next(states))
         monkeypatch.setattr(mod, "check", lambda _m: True)
         assert mod.main([]) == 2
+
+
+class TestMacroExpansionFreshness:
+    """A Swift witness must judge the plugin the harness just wrote.
+
+    SwiftPM rebuilds a `.macro` plugin when its source changes but does NOT
+    re-expand macros in a consuming target whose own sources are unchanged, so a
+    RUNTIME witness executes the PREVIOUS expansion and passes against a broken
+    plugin. That is `no.md` #23/#26 — and it defeats this harness in the
+    expensive direction, because a working guard then reports UNNOTICED, which
+    reads as "not covered" and invites rewriting correct code.
+
+    Measured 2026-08-11: `the two macros stop composing over a custom view` went
+    UNNOTICED in a full sweep, and the SAME mutation applied by hand — with the
+    consuming test files touched first — was NOTICED at exit 1 with one test
+    executed, failing on `vacuous-verdict`. The row's own note already claimed a
+    hand-verification the harness could not reproduce, because the hand check
+    followed the touch discipline and the harness did not.
+    """
+
+    def test_the_swift_runner_restamps_macro_consuming_sources(
+        self, tmp_path: Any, monkeypatch: Any
+    ) -> None:
+        """The mechanism, asserted where it is cheap to observe.
+
+        Running a real `swift test` here would cost minutes; what makes the
+        harness honest is narrower and directly checkable — that the Swift path
+        bumps the mtime of every macro-consuming test source before the runner
+        reads it. Asserted through `run_named_test` rather than by calling
+        `refresh_macro_expansions` directly, because the defect was the runner
+        NOT CALLING it: a test that invoked the helper itself would pass against
+        the unfixed harness and prove nothing (`no.md` #12).
+        """
+        mod = _load()
+        consuming = tmp_path / "Tests" / "VerdictUIMacroTests"
+        consuming.mkdir(parents=True)
+        source = consuming / "SomeMacroTests.swift"
+        source.write_text("// consuming test\n")
+
+        stale = 1_700_000_000
+        os.utime(source, (stale, stale))
+        mod.REPO = tmp_path
+
+        # The runner is stubbed: this asserts what happens BEFORE the subprocess,
+        # so the real toolchain never has to run.
+        monkeypatch.setattr(
+            mod,
+            "run",
+            lambda *_a, **_k: SimpleNamespace(
+                returncode=0, stdout="Executed 1 test, with 0 failures", stderr=""
+            ),
+        )
+        mod.run_named_test("AnyTests/testAnything", mod.Runner.SWIFT)
+
+        assert source.stat().st_mtime > stale, (
+            "the Swift path left a macro-consuming source at its old mtime, so "
+            "SwiftPM will serve the previous expansion and a broken plugin passes"
+        )
+
+    def test_the_pytest_path_does_not_restamp_swift_sources(
+        self, tmp_path: Any, monkeypatch: Any
+    ) -> None:
+        """The negative control.
+
+        Without it, "the runner restamps sources" is satisfied by a harness that
+        restamps unconditionally on every path — including pytest rows, which
+        have their own cache defeat in `-B` and no macro expansion to refresh.
+        A rule that is always true cannot distinguish a working runner from a
+        broken one.
+        """
+        mod = _load()
+        consuming = tmp_path / "Tests" / "VerdictUIMacroTests"
+        consuming.mkdir(parents=True)
+        source = consuming / "SomeMacroTests.swift"
+        source.write_text("// consuming test\n")
+
+        stale = 1_700_000_000
+        os.utime(source, (stale, stale))
+        mod.REPO = tmp_path
+
+        monkeypatch.setattr(
+            mod,
+            "run",
+            lambda *_a, **_k: SimpleNamespace(returncode=0, stdout="1 passed", stderr=""),
+        )
+        mod.run_named_test("Tests/test_x.py::test_y", mod.Runner.PYTEST)
+
+        assert source.stat().st_mtime == stale, (
+            "the pytest path touched a Swift source it has no reason to rebuild"
+        )

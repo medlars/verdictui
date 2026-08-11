@@ -101,12 +101,57 @@ def run(args: list[str]) -> subprocess.CompletedProcess[str]:
     )
 
 
+MACRO_PLUGIN_DIR = "Sources/VerdictUIMacros/"
+
+# Test targets whose sources must be re-stamped before a macro-plugin row runs.
+# Spelled as a list so a new macro-consuming target is one row rather than a
+# rediscovery of the trap below.
+MACRO_CONSUMING_TEST_DIRS = (
+    "Tests/VerdictUIMacroTests",
+    "Tests/VerdictUIMacroRuntimeTests",
+)
+
+
+def refresh_macro_expansions() -> None:
+    """Re-stamp macro-consuming test sources so SwiftPM re-expands the plugin.
+
+    SwiftPM rebuilds a `.macro` plugin when its source changes but does NOT
+    re-expand macros in a consuming target whose own sources are unchanged, so a
+    RUNTIME witness executes the PREVIOUS expansion and passes against a broken
+    plugin. That is `no.md` #23/#26, and it defeats this harness in the
+    expensive direction: a working guard reports UNNOTICED, which reads as
+    "untested" and invites rewriting correct code.
+
+    Measured 2026-08-11: the `the two macros stop composing over a custom view`
+    row went UNNOTICED in a full sweep and NOTICED (exit 1, 1 test executed,
+    naming `vacuous-verdict`) when the same mutation was applied by hand with
+    the consuming test files touched first. The row's own note recorded a
+    hand-verification that the harness could not reproduce, because the hand
+    check followed the touch discipline and the harness did not.
+
+    The pytest path solves the same class of problem with `-B`; `swift test` has
+    no equivalent, so the mtime is bumped directly.
+    """
+    for directory in MACRO_CONSUMING_TEST_DIRS:
+        # Resolved against REPO, not the process cwd: every other path in this
+        # harness is, and a helper that silently read a different root would
+        # touch nothing while reporting nothing — the failure mode being closed
+        # here, one layer down.
+        root = resolve_in_repo(directory)
+        if not root.is_dir():
+            continue
+        for source in root.rglob("*.swift"):
+            source.touch()
+
+
 def run_named_test(test: str, runner: Runner = Runner.SWIFT) -> subprocess.CompletedProcess[str]:
     """The one test invocation this script makes, spelled once per runner.
 
     Baseline and mutated runs must differ only in the state of the source, so
     they go through the same argv rather than two copies of it — and the runner
-    must read that source fresh, which is what `-B` on the pytest path buys.
+    must read that source fresh. Each runner defeats a different cache to get
+    there: `-B` on the pytest path (no `__pycache__`), and
+    ``refresh_macro_expansions`` on the Swift path (no stale macro expansion).
     """
     if runner is Runner.PYTEST:
         # `-p no:cacheprovider` so a mutation run leaves no `.pytest_cache`
@@ -124,6 +169,12 @@ def run_named_test(test: str, runner: Runner = Runner.SWIFT) -> subprocess.Compl
         # when exactly one of the six went UNNOTICED and re-running that row
         # alone said NOTICED — a race, so it moves between runs.
         return run([sys.executable, "-B", "-m", "pytest", test, "-q", "-p", "no:cacheprovider"])
+    # Unconditional, and deliberately not narrowed to macro-plugin rows: the
+    # baseline and mutated runs must differ ONLY in the state of the source, so
+    # a refresh that happened on one and not the other would reintroduce the
+    # very asymmetry this closes. Touching a handful of files costs a rebuild of
+    # one test target and buys a witness that judges the code on disk.
+    refresh_macro_expansions()
     return run(["swift", "test", "--filter", test, "-Xswiftc", "-warnings-as-errors"])
 
 

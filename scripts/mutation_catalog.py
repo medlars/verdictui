@@ -831,10 +831,15 @@ MUTATIONS = [
         runtime_witness_reason=(
             "The defect is which OVERLOAD of verdictProbing the compiler resolves, and a "
             "snapshot compares generated text, so it cannot observe an overload choice. "
-            "no.md #23's stale-expansion trap does not apply: verdictProbing lives in the "
-            "SUPPORT LIBRARY, not the plugin, so the consuming target recompiles against it "
-            "normally. Hand-verified NOTICED (exit 1, 1 test executed) with a byte-identical "
-            "restore."
+            "no.md #23's stale-expansion trap DOES apply -- this note previously claimed "
+            "it did not, reasoning that verdictProbing lives in the support library rather "
+            "than the plugin. That reasoning was wrong: the MUTATED symbol is in the "
+            "plugin (BodyProbeWalk), so the consuming target must be re-expanded no matter "
+            "where the overloads live. Measured 2026-08-11: this row reported UNNOTICED in "
+            "a full sweep while the same mutation applied by hand -- with the consuming "
+            "tests touched first -- was NOTICED at exit 1, 1 test executed, failing on "
+            "vacuous-verdict. The harness now calls refresh_macro_expansions() on the "
+            "Swift path, so the hand discipline and the automated path agree (no.md #28)."
         ),
         runner=Runner.SWIFT,
     ),
@@ -1067,6 +1072,31 @@ MUTATIONS = [
         old="        ancestors.first { escapes(node.frame, from: $0.frame) }",
         new="        ancestors.suffix(1).first { escapes(node.frame, from: $0.frame) }",
         test="ClippedContentRuleTests/testContentEscapingAGrandparentIsReported",
+    ),
+    Mutation(
+        # The Swift witness stops judging the plugin the harness just wrote.
+        # SwiftPM rebuilds a `.macro` plugin but does NOT re-expand macros in a
+        # consuming target whose own sources are unchanged, so a RUNTIME witness
+        # executes the PREVIOUS expansion and passes against a broken plugin
+        # (`no.md` #23/#26). That defeats this harness in the expensive
+        # direction: a working guard reports UNNOTICED, which reads as
+        # "uncovered" and invites rewriting correct code.
+        #
+        # Measured 2026-08-11: the composition row went UNNOTICED in a full
+        # sweep and NOTICED (exit 1, 1 test executed, failing on
+        # `vacuous-verdict`) when the same mutation was applied by hand with the
+        # consuming test files touched first. The row's own note already claimed
+        # a hand-verification the harness could not reproduce, because the hand
+        # check followed the touch discipline and the harness did not.
+        name="the swift witness is served a stale macro expansion",
+        path="scripts/mutation-check.py",
+        old="    refresh_macro_expansions()\n",
+        new="",
+        test=(
+            "Tests/test_mutation_check.py::TestMacroExpansionFreshness::"
+            "test_the_swift_runner_restamps_macro_consuming_sources"
+        ),
+        runner=Runner.PYTEST,
     ),
     Mutation(
         # The harness stops noticing that something else wrote to the file while
