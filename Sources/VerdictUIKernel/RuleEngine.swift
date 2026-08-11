@@ -146,6 +146,10 @@ public enum RuleEngine {
         TruncationRule(),
         ExcessiveWrapRule(),
         TapTargetRule(),
+        EmptyContainerRule(),
+        MisalignmentRule(),
+        InconsistentSpacingRule(),
+        ClippedContentRule(),
     ]
 
     /// Identifier of the structural vacuity guard. Not a ``LintRule`` id: no

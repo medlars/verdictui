@@ -988,6 +988,87 @@ MUTATIONS = [
         test="ExcessiveWrapRuleTests/testOrdinaryTwoLineWrappingIsNotReported",
     ),
     Mutation(
+        # The rule starts judging CHILDLESS containers, which the layout pass
+        # cannot distinguish from decorative shapes that paint themselves. This
+        # is the exact defect measured on the first draft: it reported
+        # `card-surface` and `card-pill` in CleanSettingsScenario -- the
+        # reference CORRECT UI whose whole job is producing zero findings. The
+        # witness is the control test, not a positive one: an over-reporting
+        # rule still reports the real nested defect, so only the negative case
+        # can see the difference.
+        name="empty-container judges childless containers it cannot observe",
+        path="Sources/VerdictUIKernel/Rules/EmptyContainerRule.swift",
+        old="        guard !node.children.isEmpty else { return false }",
+        new="        guard true else { return false }",
+        test="EmptyContainerRuleTests/testAChildlessContainerIsNotReportedBecauseItMayPaintItself",
+    ),
+    Mutation(
+        # A container holding one BLANK container reads as filled, so the walk
+        # never reaches the outermost empty region and reports only the deepest
+        # wrapper -- naming the symptom instead of the blank box a human sees.
+        # Measured before the fix: `VStack { HStack { } }` reported `inner`
+        # alone.
+        name="empty-container treats a blank child container as content",
+        path="Sources/VerdictUIKernel/Rules/EmptyContainerRule.swift",
+        old="            if policedRoles.contains(child.role.identifier) {",
+        new="            if false {",
+        test="EmptyContainerRuleTests/testANestedChainOfEmptyContainersReportsOnlyTheOutermost",
+    ),
+    Mutation(
+        # The upper end of the alignment window disappears and every deliberate
+        # indent, nested hierarchy and two-column layout becomes a finding. The
+        # positive test still passes -- an over-reporting rule also reports the
+        # real near-miss -- so the control is the only witness that can fail.
+        name="misalignment reports deliberate indents as near-misses",
+        path="Sources/VerdictUIKernel/Rules/MisalignmentRule.swift",
+        old="                guard deviation < alignmentTolerance else { continue }",
+        new="                guard deviation < .infinity else { continue }",
+        test="MisalignmentRuleTests/testADeliberateIndentIsNotReported",
+    ),
+    Mutation(
+        # A node exactly aligned with an earlier sibling stops being satisfied,
+        # so one sloppy element makes every correctly-aligned row around it
+        # report -- the rule blaming the innocent rows for their neighbour.
+        name="misalignment blames rows that are correctly aligned",
+        path="Sources/VerdictUIKernel/Rules/MisalignmentRule.swift",
+        old="                if deviation <= coincidenceTolerance {",
+        new="                if false {",
+        test="MisalignmentRuleTests/"
+        "testANodeAlignedWithAnEarlierSiblingIsSilentDespiteANearMissElsewhere",
+    ),
+    Mutation(
+        # The majority requirement disappears, so a MINORITY gap can be crowned
+        # as the rhythm and every element following the real spacing is reported
+        # instead of the outlier -- the rule inverted, still green, still
+        # emitting findings. Only the no-rhythm control can see it.
+        name="inconsistent-spacing invents a rhythm where none exists",
+        path="Sources/VerdictUIKernel/Rules/InconsistentSpacingRule.swift",
+        old="        guard Double(winner.value.count) > Double(gaps.count) * minimumRhythmShare else {",
+        new="        guard true else {",
+        test="InconsistentSpacingRuleTests/testALayoutWithNoDominantRhythmIsNotReported",
+    ),
+    Mutation(
+        # Axis inference stops declining ambiguous arrangements, so grids and
+        # overlays get judged on whichever axis happens to be tried first and
+        # every grid in a real app reports.
+        name="inconsistent-spacing judges a grid on an arbitrary axis",
+        path="Sources/VerdictUIKernel/Rules/InconsistentSpacingRule.swift",
+        old="        case (true, false): return .vertical\n        case (false, true): return .horizontal\n        default: return nil",
+        new="        case (true, false): return .vertical\n        default: return .horizontal",
+        test="InconsistentSpacingRuleTests/testAGridIsDeclinedRatherThanJudgedOnOneAxis",
+    ),
+    Mutation(
+        # Containment is checked against the immediate parent only, so the case
+        # that actually reaches a user goes silent: a label inside an HStack
+        # inside a card overflows the CARD while fitting its parent perfectly,
+        # because the HStack grew to fit its child and pushed the problem up.
+        name="clipped-content only checks the immediate parent",
+        path="Sources/VerdictUIKernel/Rules/ClippedContentRule.swift",
+        old="        ancestors.first { escapes(node.frame, from: $0.frame) }",
+        new="        ancestors.suffix(1).first { escapes(node.frame, from: $0.frame) }",
+        test="ClippedContentRuleTests/testContentEscapingAGrandparentIsReported",
+    ),
+    Mutation(
         # The harness stops noticing that something else wrote to the file while
         # its witness ran, and classifies the result anyway. Measured with the
         # guard removed: it prints NOTICED for a row whose subject had been

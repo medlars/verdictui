@@ -410,6 +410,164 @@ grow the control or add .frame(minWidth: 28, minHeight: 28)
 **Suppress**: `verdict.suppress` on the control, `severityOverrides` to demote it,
 or `disabledRules`.
 
+### `empty-container`
+
+Fires when a policed container (`container`, `list`, `listRow`) reserves visible
+area — larger than `1` pt on both axes — and nothing inside it paints. Severity is
+`warning`: a deliberately blank region given a background is legitimate, and the
+kernel cannot read intent.
+
+The defect is a data-driven view whose content never arrived: a `List` whose
+`ForEach` got an empty array, a detail pane bound to a `nil` selection, a card whose
+body was thrown away by a condition that was never true. Padding and a background
+give it real area, so no other rule can see it — `zero-size` is silent because the
+frame is not zero, and every other rule iterates children the container does not
+have. It is the container analogue of the `vacuous-verdict` guard: area without
+content reads to a human as a broken screen and to the engine as nothing at all.
+
+**What it will not claim.** A CHILDLESS container is never reported. From the layout
+pass a probed leaf that paints itself — a `RoundedRectangle` fill, a capsule
+background, a divider — is indistinguishable from a container whose content failed to
+arrive: both have zero children, and no attribute records whether a node draws.
+Measured: the first version of this rule reported `card-surface` and `card-pill` in
+`CleanSettingsScenario`, the reference *correct* UI whose entire job is to produce
+zero findings. Closing that gap needs a paint signal from the probe, the same missing
+data that defers `contrast`. The nested case is the one worth reporting anyway, since
+the real defect emits its wrapper.
+
+**Vessels and content.** A container is a vessel: it paints only what it holds, so a
+container child counts only if something inside *it* paints. Anything else — text,
+image, button — is content in its own right. A `spacer` never counts: it occupies
+space and renders nothing by definition, which is exactly the commonest spelling of
+the defect (`VStack { Spacer() }` where content was meant to be).
+
+**One region, one finding.** The walk reports the OUTERMOST empty container on each
+branch and stops descending, so a blank `VStack { HStack { } }` is one finding rather
+than two. It stops only when a finding was actually produced — a *suppressed* node
+keeps descending, so suppressing a wrapper reveals the empty child inside it instead
+of blindfolding the whole subtree.
+
+```text
+'results-list' reserves 200 x 120 pt but renders nothing
+render a placeholder or empty state for this container, or collapse it when it has no content
+```
+
+**Suppress**: `verdict.suppress` on the container, `severityOverrides`, or
+`disabledRules`.
+
+### `misalignment`
+
+Fires when a sibling's edge misses an earlier sibling's by more than `0.5` pt and
+less than `4` pt. Severity is `warning`: the kernel cannot prove the author wanted
+alignment.
+
+The "2 px off" class — two form labels at 16 and 18 pt, a button whose trailing edge
+misses the field above by 3 pt. A human reads it instantly as sloppy; no other rule
+can see it, because every frame is the size it asked for and nothing overlaps, clips
+or leaves the viewport.
+
+**Why a near-miss and not any misalignment.** Alignment is a claim about intent.
+Edges 2 pt apart are the author intending alignment and missing — a stray
+`.padding(2)`, an icon whose baked-in whitespace differs from its sibling's. Edges
+40 pt apart are a deliberate indent, a nested hierarchy, a two-column layout. So the
+rule fires only inside that window and is silent both at exact alignment and at any
+honest distance. A rule that fired on every unaligned edge would report most of every
+real screen, which is how a lint library loses its users.
+
+**Choosing 4 pt by measurement.** The value must sit above the float noise the layout
+engine produces and below the smallest deliberate inset a designer would author.
+SwiftUI's spacing vocabulary starts at 4 pt and its default padding is 16 pt;
+sub-pixel arithmetic lands inside the 0.5 pt band the overlap rules already use. A
+deviation of 1–3 pt is therefore too large to be rounding and too small to be an
+inset. At 4 pt and above the rule cannot separate a small deliberate offset from a
+large mistake, so it says nothing rather than guessing.
+
+**One element, one finding.** A box nudged 2 pt sideways misses on `leading` AND
+`trailing` at once — same width, so both edges shift together. Reporting per edge
+doubles every real defect, so a node reports once, naming its worst edge. A node
+exactly aligned with *any* earlier sibling on an edge has satisfied the intent for
+that edge, so one stray element cannot make the correctly-aligned rows around it
+report.
+
+```text
+'second' misses leading alignment with 'first' by 2 pt (18 vs 16)
+align the leading edges exactly, or separate them by at least 4 pt so the offset reads as deliberate
+```
+
+**Suppress**: `verdict.suppress` on the misaligned node, `severityOverrides`, or
+`disabledRules`.
+
+### `inconsistent-spacing`
+
+Fires when one gap in a single-axis stack differs from the modal gap by more than
+`0.5` pt. Severity is `warning`: an uneven gap is sometimes a deliberate group break.
+
+Eight rows spaced 12 pt apart with a single 20 pt gap in the middle — a stray
+`.padding(.bottom, 8)`, a conditional insert that brought its own spacing. Every
+frame is the size it asked for and nothing overlaps, so no other rule can see it.
+
+**Why the mode and not the mean.** A mean is dragged by the very outlier being
+hunted: with gaps `12, 12, 12, 12, 20` the mean is 13.6, so the true rhythm is no
+longer any gap's expected value and all five gaps read as slightly wrong. The mode is
+the rhythm the author actually wrote, and the outlier is the one gap that disagrees.
+
+**Why a majority is required.** A rhythm must exist before a deviation from it means
+anything. Gaps of `8, 20, 33` have a mode only by accident of counting, and reporting
+the odd one out would invent an intent the layout never expressed. So the rule is
+silent unless the modal gap holds a strict majority and there are at least 3 gaps —
+deliberately varied layouts produce no findings rather than noise. Ties are broken
+toward the smaller gap so the verdict never depends on dictionary iteration order,
+which is not stable across runs and would make the rule impossible to baseline.
+
+**Axis inference.** A `VStack` and an `HStack` produce the same node shape, and
+measuring vertical gaps in a row yields nonsense. The axis is inferred from
+non-overlapping extents, and a group that fits neither cleanly — a grid, a `ZStack`,
+an absolute layout — is declined rather than judged on an arbitrary axis. Children
+are sorted by position first, since a probe may emit them in any order and an
+unsorted pass produces negative gaps that read as a broken rhythm in an even stack.
+
+```text
+'row3' sits 20 pt below 'row2' but the other vertical gaps here are 12 pt
+use the same 12 pt spacing as the surrounding elements, or group this element separately so the different gap reads as deliberate
+```
+
+**Suppress**: `verdict.suppress` on the displaced node, `severityOverrides`, or
+`disabledRules`.
+
+### `clipped-content`
+
+Fires when a node extends more than `0.5` pt past an ancestor's frame. Severity is
+`error`: unlike a wrap or a near-miss, escaping a container has no reading under
+which the author meant it.
+
+A row whose label is 40 pt wider than its card, a button pushed below its panel, an
+image overflowing a fixed-height header. SwiftUI does not clip by default, so the
+content is often still visible — which is why this is not `truncation`, and why no
+other rule sees it: nothing overlaps a sibling, nothing leaves the viewport, nothing
+is zero-sized, and the text lost no characters. The element simply escaped its box.
+The consequence is real either way: if the ancestor clips (`.clipped()`, a `List`
+row, a `ScrollView` viewport) the overflow is silently cut off; if it does not, the
+content paints over space the parent reserved for something else.
+
+**Why ancestors and not just the parent.** A label inside an `HStack` inside a card
+overflows the *card* while sitting comfortably inside its immediate parent — the
+`HStack` grew to fit its child and pushed the problem up a level. Checking only the
+parent misses exactly the case that reaches a user. Each node is checked against every
+ancestor and reports the OUTERMOST one it escapes, which is the box a human sees the
+content burst out of.
+
+**Why the root is excluded.** `offscreen` owns content leaving the viewport, and the
+root node *is* the viewport. Reporting both would give one escape two findings in two
+vocabularies, and this rule's would be the less accurate.
+
+```text
+'label' extends 50 pt past the trailing edge of 'card'
+give 'card' room for its content, or constrain 'label' with .frame(maxWidth:) or .lineLimit() so it fits inside
+```
+
+**Suppress**: `verdict.suppress` on the escaping node, `severityOverrides` to demote
+it, or `disabledRules`.
+
 ---
 
 ## 4. Tree diff
