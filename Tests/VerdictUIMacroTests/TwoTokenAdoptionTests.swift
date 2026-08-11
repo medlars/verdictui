@@ -22,6 +22,30 @@ struct UnadornedSettingsRow: View {
     }
 }
 
+/// A custom view that is NOT `@Verifiable` — the passthrough case.
+///
+/// Deliberately plain: a consumer's tree is mostly views like this, and the walk
+/// wraps every one of them in `verdictProbing(_:)`.
+///
+/// File scope, not nested in the test case, and that is REQUIRED rather than
+/// stylistic: a `#VerdictScenario` body referencing `TwoTokenAdoptionTests.X`
+/// rendered an EMPTY tree — measured, both views missing, not just the plain
+/// one. The macro lifts the closure into a generated struct at enum scope, so a
+/// name qualified by the enclosing XCTestCase does not resolve the way it reads.
+struct PlainCustomRow: View {
+    var body: some View {
+        Text("plain-content")
+    }
+}
+
+/// A `@Verifiable` sibling, so one scenario exercises BOTH overloads.
+@Verifiable
+struct VerifiableCustomRow: View {
+    var body: some View {
+        Text("verifiable-content")
+    }
+}
+
 /// The same view, reached through the OTHER token.
 ///
 /// Declared at type scope because a `declaration` macro may not introduce
@@ -30,6 +54,15 @@ struct UnadornedSettingsRow: View {
 enum AdoptionScenarios {
     #VerdictScenario("two-token-adoption") {
         UnadornedSettingsRow(title: "ignored")
+    }
+
+    /// Both `verdictProbing(_:)` overloads in one render — a `@Verifiable` view
+    /// beside a plain one. See `testANonVerifiableViewStillRendersThroughTheProbingOverload`.
+    #VerdictScenario("mixed-overload") {
+        VStack {
+            VerifiableCustomRow()
+            PlainCustomRow()
+        }
     }
 }
 
@@ -133,6 +166,65 @@ final class TwoTokenAdoptionTests: XCTestCase {
                 """
             )
         }
+    }
+
+    func testANonVerifiableViewStillRendersThroughTheProbingOverload() async throws {
+        // The passthrough overload of `verdictProbing(_:)`, at runtime.
+        //
+        // Until this test, `verdictProbing` appeared ONLY inside expansion
+        // snapshots — generated TEXT, which cannot show that the resolved
+        // overload renders anything. That leaves the branch a consumer hits most
+        // often completely unexercised: most views in a real app are not
+        // `@Verifiable`, and the walk wraps every one of them.
+        //
+        // Two failure modes it closes, both silent. If the passthrough dropped
+        // its view, a plain subview would vanish from the render with no finding
+        // — the tree would simply be missing content nobody declared. And if the
+        // CONSTRAINED overload wrongly captured non-conforming types, this would
+        // fail to compile rather than mis-render, which is the good direction.
+        //
+        // Asserted on the two views TOGETHER, in one scenario, because that is
+        // what pins the DISCRIMINATION: a run where both render proves the
+        // overloads resolve differently and correctly, where either alone is
+        // satisfied by an implementation that treats every view the same way.
+        let host = OracleHost(scenario: AdoptionScenarios.MixedOverloadScenario())
+        let tree = try await host.currentTree()
+        let texts = Self.allText(in: tree)
+
+        // The @Verifiable sibling MUST reach the tree. It is the positive half:
+        // it proves the render happened at all and that the constrained overload
+        // resolved, so a total failure cannot masquerade as the expected
+        // absence asserted below.
+        XCTAssertTrue(
+            texts.contains("verifiable-content"),
+            """
+            The @Verifiable sibling did not reach the tree, so the render or the \
+            constrained overload is broken and this test cannot discriminate \
+            anything. Tree text: \(texts)
+            """
+        )
+
+        // The plain view must NOT contribute a node, and this expectation was
+        // MEASURED after a first draft asserted the opposite and failed.
+        //
+        // The first version demanded "plain-content" in the tree, conflating two
+        // different things: the passthrough overload RENDERS the view (it
+        // returns it unchanged), but an unprobed view has nothing to report, so
+        // it contributes no NODE. Rendering and being measured are separate
+        // facts, and only the second one shows up here.
+        //
+        // Asserting the absence is what makes this a real discriminator. If the
+        // CONSTRAINED overload ever captured non-conforming types — the failure
+        // mode that would silently change what every scenario measures —
+        // "plain-content" would appear and this fails.
+        XCTAssertFalse(
+            texts.contains("plain-content"),
+            """
+            A non-@Verifiable view contributed a node to the tree. It has no \
+            probes, so it has nothing to report — its content appearing means \
+            the constrained overload captured a type it must not. Tree text: \(texts)
+            """
+        )
     }
 
     // MARK: - Helpers

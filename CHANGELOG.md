@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+### 2026-08-10 (cold-read: the passthrough overload had no runtime coverage)
+
+**Added**
+
+- `testANonVerifiableViewStillRendersThroughTheProbingOverload` — the
+  `verdictProbing(_:)` **passthrough** overload, exercised at runtime for the
+  first time. Until now it appeared only inside expansion snapshots, which
+  compare generated *text* and cannot show that the resolved overload renders
+  anything. That left the branch a consumer hits most often — most views in a
+  real app are not `@Verifiable`, and the walk wraps every one of them —
+  completely unexercised.
+
+  Two drafts of this test were wrong before it was right, and both corrections
+  are recorded at the call site. The fixtures had to move to **file scope**: a
+  `#VerdictScenario` body referencing `TwoTokenAdoptionTests.X` rendered an
+  empty tree (measured — *both* views missing, not just the plain one), because
+  the macro lifts the closure into a generated struct at enum scope. And the
+  assertion was inverted: the first version demanded the plain view's text
+  appear in the tree, conflating **rendering** with **being measured**. The
+  passthrough returns the view unchanged, so an unprobed view contributes no
+  node. Asserting its *absence* — beside a `@Verifiable` sibling that must be
+  present — is what makes the test discriminate, and it was negative-controlled
+  by making the plain view `@Verifiable` and watching it fail.
+
 ### 2026-08-10 (Wave 4 complete — and the wave's headline claim was false until today)
 
 **Fixed**
