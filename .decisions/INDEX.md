@@ -11,6 +11,7 @@
 | [2026-007](2026-007-mutation-catalog-lives-outside-the-harness.md) | The mutation catalog lives outside the harness it drives | 2026-08-10 | Active | mutations, tooling, self-reference |
 | [2026-008](2026-008-scenario-registration-is-a-static-list.md) | Scenario registration is a static list, not a runtime scan | 2026-08-10 | Active | macros, registry, adoption |
 | [2026-009](2026-009-macro-composition-via-compile-time-overload.md) | Macros compose through a compile-time overload, not reflection | 2026-08-10 | Active | macros, adoption, composition |
+| [2026-010](2026-010-one-environment-chain-shape-for-pinned-and-swept-hosts.md) | The host's environment chain has ONE shape; a sweep varies values, never structure | 2026-08-11 | Active | sweeps, environment, host, determinism |
 
 > Use the `/adr` skill to create new entries. Each ADR is `YYYY-NNN-slug.md`.
 > ProbeLayout.measure's optional-vs-reduce choice is recorded in `no.md` entry 10
