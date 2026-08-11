@@ -107,6 +107,23 @@ public struct Expectation: Sendable {
     /// This element's frame lies inside `other`'s.
     public func contained(in other: String) -> Expectation { adding(.contained(other)) }
 
+    /// This element lies entirely within the rendered viewport.
+    ///
+    /// The predicate that ``contained(in:)`` cannot express: the viewport is not
+    /// a node, so it has no probe id to name. It arrives on ``LintContext``
+    /// instead, which is why this is the one predicate whose evaluation needs
+    /// the context.
+    ///
+    /// Added in Wave 5 when the DSL was first dogfooded on the demo catalog and
+    /// could not state ``OffscreenButtonScenario``'s intent. `.visible` is not a
+    /// substitute and the difference is load-bearing: ``SemanticNode/isVisible``
+    /// is always `true` from the layout pass (opacity and clipping are not
+    /// observable there), so an element parked at `x: 420` in a 320 pt viewport
+    /// is `visible`, `enabled`, correctly sized and below its title — every
+    /// sentence an author could previously write about it was satisfied while
+    /// the user could not see or reach it.
+    public var onscreen: Expectation { adding(.onscreen) }
+
     /// This element shares `edge` with `other`, within ``alignmentTolerance``.
     public func aligned(_ edge: MisalignmentRule.Edge, with other: String) -> Expectation {
         adding(.aligned(edge, other))
@@ -147,7 +164,9 @@ public struct Expectation: Sendable {
         }
 
         return predicates.compactMap { predicate in
-            guard let failure = predicate.failure(for: node, in: tree) else { return nil }
+            guard let failure = predicate.failure(for: node, in: tree, context: context) else {
+                return nil
+            }
             return context.makeFinding(
                 rule: Self.id,
                 node: node,
@@ -225,10 +244,19 @@ extension Expectation {
         case above(String)
         case below(String)
         case contained(String)
+        case onscreen
         case aligned(MisalignmentRule.Edge, String)
 
         /// The failure this predicate reports for `node`, or `nil` when satisfied.
-        func failure(for node: SemanticNode, in tree: SemanticNode) -> Failure? {
+        ///
+        /// `context` is taken because ``onscreen`` is judged against the
+        /// viewport, which is not a node and therefore cannot be reached
+        /// through `tree`.
+        func failure(
+            for node: SemanticNode,
+            in tree: SemanticNode,
+            context: LintContext
+        ) -> Failure? {
             switch self {
             case .visible:
                 return node.isVisible
@@ -326,6 +354,21 @@ extension Expectation {
                     node, other, in: tree, clause: "inside",
                     holds: { $1.frame.contains($0.frame) }
                 )
+
+            case .onscreen:
+                // Judged against the viewport RECTANGLE, not merely its size:
+                // a frame at negative x is as unreachable as one past the
+                // trailing edge, and a width-only comparison would call the
+                // first one satisfied.
+                return context.viewport.contains(node.frame)
+                    ? nil
+                    : Failure(
+                        message: "renders at \(node.frame) which is not inside the "
+                            + "\(context.viewport) viewport",
+                        suggestion: "the element is laid out beyond the visible area — check "
+                            + "for a fixed offset, a negative padding, or a parent wider than "
+                            + "the viewport"
+                    )
 
             case .aligned(let edge, let other):
                 return Self.relation(

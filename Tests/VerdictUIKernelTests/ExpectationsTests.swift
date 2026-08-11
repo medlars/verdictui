@@ -252,6 +252,50 @@ final class ExpectationsTests: XCTestCase {
             violatedBy: Rect(x: 90, y: 110, width: 20, height: 20), "contained")
     }
 
+    /// ``Expectation/onscreen`` is judged against the viewport rectangle, and
+    /// escaping it in ANY direction is a violation.
+    ///
+    /// The four-way sweep is the point. The predicate exists because a button
+    /// parked past the trailing edge satisfied every other clause an author
+    /// could write, and the obvious under-implementation — comparing only
+    /// `maxX`/`maxY` against the viewport's size — passes the trailing and
+    /// bottom cases while calling a frame at `x: -30` perfectly onscreen. A
+    /// test that only ever pushed the subject to the right would not see it.
+    func testOnscreenDiscriminatesInEveryDirection() {
+        func evaluate(_ frame: Rect) -> [Finding] {
+            let root = SemanticNode(
+                id: "root",
+                role: .container,
+                frame: Self.viewport,
+                children: [SemanticNode(id: "subject", role: .button, frame: frame)]
+            )
+            return Expectation("subject").onscreen.evaluate(in: root, context: context())
+        }
+
+        XCTAssertTrue(
+            evaluate(Rect(x: 10, y: 10, width: 80, height: 32)).isEmpty,
+            "a frame well inside the viewport is onscreen"
+        )
+        XCTAssertTrue(
+            evaluate(Self.viewport).isEmpty,
+            "a frame exactly filling the viewport is onscreen — the bound is inclusive, or "
+                + "every full-bleed layout reports a false positive"
+        )
+
+        for (label, frame) in [
+            ("past the trailing edge", Rect(x: 420, y: 40, width: 88, height: 32)),
+            ("past the bottom edge", Rect(x: 40, y: 290, width: 88, height: 32)),
+            ("before the leading edge", Rect(x: -30, y: 40, width: 88, height: 32)),
+            ("above the top edge", Rect(x: 40, y: -30, width: 88, height: 32)),
+        ] {
+            XCTAssertEqual(
+                evaluate(frame).count,
+                1,
+                "a frame \(label) is not onscreen, but the predicate stayed silent"
+            )
+        }
+    }
+
     /// All four edges of the public ``MisalignmentRule/Edge`` vocabulary, each
     /// asserted through `aligned(_:with:)` in both directions.
     ///
