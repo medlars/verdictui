@@ -35,7 +35,7 @@ public struct ScenarioEntry: Sendable {
 
     /// Builds a host for the concrete scenario. A closure because the concrete
     /// type exists only inside ``init(viewport:make:)``.
-    private let makeHost: @Sendable @MainActor (Size?, TimeInterval) -> OracleHost
+    private let makeHost: @Sendable @MainActor (Size?, TimeInterval, Variant?) -> OracleHost
 
     /// - Parameters:
     ///   - viewport: value for ``viewport``.
@@ -48,8 +48,13 @@ public struct ScenarioEntry: Sendable {
     ) {
         self.name = make().name
         self.viewport = viewport
-        self.makeHost = { viewport, deadline in
-            OracleHost(scenario: make(), viewport: viewport, deadline: deadline)
+        self.makeHost = { viewport, deadline, variant in
+            OracleHost(
+                scenario: make(),
+                viewport: viewport,
+                deadline: deadline,
+                variant: variant
+            )
         }
     }
 
@@ -58,12 +63,20 @@ public struct ScenarioEntry: Sendable {
     /// - Parameters:
     ///   - viewport: size to render at; defaults to this entry's ``viewport``.
     ///   - deadline: settle budget, forwarded to the host.
+    ///   - variant: environment overrides for a sweep cell, forwarded to the
+    ///     host. Registry entries could not carry one until Wave 6: the stored
+    ///     closure dropped the parameter, so `verdictui sweep` over a REGISTERED
+    ///     scenario would have rendered the baseline environment for every cell
+    ///     while reporting each cell's variant name — the silent failure
+    ///     ``SweepTests/testVariantsActuallyChangeTheRenderedTree`` exists to
+    ///     catch, arriving through a surface that test does not cover.
     @MainActor
     public func host(
         viewport override: Size? = nil,
-        deadline: TimeInterval = OracleHost.defaultDeadline
+        deadline: TimeInterval = OracleHost.defaultDeadline,
+        variant: Variant? = nil
     ) -> OracleHost {
-        makeHost(override ?? viewport, deadline)
+        makeHost(override ?? viewport, deadline, variant)
     }
 }
 

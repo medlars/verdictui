@@ -130,6 +130,18 @@ public struct SweepCell: Sendable {
     public let variant: Variant
     /// The verdict, or `nil` when the cell could not be rendered at all.
     public let verdict: Verdict?
+
+    /// Wave 6 made this public so the CLI can build a report.
+    ///
+    /// The memberwise initializer was internal, which was correct while `Sweep`
+    /// was the only producer. It no longer is: `verdictui sweep` reports cells
+    /// too, and the alternative — a second cell type in the CLI — would be two
+    /// spellings of one result that nothing compares.
+    public init(variant: Variant, verdict: Verdict?, error: String?) {
+        self.variant = variant
+        self.verdict = verdict
+        self.error = error
+    }
     /// Why the cell failed to render, when `verdict` is `nil`.
     ///
     /// A cell that could not render is NOT a passing cell and not a failing one
@@ -147,6 +159,18 @@ public struct SweepReport: Sendable {
     public let scenario: String
     /// One cell per variant, in matrix order.
     public let cells: [SweepCell]
+
+    /// Public from Wave 6 so the CLI can report a sweep it drove itself.
+    ///
+    /// `Sweep` is generic over a concrete scenario type and a registry entry
+    /// has erased that, so the CLI cannot call `Sweep.run` — see
+    /// ``VerdictEngine/sweep(scenario:variants:rules:deadline:)``. Publishing
+    /// this initializer is what lets both producers return the SAME type
+    /// instead of a second report shape nothing compares.
+    public init(scenario: String, cells: [SweepCell]) {
+        self.scenario = scenario
+        self.cells = cells
+    }
 
     /// Cells that produced a verdict with error findings.
     public var failingCells: [SweepCell] { cells.filter { $0.verdict != nil && !$0.passed } }

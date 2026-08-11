@@ -178,4 +178,45 @@ public enum DemoScenarios {
     public static func entry(named name: String) -> DemoScenarioEntry? {
         all.first { $0.name == name }
     }
+
+    /// The catalog as a ``ScenarioRegistry``, for the surfaces that consume one.
+    ///
+    /// ### Why the two entry types are not merged
+    ///
+    /// ``DemoScenarioEntry`` and ``ScenarioEntry`` erase the same thing for
+    /// different reasons and carry different payloads: the demo entry claims a
+    /// `probeIDs` list that `DemoScenarioCatalogTests` verifies against the
+    /// render — a catalog-specific guard against a scenario that silently
+    /// stopped exercising something — while the registry entry is what a
+    /// CONSUMER's `#VerdictScenario` macro generates and knows nothing about
+    /// probe ids. Collapsing them would either push a demo-only assertion into
+    /// the consumer surface or drop it entirely.
+    ///
+    /// So this rebuilds rather than casts, and the scenarios are named
+    /// explicitly. That is the same cost ``ScenarioRegistry``'s own doc comment
+    /// accepts for static registration, and for the same reason: a scenario
+    /// missing here fails visibly at the list rather than by being absent from
+    /// a CLI run nobody audits.
+    public static var registry: ScenarioRegistry {
+        ScenarioRegistry([
+            ScenarioEntry(viewport: TruncatingLabelScenario.recommendedViewport) {
+                TruncatingLabelScenario()
+            },
+            ScenarioEntry(viewport: OverlappingBadgesScenario.recommendedViewport) {
+                OverlappingBadgesScenario()
+            },
+            ScenarioEntry(viewport: OffscreenButtonScenario.recommendedViewport) {
+                OffscreenButtonScenario()
+            },
+            ScenarioEntry(viewport: UndersizedTapTargetScenario.recommendedViewport) {
+                UndersizedTapTargetScenario()
+            },
+            ScenarioEntry(viewport: ToggleLayoutScenario.recommendedViewport) {
+                ToggleLayoutScenario()
+            },
+            ScenarioEntry(viewport: CleanSettingsScenario.recommendedViewport) {
+                CleanSettingsScenario()
+            },
+        ])
+    }
 }
