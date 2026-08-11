@@ -1074,6 +1074,40 @@ MUTATIONS = [
         test="ClippedContentRuleTests/testContentEscapingAGrandparentIsReported",
     ),
     Mutation(
+        # A missing expectation subject stops being a finding, so a renamed or
+        # deleted probe turns every predicate on it into a green no-op. That is
+        # the vacuity shape `vacuous-verdict` guards at tree level arriving one
+        # layer down: the expectation still "passes" while testing nothing.
+        name="a missing expectation subject passes vacuously",
+        path="Sources/VerdictUIKernel/Expectations.swift",
+        old="        guard let node = tree.node(withID: nodeID) else {",
+        new="        guard let node = tree.node(withID: nodeID) else { return [] }\n        if false {",
+        test="ExpectationsTests/testAMissingSubjectIsAnErrorRatherThanSilence",
+    ),
+    Mutation(
+        # Baseline canonicalization stops snapping coordinates, so sub-pixel
+        # layout jitter -- which SwiftUI produces between runs and machines --
+        # reads as drift and every baseline fails everywhere. A regression
+        # channel that cries wolf on unchanged code gets deleted.
+        name="baseline canonicalization stops removing layout jitter",
+        path="Sources/VerdictUIKernel/Baselines.swift",
+        old="        return (value / quantum).rounded() * quantum",
+        new="        return value",
+        test="BaselinesTests/testSubQuantumJitterIsNotDrift",
+    ),
+    Mutation(
+        # Per-node suppression stops reaching baseline drift, so a node the
+        # author explicitly silenced reports anyway. Measured on the first
+        # draft: the two branches shared a fallback, so `makeFinding` returning
+        # nil for a SUPPRESSED node fell through and re-emitted the finding the
+        # directive had just silenced.
+        name="baseline drift ignores a node's suppression directive",
+        path="Sources/VerdictUIKernel/Baselines.swift",
+        old="        return context.makeFinding(\n            rule: id,\n            node: node,",
+        new="        return Finding(\n            rule: id,\n            severity: .error,\n            nodeID: node.id,",
+        test="BaselinesTests/testSuppressionOnALiveNodeSilencesItsDrift",
+    ),
+    Mutation(
         # The Swift witness stops judging the plugin the harness just wrote.
         # SwiftPM rebuilds a `.macro` plugin but does NOT re-expand macros in a
         # consuming target whose own sources are unchanged, so a RUNTIME witness
