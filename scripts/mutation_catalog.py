@@ -1241,4 +1241,78 @@ MUTATIONS = [
         ),
         runner=Runner.SWIFT,
     ),
+    Mutation(
+        # A state with no expectations is accepted, so arriving in it asserts
+        # nothing. This is the defect that makes a whole walk unfalsifiable: a
+        # machine of bare names still applies every action, still settles, and
+        # still reports PASS while the UI never left the first screen. Every
+        # other walk test is satisfied by that broken engine, because they all
+        # walk machines whose states DO carry expectations -- only the rejection
+        # separates a working guard from an absent one.
+        name="a state with no expectations is accepted, making arrival vacuous",
+        path="Sources/VerdictUIProbe/StateMachine.swift",
+        old="            guard !state.expectations.expectations.isEmpty else {",
+        new="            guard true else {",
+        test=("VerdictUIProbeTests.StateMachineTests/testAStateWithNoExpectationsIsRejected"),
+        runner=Runner.SWIFT,
+    ),
+    Mutation(
+        # The arrival check stops evaluating the state's expectations, so every
+        # step reports only its lint findings. A walk then verifies that the
+        # screen is not visibly broken while saying nothing about WHICH screen
+        # it is -- the "walked login -> dashboard -> settings without ever
+        # leaving login" false-green, reported as a clean path table.
+        name="a walk stops verifying arrival and only lints",
+        path="Sources/VerdictUIProbe/StateMachine.swift",
+        old=(
+            "            findings.append(\n"
+            "                contentsOf: machineState.expectations.evaluate(in: tree, "
+            "context: context)\n"
+            "            )"
+        ),
+        new="            _ = machineState",
+        test=(
+            "VerdictUIProbeTests.StateMachineTests/"
+            "testArrivingInADifferentStateThanTheGraphClaimsIsAFailure"
+        ),
+        runner=Runner.SWIFT,
+    ),
+    Mutation(
+        # A multi-path walk reuses one harness, so each path starts wherever the
+        # previous one ended. Every result still carries its own path's name, so
+        # the wrong answer is indistinguishable from the right one at the point
+        # of use -- and it depends on the order the paths happen to be listed in.
+        name="multi-path walks reuse one host instead of re-rendering",
+        path="Sources/VerdictUIProbe/StateMachine.swift",
+        old=(
+            "        for path in paths {\n"
+            "            let harness = Harness(scenario: scenario, viewport: viewport, "
+            "rules: rules)"
+        ),
+        new=(
+            "        let harness = Harness(scenario: scenario, viewport: viewport, "
+            "rules: rules)\n"
+            "        for path in paths {"
+        ),
+        test=(
+            "VerdictUIProbeTests.StateMachineTests/"
+            "testEachPathStartsFromAFreshRenderRatherThanWhereTheLastOneEnded"
+        ),
+        runner=Runner.SWIFT,
+    ),
+    Mutation(
+        # The entry check is skipped, so a scenario that does not start in the
+        # state the machine claims gets its FIRST TRANSITION blamed instead --
+        # sending debugging at an innocent action while the real defect (the
+        # starting state) goes unnamed.
+        name="the walk skips its entry check",
+        path="Sources/VerdictUIProbe/StateMachine.swift",
+        old="        steps.append(entry)\n        if entry.status == .fail {",
+        new="        steps.append(entry)\n        if false {",
+        test=(
+            "VerdictUIProbeTests.StateMachineTests/"
+            "testAFailingEntryCheckStopsTheWalkBeforeAnyAction"
+        ),
+        runner=Runner.SWIFT,
+    ),
 ]
