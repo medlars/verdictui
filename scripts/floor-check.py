@@ -16,6 +16,11 @@ ROOT = Path(__file__).resolve().parents[1]
 SLUG = "verdictui"
 GAPS = []
 
+# Named because three call sites read it — an existence check, an @import content
+# check, and the gap label. A rename that missed one would leave this script
+# checking a file that no longer exists while reporting on one that does.
+CLAUDE_MD = "CLAUDE.md"
+
 
 def check(path, label):
     p = ROOT / path
@@ -25,7 +30,7 @@ def check(path, label):
 
 
 # Core floor
-check("CLAUDE.md", "CLAUDE.md")
+check(CLAUDE_MD, CLAUDE_MD)
 check("no.md", "no.md")
 check(".env.example", ".env.example")
 
@@ -85,9 +90,9 @@ check("Package.swift", "Package.swift")
 check("docs/signing.md", "docs/signing.md")
 
 # @import check
-if (ROOT / "CLAUDE.md").exists():
-    if "@~/Projects/shared/rules.md" not in (ROOT / "CLAUDE.md").read_text():
-        GAPS.append({"item": "@import rules", "path": "CLAUDE.md", "status": "missing"})
+if (ROOT / CLAUDE_MD).exists():
+    if "@~/Projects/shared/rules.md" not in (ROOT / CLAUDE_MD).read_text():
+        GAPS.append({"item": "@import rules", "path": CLAUDE_MD, "status": "missing"})
 
 # Skills (checked outside root)
 skills_root = Path.home() / ".claude/skills"
