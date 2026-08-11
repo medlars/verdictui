@@ -413,12 +413,17 @@ public final class OracleHost {
     ///   - clock: virtual clock installed into the hosted environment. The host
     ///     owns the default instance; tests that need a pre-advanced frontier
     ///     can pass one in.
+    ///   - variant: environment overrides applied AFTER the host's pins, for
+    ///     variant sweeps. `nil` — the default — renders the pinned baseline, so
+    ///     an ordinary verify is byte-identical to what it was before sweeps
+    ///     existed.
     public init<Scenario: VerdictScenario>(
         scenario: Scenario,
         viewport: Size? = nil,
         deadline: TimeInterval = OracleHost.defaultDeadline,
         settlePolicy: SettlePolicy = .skipAnimations,
-        clock: VerdictClock = VerdictClock()
+        clock: VerdictClock = VerdictClock(),
+        variant: Variant? = nil
     ) {
         scenarioName = scenario.name
         self.deadline = deadline
@@ -440,7 +445,13 @@ public final class OracleHost {
                     ScenarioRoot(scenario: scenario, state: ScenarioState()),
                     sink: VerdictTreeSink(),
                     clock: clock,
-                    state: ScenarioState()
+                    state: ScenarioState(),
+                    // The MEASURING pass needs the variant too: a scenario sized
+                    // at `.medium` and then rendered at `.accessibility5` would
+                    // be hosted in a box too small for its own content, so every
+                    // cell but the baseline would report truncation caused by
+                    // the harness rather than by the UI.
+                    variant: variant
                 )
             )
             requested = Size(measuring.fittingSize)
@@ -463,7 +474,8 @@ public final class OracleHost {
                     .frame(width: resolved.size.width, height: resolved.size.height),
                 sink: sink,
                 clock: clock,
-                state: state
+                state: state,
+                variant: variant
             )
         )
         hostingView.frame = CGRect(
@@ -650,16 +662,34 @@ public final class OracleHost {
         _ view: Content,
         sink: VerdictTreeSink,
         clock: VerdictClock,
-        state: ScenarioState
+        state: ScenarioState,
+        variant: Variant? = nil
     ) -> AnyView {
         // `AnyView` so the class can stay non-generic while `NSHostingView` cannot.
         // It is layout-transparent — it forwards the proposal it receives and
         // reports the size its content returns — which the exact-frame tests in
         // `OracleHostTests` hold to.
+        //
+        // The variant is applied BEFORE `verdictPinnedEnvironment()` — i.e.
+        // CLOSER TO THE CONTENT, which is the writer SwiftUI honours.
+        //
+        // This was measured rather than reasoned, and the first two attempts had
+        // it backwards. A direct probe (two `.environment(\.dynamicTypeSize,)`
+        // writes around one reader) shows `inner-medium-outer-ax5` reading
+        // `medium`: for the environment, the modifier nearest the content wins,
+        // NOT the outermost. Applied on the far side of the pin, a variant is
+        // silently overwritten and every cell renders the baseline — measured as
+        // two cells at `.medium` and `.accessibility5` both producing a label
+        // 116.0 pt wide, a sweep that ran and reported while measuring one thing
+        // twice.
+        //
+        // `verdictPinnedEnvironment()` therefore skips the axes a variant owns
+        // when one is present: a pin that re-wrote them here would win, and the
+        // sweep would be silently inert again.
         AnyView(
             view
                 .verdictRoot(into: sink)
-                .verdictPinnedEnvironment()
+                .verdictPinnedEnvironment(overriding: variant)
                 .environment(\.verdictClock, clock)
                 .environment(\.verdictScenarioState, state)
         )
@@ -668,6 +698,19 @@ public final class OracleHost {
     /// The pinned locale. `en_US` because it is the locale the kernel's fixtures,
     /// the demo scenarios and every documented expectation are written against.
     nonisolated static let pinnedLocale = Locale(identifier: "en_US")
+
+    /// The pinned calendar — Gregorian, fixed to the pinned locale and time zone.
+    ///
+    /// Hoisted to a stored constant when `verdictPinnedEnvironment` became a
+    /// `@ViewBuilder`: a builder body may not contain statements, and rebuilding
+    /// the calendar on every evaluation was work repeated per layout pass for a
+    /// value that never changes.
+    nonisolated static let pinnedCalendar: Calendar = {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = pinnedLocale
+        calendar.timeZone = pinnedTimeZone
+        return calendar
+    }()
 
     /// The pinned time zone. UTC because it is the only zone with no daylight
     /// saving transition, so a scenario rendering a date cannot produce a
@@ -714,18 +757,46 @@ extension View {
     /// across machines in a way this harness cannot fix. Wave 3, which drives
     /// animations on purpose, applies `Transaction(animation: nil)` instead —
     /// controlling the animation rather than asking the system to.
-    public func verdictPinnedEnvironment() -> some View {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.locale = OracleHost.pinnedLocale
-        calendar.timeZone = OracleHost.pinnedTimeZone
-
-        return environment(\.displayScale, 1)
-            .environment(\.locale, OracleHost.pinnedLocale)
-            .environment(\.calendar, calendar)
+    /// - Parameter overriding: when `true`, the four axes a ``Variant`` owns —
+    ///   locale, colour scheme, dynamic type and layout direction — are left to
+    ///   whatever was applied closer to the content, and only the axes no
+    ///   variant can express (display scale, calendar, time zone) are pinned.
+    ///
+    ///   The two are mutually exclusive by construction rather than by
+    ///   convention: SwiftUI honours the environment writer NEAREST the content
+    ///   (measured — `inner-medium-outer-ax5` reads `medium`), so a pin that
+    ///   re-wrote those axes would win over the variant applied beneath it and
+    ///   every sweep cell would silently render the baseline. Keeping the two
+    ///   spellings in ONE function means a caller cannot pin six axes and
+    ///   override a seventh by accident.
+    public func verdictPinnedEnvironment(overriding: Variant? = nil) -> some View {
+        // Every axis is ALWAYS written — the modifier chain has one shape, so a
+        // pinned host and a swept host differ only in the VALUES written, never
+        // in the view type.
+        //
+        // A `@ViewBuilder` branching between two chains was tried and reverted:
+        // it wraps the subtree in `_ConditionalContent`, which changes view
+        // identity, and a `Button`'s label stopped reaching the tree entirely
+        // ("'Pay' never reached the tree"). Verified against a pristine worktree
+        // at HEAD — 10/10 there, 9/10 with the branch — so this is structural,
+        // not a stale expansion.
+        //
+        // The variant's values win because they are written HERE, and the
+        // caller applies nothing closer to the content. SwiftUI honours the
+        // environment writer NEAREST the content (measured:
+        // `inner-medium-outer-ax5` reads `medium`), so a variant applied by the
+        // caller on the far side of this pin would be silently overwritten.
+        environment(\.displayScale, 1)
+            .environment(\.calendar, OracleHost.pinnedCalendar)
             .environment(\.timeZone, OracleHost.pinnedTimeZone)
-            .environment(\.colorScheme, .light)
-            .environment(\.dynamicTypeSize, .medium)
-            .environment(\.layoutDirection, .leftToRight)
+            .environment(
+                \.locale,
+                overriding.map { Locale(identifier: $0.localeIdentifier) }
+                    ?? OracleHost.pinnedLocale
+            )
+            .environment(\.colorScheme, overriding?.colorScheme ?? .light)
+            .environment(\.dynamicTypeSize, overriding?.dynamicTypeSize ?? .medium)
+            .environment(\.layoutDirection, overriding?.layoutDirection ?? .leftToRight)
     }
 }
 
