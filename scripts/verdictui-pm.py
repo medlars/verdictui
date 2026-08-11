@@ -63,6 +63,13 @@ TIMEOUT_SWIFT_BUILD = 900
 TIMEOUT_SWIFT_TEST = 600
 TIMEOUT_STANDARD = 120
 TIMEOUT_PYTEST = 240
+# Grace period for a timed-out swift test process group to exit on SIGTERM
+# before escalating to SIGKILL.
+TIMEOUT_PROC_TERM_GRACE = 10
+
+# Stand-in detail when a subprocess wrote neither stdout nor stderr. One
+# spelling so every stage's detail string reads the same for the same condition.
+NO_OUTPUT = "no output"
 
 # Immaculate-build bar: any Swift warning fails the build stage. Applied at the
 # invocation layer (not Package.swift unsafeFlags) so downstream consumers of
@@ -232,7 +239,7 @@ def _run_streamed_swift_test(
         except subprocess.TimeoutExpired:
             try:
                 os.killpg(proc.pid, signal.SIGTERM)
-                proc.wait(timeout=10)
+                proc.wait(timeout=TIMEOUT_PROC_TERM_GRACE)
             except (ProcessLookupError, subprocess.TimeoutExpired):
                 try:
                     os.killpg(proc.pid, signal.SIGKILL)
@@ -487,7 +494,7 @@ class VerdictUIPM(PmBase):
                 timeout=TIMEOUT_STANDARD,
             )
             if r.returncode != 0:
-                detail = (r.stdout.strip() or r.stderr.strip() or "no output")[:400]
+                detail = (r.stdout.strip() or r.stderr.strip() or NO_OUTPUT)[:400]
                 return {"passed": False, "detail": f"ruff {name}: {detail}"}
         return {"passed": True, "detail": "ruff check + format clean"}
 
@@ -553,7 +560,7 @@ class VerdictUIPM(PmBase):
         )
         return {
             "passed": r.returncode == 0,
-            "detail": (r.stdout.strip() or r.stderr.strip() or "no output")[:300],
+            "detail": (r.stdout.strip() or r.stderr.strip() or NO_OUTPUT)[:300],
         }
 
     def stage_stale_buffer(self) -> dict:
@@ -580,7 +587,7 @@ class VerdictUIPM(PmBase):
         )
         return {
             "passed": r.returncode == 0,
-            "detail": (r.stdout.strip() or r.stderr.strip() or "no output")[:300],
+            "detail": (r.stdout.strip() or r.stderr.strip() or NO_OUTPUT)[:300],
         }
 
     def stage_runtime_bench(self) -> dict:
@@ -718,7 +725,7 @@ class VerdictUIPM(PmBase):
         match = re.search(r"(\d+) passed", output)
         if match is None:
             tail = output.strip().splitlines()
-            detail = tail[-1] if tail else "no output"
+            detail = tail[-1] if tail else NO_OUTPUT
             return {"passed": False, "detail": f"no pytest summary line: {detail}"[:300]}
         passed = int(match.group(1))
         if r.returncode != 0:
