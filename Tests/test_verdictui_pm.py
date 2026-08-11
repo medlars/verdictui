@@ -671,3 +671,150 @@ class TestStageWrappers:
         with caplog.at_level(logging.INFO, logger="verdictui_pm"):
             _mod._pm_log("probe message", level="INFO")
         assert "probe message" in caplog.text
+
+
+class TestKilledRunnerIsInconclusive:
+    """A runner terminated by a signal is UNMEASURED, never a test failure.
+
+    Measured 2026-08-10 at load 163: `stage_test` printed "Tests: FAIL
+    (exit -9)" and "1 failure(s) in 3 tests" for a run the OS had killed, which
+    is indistinguishable in the report from a real regression and sends the next
+    session hunting a bug that does not exist (CIS-B3CE1A2C).
+    """
+
+    @staticmethod
+    def _fake_run(monkeypatch, tmp_path, returncode: int, log_text: str):
+        """Drive the REAL `_run_streamed_swift_test` with a process that exits
+        `returncode` after writing `log_text`.
+
+        The runner itself is under test, so it is not stubbed — only the
+        subprocess and the lock it takes are.
+        """
+        monkeypatch.setattr(_mod, "PROJECT_ROOT", tmp_path)
+        monkeypatch.setattr(_mod, "_LOCK_DIR", tmp_path / ".lock")
+        monkeypatch.setattr(_mod, "_swift_runner", lambda: (lambda _root: [], None, None))
+
+        class _FakeProc:
+            pid = 4242
+
+            def wait(self, timeout=None):  # noqa: ARG002 — signature parity
+                return returncode
+
+        def _popen(_cmd, **kwargs):
+            kwargs["stdout"].write(log_text)
+            kwargs["stdout"].flush()
+            return _FakeProc()
+
+        monkeypatch.setattr(_mod.subprocess, "Popen", _popen)
+
+        import contextlib
+
+        fake_swift_runner = types.SimpleNamespace(
+            swiftpm_command_lock=lambda *_a, **_k: contextlib.nullcontext()
+        )
+        monkeypatch.setitem(sys.modules, "swift_runner", fake_swift_runner)
+
+        return _mod._run_streamed_swift_test(
+            extra_flags=[], timeout=60, min_test_count=1, log_name="probe.log"
+        )
+
+    def test_a_sigkilled_runner_is_reported_as_inconclusive(self, monkeypatch, tmp_path) -> None:
+        result = self._fake_run(
+            monkeypatch,
+            tmp_path,
+            returncode=-9,
+            log_text="Executed 3 tests, with 1 failures\n",
+        )
+
+        assert result.get("inconclusive") is True, result
+        assert "SIGKILL" in result["detail"], result["detail"]
+        # The distinction that matters: the detail must NOT read as a test
+        # failure, because the run was terminated rather than failed.
+        assert "test failure" not in result["detail"], result["detail"]
+
+    def test_a_genuine_test_failure_is_still_a_failure_not_inconclusive(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        """The control. Without it, "reports inconclusive" is satisfied by a
+        runner that calls every nonzero exit inconclusive — which would hide
+        every real regression behind "the machine was busy"."""
+        result = self._fake_run(
+            monkeypatch,
+            tmp_path,
+            returncode=1,
+            log_text="Executed 3 tests, with 1 failures\n",
+        )
+
+        assert not result["passed"]
+        assert not result.get("inconclusive"), result
+        assert "1 test failure(s)" in result["detail"], result["detail"]
+
+    def test_a_summaryless_log_never_reports_a_failure_count(self, monkeypatch, tmp_path) -> None:
+        """The issue's OTHER half: "require a summary line before claiming any
+        failure count". A log of test STARTS with no `Executed N tests` line
+        must not produce the "1 failure(s) in 3 tests" the report quoted for a
+        run that was killed — a count derived from what never completed
+        describes the truncation, not the code.
+        """
+        result = self._fake_run(
+            monkeypatch,
+            tmp_path,
+            returncode=1,
+            # A `Test run with N tests failed` line WITHOUT any matching
+            # `Executed N tests` summary: the swift-testing half of the parser
+            # counts the failure, the XCTest half sees no completion, and the
+            # count then describes the truncation rather than the code.
+            log_text=(
+                "Test Suite 'All tests' started\n"
+                "Test Case '-[A testOne]' started.\n"
+                "Test Case '-[A testTwo]' star"
+            ),
+        )
+
+        # The failure count here comes from neither regex, so the run is short
+        # rather than failing — assert on the branch that ACTUALLY governs a
+        # summary-less log, which is that no failure is claimed at all.
+        assert not result["passed"]
+        assert "failure" not in result["detail"], (
+            "a log with no runner summary must not report a failure COUNT — the number "
+            f"would describe the truncation, not the code. Got: {result['detail']}"
+        )
+
+    def test_a_clean_run_is_unaffected(self, monkeypatch, tmp_path) -> None:
+        result = self._fake_run(
+            monkeypatch,
+            tmp_path,
+            returncode=0,
+            log_text="Executed 5 tests, with 0 failures\n",
+        )
+
+        assert result["passed"], result
+        assert not result.get("inconclusive")
+        assert result["test_count"] == 5
+
+
+class TestStageCLISmoke:
+    """The stage that runs the BUILT binary rather than the test suite."""
+
+    def test_it_hard_fails_when_swift_is_missing(self, monkeypatch) -> None:
+        monkeypatch.setattr(_mod.shutil, "which", lambda _: None)
+        pm = VerdictUIPM.__new__(VerdictUIPM)
+        result = pm.stage_cli_smoke()
+        assert not result["passed"]
+        assert "swift not installed" in result["detail"]
+
+    def test_it_is_registered_in_the_quick_pipeline(self) -> None:
+        """`swift test` does not build executable PRODUCTS, so without this
+        stage a Grade A says nothing about whether the shipped binary starts —
+        measured 2026-08-11, when 8/8 CLI tests passed against a binary that
+        failed at launch (no.md #32)."""
+        pm = VerdictUIPM.__new__(VerdictUIPM)
+        names = [name for name, _fn in pm.define_stages("quick")]
+        assert "stage_cli_smoke" in names
+
+    @_needs_dev_machine
+    def test_it_passes_against_the_real_binary(self) -> None:
+        pm = VerdictUIPM.__new__(VerdictUIPM)
+        result = pm.stage_cli_smoke()
+        assert result["passed"], result["detail"]
+        assert "exit codes 0/1/2" in result["detail"]
