@@ -2,6 +2,68 @@
 
 ## [Unreleased]
 
+### 2026-08-11 (Wave 5 Task 1 — rule library v2, and a harness that was lying about coverage)
+
+**Added**
+
+- Four kernel lint rules, taking the standard set from 8 to 12 and meeting Wave
+  5's ">= 12 rules, each with false-positive tests" exit criterion:
+
+  - **`empty-container`** (warning) — a container reserving visible area whose
+    children all fail to paint. The blank box a `ForEach` over an empty array or
+    a `nil`-bound detail pane leaves behind; no other rule can see it, because
+    the frame is not zero and every rule iterates children that never arrived.
+    Reports the **outermost** empty node per branch, so a blank
+    `VStack { HStack { } }` is one finding rather than two, and keeps descending
+    through a *suppressed* node so suppressing a wrapper reveals the empty child
+    instead of blindfolding a subtree.
+  - **`misalignment`** (warning) — the "2 px off" class, inside a measured
+    0.5–4 pt window. Below it is float noise, at or above it is a deliberate
+    indent; only the gap between can be a mistake. One finding per **node**
+    naming its worst edge, because a box nudged sideways misses on `leading` and
+    `trailing` simultaneously.
+  - **`inconsistent-spacing`** (warning) — one gap breaking a single-axis
+    stack's rhythm. Keyed on the **mode**, never the mean: with gaps
+    `12, 12, 12, 12, 20` the mean is 13.6, so a mean-based rule reports all five
+    including the four that are correct. Silent unless the modal gap holds a
+    strict majority, so deliberately varied layouts produce nothing.
+  - **`clipped-content`** (error) — content extending past an **ancestor's**
+    frame, not merely its parent. The case that reaches a user is a label inside
+    an `HStack` inside a card: the `HStack` grew to fit its child and pushed the
+    overflow up a level, so a parent-only check passes every simple test and
+    misses it.
+
+**Fixed**
+
+- `empty-container`'s first draft fired on `CleanSettingsScenario` — the
+  reference *correct* UI whose entire job is producing zero findings — reporting
+  `card-surface` and `card-pill`. From the layout pass a probed leaf that paints
+  itself (a filled shape, a capsule background, a divider) is
+  **indistinguishable** from a container whose content never arrived: both have
+  zero children, and no attribute records whether a node draws. The rule now
+  declines childless containers entirely and reports only the unambiguous nested
+  case, pinned by its own test so nobody widens it back.
+
+- The mutation harness was reporting **UNNOTICED for a guard that works**. A
+  sweep row (`the two macros stop composing over a custom view`) failed to
+  notice its mutation because `run_named_test` never re-stamped
+  macro-consuming test sources: SwiftPM rebuilds a `.macro` plugin but does not
+  re-expand macros in an unchanged consuming target, so the runtime witness
+  executed the *previous* expansion. Applied by hand with the consuming tests
+  touched first, the same mutation is NOTICED at exit 1 with 1 test executed,
+  failing on `vacuous-verdict`.
+
+  The row's own note asserted the trap "does not apply" here, reasoning from
+  where `verdictProbing` lives rather than where the **mutated symbol** lives —
+  true about the hand check, false about the harness, and unfalsifiable because
+  it lived in a comment. Recorded as `no.md` #28. `refresh_macro_expansions()`
+  now runs unconditionally on the Swift path, since baseline and mutated runs
+  must differ only in the source; guarded by its own mutation row and a
+  pytest-path negative control.
+
+**Verification** — 478 Swift + 220 Python tests, 0 failures, zero warnings under
+`-warnings-as-errors`, 84/84 mutation targets resolve to exactly one site.
+
 ### 2026-08-10 (cold-read: the passthrough overload had no runtime coverage)
 
 **Added**
