@@ -45,7 +45,15 @@ jobs:
       # SHADOW STAGE (S10 rollback contract): additive, non-required, decides
       # nothing. Cutting over to an authoritative consumer is later work —
       # add -> shadow -> compare -> cut over -> retire.
+      # `!cancelled()`: a step with no `if:` is SKIPPED once an earlier step
+      # fails, and this is the FIRST link in the evidence chain. Without it a
+      # red build skips the checkout, skips the emit, and the verify step
+      # (which does run on red) fails a SECOND time blaming a missing deploy
+      # key that is present and healthy. Evidence that exists only when
+      # everything passed cannot describe a failure. Measured 2026-08-11 on
+      # financeflow-pro run 31458757494; swept fleet-wide, 24 repos affected.
       - name: Check out governance-v2
+        if: ${{ !cancelled() }}
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           repository: medlars/projects-shared
