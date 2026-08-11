@@ -63,17 +63,25 @@ public struct MisalignmentRule: LintRule {
     /// so the Wave 6 daemon can hold one rule set and evaluate trees
     /// concurrently, and a rule smuggling non-`Sendable` state into a static
     /// would defeat that for every rule in the set.
-    enum Edge: String, CaseIterable, Sendable {
+    /// Public because ``Expectation/aligned(_:with:)`` takes one: an author
+    /// asserting "these two edges line up" needs the same edge vocabulary the
+    /// rule infers with, and two spellings of one concept would drift.
+    public enum Edge: String, CaseIterable, Sendable {
+        /// The `x` edge — a frame's left side in a left-to-right layout.
         case leading
+        /// The `maxX` edge — a frame's right side in a left-to-right layout.
         case trailing
+        /// The `y` edge. VerdictUI uses SwiftUI's y-down convention, so this is
+        /// the visually upper edge.
         case top
+        /// The `maxY` edge — the visually lower one under the y-down convention.
         case bottom
 
         /// The name a finding reports for this edge.
-        var name: String { rawValue }
+        public var name: String { rawValue }
 
         /// This edge's coordinate on `rect`.
-        func value(of rect: Rect) -> Double {
+        public func value(of rect: Rect) -> Double {
             switch self {
             case .leading: rect.x
             case .trailing: rect.maxX
