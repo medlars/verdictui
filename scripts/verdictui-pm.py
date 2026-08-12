@@ -14,6 +14,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -112,6 +113,39 @@ CONSTRAINED_TIMING_ENV_MARKERS = (
     "CODEX_CI",
     "CODEX_SANDBOX",
 )
+
+
+def mutation_sweep_in_progress() -> bool:
+    """True while `scripts/mutation-check.py` is deliberately mutating this tree.
+
+    A mutation sweep rewrites source in place and restores it, so any concurrent
+    READER sees a tree the author never intended to ship. Measured 2026-08-12: a
+    background PM sampled this repo during a hand-applied mutation and filed two
+    P1s (CTS-36AA316A, CTS-D69CD61A) describing a regression that did not exist,
+    each carrying a precise-looking file:line citation. Both were falsified on a
+    clean tree at HEAD and closed.
+
+    That is the expensive direction — a fabricated defect is indistinguishable
+    from a real one at the point of use, and the next session inherits it as
+    fact. Anything that FILES an issue from this tree should consult this first.
+
+    `no.md` #14/#21 cover concurrent WRITERS; this covers readers, which the
+    per-row hash guard cannot see because nothing wrote anything.
+    """
+    marker = Path(__file__).resolve().parent.parent / "logs" / ".mutation-in-progress"
+    try:
+        raw = marker.read_text().split()
+    except OSError:
+        return False
+    if len(raw) != 2:
+        return False
+    try:
+        started = float(raw[1])
+    except ValueError:
+        return False
+    # Stale markers do not suppress forever: a SIGKILLed sweep cannot run its
+    # `finally`, and a permanent silence is worse than the noise it prevents.
+    return (time.time() - started) < 3600
 
 
 def _pm_log(message: str, level: str = "INFO") -> None:
