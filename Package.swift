@@ -149,7 +149,13 @@ let package = Package(
         ),
         .testTarget(
             name: "VerdictUIWitnessTests",
-            dependencies: ["VerdictUIWitness", "VerdictUIKernel"],
+            // The demo catalog is a dependency because Wave 8's lie fixtures
+            // live there: the honesty proof must render the SAME scenario in
+            // both channels, and a fixture defined in the test target could
+            // not be handed to the out-of-process witness host.
+            dependencies: [
+                "VerdictUIWitness", "VerdictUIKernel", "VerdictUIProbe", "VerdictUIDemoScenarios",
+            ],
             swiftSettings: strictSettings
         ),
         .testTarget(
