@@ -74,7 +74,7 @@ final class DaemonTransportTests: XCTestCase {
         FileManager.default.createFile(atPath: path, contents: Data())
         XCTAssertTrue(FileManager.default.fileExists(atPath: path))
 
-        let descriptor = try DaemonTransport.prepare(path: path)
+        let descriptor = try prepareSocketOrSkip(path: path)
         defer { close(descriptor) }
 
         XCTAssertGreaterThanOrEqual(descriptor, 0, "a stale file must not block binding")
@@ -87,7 +87,7 @@ final class DaemonTransportTests: XCTestCase {
     /// daemon, silently stealing its socket and leaving two servers fighting.
     func testALiveListenerIsRefusedAsAddressInUse() throws {
         let path = socketPath()
-        let first = try DaemonTransport.prepare(path: path)
+        let first = try prepareSocketOrSkip(path: path)
         defer { close(first) }
 
         XCTAssertThrowsError(try DaemonTransport.prepare(path: path)) { error in
@@ -105,7 +105,7 @@ final class DaemonTransportTests: XCTestCase {
     /// not.
     func testIsLiveDistinguishesAListenerFromAFile() throws {
         let bound = socketPath()
-        let descriptor = try DaemonTransport.prepare(path: bound)
+        let descriptor = try prepareSocketOrSkip(path: bound)
         defer { close(descriptor) }
         XCTAssertTrue(DaemonTransport.isLive(path: bound), "a bound socket is live")
 
@@ -249,6 +249,7 @@ final class DaemonTransportTests: XCTestCase {
             }
             try await Task.sleep(nanoseconds: 20_000_000)
         }
+        try skipIfHostRefusedSocketBind(failure.value)
         XCTAssertTrue(
             bound,
             "serve() must bind and listen. serve() error: \(failure.value ?? "none reported")"
@@ -281,6 +282,21 @@ final class DaemonTransportTests: XCTestCase {
             "the socket must publish the documented shape, not a positional wrapper"
         )
     }
+}
+
+private func prepareSocketOrSkip(path: String) throws -> Int32 {
+    do {
+        return try DaemonTransport.prepare(path: path)
+    } catch DaemonTransport.TransportError.systemCall(let name, let code, let detail)
+        where name == "bind" && code == EPERM
+    {
+        throw XCTSkip("unix socket bind refused by host: \(detail) (errno \(code))")
+    }
+}
+
+private func skipIfHostRefusedSocketBind(_ failure: String?) throws {
+    guard let failure, failure.contains("bind failed (errno \(EPERM))") else { return }
+    throw XCTSkip("unix socket bind refused by host: \(failure)")
 }
 
 private struct SocketReply: Sendable {
@@ -351,7 +367,14 @@ final class DaemonTransportConcurrencyTests: XCTestCase {
         )
         let transport = DaemonTransport(engine: engine, socketPath: path)
 
-        let server = Task { try? await transport.serve(shouldContinue: { true }) }
+        let failure = Box()
+        let server = Task {
+            do {
+                try await transport.serve(shouldContinue: { true })
+            } catch {
+                failure.set("\(error)")
+            }
+        }
         defer { server.cancel() }
 
         // The assertion: while `serve` is blocked in accept, THIS main-actor
@@ -366,6 +389,7 @@ final class DaemonTransportConcurrencyTests: XCTestCase {
             }
         }
 
+        try skipIfHostRefusedSocketBind(failure.value)
         XCTAssertTrue(
             observed,
             "serve() must not hold the main actor while waiting in accept — main-actor work "
