@@ -100,3 +100,53 @@ is why the window origin is the wrong anchor and the hosting group is the right 
 proven by a sandbox spike that denies every `com.apple.windowserver*` mach-lookup.
 The witness needs the opposite. These are two hosts with two different
 constraints, and merging them would trade the CI property for the AX one.
+
+## 7. A `Process`-spawned host is invisible to AX — the launch PATH is the variable
+
+Found while wiring the integration test, and it cost the most time of anything
+here because the failure names the wrong subject: the test failed with
+`-25204`, the same code a permission problem produces, against a host that had
+just been verified working by hand minutes earlier.
+
+Measured, one variable at a time:
+
+| Launch path                                   | AX read |
+| --------------------------------------------- | ------- |
+| shell (`./verdictui-witness-host`)             | **err=0, 1 window** |
+| `Process` from `xctest`                        | -25204 |
+| `Process` from a plain Swift CLI parent        | -25204 |
+| `open -a` on a minimal `.app` bundle           | **err=0, 1 window** |
+
+Two theories were tested and **falsified** before the real one was found, and
+recording them matters as much as the answer:
+
+- **Session/graphic access.** `SessionGetInfo` reports the identical session id
+  (`100022`) and `sessionHasGraphicAccess: true` in both the shell and the
+  xctest process. Not the cause.
+- **Registration latency.** A shell-launched host is readable within 0.3 s and
+  stays readable; a `Process`-spawned one is never readable, at any delay out to
+  the full timeout. Not a race.
+
+The cause is that a fork/exec child does not join the GUI session as a launched
+application. `open` routes through **LaunchServices**, which registers it, and
+the same spawning parent then reads a full tree. `WitnessHostProcess` therefore
+generates a minimal `.app` at run time (never shipped, so it cannot drift from
+the binary) and launches through `open -n -a`.
+
+**`-n` is not optional**: without it LaunchServices reuses a still-terminating
+host from a previous scenario, so the reader verifies the PREVIOUS scenario's
+window while reporting the current scenario's name — a wrong answer that looks
+entirely well-formed.
+
+Two consequences worth carrying forward:
+
+1. **`xctest` was not the culprit**, though it was the obvious suspect. Testing a
+   plain CLI parent is what ruled it out, and without that control the fix would
+   have been aimed at the test harness.
+2. **The readiness handshake had to change.** The host's `WITNESS-READY <pid>`
+   line is unreachable through LaunchServices (the process is detached; stdout
+   is not connected), so readiness is now established by POLLING FOR THE WINDOW
+   itself via the bundle identifier. That is the stronger signal anyway: the
+   process exists well before the window server publishes it, and treating
+   "process exists" as ready is precisely the race that reports -25204 as a
+   product defect.
