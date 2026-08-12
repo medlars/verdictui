@@ -83,7 +83,7 @@ MUTATIONS = [
     ),
     Mutation(
         name="a non-integral host size is rounded in the error message",
-        path="Sources/VerdictUIProbe/OracleHost.swift",
+        path="Sources/VerdictUIProbe/LayoutSettle.swift",
         old="guard value.isFinite, value == value.rounded(), value.magnitude < 1e15 else {",
         # Only the integrality clause is dropped. Dropping the finiteness clause
         # instead would trap in `Int64(Double.nan)` and the run would report a
@@ -446,7 +446,7 @@ MUTATIONS = [
         # UNNOTICED and correctly so. Mutating the floor instead targets the
         # guard that is actually load-bearing today.
         name="quiet is accepted without the wall-clock floor holding",
-        path="Sources/VerdictUIProbe/OracleHost.swift",
+        path="Sources/VerdictUIProbe/LayoutSettle.swift",
         old="public nonisolated static let minimumQuietInterval: TimeInterval = 0.030",
         new="public nonisolated static let minimumQuietInterval: TimeInterval = 0.0",
         test="HostileSettleTests/testSettleWaitsOutAMutationScheduledBeyondOnePumpInterval",
@@ -538,7 +538,7 @@ MUTATIONS = [
         # single 5 ms window — the false quiet that let settle report a still
         # UI while a mutation was still pending.
         name="the quiet floor is weakened below what the scenario needs",
-        path="Sources/VerdictUIProbe/OracleHost.swift",
+        path="Sources/VerdictUIProbe/LayoutSettle.swift",
         old="public nonisolated static let minimumQuietInterval: TimeInterval = 0.030",
         new="public nonisolated static let minimumQuietInterval: TimeInterval = 0.005",
         test="HostileSettleTests/testSettleWaitsOutAMutationScheduledBeyondOnePumpInterval",
@@ -549,7 +549,7 @@ MUTATIONS = [
         # across isolated, full-suite, and breaching runs) — unlike p95, which
         # moves 56.7 -> 102.6 ms purely from contention with the other 318 tests.
         name="the settle floor triples, tripling inner-loop latency",
-        path="Sources/VerdictUIProbe/OracleHost.swift",
+        path="Sources/VerdictUIProbe/LayoutSettle.swift",
         old="public nonisolated static let minimumQuietInterval: TimeInterval = 0.030",
         new="public nonisolated static let minimumQuietInterval: TimeInterval = 0.090",
         test="HarnessPerformanceTests/testPerformCycleMeetsTheSLO1Gate",
