@@ -2,6 +2,86 @@
 
 ## [Unreleased]
 
+### 2026-08-11 (Waves 5–7 — the engine leaves the test target, and three green signals that proved nothing)
+
+**Added**
+
+- **`verdictui` CLI** (`Sources/verdictui`, `Sources/VerdictUICLICore`) — `list`,
+  `render`, `verify`, `baseline`, `sweep`. The first time anything outside a test
+  target can run a verdict.
+
+  Exit codes are **three-valued** and the third is the point: `0` passed, `1` a
+  verdict was produced and FAILED (the UI is wrong), `2` no verdict could be
+  produced (says nothing about any UI). A tool that reports "not passing" for
+  both an incorrect layout and an unreadable scenario forces every caller to
+  treat an infrastructure fault as a product defect.
+
+  All command logic lives in the LIBRARY, not the executable: nothing inside an
+  `executableTarget` is reachable from a test in the same package, so logic
+  living there would be verified by nothing.
+
+- **`BaselineStore`** (kernel) — the storage half of baselines, and the one
+  destructive operation in the product. Replacing a baseline requires `--accept`,
+  prints the delta BEFORE the write, and appends the SUPERSEDED content's SHA-256
+  to `logs/baseline-audit.log` (after the fact the question is *what did I
+  destroy*; the replacement is still on disk for anyone who wants its hash).
+  Creating a FIRST baseline needs no flag — a gate that fires on both branches
+  teaches users to pass it reflexively. SHA-256 is hand-rolled because the kernel
+  may not import CryptoKit, and is pinned to the published FIPS vectors rather
+  than to its own output.
+
+- **`VerdictDaemon`** — warm JSON-RPC over a unix socket, so repeat verifies pay
+  only the render. `ok` reports whether the daemon could LOOK, never what it saw:
+  a FAILING verdict is an ANSWERED request. It deliberately serves no baseline
+  update.
+
+- **`CompactTree`** — the token-frugal wire format: parallel arrays, a parent
+  index, interned strings. 362–839 B against the plan's 2 KB budget.
+
+- **`Expectation.onscreen`** — the predicate the DSL dogfood proved was missing.
+
+- **`MCPServer`** tool catalog + `contracts/mcp-tools.md`; `stage_cli_smoke` in
+  the PM; `docs/runbook.md` filled in and verified by running every command.
+
+**Fixed**
+
+- **A binary that could not start, behind a green suite.** `main.swift` calling
+  `VerdictUITool.main()` selects the synchronous overload on an async root
+  command: it compiles, links, and fails at RUN time. 8/8 library tests passed
+  against it. Fixed with `@main` in a file NOT named `main.swift`, and covered by
+  a suite that runs the built artifact (`no.md` #32).
+
+- **A DSL that could not express its own demo scenario.** An offscreen button
+  satisfied `.visible`, `.role(.button)` and `.below(...)` at `x: 420` in a 320 pt
+  viewport, because `isVisible` is always `true` from the layout pass and the
+  viewport had no name in the vocabulary.
+
+- **A lossy wire format.** `CompactTree` first dropped `textMetrics` and
+  `structuralPath`; all six demo trees failed to round-trip. `TruncationRule`
+  reads `textMetrics`, so a verdict computed from the far side would have
+  reported a clean screen for a clipped label.
+
+- **`ScenarioEntry` could not forward a `Variant`** — the stored closure dropped
+  it, so `verdictui sweep` over a registered scenario would have rendered the
+  baseline environment for every cell while labelling each with its variant name.
+
+- **A SIGKILLed test runner reported as a test failure** (CIS-B3CE1A2C). A
+  negative return code is a signal, not a verdict, and is now INCONCLUSIVE —
+  checked before the count and failure branches, because a killed run leaves a
+  partial log that routinely contains real-looking failures. A failure count with
+  no runner summary is likewise inferred rather than reported.
+
+- **Nine unverified mutation rows, not the seven the ticket claimed**, across two
+  causes it collapsed into one: 5 non-compiling and 4 whose test filter matched
+  nothing — those had been proving nothing before any mutation was applied, and
+  two went stale in this session when a file split moved the tests they named.
+  Sweep after: 90 NOTICED, 0 UNNOTICED, 2 unverified (`no.md` #33).
+
+- **A guard that judged by spelling.** The macro-witness rule asserted
+  `suite.endswith("MacroTests")`; it now asks whether the suite CALLS
+  `assertMacroExpansion`.
+
+
 ### 2026-08-11 (Wave 5 Task 5 — state-machine scenarios, and a mutation row that proved nothing)
 
 **Added**
