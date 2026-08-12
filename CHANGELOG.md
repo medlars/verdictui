@@ -30,26 +30,53 @@
   may not import CryptoKit, and is pinned to the published FIPS vectors rather
   than to its own output.
 
-- **`VerdictDaemon` — METHOD SURFACE ONLY, no transport yet.** `handle()` answers
-  ping/list/render/verify/sweep/baseline_diff and is covered by 10 tests, but
-  nothing binds or listens on a socket and `verdictui` has no `daemon`
-  subcommand, so there is no process to connect to. The design holds: `ok`
-  reports whether the daemon could LOOK, never what it saw (a FAILING verdict is
-  an ANSWERED request), and it deliberately serves no baseline update. The
-  accept loop is Wave 7's remaining work and ships with a subprocess-level smoke
-  test, the way `stage_cli_smoke` covers the CLI.
+- **`VerdictDaemon` + `DaemonTransport` — the warm daemon, now reachable.**
+  `verdictui daemon start|stop|status` binds `~/.verdictui/daemon.sock` and
+  answers newline-delimited JSON-RPC, pipelining several frames per connection.
+  `ok` reports whether the daemon could LOOK, never what it saw (a FAILING
+  verdict is an ANSWERED request), and it deliberately serves no baseline
+  update. `status` probes by CONNECTING, so a crashed daemon's leftover socket
+  file reads as not-running rather than as a live server; the same probe lets a
+  restart replace stale debris while refusing a genuine `addressInUse`.
 
 - **`CompactTree`** — the token-frugal wire format: parallel arrays, a parent
   index, interned strings. 362–839 B against the plan's 2 KB budget.
 
 - **`Expectation.onscreen`** — the predicate the DSL dogfood proved was missing.
 
-- **`MCPServer` tool CATALOG + `contracts/mcp-tools.md` — also transport-less.**
-  The catalog and its name→method dispatch are built and tested; the stdio read
-  loop is not, so no MCP client can connect yet. `stage_cli_smoke` in the PM and
-  `docs/runbook.md` are real and were verified by RUNNING every command.
+- **`MCPServer` + `MCPTransport` — the MCP surface, now reachable.**
+  `verdictui mcp` speaks MCP over stdio: `initialize`, `tools/list`,
+  `tools/call`, `ping`. Every tool routes into `VerdictDaemon.handle`, so the
+  CLI, the socket and MCP cannot drift into three answers. `isError` reports
+  whether the tool COULD ANSWER, never what the answer was — a failing verdict
+  arrives `isError: false`. A NOTIFICATION (no `id`) is answered with silence,
+  as the protocol requires; replying to `notifications/initialized` is how a
+  server presents as "never finished starting".
+
+- **`stage_transport_smoke`** — drives the built binary as a subprocess over the
+  MCP wire, asserting the catalog arrives and a failing verdict is not an error.
+  A library test cannot see a process that will not start (`no.md` #32).
 
 **Fixed**
+
+- **A daemon and an MCP server with no transport, behind 14 green tests.**
+  `handle()` and the tool catalog were correct and fully covered while nothing
+  bound a socket or read stdin — and the docs described a live wire protocol,
+  including a literal `nc -U` example against a path nothing created. The method
+  surface without its transport is a library, not a service (`no.md` #34).
+
+- **The published wire shape was never the shape that shipped.** Swift's
+  synthesized encoding for an enum with associated values wraps the payload in a
+  positional key, so the daemon sent `{"scenarios":{"_0":[…]}}` while
+  `contracts/mcp-tools.md` documented `{"scenarios":[…]}`. Every test agreed with
+  it, because they all round-tripped through the same `Codable`. `DaemonResult`
+  now codes by hand and two tests assert on RAW JSON.
+
+- **A blocking accept on the main actor.** `serve` ran `accept`/`read` on the
+  main actor, which is also where SwiftUI renders — so the daemon could not
+  render the scenario a request asked for, and deadlocked outright when a client
+  shared the process (measured: a ten-minute hang with no output). The syscalls
+  now run off-actor and only `handle` hops onto the main actor.
 
 - **A binary that could not start, behind a green suite.** `main.swift` calling
   `VerdictUITool.main()` selects the synchronous overload on an async root

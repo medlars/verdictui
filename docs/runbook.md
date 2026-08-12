@@ -23,18 +23,28 @@ Never treat 2 as a product defect: it means the tool could not look.
 
 ### Daemon
 
-**NOT RUNNABLE YET — the transport is Wave 7's remaining work.** The daemon's
-METHOD SURFACE is built and tested (`VerdictDaemon.handle`, 10 tests), but
-nothing in the package binds, listens on, or accepts a socket, and `verdictui`
-has no `daemon` subcommand. There is no process to connect to, so no example is
-given here: a runbook command that cannot run is worse than a missing one.
+Keeps scenario hosts warm so a repeat verify pays only the render. Answers
+newline-delimited JSON-RPC on a unix socket at `~/.verdictui/daemon.sock` — a
+unix socket rather than a TCP port, so filesystem permissions answer the
+authorization question rather than an auth layer this project would have to
+write and get right.
 
-When the transport lands it will keep scenario hosts warm so a repeat verify pays
-only the render, answering newline-delimited JSON-RPC on a unix socket at
-`~/.verdictui/daemon.sock` (a unix socket rather than a TCP port, so filesystem
-permissions answer the authorization question). This section gets its commands —
-and a subprocess-level smoke test, the way `stage_cli_smoke` covers the CLI —
-in the same commit, not before.
+```bash
+verdictui daemon start            # foreground; readiness line goes to stderr
+verdictui daemon status           # {"running":true,"socket":"…"}
+verdictui daemon stop
+
+printf '%s\n' '{"method":"ping","id":"a"}' | nc -U ~/.verdictui/daemon.sock
+# → {"id":"a","ok":true,"result":{"pong":"1.0"}}
+```
+
+Several frames may be pipelined on one connection; each is answered in order.
+
+`status` probes by CONNECTING, never by checking the socket file exists — a
+daemon killed without unwinding leaves the file behind, and a status that read
+the filesystem would report a dead daemon as running for as long as that file
+survived it. For the same reason a leftover file does not block a restart, while
+a LIVE listener is refused as `addressInUse`.
 
 `ok` reports whether the daemon could LOOK, never what it saw — a FAILING
 verdict is `ok: true`.
@@ -42,6 +52,30 @@ verdict is `ok: true`.
 `baseline update` is deliberately NOT served over the socket. It replaces
 the record of what a screen should be, and that stays a foreground command
 a human runs and watches.
+
+### MCP server
+
+Speaks MCP over stdio, which is what an MCP client expects. Every tool routes
+into the same `VerdictDaemon.handle` the CLI and the socket use, so the three
+surfaces cannot disagree about what `verify` means.
+
+```bash
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | verdictui mcp
+# → the 5-tool catalog: list_scenarios, render, verify, sweep, baseline_diff
+```
+
+`isError` reports whether the tool COULD ANSWER, never what the answer was: a
+scenario whose layout is broken comes back `isError: false` carrying a FAILING
+verdict. An agent that conflated the two would retry a real defect as though it
+were a transport fault.
+
+Trees are returned in the compact wire form (parallel arrays plus a parent
+index, strings interned) — see `contracts/mcp-tools.md`.
+
+Both transports are covered by `stage_transport_smoke`, which drives the built
+binary as a subprocess. A library test cannot see a process that refuses to
+start (`no.md` #32), and for a whole wave the method surfaces here were green
+while nothing bound a socket at all (`no.md` #34).
 
 ## Baselines (destructive — read before running)
 

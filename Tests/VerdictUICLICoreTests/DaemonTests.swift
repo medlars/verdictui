@@ -183,6 +183,68 @@ final class DaemonTests: XCTestCase {
         XCTAssertNoThrow(try JSONSerialization.jsonObject(with: Data(body)))
     }
 
+    /// The wire shape is the one `contracts/mcp-tools.md` publishes.
+    ///
+    /// ### Why a round-trip test could never have caught this
+    ///
+    /// Every other daemon test encodes with `Codable` and decodes with the same
+    /// `Codable`, so it agrees with itself no matter what bytes travel between.
+    /// Swift's synthesized encoding for an enum with associated values wraps the
+    /// payload in a positional key — the daemon really shipped
+    /// `{"scenarios":{"_0":[…]}}` while the contract documented
+    /// `{"scenarios":[…]}`, and it round-tripped perfectly the whole time.
+    ///
+    /// So this test reads the RAW JSON and asserts on the published shape. A
+    /// client is written against the contract, not against our decoder; `_0` is
+    /// a compiler implementation detail leaking into a public interface, and it
+    /// would have changed under us if the case ever gained a second value.
+    @MainActor
+    func testTheResultShapeIsTheOneTheContractPublishes() async throws {
+        let response = await VerdictDaemon.handle(
+            DaemonRequest(method: "list", id: "x"),
+            engine: engine()
+        )
+        let encoded = try VerdictDaemon.encode(response)
+        let object = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data(encoded.dropLast())) as? [String: Any]
+        )
+        let result = try XCTUnwrap(object["result"] as? [String: Any])
+
+        XCTAssertNotNil(
+            result["scenarios"] as? [String],
+            "contracts/mcp-tools.md documents result.scenarios as an ARRAY of names; got "
+                + "\(result["scenarios"] ?? "nothing"). A positional `_0` wrapper here is "
+                + "Swift's synthesized enum encoding leaking onto a published wire."
+        )
+    }
+
+    /// The same guard for a verdict, whose payload a client actually reads.
+    ///
+    /// `list` and `verify` are encoded by the same synthesized machinery, so
+    /// fixing one and not the other is possible; asserting both means the wire
+    /// contract cannot be half-correct.
+    @MainActor
+    func testAVerdictArrivesUnwrappedOnTheWire() async throws {
+        let response = await VerdictDaemon.handle(
+            DaemonRequest(method: "verify", scenario: "demo-offscreen-button", id: "v"),
+            engine: engine()
+        )
+        let encoded = try VerdictDaemon.encode(response)
+        let object = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data(encoded.dropLast())) as? [String: Any]
+        )
+        let result = try XCTUnwrap(object["result"] as? [String: Any])
+        let verdict = try XCTUnwrap(
+            result["verdict"] as? [String: Any],
+            "result.verdict must be the verdict object itself, not a positional wrapper"
+        )
+
+        XCTAssertNotNil(
+            verdict["findings"],
+            "the verdict must carry its findings at the documented path result.verdict.findings"
+        )
+    }
+
     func testARequestRoundTripsThroughTheWire() throws {
         let original = DaemonRequest(
             method: "verify",

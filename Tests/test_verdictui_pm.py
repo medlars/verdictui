@@ -818,3 +818,50 @@ class TestStageCLISmoke:
         result = pm.stage_cli_smoke()
         assert result["passed"], result["detail"]
         assert "exit codes 0/1/2" in result["detail"]
+
+
+class TestStageTransportSmoke:
+    """The stage that speaks the MCP wire protocol to the shipped binary.
+
+    The library suite structurally cannot answer this question. `MCPServer` and
+    `VerdictDaemon.handle` were correct and fully tested for a whole wave while
+    nothing read stdin or bound a socket — the runbook printed an `nc -U`
+    example against a path that never existed (no.md #34).
+    """
+
+    def test_it_reports_a_missing_binary_rather_than_passing(self, tmp_path, monkeypatch) -> None:
+        """An absent binary is 'could not observe', never 'observed and fine'.
+
+        The fail-open this closes: a stage that skipped when the artifact was
+        missing would report clean on exactly the builds where the artifact is
+        broken.
+        """
+        monkeypatch.setattr(_mod, "PROJECT_ROOT", tmp_path)
+        pm = VerdictUIPM.__new__(VerdictUIPM)
+        result = pm.stage_transport_smoke()
+        assert not result["passed"]
+        assert "missing" in result["detail"]
+
+    def test_it_is_registered_in_the_quick_pipeline(self) -> None:
+        pm = VerdictUIPM.__new__(VerdictUIPM)
+        names = [name for name, _fn in pm.define_stages("quick")]
+        assert "stage_transport_smoke" in names
+
+    def test_it_runs_after_the_stage_that_builds_the_binary(self) -> None:
+        """Order is load-bearing: `stage_cli_smoke` builds what this drives.
+
+        Reversed, this stage would report a missing binary on every clean
+        checkout — a hard failure whose cause is the pipeline, not the code.
+        """
+        pm = VerdictUIPM.__new__(VerdictUIPM)
+        names = [name for name, _fn in pm.define_stages("quick")]
+        assert names.index("stage_cli_smoke") < names.index("stage_transport_smoke")
+
+    @_needs_dev_machine
+    def test_it_passes_against_the_real_binary(self) -> None:
+        pm = VerdictUIPM.__new__(VerdictUIPM)
+        # stage_cli_smoke is what builds the product both stages drive.
+        assert pm.stage_cli_smoke()["passed"]
+        result = pm.stage_transport_smoke()
+        assert result["passed"], result["detail"]
+        assert "isError=false" in result["detail"]

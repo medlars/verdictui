@@ -36,6 +36,7 @@ public struct VerdictUITool: AsyncParsableCommand {
         version: SchemaVersion.current,
         subcommands: [
             List.self, Render.self, Verify.self, Baseline.self, SweepRun.self,
+            Daemon.self, MCP.self,
         ],
         defaultSubcommand: List.self
     )
@@ -195,6 +196,86 @@ public struct VerdictUITool: AsyncParsableCommand {
                 colorSchemes: colorSchemes,
                 dynamicTypeSizes: dynamicTypeSizes
             ).run(environment, pretty: formatting.pretty)
+            try VerdictUITool.finish(code)
+        }
+    }
+
+    /// `verdictui daemon start|stop|status` — the warm socket server.
+    public struct Daemon: AsyncParsableCommand {
+        public static let configuration = CommandConfiguration(
+            commandName: "daemon",
+            abstract: "Run, stop, or query the warm verification daemon.",
+            discussion: """
+                A cold `verify` pays process start, package resolution and the
+                first SwiftUI warm-up before it renders anything. The daemon
+                keeps that cost paid once and answers newline-delimited JSON-RPC
+                over a unix socket, so repeat verifies pay only the render.
+
+                It deliberately does NOT accept a baseline update. Every method
+                it serves reads the UI; accepting a baseline destroys the record
+                of what the UI should be, and a long-running socket-reachable
+                process is the wrong place for the single destructive operation
+                in this tool. `verdictui baseline --update --accept` stays a
+                foreground command a human runs and watches.
+                """
+        )
+        public init() {}
+
+        /// The parser's spelling of ``DaemonCommand/Action``.
+        ///
+        /// Two enums rather than one because the command layer owns the
+        /// behaviour and must stay free of argument-parser types;
+        /// `testEveryDaemonActionIsParseable` walks both and fails if either
+        /// grows a case the other lacks, so the duplication cannot drift.
+        public enum Action: String, ExpressibleByArgument, CaseIterable {
+            case start, stop, status
+
+            var command: DaemonCommand.Action {
+                switch self {
+                case .start: return .start
+                case .stop: return .stop
+                case .status: return .status
+                }
+            }
+        }
+
+        @Argument(help: "start, stop, or status.")
+        public var action: Action = .status
+
+        @Option(name: .long, help: "Socket path. Defaults to ~/.verdictui/daemon.sock.")
+        public var socket: String?
+
+        @MainActor
+        public func run() async throws {
+            let environment = CommandEnvironment.standard()
+            let code = await DaemonCommand(action: action.command, socketPath: socket)
+                .run(environment)
+            try VerdictUITool.finish(code)
+        }
+    }
+
+    /// `verdictui mcp` — the stdio MCP server.
+    public struct MCP: AsyncParsableCommand {
+        public static let configuration = CommandConfiguration(
+            commandName: "mcp",
+            abstract: "Serve the MCP tool catalog over stdio.",
+            discussion: """
+                Reads newline-delimited JSON-RPC on stdin and writes replies to
+                stdout, which is what an MCP client speaks. Diagnostics go to
+                stderr — anything else printed to stdout would corrupt the
+                protocol stream.
+
+                Every tool routes into the same method surface the CLI and the
+                socket daemon use, so the three cannot disagree about what
+                `verify` means.
+                """
+        )
+        public init() {}
+
+        @MainActor
+        public func run() async throws {
+            let environment = CommandEnvironment.standard()
+            let code = await MCPCommand().run(environment)
             try VerdictUITool.finish(code)
         }
     }

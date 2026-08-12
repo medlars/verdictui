@@ -1,16 +1,19 @@
 # VerdictUI MCP tools — contract
 
-> **STATUS: DESIGNED AND TESTED, NOT YET SERVABLE.** The tool catalog and its
-> dispatch into `VerdictDaemon.handle` exist and are covered by
-> `MCPServerTests`; the stdio transport that would let a client CALL them does
-> not — there is no read loop on stdin and no `verdictui mcp` subcommand. Read
-> what follows as the contract the transport must satisfy, not as a running
-> service. It is recorded here rather than deferred because writing the contract
-> first is what keeps the three surfaces from drifting.
+> **STATUS: SERVABLE.** `verdictui mcp` speaks this protocol over stdio, and
+> `stage_transport_smoke` drives the built binary to prove it — a library test
+> cannot see a process that refuses to start, and for a whole wave this catalog
+> was green while nothing read stdin at all (`no.md` #34).
 >
 > Wave 7. Every tool below is served by `VerdictDaemon.handle`, so the CLI, the
 > daemon and the MCP surface cannot disagree about what `verify` means. A second
 > implementation is how three surfaces drift into three answers.
+>
+> **On the shapes below.** They are the shapes that go over the wire, verified
+> against raw JSON rather than through a round trip. Swift's synthesized enum
+> encoding once wrapped every payload in a positional `_0` key while this file
+> documented the unwrapped form, and every test agreed with the code because
+> they all decoded with the same `Codable` that encoded it.
 
 ## The contract that governs every tool
 
