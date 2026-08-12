@@ -27,7 +27,12 @@ guard arguments.count >= 2 else {
 let scenarioName = arguments[1]
 let lifetime = arguments.count >= 3 ? (Double(arguments[2]) ?? 30) : 30
 
-guard let entry = DemoScenarios.all.first(where: { $0.name == scenarioName }) else {
+// Resolves across BOTH catalogs — the demo scenarios and Wave 8's lie fixtures.
+// The lie fixtures are the reconciler's honesty proof, so the external channel
+// must be able to render them; they stay out of `DemoScenarios.all` (the array
+// the sweep, the CLI and `list_scenarios` iterate) precisely so a scenario that
+// misreports on purpose is never shown to a user as a product defect.
+guard let entry = LieScenarios.anyEntry(named: scenarioName) else {
     FileHandle.standardError.write(
         Data("unknown scenario '\(scenarioName)'\n".utf8))
     exit(3)
