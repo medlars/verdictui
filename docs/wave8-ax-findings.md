@@ -150,3 +150,65 @@ Two consequences worth carrying forward:
    process exists well before the window server publishes it, and treating
    "process exists" as ready is precisely the race that reports -25204 as a
    product defect.
+
+## 8. The AX tree can go DEGRADED for one app while the window is provably real
+
+Found 2026-08-12 while building the Task 4 lie fixtures, and it cost the most
+time of anything in Wave 8 because every signal points at the wrong subject.
+
+`WitnessIntegrationTests` passed at **17:22:55** and failed at **18:04** with
+`Sources/VerdictUIWitness/` byte-identical at HEAD (verified: `git status
+--porcelain Sources/VerdictUIWitness/` empty, and the earlier green run is in
+the same session's log). Nothing about the product changed between the two.
+
+What the failure looks like from inside the reader:
+
+| Probe | Result |
+| --- | --- |
+| `kAXWindowsAttribute` on the host app | status 0, array of **1** |
+| role of that one element | **`AXApplication`** — not `AXWindow` |
+| its children | an `AXApplication` with no geometry, and an `AXMenuBar` |
+| `hostingContent(of:)` | finds no `AXHostingView`, no `AXGroup` |
+| the anchor's `frame(of:)` | `nil` -> **`anchorUnreadable`** |
+
+And what is true at the same instant, measured with three independent controls:
+
+- The host **does** create a real window. Instrumenting `WitnessHost.run`
+  printed `windowNumber=10183 visible=true screens=1 contentSize=(0,0,360,260)`.
+- `CGWindowListCopyWindowInfo` **sees it on screen**: owner
+  `VerdictUIWitnessHost`, name `VerdictUI Witness`, bounds 240x186, `layer 0`,
+  `onscreen True`.
+- A plain `NSWindow` (`windowNumber=10160`) and an `NSHostingView`-backed window
+  (`windowNumber=10173`) both create and show normally from a throwaway binary
+  in the same shell — so the window server itself is healthy.
+
+So the window exists, is on screen, and is invisible to the accessibility server
+*specifically for this process*. This is an OS-level state, not a product
+defect, and it is not the `-25204` case of finding #7 either: the read
+**succeeds** and returns a malformed tree rather than failing.
+
+**The consequence for tests, which is the durable half.** There are now THREE
+environment states a witness suite must tell apart, and only the first two were
+modelled:
+
+1. headless / no window server — skip
+2. no Accessibility grant — skip
+3. **the AX tree is degraded for this app while the window is real — must ALSO
+   skip**, and nothing about `AXIsProcessTrusted()` distinguishes it (it stays
+   `true` throughout, per finding #3)
+
+Left unhandled, state 3 turns the honesty gate RED for the machine — the exact
+failure `no.md` #15 names, on the one gate that must never be discounted. Both
+`WitnessIntegrationTests` and `LieCatchTests` now discriminate it by catching
+`anchorUnreadable` (and, in the lie suite, by a positive control that reads a
+scenario known to be honest before asking the witness to judge a lie). The skip
+names the state explicitly so a reader is not sent hunting a product bug.
+
+**Suspected trigger, stated as a suspicion rather than a finding**: this session
+launched and killed an unsigned generated `.app` bundle under the same bundle
+identifier dozens of times. Four stale menu-bar-only windows from leaked hosts
+were still in `CGWindowListCopyWindowInfo` when the degradation was noticed.
+That was NOT tested by removing it — per `no.md` #31, a suspect that merely
+correlates is not a cause until removing it changes the symptom, and killing the
+strays did not restore the tree within this session. A fresh login session is
+the documented recovery.
