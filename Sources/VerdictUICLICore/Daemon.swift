@@ -106,6 +106,12 @@ public struct DaemonRequest: Codable, Sendable, Equatable {
     /// to serve: an agent in an act loop wants what CHANGED, and a full tree per
     /// step is the token cost that makes the loop unaffordable.
     public let includeTree: Bool?
+    /// The node `focus` should return the subtree of.
+    ///
+    /// A `structuralPath` (or a probe id), i.e. exactly what a compact tree
+    /// publishes and what a finding cites — so an agent that read
+    /// `truncated: true` can name the node it wants without a second vocabulary.
+    public let nodePath: String?
     /// Whether `verify` should also reconcile against the external witness.
     ///
     /// Off by default: it costs a windowed subprocess and an Accessibility
@@ -122,6 +128,7 @@ public struct DaemonRequest: Codable, Sendable, Equatable {
         baseline: Bool? = nil,
         action: DaemonAction? = nil,
         includeTree: Bool? = nil,
+        nodePath: String? = nil,
         crossValidate: Bool? = nil,
         id: String? = nil
     ) {
@@ -130,6 +137,7 @@ public struct DaemonRequest: Codable, Sendable, Equatable {
         self.baseline = baseline
         self.action = action
         self.includeTree = includeTree
+        self.nodePath = nodePath
         self.crossValidate = crossValidate
         self.id = id
     }
@@ -279,7 +287,7 @@ public actor VerdictDaemon {
     /// rule — adding `act` here left the copy stale, and the schema and the
     /// dispatcher disagreed about what a client must send.
     public static let methodsNeedingAScenario: Set<String> = [
-        "render", "verify", "act", "sweep", "baseline_diff",
+        "render", "verify", "focus", "act", "sweep", "baseline_diff",
     ]
 
     /// Answer one request.
@@ -324,6 +332,24 @@ public actor VerdictDaemon {
             case "render":
                 let tree = try await engine.render(scenario: scenario)
                 return success(.tree(tree))
+
+            case "focus":
+                // The follow-up verb for `truncated: true`. A tree that says it
+                // was cut and gives no way to see the omitted part leaves an
+                // agent knowing only that its picture is incomplete — which is
+                // worse than a smaller complete picture, because it cannot tell
+                // which conclusions are still safe.
+                guard let path = request.nodePath, !path.isEmpty else {
+                    return failure("method 'focus' requires a nodePath")
+                }
+                let whole = try await engine.render(scenario: scenario)
+                guard let subtree = Self.subtree(at: path, in: whole) else {
+                    return failure(
+                        "no node at '\(path)' in scenario '\(scenario)' — a path is a "
+                            + "structuralPath or a probe id, as published by render and cited "
+                            + "by every finding")
+                }
+                return success(.tree(subtree))
 
             case "verify":
                 let verdict = try await engine.verify(
@@ -425,5 +451,17 @@ public actor VerdictDaemon {
     /// Decode one request from a newline-delimited line.
     public static func decode(_ line: Data) throws -> DaemonRequest {
         try JSONDecoder().decode(DaemonRequest.self, from: line)
+    }
+
+    /// The subtree rooted at `path`, addressed the way a verdict addresses nodes.
+    ///
+    /// Matches a `structuralPath` first and a probe `id` second — the same
+    /// identity rule `TreeDiff` and `Reconcile` use, so a node an agent read
+    /// about in a finding is a node it can focus on. Accepting only one of the
+    /// two would make half the nodes an agent can SEE unreachable by the verb
+    /// that exists to reach them.
+    static func subtree(at path: String, in tree: SemanticNode) -> SemanticNode? {
+        let all = tree.flattened()
+        return all.first { $0.structuralPath == path } ?? all.first { $0.id == path }
     }
 }

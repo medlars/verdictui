@@ -75,9 +75,38 @@ reports a clean screen for a clipped label.
 
 `truncated: true` appears when a tree was cut to fit. It is named on the wire
 rather than inferred, because a truncated tree that looks complete is a verdict
-about a screen nobody saw all of.
+about a screen nobody saw all of. Use `focus` to see what was cut.
 
-### `verify(scenario, baseline?)`
+### `focus(scenario, node_path)`
+
+The follow-up verb for `truncated: true`. Returns the subtree rooted at one
+node, in the same `CompactTree` wire form — so an agent expands the part it
+cares about instead of re-rendering the whole screen at a bigger budget.
+
+```json
+{"method": "focus", "scenario": "demo-clean-settings", "nodePath": "button-row"}
+→ {"ok": true, "result": {"tree": {"ids": ["button-row", "cancel-button", "save-button"],
+                                   "parents": [-1, 0, 0], …}}}
+```
+
+`node_path` is a `structuralPath` **or** a probe id — both, because a verdict
+cites whichever identity a node has, and accepting only one would leave half the
+nodes an agent can SEE unreachable by the verb that exists to reach them.
+
+The focused node is the ROOT of what comes back (`parents[0] == -1`). An unknown
+path is `ok: false` with the path quoted, never an empty tree: an empty tree
+reads as "that node has no children" rather than "that node does not exist", and
+an agent would act on a screen it never saw.
+
+### `verify(scenario, baseline?, cross_validate?)`
+
+`cross_validate: true` also reconciles the in-process tree against the
+platform's accessibility tree — an independent channel that catches a probe
+misreporting what it renders. It needs a windowed session and an Accessibility
+grant on the launching process; when it cannot run, the verdict carries a
+`cross-validation-skipped` **warning** naming the reason rather than passing
+more quietly. `timing.crossValidateMs` is populated whenever it was ATTEMPTED,
+including on the failing path — absent means it was never requested.
 
 Renders, judges, returns a `Verdict`. Every finding cites `rule` and `nodeID`;
 bare booleans are banned from this API by CLAUDE.md rule 4.

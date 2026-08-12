@@ -187,6 +187,7 @@ public struct MCPTransport: Sendable {
             baseline: arguments["baseline"]?.boolValue,
             action: action,
             includeTree: arguments["include_tree"]?.boolValue,
+            nodePath: arguments["node_path"]?.stringValue,
             crossValidate: arguments["cross_validate"]?.boolValue,
             id: nil
         )

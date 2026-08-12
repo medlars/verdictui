@@ -217,6 +217,11 @@ final class MCPTransportTests: XCTestCase {
             "scenario": #""demo-toggle-layout""#,
             "action": #""toggle""#,
             "probe": #""advanced-toggle""#,
+            // A REAL node in that scenario, not a placeholder: `focus` refuses a
+            // path it cannot resolve, so a made-up value would drive the tool
+            // with a call it was always going to refuse — which is what this
+            // test's own XCTUnwrap message warns against.
+            "node_path": #""advanced-toggle""#,
         ]
 
         for tool in MCPServer.tools {

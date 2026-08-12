@@ -1519,4 +1519,16 @@ MUTATIONS = [
         new="    static let maximumNodes = Int.max",
         test="ThirdPartyAuditTests/testTheReaderIsBoundedAgainstAHostileTree",
     ),
+    Mutation(
+        # `focus` stops resolving probe ids and honours structural paths only.
+        # A verdict cites whichever identity a node HAS, so half the nodes an
+        # agent can see would become unreachable by the one verb that exists to
+        # reach them -- and the failure is silent per-node: the tool still works
+        # for every path-addressed node, so a spot check passes.
+        name="focus resolves structural paths but stops resolving probe ids",
+        path="Sources/VerdictUICLICore/Daemon.swift",
+        old="        return all.first { $0.structuralPath == path } ?? all.first { $0.id == path }",
+        new="        return all.first { $0.structuralPath == path }",
+        test="FocusToolTests/testFocusResolvesAStructuralPathAsWellAsAProbeID",
+    ),
 ]
