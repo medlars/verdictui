@@ -34,9 +34,33 @@
   → fix → **PASS, exit 0**, with `git diff --stat` empty. No screenshots, no
   window server, 0.32 ms of engine time.
 
-- **Warm MCP latency, measured through the real stdio transport** (30 samples,
-  one long-lived process): `verify` **p50 9.61 ms / p95 10.25 ms**,
-  `list_scenarios` p50 0.08 ms — against the gate's 100 ms.
+- **SLO 3 — warm MCP round-trip latency**, measured through the real stdio
+  transport of the built binary and now ENFORCED: `MCPLatencyTests` plus PM
+  `stage_mcp_latency`, reading `SLO 3 p50 9.24ms < 40.0ms, p95 23.57ms recorded`.
+  SLO 1 times the engine in-process; an agent waits on the wire, and a tool can
+  meet one and miss the other.
+
+  The median is gated and the tail recorded, decided on THIS metric by
+  measurement rather than by analogy: under 8 spinning cores the median moved
+  8.3 → 11.3 ms while the tail moved 8.4 → **45.8 ms** on unchanged code.
+  `list_scenarios` (no render) measures p50 0.08 ms, so essentially all of the
+  ~9 ms is the render the tool exists to perform.
+
+- **`.mcp.json`** — project-scoped MCP registration, so `verdictui mcp` is
+  reachable from an editor in this repo without launching it fleet-wide. Two
+  gates keep it honest: the args must name a subcommand the CLI declares, and
+  the path must exist and be executable (it lives under gitignored `.build/`,
+  which `swift package clean` removes — an editor would report only that the
+  server failed to start).
+
+**Changed**
+
+- `ConstrainedTimingEnvironment` moved from `VerdictUIProbeTests` into the
+  `VerdictUIProbe` library. It was unreachable from other test targets, so SLO 3
+  could only have had a COPY — which is the drift the type was extracted to end
+  (`no.md` #17). Both SLO stages now also share one `_parse_slo_line`, so the
+  two fail-closed conditions (a stale filter that executed nothing, a missing
+  summary line) cannot be weakened in one gate while the other's tests stay green.
 
 **Known gap**
 

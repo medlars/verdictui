@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "verdictui": {
+      "type": "stdio",
+      "command": "~/Projects/VerdictUI/.build/release/verdictui",
+      "args": ["mcp"]
+    }
+  }
+}

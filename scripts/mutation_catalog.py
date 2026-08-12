@@ -1399,4 +1399,33 @@ MUTATIONS = [
         test="VerdictUICLICoreTests.MCPTransportTests/testTheHandshakeARealClientSendsIsAnswered",
         runner=Runner.SWIFT,
     ),
+    Mutation(
+        # SLO 3's gate stops gating: the median is compared against the PRODUCT
+        # target (100 ms) instead of the enforced budget (40 ms), so a round trip
+        # 2.5x slower than today's still passes while the stage keeps printing a
+        # confident figure. A budget quietly widened to the published ceiling is
+        # the silencer shape SE Principle 11 forbids, and it is invisible in a
+        # log -- every line still reads "SLO 3 p50 ... < ...".
+        name="the MCP latency gate compares against the product target, not its budget",
+        path="scripts/verdictui-pm.py",
+        old="        if p50 >= SLO3_MCP_P50_BUDGET_MS:",
+        new="        if p50 >= SLO3_MCP_P95_BUDGET_MS:",
+        test="Tests/test_verdictui_bench.py::TestStageMCPLatency"
+        "::test_the_gated_figure_is_the_median_not_the_tail",
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
+        # The shared SLO parse stops failing closed on a stale filter. A
+        # `swift test --filter` that matches nothing exits 0 having executed no
+        # tests, so without this check a renamed test class turns BOTH SLO gates
+        # green forever -- and green is exactly what a silently-unmeasured
+        # benchmark looks like.
+        name="the shared SLO parse accepts a run that executed no tests",
+        path="scripts/verdictui-pm.py",
+        old='        return {"detail": f"{marker}: no executed tests reported -- the filter is stale"}',
+        new='        _ = f"{marker}: no executed tests reported -- the filter is stale"',
+        test="Tests/test_verdictui_bench.py::TestSharedSLOParse"
+        "::test_a_filter_that_matched_nothing_is_a_failure_not_a_pass",
+        runner=Runner.PYTEST,
+    ),
 ]

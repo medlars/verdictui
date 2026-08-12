@@ -238,8 +238,11 @@ class TestStageRuntimeBench:
         ``test_the_gated_budget_agrees_with_the_swift_test``, one level up: that
         pins the number, this pins the set of hosts it applies to.
         """
+        # Lives in the LIBRARY, not the probe test target: SLO 3's suite is in a
+        # different test target and could otherwise only have had a COPY, which
+        # is the drift this type exists to end.
         source = (
-            _PROJECT_ROOT / "Tests" / "VerdictUIProbeTests" / "ConstrainedTimingEnvironment.swift"
+            _PROJECT_ROOT / "Sources" / "VerdictUIProbe" / "ConstrainedTimingEnvironment.swift"
         ).read_text()
         block = re.search(r"static let markers = \[(.*?)\]", source, re.DOTALL)
         assert block is not None, "ConstrainedTimingEnvironment.markers is no longer a list literal"
@@ -279,6 +282,135 @@ class TestStageRuntimeBench:
         when the prose is reworded), so the two must be asserted equal."""
         slo = (_PROJECT_ROOT / "docs" / "slo.md").read_text()
         assert f"< {int(_mod.SLO1_P95_BUDGET_MS)} ms p95" in slo
+
+
+class TestSharedSLOParse:
+    """`_parse_slo_line`, which BOTH SLO gates read their figure through.
+
+    It carries the two fail-closed conditions that separate "measured and fast"
+    from "never measured": a `--filter` matching nothing exits 0 having run no
+    tests, and a benchmark that stopped reporting emits no marker line. Both
+    look exactly like health to a stage that only checks an exit code.
+
+    Tested directly rather than only through the stages because one helper now
+    serves two callers: a weakening here is a weakening of both, and a test that
+    reached it only via `stage_runtime_bench` would say nothing about SLO 3.
+    """
+
+    _GOOD = "Executed 3 tests, with 0 failures\nSLO3-MCP p50=9.61ms p95=10.25ms n=60\n"
+
+    def test_it_reads_the_gated_median_and_records_the_tail(self) -> None:
+        parsed = _mod._parse_slo_line({"test_count": 3}, self._GOOD, marker="SLO3-MCP")
+        assert parsed["p50"] == 9.61
+        assert "10.25ms recorded" in parsed["p95_note"]
+        assert parsed["executed"] == 3
+
+    def test_a_filter_that_matched_nothing_is_a_failure_not_a_pass(self) -> None:
+        """Zero executed tests must never yield a figure.
+
+        `swift test --filter` exits 0 when the filter matches nothing, so
+        without this a renamed test class turns both SLO gates green forever.
+        """
+        parsed = _mod._parse_slo_line({"test_count": 0}, "Executed 0 tests\n", marker="SLO3-MCP")
+        assert "p50" not in parsed
+        assert "stale" in parsed["detail"]
+
+    def test_a_missing_marker_line_is_a_failure_not_a_skip(self) -> None:
+        """A run that executed tests but reported no figure measured nothing."""
+        parsed = _mod._parse_slo_line(
+            {"test_count": 3}, "Executed 3 tests, with 0 failures\n", marker="SLO3-MCP"
+        )
+        assert "p50" not in parsed
+        assert "did not report" in parsed["detail"]
+
+    def test_a_missing_tail_does_not_fail_the_parse(self) -> None:
+        """p95 is recorded, never gated, so its absence cannot decide a verdict.
+
+        The asymmetry is deliberate: failing here would let a formatting change
+        to a NON-decisive figure fail a stage whose gated number parsed fine.
+        """
+        parsed = _mod._parse_slo_line(
+            {"test_count": 1}, "Executed 1 test\nSLO3-MCP p50=9.00ms n=60\n", marker="SLO3-MCP"
+        )
+        assert parsed["p50"] == 9.0
+        assert parsed["p95_note"] == ""
+
+    def test_it_reads_only_its_own_marker(self) -> None:
+        """Two SLO lines can share one output; each gate must read its own.
+
+        Without this, a helper matching any `p50=` would let SLO 3 report SLO
+        1's median — a number from a different measurement entirely, and one
+        that would look plausible in every log.
+        """
+        both = (
+            "Executed 4 tests\n"
+            "SLO1-PERFORM p50=49.97ms p95=68.90ms n=150\n"
+            "SLO3-MCP p50=9.61ms p95=10.25ms n=60\n"
+        )
+        assert _mod._parse_slo_line({"test_count": 4}, both, marker="SLO1-PERFORM")["p50"] == 49.97
+        assert _mod._parse_slo_line({"test_count": 4}, both, marker="SLO3-MCP")["p50"] == 9.61
+
+
+class TestStageMCPLatency:
+    """SLO 3's gate: the warm MCP round trip through the real stdio transport.
+
+    SLO 1 measures the ENGINE in-process; an agent measures the WIRE. A tool can
+    be fast by SLO 1 and slow to every caller, and only this stage can say so.
+    """
+
+    def test_it_is_registered_in_the_quick_pipeline(self) -> None:
+        pm = VerdictUIPM.__new__(VerdictUIPM)
+        names = [name for name, _fn in pm.define_stages("quick")]
+        assert "stage_mcp_latency" in names
+
+    def test_it_runs_after_the_stage_that_builds_the_binary(self) -> None:
+        """Order is load-bearing: `stage_cli_smoke` builds what this drives.
+
+        Reversed, it would report a missing binary on every clean checkout — a
+        failure whose cause is the pipeline rather than the code.
+        """
+        pm = VerdictUIPM.__new__(VerdictUIPM)
+        names = [name for name, _fn in pm.define_stages("quick")]
+        assert names.index("stage_cli_smoke") < names.index("stage_mcp_latency")
+
+    def test_it_reports_a_missing_binary_rather_than_passing(self, tmp_path, monkeypatch) -> None:
+        """An absent artifact is 'could not observe', never 'observed and fast'."""
+        monkeypatch.setattr(_mod, "PROJECT_ROOT", tmp_path)
+        pm = VerdictUIPM.__new__(VerdictUIPM)
+        result = pm.stage_mcp_latency()
+        assert not result["passed"]
+        assert "binary" in result["detail"]
+
+    def test_the_gated_budget_agrees_with_the_swift_test(self) -> None:
+        """One budget, two languages, and neither can read the other's constant.
+
+        The Swift suite asserts the median and this stage gates it; if the two
+        numbers drift, the stage passes runs the test failed, or vice versa —
+        and nothing else compares them. Same joint as SLO 1's.
+        """
+        swift = (
+            _PROJECT_ROOT / "Tests" / "VerdictUICLICoreTests" / "MCPLatencyTests.swift"
+        ).read_text()
+        match = re.search(r"warmP50BudgetMs: Double = ([0-9.]+)", swift)
+        assert match is not None, "the Swift budget is no longer a literal — update this test"
+        assert float(match.group(1)) == _mod.SLO3_MCP_P50_BUDGET_MS
+
+    def test_the_budget_matches_the_published_slo(self) -> None:
+        """docs/slo.md is the SSoT for the published number."""
+        slo = (_PROJECT_ROOT / "docs" / "slo.md").read_text()
+        assert f"< {int(_mod.SLO3_MCP_P95_BUDGET_MS)} ms p95" in slo
+
+    def test_the_gated_figure_is_the_median_not_the_tail(self) -> None:
+        """The tail must not decide a verdict, on this metric by measurement.
+
+        Under 8 spinning cores the median moved 8.3 → 11.3 ms while the tail
+        moved 8.4 → 45.8 ms on unchanged code. A gate on p95 would fail for a
+        busy neighbour and teach its reader to discount it.
+        """
+        source = (_PROJECT_ROOT / "scripts" / "verdictui-pm.py").read_text()
+        stage = source.split("def stage_mcp_latency")[1].split("\n    def ")[0]
+        assert "p50 >= SLO3_MCP_P50_BUDGET_MS" in stage
+        assert "p95 >=" not in stage, "the tail must be recorded, never gated"
 
 
 class TestNoSleepsInHarnessSource:

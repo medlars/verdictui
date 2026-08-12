@@ -172,6 +172,13 @@ client side (30 samples after 3 warm-up calls):
 an order of magnitude inside the budget. These are client-observed round trips
 through pipes, not internal timings — the number an agent would experience.
 
+This is now **SLO 3**, enforced by `MCPLatencyTests` and PM `stage_mcp_latency`
+(measured live at `SLO 3 p50 9.24ms < 40.0ms, p95 23.57ms recorded`). The median
+is gated and the tail is recorded, decided by measurement on this metric rather
+than by analogy to SLO 1: under 8 spinning cores the median moved 8.3 → 11.3 ms
+while the tail moved 8.4 → **45.8 ms** on unchanged code. A gate on p95 would
+fail for a busy neighbour and teach its reader to discount it.
+
 ## A defect this session found, which no test could
 
 The handshake above is written the way a real client sends it, with
