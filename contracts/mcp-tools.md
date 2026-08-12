@@ -1,5 +1,13 @@
 # VerdictUI MCP tools — contract
 
+> **STATUS: DESIGNED AND TESTED, NOT YET SERVABLE.** The tool catalog and its
+> dispatch into `VerdictDaemon.handle` exist and are covered by
+> `MCPServerTests`; the stdio transport that would let a client CALL them does
+> not — there is no read loop on stdin and no `verdictui mcp` subcommand. Read
+> what follows as the contract the transport must satisfy, not as a running
+> service. It is recorded here rather than deferred because writing the contract
+> first is what keeps the three surfaces from drifting.
+>
 > Wave 7. Every tool below is served by `VerdictDaemon.handle`, so the CLI, the
 > daemon and the MCP surface cannot disagree about what `verify` means. A second
 > implementation is how three surfaces drift into three answers.

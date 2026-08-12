@@ -23,15 +23,18 @@ Never treat 2 as a product defect: it means the tool could not look.
 
 ### Daemon
 
-The daemon keeps scenario hosts warm so a repeat verify pays only the
-render. It answers newline-delimited JSON-RPC on a unix socket at
-`~/.verdictui/daemon.sock` (a unix socket, not a TCP port, so filesystem
-permissions answer the authorization question).
+**NOT RUNNABLE YET — the transport is Wave 7's remaining work.** The daemon's
+METHOD SURFACE is built and tested (`VerdictDaemon.handle`, 10 tests), but
+nothing in the package binds, listens on, or accepts a socket, and `verdictui`
+has no `daemon` subcommand. There is no process to connect to, so no example is
+given here: a runbook command that cannot run is worse than a missing one.
 
-```bash
-# Methods: ping, list, render, verify, sweep, baseline_diff
-printf '{"method":"ping"}\n' | nc -U ~/.verdictui/daemon.sock
-```
+When the transport lands it will keep scenario hosts warm so a repeat verify pays
+only the render, answering newline-delimited JSON-RPC on a unix socket at
+`~/.verdictui/daemon.sock` (a unix socket rather than a TCP port, so filesystem
+permissions answer the authorization question). This section gets its commands —
+and a subprocess-level smoke test, the way `stage_cli_smoke` covers the CLI —
+in the same commit, not before.
 
 `ok` reports whether the daemon could LOOK, never what it saw — a FAILING
 verdict is `ok: true`.
