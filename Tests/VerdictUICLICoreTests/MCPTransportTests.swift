@@ -74,6 +74,36 @@ final class MCPTransportTests: XCTestCase {
         XCTAssertEqual(info["version"] as? String, SchemaVersion.current)
     }
 
+    /// The handshake a REAL client sends, params and all.
+    ///
+    /// The test above passes `initialize` with no `params` key, which is the one
+    /// spelling that happens to decode: `MCPRequest.params` was typed as the
+    /// `tools/call`-specific `MCPCallParams`, whose `name` is non-optional, so a
+    /// present-but-differently-shaped `params` failed to decode the ENVELOPE and
+    /// the message never reached the `initialize` handler at all. Every client in
+    /// existence sends `protocolVersion`/`capabilities`/`clientInfo` here, so the
+    /// server answered the first message of every real session with a parse error
+    /// while its own suite reported the handshake working.
+    ///
+    /// The `tools/list` after it is the control: it carries no params at all, so
+    /// a server that had stopped answering everything could not pass this.
+    func testTheHandshakeARealClientSendsIsAnswered() async throws {
+        let replies = try await exchange([
+            #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"probe","version":"1"}}}"#,
+            #"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#,
+        ])
+
+        XCTAssertEqual(replies.count, 2)
+        XCTAssertNil(
+            replies[0]["error"],
+            "the first message of every real MCP session carries params; rejecting it means no "
+                + "client can complete a handshake: \(replies[0])"
+        )
+        let result = try XCTUnwrap(replies[0]["result"] as? [String: Any])
+        XCTAssertEqual(result["protocolVersion"] as? String, MCPTransport.protocolVersion)
+        XCTAssertNotNil(replies[1]["result"], "control: a paramless request still answers")
+    }
+
     /// A notification — no `id` — must produce NO reply.
     ///
     /// MCP clients send `notifications/initialized` during handshake. A server

@@ -30,6 +30,27 @@ This is the same three-valued contract the CLI spells as exit codes:
 | 1 | `ok: true`, verdict `FAIL` | the screen is wrong, findings cite rule + node |
 | 2 | `ok: false`, `error` set | no verdict was produced; says nothing about any UI |
 
+## The handshake
+
+`initialize` is the first message of every real session, and it carries `params`:
+
+```json
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"probe","version":"1"}}}
+→ {"id":1,"jsonrpc":"2.0","result":{"capabilities":{"tools":{}},"protocolVersion":"2024-11-05","serverInfo":{"name":"verdictui","version":"1.0"}}}
+```
+
+**`params` is free-form per method and must decode leniently.** It is typed here
+for `tools/call`, but `initialize` fills it with an entirely different shape. A
+strict decode rejects the ENVELOPE, so the message never reaches its handler and
+the server answers every real client's opening message with a parse error — which
+is exactly what shipped until 2026-08-12, behind a suite whose handshake test sent
+`initialize` with no `params` key at all, the one spelling that happens to decode.
+`MCPTransportTests.testTheHandshakeARealClientSendsIsAnswered` pins the real form.
+
+`notifications/initialized` follows and **must not be answered** — it has no `id`,
+and a reply to it is a protocol error that presents as a server that never
+finished starting.
+
 ## Tools
 
 ### `list_scenarios`

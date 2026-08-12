@@ -2,6 +2,50 @@
 
 ## [Unreleased]
 
+### 2026-08-12 (Wave 7 dogfood — the loop closes, and the first real bytes found a defect no test could)
+
+**Fixed**
+
+- **No MCP client could complete a handshake.** `MCPRequest.params` was typed as
+  the `tools/call`-specific `MCPCallParams`, whose `name` is non-optional — but
+  `params` is free-form per JSON-RPC method, and `initialize`, the first message
+  of every real session, fills it with `protocolVersion`/`capabilities`/
+  `clientInfo`. A strict decode rejected the whole ENVELOPE, so the message never
+  reached the correct `initialize` handler sitting four lines below, and every
+  real client's opening message was answered with `-32700 parse error`.
+
+  Three layers were blind for one reason: the suite's handshake test sends
+  `initialize` with **no `params` key at all** — the one spelling that decodes
+  either way; `stage_transport_smoke` sent that same payload and asserted only
+  the reply COUNT, which cannot see this, **because a parse error IS a reply**;
+  and the contract documented the tools but not the handshake. Now: `params`
+  decodes leniently (`callTool` still rejects a missing one as a tool-level
+  error, so a malformed `tools/call` fails as that call rather than as the
+  connection), pinned by `testTheHandshakeARealClientSendsIsAnswered` with a
+  paramless `tools/list` control, by a mutation row, and by the gate asserting
+  the handshake SUCCEEDED. Recorded as `no.md` #37.
+
+**Added**
+
+- **`docs/dogfood-session.md`** — Wave 7's exit-gate transcript, run against the
+  shipped binary and pasted verbatim: `demo-clean-settings` PASS → a Save button
+  shrunk to 24 pt → **FAIL, exit 1**, citing `tap-target` on `save-button` with
+  both measurements and the fix → the same failure over MCP at `isError: false`
+  → fix → **PASS, exit 0**, with `git diff --stat` empty. No screenshots, no
+  window server, 0.32 ms of engine time.
+
+- **Warm MCP latency, measured through the real stdio transport** (30 samples,
+  one long-lived process): `verify` **p50 9.61 ms / p95 10.25 ms**,
+  `list_scenarios` p50 0.08 ms — against the gate's 100 ms.
+
+**Known gap**
+
+- The plan's `act` tool and its 300 B delta budget are **unbuilt** — `tools/list`
+  returns `list_scenarios`, `render`, `verify`, `sweep`, `baseline_diff`, and the
+  contract documents no `act` either, so only the plan names it. The delta budget
+  therefore has no subject to measure. Tracked as **CTS-D47CCD1D**. The tree half
+  IS enforced (362–839 B against 2048).
+
 ### 2026-08-11 (Waves 5–7 — the engine leaves the test target, and three green signals that proved nothing)
 
 **Added**

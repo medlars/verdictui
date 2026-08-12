@@ -685,10 +685,17 @@ class VerdictUIPM(PmBase):
 
         So this stage asks the only question a library test structurally
         cannot: does a client that speaks the wire protocol to the SHIPPED
-        BINARY get answered? The assertions are the two halves of the tool's
-        contract with an agent — the catalog arrives, and a FAILING verdict
+        BINARY get answered? Three assertions, in the order a session hits them
+        — the HANDSHAKE succeeds, the catalog arrives, and a FAILING verdict
         comes back with `isError: false`, because a broken UI is the ANSWER,
         not a failure to produce one.
+
+        The handshake half was added 2026-08-12 after this stage passed against
+        a binary that answered every real client's `initialize` with a parse
+        error. Two things hid it: the payload sent `initialize` with no `params`
+        key, the one spelling that decodes either way, and the reply COUNT was
+        the only check on it — a parse error is a reply, so the count stayed 3
+        while nothing could connect.
         """
         binary = PROJECT_ROOT / ".build" / "debug" / "verdictui"
         if not binary.exists():
@@ -697,8 +704,17 @@ class VerdictUIPM(PmBase):
         # A notification (no id) is deliberately included: it must be answered
         # with SILENCE, so the reply count is itself an assertion. A server that
         # replied to everything would return four.
+        # `initialize` carries the params a REAL client sends. This spelling is
+        # load-bearing: `params` is free-form per method, and a strict decode of
+        # it rejects the ENVELOPE, so the message never reaches the handler and
+        # every real client's opening message is answered with a parse error.
+        # That shipped, and this gate's own payload was why nothing caught it —
+        # it sent `initialize` with no `params` key at all, the one spelling that
+        # happens to decode either way.
         messages = [
-            '{"jsonrpc":"2.0","id":1,"method":"initialize"}',
+            '{"jsonrpc":"2.0","id":1,"method":"initialize","params":'
+            '{"protocolVersion":"2024-11-05","capabilities":{},'
+            '"clientInfo":{"name":"verdictui-pm","version":"1"}}}',
             '{"jsonrpc":"2.0","method":"notifications/initialized"}',
             '{"jsonrpc":"2.0","id":2,"method":"tools/list"}',
             '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":'
@@ -733,6 +749,20 @@ class VerdictUIPM(PmBase):
             }
 
         by_id = {r.get("id"): r for r in replies}
+
+        # The handshake must SUCCEED, not merely produce a line. Counting replies
+        # cannot see this: a parse error is a reply, so the count above stays 3
+        # while no client can connect at all.
+        handshake = by_id.get(1, {})
+        if "error" in handshake or "result" not in handshake:
+            return {
+                "passed": False,
+                "detail": (
+                    "initialize was not answered — no MCP client can complete a handshake: "
+                    f"{str(handshake.get('error', handshake))[:160]}"
+                ),
+            }
+
         catalog = by_id.get(2, {}).get("result", {}).get("tools", [])
         if len(catalog) != 5:
             return {
