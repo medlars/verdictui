@@ -1495,4 +1495,28 @@ MUTATIONS = [
         new="        if false, crossValidate {",
         test="CrossValidateFlagTests/testRequestingCrossValidationAlwaysReportsWhatHappened",
     ),
+    Mutation(
+        # The AX walk loses its BREADTH bound and keeps only its depth bound.
+        # Depth stops a cycle; it says nothing about a tree 64 deep with modest
+        # branching, where each node costs ~5 CROSS-PROCESS accessibility calls
+        # -- IPC-bound work that no amount of waiting finishes. Measured
+        # 2026-08-12: reading Finder like this did not terminate in 60 s and was
+        # SIGKILLed, while the same read with the budget takes ~2 s. A budget of
+        # Int.max keeps every binding live and still COMPILES (no.md #31).
+        # HAND-VERIFIED ONLY, and deliberately not scored by the sweep. The
+        # mutation makes the guarded read HANG rather than fail, so the witness
+        # exits on a timeout -- and a timeout is indistinguishable, at the
+        # harness's exit-code boundary, from a hostile environment or a stuck
+        # machine (no.md #25's rule: ask whether the WITNESS RAN, not whether
+        # the row scored). Measured 2026-08-12: mutated, exit 124 with no
+        # summary line at a 120 s bound; restored, 2 tests / 0 failures in
+        # ~3.3 s; byte-identical restore (ac7da344). The row is kept because
+        # --verify-targets still pins the anchor, so a refactor that moves or
+        # renames the budget is caught even though the mutation is not scored.
+        name="the AX walk keeps its depth bound but loses its node budget",
+        path="Sources/VerdictUIWitness/AXReader.swift",
+        old="    static let maximumNodes = 4096",
+        new="    static let maximumNodes = Int.max",
+        test="ThirdPartyAuditTests/testTheReaderIsBoundedAgainstAHostileTree",
+    ),
 ]

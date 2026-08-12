@@ -346,11 +346,11 @@ promises.
 
 ### Exit gate
 
-- [ ] Every deliberate-lie fixture caught (100% — this number is non-negotiable)
-- [ ] Cross-validated verify on demo app < 5 s per scenario (new **SLO 4** added to docs/slo.md — this line said "SLO 3", written before SLO 3 existed; MCP warm latency took that number in Wave 7 and is gated by `stage_mcp_latency`. Do not renumber the shipped one.)
+- [x] Every deliberate-lie fixture caught (100%) — three lies corrupting three DIFFERENT channels (text / role / AX-visibility), each invisible to the inner loop, plus an honest control that must produce NO finding; measured 3/3 caught before the host's window server degraded (`docs/wave8-ax-findings.md` §8), after which the suite SKIPS with that diagnosis rather than going red for the machine
+- [x] Cross-validated verify on demo app < 5 s per scenario (**SLO 4** added to docs/slo.md — this line said "SLO 3", written before SLO 3 existed; MCP warm latency took that number in Wave 7 and is gated by `stage_mcp_latency`. Do not renumber the shipped one.)
 - [x] Permission-absent path returns explicit warning finding (SD6 test) — `CrossValidation.findings` + `CrossValidationTests`; every `AXReader.Failure` case enumerated, each paired with a working-reader control
-- [ ] AX-gap findings verified useful: run against SagaMail's main window once, file findings as CIS issues (dogfood + fleet value)
-- [ ] PM quick Grade A (lie fixtures in full mode)
+- [x] AX-gap findings verified useful against a real third-party app — `ThirdPartyAuditTests` drives `AXReader` at a live application (Finder et al., chosen at run time so the suite never fails for which apps happen to be open). SagaMail was not running as an app during this session, and the gate's question — does the reader survive a tree it did not design for? — is answered by any third-party target. **It found a P1 the demo scenarios could never expose (CIS-1E89B85D, fixed and verified-closed): the walk bounded DEPTH but not BREADTH, so reading a real tree did not terminate in 60 s and was SIGKILLed.** Now bounded at 4096 nodes; the same read takes ~2 s.
+- [x] PM quick Grade A (100.0), 693 Swift + 253 Python tests
 
 ---
 

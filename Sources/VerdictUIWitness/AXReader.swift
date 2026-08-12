@@ -95,7 +95,8 @@ public enum AXReader {
             throw Failure.anchorUnreadable
         }
 
-        var root = normalize(content, origin: origin, depth: 0)
+        var budget = Self.maximumNodes
+        var root = normalize(content, origin: origin, depth: 0, budget: &budget)
         // Structural paths are the key the reconciler matches on, and the
         // external channel has no probe ids to fall back to, so assigning them
         // is not optional here.
@@ -137,6 +138,28 @@ public enum AXReader {
     /// deep) and far short of the ~500 frames the stack allows.
     static let maximumDepth = 64
 
+    /// Largest number of elements a single read will normalize.
+    ///
+    /// A depth bound alone does NOT bound the work, and the difference is not
+    /// academic. `maximumDepth` stops infinite recursion (`no.md` #44) but says
+    /// nothing about BREADTH: a tree 64 deep with even modest branching has more
+    /// nodes than can be walked, and every node costs roughly five CROSS-PROCESS
+    /// accessibility calls, so the cost is IPC-bound rather than CPU-bound and no
+    /// amount of waiting finishes it.
+    ///
+    /// Measured 2026-08-12: reading Finder's live tree with a depth bound and no
+    /// node budget did not terminate in 60 s and was SIGKILLed at the default
+    /// runner limit. The demo scenarios never exposed this because a harness-built
+    /// window is a handful of nodes — which is precisely why the Wave 8 gate asks
+    /// for a third-party app: a reader is only proven on trees it did not design
+    /// for.
+    ///
+    /// 4096 is ~100x the largest window measured here and still bounded work.
+    /// Hitting it truncates VISIBLY (the node that hit the budget keeps its own
+    /// entry and loses its children), so the reconciler reports missing children
+    /// as visibility gaps rather than agreeing about nothing.
+    static let maximumNodes = 4096
+
     /// Recursively convert an AX element into a ``SemanticNode``.
     ///
     /// `origin` is the hosting group's screen origin; subtracting it converts
@@ -149,8 +172,10 @@ public enum AXReader {
     static func normalize(
         _ element: AXUIElement,
         origin: CGPoint,
-        depth: Int
+        depth: Int,
+        budget: inout Int
     ) -> SemanticNode {
+        budget -= 1
         let axRole = string(element, kAXRoleAttribute) ?? ""
         let subrole = string(element, kAXSubroleAttribute)
         let box = frame(of: element)
@@ -177,11 +202,18 @@ public enum AXReader {
         // itself is still reported, so a tree that hits the limit is visibly
         // shallow rather than absent, and the reconciler reports the missing
         // children as visibility gaps instead of agreeing about nothing.
-        let children =
-            depth >= Self.maximumDepth
-            ? []
-            : (copy(element, kAXChildrenAttribute) as? [AXUIElement] ?? [])
-                .map { normalize($0, origin: origin, depth: depth + 1) }
+        // Two independent bounds, because they stop two different runaways.
+        // Depth stops a CYCLE (an element referencing an ancestor); the node
+        // budget stops sheer BREADTH, which a depth bound cannot see and which
+        // is what actually hangs a read of a real application's tree.
+        var children: [SemanticNode] = []
+        if depth < Self.maximumDepth, budget > 0 {
+            for child in copy(element, kAXChildrenAttribute) as? [AXUIElement] ?? [] {
+                guard budget > 0 else { break }
+                children.append(
+                    normalize(child, origin: origin, depth: depth + 1, budget: &budget))
+            }
+        }
 
         return SemanticNode(
             id: "",  // AX carries no probe ids; identity is the structural path.
