@@ -71,6 +71,22 @@ final class AXReaderTests: XCTestCase {
         )
     }
 
+    func testAnUnreadableAnchorIsItsOwnFailureNotASilentZeroOrigin() {
+        // The `?? .zero` this replaced was the dangerous kind of fallback: with no
+        // readable hosting-group origin, every node keeps its SCREEN coordinates
+        // (x in the hundreds) while the probe channel reports root coordinates, so
+        // the reconciler reports a frame disagreement on EVERY node at once —
+        // blaming the probe channel for the witness's own failure to read an anchor.
+        //
+        // It must also be DISTINCT from .noWindow: the window WAS read, and a zero
+        // AXError would misreport the failure as a success code.
+        XCTAssertNotEqual(AXReader.Failure.anchorUnreadable, .noWindow(axError: 0))
+        XCTAssertTrue(
+            AXReader.Failure.anchorUnreadable.description.contains("geometry"),
+            "the failure must say what was unreadable, got: "
+                + AXReader.Failure.anchorUnreadable.description)
+    }
+
     // MARK: - Recursion bound
 
     func testTheWalkIsDepthBounded() {

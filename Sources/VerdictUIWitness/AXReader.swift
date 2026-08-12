@@ -34,6 +34,13 @@ public enum AXReader {
         case noWindow(axError: Int32)
         /// The host process exited or never started.
         case hostUnavailable(String)
+        /// The window was found but its hosting group published no geometry, so
+        /// there is no origin to convert coordinates against.
+        ///
+        /// Distinct from ``noWindow(axError:)`` because the window WAS read — a
+        /// zero AXError would misreport this as success, and `.zero` as a
+        /// fallback origin would leave every node in screen coordinates.
+        case anchorUnreadable
 
         public var description: String {
             switch self {
@@ -43,6 +50,9 @@ public enum AXReader {
                 "the host published no accessibility-visible window (AXError \(code))"
             case .hostUnavailable(let detail):
                 "the witness host process is unavailable: \(detail)"
+            case .anchorUnreadable:
+                "the host window published no geometry for its hosting group, so node "
+                    + "coordinates cannot be converted to root space"
             }
         }
     }
@@ -74,7 +84,16 @@ public enum AXReader {
         // shifts every node by that amount — a uniform offset that looks like a
         // real disagreement on every single node at once.
         let content = hostingContent(of: window) ?? window
-        let origin = frame(of: content)?.origin ?? .zero
+        // NOT `?? .zero`. Falling back to the origin would leave every node in
+        // SCREEN coordinates (x in the hundreds) while the probe channel reports
+        // root coordinates, so the reconciler would report a frame disagreement
+        // on EVERY node at once — blaming the probe channel for the witness's own
+        // failure to read an origin. A witness that cannot locate its anchor has
+        // not observed the window; it must say so rather than return a tree whose
+        // every frame is wrong by a constant.
+        guard let origin = frame(of: content)?.origin else {
+            throw Failure.anchorUnreadable
+        }
 
         var root = normalize(content, origin: origin, depth: 0)
         // Structural paths are the key the reconciler matches on, and the
