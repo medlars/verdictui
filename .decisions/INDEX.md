@@ -14,6 +14,7 @@
 | [2026-010](2026-010-one-environment-chain-shape-for-pinned-and-swept-hosts.md) | The host's environment chain has ONE shape; a sweep varies values, never structure | 2026-08-11 | Active | sweeps, environment, host, determinism |
 | [2026-011](2026-011-three-valued-exit-and-no-destructive-verb-over-a-socket.md) | Three-valued exit codes, and no destructive verb over a socket | 2026-08-11 | Active | cli, daemon, mcp, sd4, honesty |
 | [2026-012](2026-012-transports-frame-bytes-and-never-dispatch.md) | Transports frame bytes and never dispatch, and blocking I/O stays off the render actor | 2026-08-12 | Active | daemon, mcp, transport, concurrency, one-implementation |
+| [2026-013](2026-013-slo3-measures-the-wire-and-gates-the-median.md) | SLO 3 measures the artifact's wire latency, and gates the median because the tail is not load-stable | 2026-08-12 | Active | slo, latency, mcp, measurement, one-implementation |
 
 > Use the `/adr` skill to create new entries. Each ADR is `YYYY-NNN-slug.md`.
 > ProbeLayout.measure's optional-vs-reduce choice is recorded in `no.md` entry 10
