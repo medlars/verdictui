@@ -23,7 +23,17 @@ import Foundation
 /// `scripts/verdictui-pm.py`, which is the same class read from Python;
 /// `test_the_swift_and_python_timing_lanes_agree` pins the two together,
 /// because neither language can read the other's list.
-enum ConstrainedTimingEnvironment {
+///
+/// ### Why it lives in the library rather than a test target
+///
+/// It began in `VerdictUIProbeTests`, which put it out of reach of every other
+/// test target — so `MCPLatencyTests` (SLO 3, in `VerdictUICLICoreTests`) could
+/// only have had a COPY, which is precisely the drift this type was extracted to
+/// end. Test targets cannot share a file without a shared target, so the type
+/// moved down into the library both already depend on. It reads `ProcessInfo`
+/// and nothing else: no test-only API, no XCTest, and it stays inside the
+/// probe's platform surface.
+public enum ConstrainedTimingEnvironment {
     /// Environment variables that each mark a host in this class.
     ///
     /// - `CI`: any shared runner. Five consecutive GitHub macOS medians on
@@ -35,7 +45,7 @@ enum ConstrainedTimingEnvironment {
     ///   suite under seatbelt with denied caches, so it is measurement-capable
     ///   and timing-incomparable at once — the exact combination that reads as
     ///   developer hardware unless named.
-    static let markers = [
+    public static let markers = [
         "CI",
         "VERDICTUI_RECORD_TIMING_ONLY",
         "CODEX_CI",
@@ -47,7 +57,7 @@ enum ConstrainedTimingEnvironment {
     /// Presence, not truthiness: a runner that exports `CI=false` is still a
     /// runner, and reading the value would make the lane depend on a string
     /// nobody in this repo controls.
-    static var isActive: Bool {
+    public static var isActive: Bool {
         let environment = ProcessInfo.processInfo.environment
         return markers.contains { environment[$0] != nil }
     }

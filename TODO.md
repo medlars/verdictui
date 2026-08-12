@@ -47,7 +47,8 @@
 - [ ] Fill in docs/runbook.md start/stop commands once the daemon exists (Wave 6)
 
 ## P2 — Normal
-- [ ] Add second SLO (cross-validation loop latency) once Wave 8 lands
+- [x] (2026-08-12) SLO 3 — warm MCP round-trip latency through the real stdio transport. Gated at p50 < 40 ms by `MCPLatencyTests` + PM `stage_mcp_latency`; tail recorded, not gated (measured: median 8.3 → 11.3 ms under load, tail 8.4 → 45.8 ms on unchanged code)
+- [ ] Add a further SLO (cross-validation loop latency) once Wave 8 lands
 - [ ] Homebrew tap + stage_auto_release wiring at first public release (registered False in CEO PROPAGATION_PATTERNS until then)
 
 ## Done

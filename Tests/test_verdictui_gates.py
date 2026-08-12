@@ -494,3 +494,53 @@ class TestRunbookCommandsNameRealVerbs:
             "docs/runbook.md gives an `nc -U` example for a socket no code in this package "
             "binds. Remove the example until the transport ships (CTS-81D9483D)."
         )
+
+    def test_the_mcp_registration_names_a_verb_the_cli_declares(self) -> None:
+        """`.mcp.json` is a pasteable command with no reader to notice it broke.
+
+        It is the same class as the runbook examples above, one step worse: a
+        runbook line is read by a human who can react to an error, while this is
+        launched by an editor that reports only that the server failed to start.
+        The args must therefore name a real subcommand.
+        """
+        config = _PROJECT_ROOT / ".mcp.json"
+        if not config.exists():
+            pytest.skip("no project-scoped MCP registration")
+
+        entry = json.loads(config.read_text(encoding="utf-8"))["mcpServers"]["verdictui"]
+        verb = entry["args"][0]
+        declared = self._declared_subcommands()
+
+        assert declared, "no subcommands parsed — the extractor is broken, not the config"
+        assert verb in declared, (
+            f".mcp.json launches `verdictui {verb}`, which the CLI does not declare. "
+            f"Declared: {sorted(declared)}. The editor would report only that the server "
+            "failed to start."
+        )
+
+    def test_the_mcp_registration_points_at_a_binary_that_exists(self) -> None:
+        """The registered PATH must exist and be executable.
+
+        It lives under `.build/`, which is gitignored and which
+        `swift package clean` removes — so this config goes stale with no edit
+        to it and no signal anywhere. A path is a claim about the filesystem,
+        and the only way to check a claim about the filesystem is to look.
+
+        Skipped on a clean checkout, where nothing has been built yet: that is
+        "could not observe", not "observed and broken" (lesson 206).
+        """
+        config = _PROJECT_ROOT / ".mcp.json"
+        if not config.exists():
+            pytest.skip("no project-scoped MCP registration")
+
+        entry = json.loads(config.read_text(encoding="utf-8"))["mcpServers"]["verdictui"]
+        binary = Path(entry["command"])
+
+        if not binary.parent.exists():
+            pytest.skip(f"{binary.parent} absent — nothing built in this checkout yet")
+
+        assert binary.exists(), (
+            f".mcp.json points at {binary}, which does not exist. Rebuild with "
+            "`swift build -c release --product verdictui`, or repoint the config."
+        )
+        assert binary.stat().st_mode & 0o111, f"{binary} is not executable"

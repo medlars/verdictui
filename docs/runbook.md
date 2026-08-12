@@ -77,6 +77,60 @@ binary as a subprocess. A library test cannot see a process that refuses to
 start (`no.md` #32), and for a whole wave the method surfaces here were green
 while nothing bound a socket at all (`no.md` #34).
 
+#### Registering it with an editor
+
+`.mcp.json` at the repo root registers the server for **this project only** —
+scoping matters, because a fleet-wide registration would launch this binary in
+every session:
+
+```json
+{
+  "mcpServers": {
+    "verdictui": {
+      "type": "stdio",
+      "command": "<absolute path to this repo>/.build/release/verdictui",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+The `command` must be absolute — an MCP client does not resolve it against the
+project directory. Read the live value out of the file rather than copying it
+from here, where it would go stale silently:
+
+```bash
+python3.14 -c "import json;print(json.load(open('.mcp.json'))['mcpServers']['verdictui']['command'])"
+```
+
+It points at the **release** binary, so it survives the debug builds a working
+session churns through. Build it once with:
+
+```bash
+swift build -c release --product verdictui
+```
+
+`.build/` is gitignored and `swift package clean` removes it, so the path can go
+stale with no edit to the config and no signal anywhere — an editor reports only
+that the server failed to start. Two gates in `Tests/test_verdictui_gates.py`
+close that: the args must name a subcommand the CLI declares, and the path must
+exist and be executable. Both skip on a checkout where nothing has been built,
+because "could not observe" is not "observed and broken".
+
+Verify the registration end to end by driving the exact binary the config names:
+
+```bash
+printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"probe","version":"1"}}}' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
+  | .build/release/verdictui mcp
+# → handshake result with serverInfo, then the 5-tool catalog
+```
+
+Send the handshake **with its params**, as above. `initialize` with no `params`
+key is the one spelling that decodes even when the envelope is broken, so it
+cannot tell a working server from one no client can connect to (`no.md` #37).
+
 ## Baselines (destructive — read before running)
 
 ```bash

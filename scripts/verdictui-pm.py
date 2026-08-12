@@ -96,6 +96,15 @@ SLO1_P95_BUDGET_MS = 100.0
 # at p50 49.09 ms) exactly as the test's own comment predicted. Same value as
 # `performP50BudgetMs`; the two move together.
 SLO1_P50_BUDGET_MS = 70.0
+# SLO 3 from docs/slo.md — warm MCP round trip through the real stdio transport.
+# Same lane rule as SLO 1 and for the same measured reason, established on THIS
+# metric rather than inherited: under 8 spinning cores the median moved
+# 8.3 -> 11.3 ms while the tail moved 8.4 -> 45.8 ms on unchanged code. So p50 is
+# gated and p95 is recorded. 40 ms is ~4x the 8.3 ms idle median: headroom for
+# load, still far inside the 100 ms product target. `MCPLatencyTests` carries the
+# same numbers and the two move together.
+SLO3_MCP_P50_BUDGET_MS = 40.0
+SLO3_MCP_P95_BUDGET_MS = 100.0
 TIMING_RECORD_ONLY_ENV = "VERDICTUI_RECORD_TIMING_ONLY"
 CONSTRAINED_TIMING_ENV_MARKERS = (
     "CI",
@@ -126,6 +135,45 @@ def _clear_project_swiftpm_lock_files(project_root: Path) -> int:
         except OSError as exc:
             _pm_log(f"Could not remove SwiftPM lock sentinel {path}: {exc}", "WARN")
     return removed
+
+
+def _parse_slo_line(result: dict, output: str, *, marker: str) -> dict:
+    """Extract a benchmark's p50 (gated) and p95 (recorded) from its own output.
+
+    Returns `{"p50": float, "p95_note": str, "executed": int}` on success, or
+    `{"detail": str}` naming what could not be observed. The caller decides what
+    a figure MEANS; this only says whether one was reported. `executed` travels
+    with the figure because it is the evidence the benchmark RAN, and a stage
+    that reports a latency without it is asking to be believed.
+
+    Fails closed on two conditions that are otherwise indistinguishable from a
+    fast run. A `swift test --filter` matching nothing exits 0 having executed
+    no tests, so the executed count is checked before any number is trusted; and
+    a MISSING marker line is a failure rather than a skip, because a benchmark
+    that silently stopped running must never read as a healthy one.
+
+    The p50 is required and the p95 is optional BY DESIGN: p50 is the gated
+    figure, so failing to parse it means the gate cannot be applied, while the
+    tail is evidence a reader may want and never decides a verdict. Falling back
+    to whichever number happened to parse would silently re-point the gate at
+    the statistic these suites deliberately stopped asserting.
+    """
+    executed = [int(m) for m in re.findall(r"Executed (\d+) test", output)]
+    raw_test_count = result.get("test_count")
+    runner_count = raw_test_count if isinstance(raw_test_count, int) else 0
+    if max([runner_count, *executed], default=0) == 0:
+        return {"detail": f"{marker}: no executed tests reported -- the filter is stale"}
+
+    median = re.search(rf"{re.escape(marker)} .*?p50=([0-9.]+)ms", output)
+    if median is None:
+        return {"detail": f"no {marker} p50 in output -- the benchmark did not report"}
+
+    tail = re.search(rf"{re.escape(marker)} .*?p95=([0-9.]+)ms", output)
+    return {
+        "p50": float(median.group(1)),
+        "p95_note": f", p95 {float(tail.group(1)):.2f}ms recorded" if tail else "",
+        "executed": max([runner_count, *executed], default=0),
+    }
 
 
 def _timing_record_only_environment() -> bool:
@@ -857,6 +905,11 @@ class VerdictUIPM(PmBase):
         health. So the summary line must be present AND parse AND be under
         budget; a missing line is a failure, never a skip.
 
+        Both of those fail-closed conditions live in `_parse_slo_line`, which
+        `stage_mcp_latency` (SLO 3) shares: two copies of this parse would be
+        two places to weaken, and weakening either alone leaves the other's
+        tests green.
+
         ## Why the median and not the tail
 
         This gated p95 until 2026-08-07, when it failed at p95 105.51 ms on a
@@ -897,34 +950,15 @@ class VerdictUIPM(PmBase):
             )
             return {"passed": False, "detail": failure[:300]}
 
-        # A filter that matched nothing exits 0 having run no tests, so the
-        # executed count is checked before the figure is trusted.
-        executed = [int(m) for m in re.findall(r"Executed (\d+) test", output)]
-        raw_test_count = result.get("test_count")
-        runner_count = raw_test_count if isinstance(raw_test_count, int) else 0
-        executed_count = max([runner_count, *executed], default=0)
-        if executed_count == 0:
-            return {
-                "passed": False,
-                "detail": "the benchmark reported no executed tests -- filter is stale",
-            }
-
-        # The GATED figure is p50, so p50 is what must parse. Falling back to
-        # whichever number is present would silently re-point the gate at the
-        # tail -- the exact thing this stage stopped asserting.
-        median = re.search(r"SLO1-PERFORM .*?p50=([0-9.]+)ms", output)
-        if median is None:
-            return {
-                "passed": False,
-                "detail": "no SLO1-PERFORM p50 in output -- the benchmark did not report",
-            }
-        p50 = float(median.group(1))
-
-        # Recorded alongside, never decisive. `?` so a format that drops the
-        # tail cannot fail the stage for the wrong reason -- the gated figure
-        # above already parsed, which is the claim that matters.
-        tail = re.search(r"SLO1-PERFORM .*?p95=([0-9.]+)ms", output)
-        p95_note = f", p95 {float(tail.group(1)):.2f}ms recorded" if tail else ""
+        # Both fail-closed conditions -- a stale filter that executed nothing,
+        # and a missing summary line -- live in `_parse_slo_line`, which SLO 3
+        # shares. Two copies of this parse would be two places to weaken, and
+        # weakening either alone leaves the other's tests green.
+        parsed = _parse_slo_line(result, output, marker="SLO1-PERFORM")
+        if "detail" in parsed:
+            return {"passed": False, "detail": parsed["detail"]}
+        p50 = parsed["p50"]
+        p95_note = parsed["p95_note"]
 
         if p50 >= SLO1_P50_BUDGET_MS:
             if record_only:
@@ -946,8 +980,93 @@ class VerdictUIPM(PmBase):
         return {
             "passed": True,
             "detail": (
-                f"SLO 1 p50 {p50:.2f}ms < {SLO1_P50_BUDGET_MS}ms{p95_note} ({executed_count} tests)"
+                f"SLO 1 p50 {p50:.2f}ms < {SLO1_P50_BUDGET_MS}ms{p95_note} "
+                f"({parsed['executed']} tests)"
             ),
+        }
+
+    def stage_mcp_latency(self) -> dict:
+        """SLO 3: the warm MCP round trip stays under its budget.
+
+        SLO 1 times `Harness.perform` INSIDE the test process. That is the
+        engine's number, and an agent never calls `perform` -- it writes a JSON
+        frame to a pipe and waits for one back. Process boundary, framing, JSON
+        coding and pipe scheduling all sit between the two, and none of it
+        appears in an in-process timing, so a tool can be fast by SLO 1 and slow
+        to every caller. `MCPLatencyTests` measures the artifact; this stage
+        gates what it measured.
+
+        Fail-closed exactly like `stage_runtime_bench`: a `--filter` that
+        matches nothing exits 0 having run no tests, so the executed count is
+        checked before any figure is trusted, and a MISSING `SLO3-MCP` line is a
+        failure rather than a skip. A benchmark that silently stopped running
+        must never read as a fast one.
+
+        The gated figure is p50, for the reason measured on this metric rather
+        than inherited: under 8 spinning cores the median moved 8.3 -> 11.3 ms
+        while the tail moved 8.4 -> 45.8 ms on unchanged code. A gate on the
+        tail would fail for a busy neighbour and teach its reader to discount
+        it.
+        """
+        if shutil.which("swift") is None:
+            return {"passed": False, "detail": "swift not installed -- bench cannot be run"}
+
+        binary = PROJECT_ROOT / ".build" / "debug" / "verdictui"
+        release = PROJECT_ROOT / ".build" / "release" / "verdictui"
+        if not binary.exists() and not release.exists():
+            return {
+                "passed": False,
+                "detail": "no verdictui binary -- run stage_cli_smoke first",
+            }
+
+        _LOCK_DIR.mkdir(parents=True, exist_ok=True)
+        record_only = _timing_record_only_environment()
+        with _swift_timing_environment():
+            result = _run_streamed_swift_test(
+                timeout=TIMEOUT_SWIFT_TEST,
+                min_test_count=1,
+                log_name="swift-mcp-latency-latest.log",
+                extra_flags=[
+                    *SWIFT_PM_FLAGS,
+                    *SWIFT_STRICT_FLAGS,
+                    "--filter",
+                    "MCPLatencyTests",
+                ],
+            )
+
+        output = str(result.get("output") or "")
+        if not result.get("passed"):
+            failure = next(
+                (line.strip() for line in output.splitlines() if "error:" in line),
+                str(result.get("detail") or "swift test failed"),
+            )
+            return {"passed": False, "detail": failure[:300]}
+
+        parsed = _parse_slo_line(result, output, marker="SLO3-MCP")
+        if "detail" in parsed:
+            return {"passed": False, "detail": parsed["detail"]}
+        p50 = parsed["p50"]
+        p95_note = parsed["p95_note"]
+
+        if p50 >= SLO3_MCP_P50_BUDGET_MS:
+            if record_only:
+                return {
+                    "passed": True,
+                    "detail": (
+                        f"SLO 3 p50 {p50:.2f}ms recorded in constrained timing environment "
+                        f"(budget {SLO3_MCP_P50_BUDGET_MS}ms){p95_note}"
+                    ),
+                }
+            return {
+                "passed": False,
+                "detail": (
+                    f"warm MCP round trip p50 {p50:.2f}ms over "
+                    f"{SLO3_MCP_P50_BUDGET_MS}ms (SLO 3 is {SLO3_MCP_P95_BUDGET_MS}ms){p95_note}"
+                ),
+            }
+        return {
+            "passed": True,
+            "detail": f"SLO 3 p50 {p50:.2f}ms < {SLO3_MCP_P50_BUDGET_MS}ms{p95_note}",
         }
 
     def stage_pytest(self) -> dict:
@@ -1061,6 +1180,11 @@ class VerdictUIPM(PmBase):
             ("stage_mutations", self.stage_mutations),
             ("stage_stale_buffer", self.stage_stale_buffer),
             ("stage_runtime_bench", self.stage_runtime_bench),
+            # SLO 3. Also needs the binary stage_cli_smoke builds, and sits
+            # beside SLO 1 because the two answer the same question at
+            # different layers: the engine's speed, and the speed a caller
+            # actually experiences through the wire.
+            ("stage_mcp_latency", self.stage_mcp_latency),
             ("stage_pytest", self.stage_pytest),
             ("stage_lint", self.stage_lint),
             ("stage_codewatch", self.stage_codewatch),
