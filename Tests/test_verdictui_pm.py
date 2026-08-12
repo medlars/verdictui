@@ -805,6 +805,30 @@ class TestStageCLISmoke:
         assert not result["passed"]
         assert "swift not installed" in result["detail"]
 
+    def test_the_build_takes_the_shared_swiftpm_lock(self) -> None:
+        """This stage's `swift build` must serialize against the Swift stages.
+
+        It is reachable from BOTH the pipeline and `stage_pytest` — the test
+        below drives it — so one PM run can invoke it while its own Swift stage
+        holds the package's single build directory. Measured 2026-08-12: that
+        produced **Grade B on a clean tree at 629/629 green**, with the stage
+        naming a test that passes in isolation. A gate failing for the
+        environment rather than the code teaches its reader to discount it
+        (`no.md` #15), and "it passed on retry" is not a diagnosis.
+
+        Read as source rather than by running: the failure needs two concurrent
+        SwiftPM invocations to reproduce, which a unit test cannot stage
+        deterministically. What CAN be asserted is that the lock is taken.
+        """
+        source = inspect.getsource(VerdictUIPM.stage_cli_smoke)
+        assert "swiftpm_command_lock" in source, (
+            "stage_cli_smoke builds without the shared SwiftPM lock, so it "
+            "contends with a concurrent swift test for the build directory"
+        )
+        lock_at = source.index("swiftpm_command_lock")
+        build_at = source.index("subprocess.run")
+        assert lock_at < build_at, "the lock must be acquired BEFORE the build runs"
+
     def test_it_is_registered_in_the_quick_pipeline(self) -> None:
         """`swift test` does not build executable PRODUCTS, so without this
         stage a Grade A says nothing about whether the shipped binary starts —
