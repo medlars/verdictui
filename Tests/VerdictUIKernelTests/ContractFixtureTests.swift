@@ -132,7 +132,7 @@ final class ContractFixtureTests: XCTestCase {
             timestamp: instant,
             tree: after,
             delta: delta,
-            timing: Verdict.Timing(settleMs: 8.5, evaluateMs: 0.42)
+            timing: Verdict.Timing(settleMs: 8.5, evaluateMs: 0.42, crossValidateMs: 412.7)
         )
     }
 
@@ -204,7 +204,8 @@ final class ContractFixtureTests: XCTestCase {
         XCTAssertTrue(failing.contains("\"status\" : \"FAIL\""), failing)
         let everyOptionalField = [
             "\"tree\"", "\"delta\"", "\"added\"", "\"removed\"", "\"moved\"", "\"changed\"",
-            "\"settleMs\"", "\"evaluateMs\"", "\"suggestion\"", "\"attributes\"",
+            "\"settleMs\"", "\"evaluateMs\"", "\"crossValidateMs\"", "\"suggestion\"",
+            "\"attributes\"",
             "\"textMetrics\"", "\"zIndex\"", "\"text\"", "\"isVisible\" : false",
             "\"severity\" : \"error\"", "\"severity\" : \"warning\"",
         ]

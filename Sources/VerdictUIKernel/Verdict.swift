@@ -33,10 +33,24 @@ public struct Verdict: Equatable, Codable, Sendable {
         public var settleMs: Double?
         /// Milliseconds spent running lint rules over the tree.
         public var evaluateMs: Double?
+        /// Milliseconds spent cross-validating against the external witness.
+        ///
+        /// `nil` means cross-validation was **not requested** — a different
+        /// fact from "it was requested and failed", which is reported as a
+        /// `cross-validation-skipped` finding with a non-nil measurement of
+        /// what the attempt cost. Collapsing the two would make an
+        /// inner-loop-only verdict indistinguishable from one whose witness
+        /// could not run, which is the distinction Wave 8 exists to preserve.
+        public var crossValidateMs: Double?
 
-        public init(settleMs: Double? = nil, evaluateMs: Double? = nil) {
+        public init(
+            settleMs: Double? = nil,
+            evaluateMs: Double? = nil,
+            crossValidateMs: Double? = nil
+        ) {
             self.settleMs = settleMs
             self.evaluateMs = evaluateMs
+            self.crossValidateMs = crossValidateMs
         }
     }
 

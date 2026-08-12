@@ -120,11 +120,24 @@ public struct VerifyCommand: Sendable {
     public let scenario: String
     public let useBaseline: Bool
     public let includeTree: Bool
+    /// Also reconcile against the external accessibility witness (Wave 8).
+    ///
+    /// Off by default because it costs a real windowed subprocess and an
+    /// Accessibility grant. When ON and the witness cannot run, the verdict
+    /// carries a `cross-validation-skipped` warning rather than a quieter
+    /// PASS — the caller asked for two channels and must be told it got one.
+    public let crossValidate: Bool
 
-    public init(scenario: String, useBaseline: Bool = false, includeTree: Bool = false) {
+    public init(
+        scenario: String,
+        useBaseline: Bool = false,
+        includeTree: Bool = false,
+        crossValidate: Bool = false
+    ) {
         self.scenario = scenario
         self.useBaseline = useBaseline
         self.includeTree = includeTree
+        self.crossValidate = crossValidate
     }
 
     @MainActor
@@ -137,7 +150,8 @@ public struct VerifyCommand: Sendable {
             let verdict = try await environment.engine.verify(
                 scenario: scenario,
                 againstBaseline: useBaseline,
-                includeTree: includeTree
+                includeTree: includeTree,
+                crossValidate: crossValidate
             )
             environment.output.writeOut(
                 summary

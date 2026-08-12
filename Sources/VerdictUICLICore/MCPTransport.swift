@@ -187,6 +187,7 @@ public struct MCPTransport: Sendable {
             baseline: arguments["baseline"]?.boolValue,
             action: action,
             includeTree: arguments["include_tree"]?.boolValue,
+            crossValidate: arguments["cross_validate"]?.boolValue,
             id: nil
         )
         let response = await VerdictDaemon.handle(request, engine: engine)

@@ -1,15 +1,22 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://verdictui.dev/schemas/verdict/1.0.json",
+  "$id": "https://verdictui.dev/schemas/verdict/1.1.json",
   "title": "VerdictUI verdict envelope",
   "description": "Wire format emitted by VerdictUIKernel and parsed by the CLI, the MCP server, and agent consumers. Produced by Verdict.encode(to:) in Sources/VerdictUIKernel/Verdict.swift; kept in agreement with it by contracts/validate-contracts.py. Absent optional fields are omitted, never null.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "scenario", "timestamp", "status", "findings", "timing"],
+  "required": [
+    "schemaVersion",
+    "scenario",
+    "timestamp",
+    "status",
+    "findings",
+    "timing"
+  ],
   "properties": {
     "schemaVersion": {
       "description": "Version of this contract. Major bumps are breaking; minor bumps only add optional fields.",
-      "const": "1.0"
+      "const": "1.1"
     },
     "scenario": {
       "description": "Name of the scenario that produced the verdict.",
@@ -22,12 +29,17 @@
     },
     "status": {
       "description": "PASS unless at least one finding has severity 'error'.",
-      "enum": ["PASS", "FAIL"]
+      "enum": [
+        "PASS",
+        "FAIL"
+      ]
     },
     "findings": {
       "description": "The evidence. Empty for a clean verdict.",
       "type": "array",
-      "items": { "$ref": "#/$defs/finding" }
+      "items": {
+        "$ref": "#/$defs/finding"
+      }
     },
     "tree": {
       "description": "The semantic tree the verdict was computed from, when the caller asked for it.",
@@ -37,20 +49,32 @@
       "description": "What changed since the previous observation, for act-and-observe steps.",
       "$ref": "#/$defs/treeDelta"
     },
-    "timing": { "$ref": "#/$defs/timing" }
+    "timing": {
+      "$ref": "#/$defs/timing"
+    }
   },
   "$defs": {
     "finding": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["rule", "severity", "nodeID", "message"],
+      "required": [
+        "rule",
+        "severity",
+        "nodeID",
+        "message"
+      ],
       "properties": {
         "rule": {
           "description": "Rule identifier, e.g. 'sibling-overlap'.",
           "type": "string",
           "minLength": 1
         },
-        "severity": { "enum": ["error", "warning"] },
+        "severity": {
+          "enum": [
+            "error",
+            "warning"
+          ]
+        },
         "nodeID": {
           "description": "Probe id of the offending node, or its structural path when unprobed.",
           "type": "string"
@@ -80,41 +104,78 @@
           "description": "Milliseconds spent running lint rules.",
           "type": "number",
           "minimum": 0
+        },
+        "crossValidateMs": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Milliseconds spent cross-validating against the external witness. null means cross-validation was NOT REQUESTED \u2014 distinct from requested-and-failed, which reports a cross-validation-skipped finding alongside a non-null measurement of what the attempt cost."
         }
       }
     },
     "rect": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["x", "y", "width", "height"],
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
       "properties": {
-        "x": { "type": "number" },
-        "y": { "type": "number" },
-        "width": { "type": "number" },
-        "height": { "type": "number" }
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "width": {
+          "type": "number"
+        },
+        "height": {
+          "type": "number"
+        }
       }
     },
     "attributeValue": {
       "description": "Exactly three primitive cases, encoded as a bare JSON scalar.",
-      "type": ["string", "number", "boolean"]
+      "type": [
+        "string",
+        "number",
+        "boolean"
+      ]
     },
     "textMetrics": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["intrinsicWidth", "renderedLineCount", "idealLineCount"],
+      "required": [
+        "intrinsicWidth",
+        "renderedLineCount",
+        "idealLineCount"
+      ],
       "properties": {
         "intrinsicWidth": {
           "description": "Width the text needs when proposed unlimited space, in points.",
           "type": "number"
         },
-        "renderedLineCount": { "type": "integer" },
-        "idealLineCount": { "type": "integer" }
+        "renderedLineCount": {
+          "type": "integer"
+        },
+        "idealLineCount": {
+          "type": "integer"
+        }
       }
     },
     "semanticNode": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "role", "frame", "isVisible"],
+      "required": [
+        "id",
+        "role",
+        "frame",
+        "isVisible"
+      ],
       "properties": {
         "id": {
           "description": "Probe-supplied identifier; empty for unprobed nodes.",
@@ -125,81 +186,128 @@
           "type": "string",
           "minLength": 1
         },
-        "frame": { "$ref": "#/$defs/rect" },
-        "text": { "type": "string" },
+        "frame": {
+          "$ref": "#/$defs/rect"
+        },
+        "text": {
+          "type": "string"
+        },
         "attributes": {
           "type": "object",
-          "additionalProperties": { "$ref": "#/$defs/attributeValue" }
+          "additionalProperties": {
+            "$ref": "#/$defs/attributeValue"
+          }
         },
-        "isVisible": { "type": "boolean" },
-        "zIndex": { "type": "number" },
-        "textMetrics": { "$ref": "#/$defs/textMetrics" },
+        "isVisible": {
+          "type": "boolean"
+        },
+        "zIndex": {
+          "type": "number"
+        },
+        "textMetrics": {
+          "$ref": "#/$defs/textMetrics"
+        },
         "structuralPath": {
           "description": "Parent-chain path, e.g. 'root/container[0]/text[2]'.",
           "type": "string"
         },
         "children": {
           "type": "array",
-          "items": { "$ref": "#/$defs/semanticNode" }
+          "items": {
+            "$ref": "#/$defs/semanticNode"
+          }
         }
       }
     },
     "nodePath": {
       "description": "Chain of sibling-local identities from the root, root segment first. An array, not a joined string, because a structural segment may itself contain '/'.",
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "minItems": 1
     },
     "attributeChange": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["key"],
+      "required": [
+        "key"
+      ],
       "properties": {
         "key": {
           "description": "Flat field vocabulary: 'id', 'role', 'text', 'isVisible', 'zIndex', 'structuralPath', 'childIndex', 'textMetrics.<component>', or 'attributes.<name>'.",
           "type": "string",
           "minLength": 1
         },
-        "before": { "$ref": "#/$defs/attributeValue" },
-        "after": { "$ref": "#/$defs/attributeValue" }
+        "before": {
+          "$ref": "#/$defs/attributeValue"
+        },
+        "after": {
+          "$ref": "#/$defs/attributeValue"
+        }
       }
     },
     "treeDelta": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["added", "removed", "moved", "changed"],
+      "required": [
+        "added",
+        "removed",
+        "moved",
+        "changed"
+      ],
       "properties": {
         "added": {
           "type": "array",
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["path", "index", "node"],
+            "required": [
+              "path",
+              "index",
+              "node"
+            ],
             "properties": {
-              "path": { "$ref": "#/$defs/nodePath" },
+              "path": {
+                "$ref": "#/$defs/nodePath"
+              },
               "index": {
                 "description": "Insertion index among the parent's children in the after-tree.",
                 "type": "integer",
                 "minimum": 0
               },
-              "node": { "$ref": "#/$defs/semanticNode" }
+              "node": {
+                "$ref": "#/$defs/semanticNode"
+              }
             }
           }
         },
         "removed": {
           "type": "array",
-          "items": { "$ref": "#/$defs/nodePath" }
+          "items": {
+            "$ref": "#/$defs/nodePath"
+          }
         },
         "moved": {
           "type": "array",
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["path", "from", "to"],
+            "required": [
+              "path",
+              "from",
+              "to"
+            ],
             "properties": {
-              "path": { "$ref": "#/$defs/nodePath" },
-              "from": { "$ref": "#/$defs/rect" },
-              "to": { "$ref": "#/$defs/rect" }
+              "path": {
+                "$ref": "#/$defs/nodePath"
+              },
+              "from": {
+                "$ref": "#/$defs/rect"
+              },
+              "to": {
+                "$ref": "#/$defs/rect"
+              }
             }
           }
         },
@@ -208,12 +316,19 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["path", "changes"],
+            "required": [
+              "path",
+              "changes"
+            ],
             "properties": {
-              "path": { "$ref": "#/$defs/nodePath" },
+              "path": {
+                "$ref": "#/$defs/nodePath"
+              },
               "changes": {
                 "type": "array",
-                "items": { "$ref": "#/$defs/attributeChange" },
+                "items": {
+                  "$ref": "#/$defs/attributeChange"
+                },
                 "minItems": 1
               }
             }

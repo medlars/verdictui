@@ -16,7 +16,7 @@ import Foundation
 /// declared version drift apart.
 public enum SchemaVersion {
     /// The version this kernel emits, as `major.minor`.
-    public static let current = "1.0"
+    public static let current = "1.1"
 
     /// Major component of ``current``.
     public static var currentMajor: Int { major(of: current) ?? 0 }

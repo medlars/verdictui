@@ -122,6 +122,12 @@ let package = Package(
                 "VerdictUIKernel",
                 "VerdictUIProbe",
                 "VerdictUIDemoScenarios",
+                // Wave 8: `verify --cross-validate` needs the external witness.
+                // Linking it does NOT make Accessibility mandatory — the
+                // witness is invoked only when cross-validation is requested,
+                // and a failed read becomes a warning finding rather than an
+                // error (see `CrossValidation`).
+                "VerdictUIWitness",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
             ],
             swiftSettings: strictSettings

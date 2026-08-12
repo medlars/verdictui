@@ -5,6 +5,7 @@
 | 1 | Inner-loop verify cycle (act → settle → verdict) on the demo app | < 100 ms p95 | PM `stage_runtime_bench` (`HarnessPerformanceTests`, `SLO1-PERFORM` line) | medlars@gmail.com |
 | 2 | PM quick pipeline health | Grade A on every run | `python3.14 scripts/verdictui-pm.py --quick` | medlars@gmail.com |
 | 3 | Warm MCP round trip (`verify`) through the stdio transport | < 100 ms p95 | PM `stage_mcp_latency` (`MCPLatencyTests`, `SLO3-MCP` line) | medlars@gmail.com |
+| 4 | Cross-validated verify (in-process tree reconciled against the AX witness) | < 5 s per scenario | `LieCatchTests` / `verdictui verify --cross-validate`; recorded in `timing.crossValidateMs` | medlars@gmail.com |
 
 ## Notes
 
@@ -29,4 +30,27 @@
 - **The gated budget is 40 ms**, roughly 4x the idle median and comfortably above the loaded one, so it fails on a regression rather than on a bad afternoon while sitting far inside the published 100 ms target. `MCPLatencyTests.warmP50BudgetMs` and `SLO3_MCP_P50_BUDGET_MS` carry the same number, and `test_the_gated_budget_agrees_with_the_swift_test` pins them together because neither language can read the other's constant.
 - **What proves it RAN** — sample count, finite samples, and a `result` (never an `error`) on every reply — is asserted in EVERY lane, including constrained hosts that only record the figure. A reply that is an error is fast for the wrong reason, and without that assertion a server that had stopped rendering entirely would post the best numbers this suite has ever seen.
 
-- A fourth SLO (cross-validation loop < 5 s per scenario) is added when Wave 8 lands (see TODO.md P2).
+### SLO 4 — the honest middle loop
+
+- **Why 5 s and not 100 ms.** SLO 1 and SLO 3 time channels that never leave the
+  process tree. Cross-validation launches a REAL WINDOWED SUBPROCESS through
+  LaunchServices, waits for the window server to publish it, and reads an
+  accessibility tree — OS work VerdictUI does not control and cannot make
+  faster. Budgeting it like an in-process call would produce a gate that fails
+  for the platform, which is the failure `no.md` #15 names.
+- **It is a PER-SCENARIO budget, not a per-verify one.** The witness cost is
+  paid once per scenario rendered, so a sweep of twelve cells pays it twelve
+  times; that is the honest accounting and the reason cross-validation is
+  opt-in rather than default.
+- **`timing.crossValidateMs` is populated on BOTH paths** — the successful read
+  and the failed one. A failed attempt has a real cost and reporting it is what
+  separates "no Accessibility grant" (fails in ~200 ms) from "a hung host"
+  (fails at the timeout). A `nil` means cross-validation was NOT REQUESTED,
+  which is a third state and deliberately not collapsed into either.
+- **Not gated in the PM as of Wave 8.** The honesty suite skips rather than
+  fails where the witness cannot observe (headless, no grant, or the degraded-AX
+  state in `docs/wave8-ax-findings.md` §8), so a PM gate on this figure would be
+  measuring host availability rather than the engine. The figure is recorded on
+  every cross-validated run and the budget is the review threshold. Wiring a
+  hard gate needs a host whose window server is known-good for the length of the
+  run — tracked as follow-up work rather than asserted on a guess.

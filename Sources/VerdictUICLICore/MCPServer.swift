@@ -92,6 +92,16 @@ public enum MCPServer {
                             type: "boolean",
                             description: "Also compare against the recorded baseline."
                         ),
+                        "cross_validate": MCPProperty(
+                            type: "boolean",
+                            description:
+                                "Also reconcile the in-process tree against the platform's "
+                                + "accessibility tree — an independent channel that catches a "
+                                + "probe misreporting what it renders. Needs a windowed session "
+                                + "and an Accessibility grant; when it cannot run, the verdict "
+                                + "carries a cross-validation-skipped warning rather than "
+                                + "passing more quietly."
+                        ),
                     ],
                     required: ["scenario"]
                 )

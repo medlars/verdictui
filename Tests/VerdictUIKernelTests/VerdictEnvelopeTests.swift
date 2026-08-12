@@ -198,7 +198,7 @@ final class VerdictEnvelopeTests: XCTestCase {
     func testEncodingAlwaysStampsTheKernelsOwnSchemaVersion() throws {
         let verdict = Verdict(scenario: "s", findings: [], timestamp: instant)
         XCTAssertEqual(verdict.schemaVersion, SchemaVersion.current)
-        XCTAssertTrue(try json(verdict).contains("\"schemaVersion\":\"1.0\""))
+        XCTAssertTrue(try json(verdict).contains("\"schemaVersion\":\"1.1\""))
     }
 
     func testEnvelopeCarriesExactlyTheRequiredKeysWhenNothingIsOptionalPresent() throws {

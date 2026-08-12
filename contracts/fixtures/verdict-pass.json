@@ -3,7 +3,7 @@
 
   ],
   "scenario" : "settings-pane-clean",
-  "schemaVersion" : "1.0",
+  "schemaVersion" : "1.1",
   "status" : "PASS",
   "timestamp" : "2026-08-04T09:20:31Z",
   "timing" : {
