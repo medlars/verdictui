@@ -1467,4 +1467,18 @@ MUTATIONS = [
         new='            return .setText(probe, text ?? "")',
         test="ActToolTests/testAVerbMissingItsPayloadIsRefusedRatherThanDefaulted",
     ),
+    Mutation(
+        # The SD6 permission path stops reporting itself. A caller that ASKED
+        # for cross-validation and could not get it then receives an ordinary
+        # PASS -- "the two channels agree" and "only one channel ran" arriving
+        # as the same answer, which is the exact silent-weakening Task 3 exists
+        # to prevent. Hand-verified 2026-08-12 in both directions: exit 1 with
+        # 6 tests executed and 8 failures under the mutation, byte-identical
+        # restore (sha256 6c3aa8df...).
+        name="a witness that could not run stops saying so",
+        path="Sources/VerdictUIWitness/CrossValidation.swift",
+        old="            return [Reconcile.unavailable(reason: reason(for: error))]",
+        new="            return []",
+        test="CrossValidationTests/testAFailedReadBecomesAWarningFindingNamingTheReason",
+    ),
 ]

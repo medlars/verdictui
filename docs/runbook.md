@@ -155,6 +155,53 @@ To see what was destroyed:
 cat logs/baseline-audit.log
 ```
 
+## Cross-validation and the Accessibility grant
+
+Cross-validation runs the external witness: a windowed host process whose
+`AXUIElement` tree is read and reconciled against the in-process probe tree. It
+needs Accessibility permission — but **the grant is not on VerdictUI**.
+
+Accessibility trust is **inherited from the launching process**, so what must be
+trusted is whatever runs `verdictui`: Terminal, iTerm2, Xcode, or the CI agent.
+An unsigned binary built seconds earlier reads a live cross-process window tree
+with no grant of its own (measured 2026-08-12). Granting "VerdictUI" itself is
+not a step, and looking for it in the permission list is a dead end.
+
+Grant it to the launching app:
+
+```
+System Settings → Privacy & Security → Accessibility → enable your terminal
+```
+
+Then confirm — the flag is necessary but **not sufficient**, so confirm by
+reading rather than by checking a box:
+
+```bash
+swift test --filter WitnessIntegrationTests   # skips loudly if the grant is missing
+```
+
+### Why a missing grant never produces a quieter PASS
+
+A verify that asked for cross-validation and could not run it returns a verdict
+carrying a `cross-validation-skipped` **warning finding** naming the reason —
+never an ordinary PASS, and never a thrown error. The distinction matters in
+both directions: a silent PASS would read as "both channels agree" when one
+channel never ran, and a thrown error would exit 2 ("no verdict could be
+produced") when the in-process verdict is perfectly producible.
+
+The decision is driven by **the read failing**, not by `AXIsProcessTrusted()`.
+That flag returned `true` in every failing case measured
+(`docs/wave8-ax-findings.md` §3): it reports what was granted, never what is
+reachable, so a witness gating on it proceeds confidently onto an empty tree —
+and an empty tree is indistinguishable from a scenario that renders nothing.
+
+| Reason in the finding | What to do |
+|---|---|
+| `no Accessibility permission` | grant it to the launching terminal (above) |
+| `published no accessibility-visible window (AXError -25204)` | the host was launched off the GUI session; it must go through LaunchServices, not fork/exec (`no.md` #43) |
+| `the witness host process is unavailable` | `swift build` did not produce `verdictui-witness-host` |
+| `published no geometry for its hosting group` | the window was read but has no anchor; treat as a witness defect, not a UI one |
+
 ## Health Check
 
 ```bash
