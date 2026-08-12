@@ -2,6 +2,37 @@
 
 ## [Unreleased]
 
+### 2026-08-12 (Wave 8 Task 3 — the permission path)
+
+**Added**
+
+- **`CrossValidation.findings`** — cross-validation now has an answer for the
+  case where the witness cannot run at all. A failed read returns exactly one
+  `cross-validation-skipped` **warning** naming the reason; it never throws and
+  never quietly returns an ordinary PASS. Both alternatives are silent failures:
+  a swallowed failure makes "the two channels agree" and "only one channel ran"
+  reach the caller as the same answer, while a thrown error exits 2 ("no verdict
+  could be produced") when the in-process verdict is perfectly producible. The
+  reason is carried through because the fix for a missing permission grant and
+  the fix for a host that never launched are different fixes.
+
+**Changed**
+
+- Availability is decided by **the read failing**, not by `AXIsProcessTrusted()`.
+  That flag reports what was granted, never what is reachable — measured
+  returning `true` in every failing case (`docs/wave8-ax-findings.md` §3), so a
+  witness gating on it proceeds onto an empty tree, which at the point of use is
+  indistinguishable from a scenario that renders nothing.
+
+- `docs/runbook.md` documents the grant flow, including the part that is easy to
+  get wrong: **Accessibility trust is inherited from the launching process**
+  (your terminal or CI agent), so there is nothing to grant to VerdictUI itself.
+  Re-verified 2026-08-12 — a freshly compiled binary with no permission entry of
+  its own reads another application's window tree at `AXError 0`.
+
+- The Wave 8 gate's "new SLO 3" is corrected to **SLO 4** in the plan: SLO 3
+  shipped in Wave 7 as MCP warm latency and is gated by `stage_mcp_latency`.
+
 ### 2026-08-12 (Wave 8 Tasks 1-2 — the cross-validation witness and reconciler)
 
 **Added**
