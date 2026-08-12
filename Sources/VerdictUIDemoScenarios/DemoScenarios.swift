@@ -68,6 +68,10 @@ public struct DemoScenarioEntry {
     /// concrete type only exists inside ``init(viewport:probeIDs:make:)``.
     private let host: @Sendable @MainActor (Size, TimeInterval) -> OracleHost
 
+    /// Builds the scenario's view for the Wave 8 witness window. Stored the same
+    /// way and for the same reason as ``host``: the concrete type is erased.
+    private let witnessView: @Sendable @MainActor () -> AnyView
+
     /// - Parameters:
     ///   - viewport: value for ``recommendedViewport``.
     ///   - probeIDs: value for ``probeIDs``.
@@ -85,7 +89,18 @@ public struct DemoScenarioEntry {
         self.host = { viewport, deadline in
             OracleHost(scenario: make(), viewport: viewport, deadline: deadline)
         }
+        self.witnessView = {
+            // The PROBED body, so the witness window and the probe channel
+            // describe the same views. Rendering an unprobed variant here would
+            // compare two different view trees and report the difference as a
+            // defect — an engine accusing the UI of its own harness's choice.
+            AnyView(WitnessScenarioRoot(scenario: make(), state: ScenarioState()))
+        }
     }
+
+    /// The scenario's view, for hosting in the Wave 8 witness window.
+    @MainActor
+    public func witnessBody() -> AnyView { witnessView() }
 
     /// A fresh ``OracleHost`` rendering this scenario.
     ///
@@ -218,5 +233,28 @@ public enum DemoScenarios {
                 CleanSettingsScenario()
             },
         ])
+    }
+}
+
+// MARK: - Witness hosting
+
+/// Calls `scenario.body(state:)` from inside a `View`'s own body, for the Wave 8
+/// witness window.
+///
+/// The same indirection `OracleHost` uses, and for the same reason: handing
+/// `scenario.body(state: state)` straight to `NSHostingView` evaluates the
+/// author's body exactly once, at construction, so no later state change would
+/// ever reach it. Evaluating it here means SwiftUI re-runs `body(state:)` on
+/// every invalidation with the same state instance.
+///
+/// It is a second copy of a private type rather than a shared one because the
+/// alternative is widening `OracleHost`'s internals to the package, and the two
+/// hosts are deliberately separate — see ``VerdictUIWitness``.
+private struct WitnessScenarioRoot<Scenario: VerdictScenario>: View {
+    let scenario: Scenario
+    @ObservedObject var state: ScenarioState
+
+    var body: some View {
+        scenario.body(state: state)
     }
 }
