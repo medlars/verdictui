@@ -18,6 +18,11 @@ python3.14 scripts/verdictui-pm.py --quick # health check
 
 1. Read `docs/wave-status.md` — its "Next action" row is the first task. Cross-check against `git log --oneline -5`; if the file is stale (newer commits or uncommitted work), reconcile it from git evidence before continuing.
 2. P0/P1 in `TODO.md` / open CIS issues preempt wave work; a non-Grade-A PM preempts everything.
+   **Blockers carry `measured: YYYY-MM-DD` + `falsify: <command>` (DIR-036).** Do not inherit one:
+   run the falsify command if the date is older than 7 days and re-stamp it either way. A blocker
+   with neither field is unverified — measure before escalating. Wave 8 sat blocked for a week on
+   "needs Accessibility permission, an owner action" that was never measured and was false; one
+   probe retired it in under a minute (`no.md` #42).
 3. Start working without asking what to do — announce in one line what is being resumed.
 4. **Before the session ends**: update `docs/wave-status.md` (tasks done, precise next action, session-log line), commit, push. Leaving it stale breaks the next session's resume.
 
