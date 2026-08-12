@@ -4,7 +4,8 @@
 *.xcodeproj
 xcuserdata/
 DerivedData/
-logs/
+logs/*
+!logs/.gitkeep
 *.log
 .env
 .DS_Store

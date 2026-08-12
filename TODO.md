@@ -4,6 +4,9 @@
 <!-- none -->
 
 ## P1 — High Priority
+- [x] (2026-08-12) (P1) CEO/stage_floor: VerdictUI floor: 1 gap(s):
+  ✗ logs/
+
 - [x] (2026-08-10) (P1) PM/stage_test: `python3.14 scripts/verdictui-pm.py --quick` failed with `HarnessTests.testSettleMsIsMeasuredNotAssumedOnTheTimeoutPath`: under the Codex constrained timing lane, the 600 ms iteration reached `oracle-host` before the intended `settle-timeout` branch (`settleMs 587.41975 <= 600`). Fixed by making the timeout-path proof strict on developer hardware and record-only when `ConstrainedTimingEnvironment` is active; verified with the focused test in both record-only and marker-unset lanes plus the full `HarnessTests` filter.
 - [x] (2026-08-09) (P1) PM CLI: `python3.14 scripts/verdictui-pm.py query risk --file Tests/VerdictUIProbeTests/HarnessPerformanceTests.swift` was parsed as a quick pipeline because the script ignored unknown positional args and only checked for `--full`. That launched Swift stages instead of returning a sub-second query and left a SwiftPM lock during repair. Fixed by adding project-local argparse dispatch for `query risk|coverage|why-failed`, `--quick`, `--full`, and `--fix`; pinned with `Tests/test_verdictui_pm.py::TestPMCLI`.
 - [x] (2026-08-09) (P1) PM/stage_test + stage_runtime_bench: Codex repair sandboxes (`CODEX_CI=1`, `CODEX_SANDBOX=seatbelt`) were treated as developer hardware, so `HarnessPerformanceTests.testPerformCycleMeetsTheSLO1Gate` enforced the 70 ms local p50 gate under constrained timing and failed at 138–280 ms. Fixed by making `_timing_record_only_environment()` and Swift timing predicates honor explicit `VERDICTUI_RECORD_TIMING_ONLY`, `CI`, `CODEX_CI`, and `CODEX_SANDBOX` markers; pinned with `Tests/test_verdictui_pm.py::TestSkipSentinel::test_timing_record_only_detects_codex_repair_sandbox`.
