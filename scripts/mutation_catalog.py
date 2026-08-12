@@ -138,7 +138,7 @@ MUTATIONS = [
         path="Sources/VerdictUIKernel/RuleEngine.swift",
         old="            if !containsProbedNode(root) {",
         new="            if false {",
-        test="VerdictUIKernelTests/testAProbelessTreeCannotProduceAPassVerdict",
+        test="VerdictUIKernelTests.VacuousVerdictTests/testAProbelessTreeCannotProduceAPassVerdict",
     ),
     Mutation(
         # The search must cover the WHOLE tree. Restricting it to the root's
@@ -148,7 +148,7 @@ MUTATIONS = [
         path="Sources/VerdictUIKernel/RuleEngine.swift",
         old="            if !child.id.isEmpty || containsProbedNode(child) { return true }",
         new="            if !child.id.isEmpty { return true }",
-        test="VerdictUIKernelTests/testAProbeNestedDeepCountsAsObservation",
+        test="VerdictUIKernelTests.VacuousVerdictTests/testAProbeNestedDeepCountsAsObservation",
     ),
     Mutation(
         # Mutates the MANIFEST, because the floor is the thing consumers collide
@@ -588,7 +588,10 @@ MUTATIONS = [
         name="settleMs on the timeout path reports the budget, not the measurement",
         path="Sources/VerdictUIProbe/Harness.swift",
         old="        let settleMs = settleStarted.duration(to: .now).asMilliseconds",
-        new="        let settleMs = timeout.asMilliseconds",
+        new=(
+            "        _ = settleStarted.duration(to: .now)\n"
+            "        let settleMs = timeout.asMilliseconds"
+        ),
         test="HarnessTests/testSettleMsIsMeasuredNotAssumedOnTheTimeoutPath",
     ),
     Mutation(
@@ -778,6 +781,15 @@ MUTATIONS = [
         # consuming target scores INCONCLUSIVE, which measures nothing. The
         # snapshot test expands the macro in-process, so it observes the broken
         # source as a text mismatch instead of as a build failure.
+        # UNPROVABLE BY CONSTRUCTION, and the reason is the defect itself: this
+        # guard exists because the macro emitted `{ row inText(…)`, which by
+        # definition does not compile. A mutation reinstating that bug therefore
+        # cannot produce a building test target, so the row scores INCONCLUSIVE
+        # however it is written. The snapshot witness WOULD see it (measured:
+        # "cannot find 'item' in scope" / "cannot find 'inText' in scope"), but
+        # sibling COMPILATION tests in the same target fail to build first.
+        # Kept rather than deleted: --verify-targets still pins the anchor, so a
+        # refactor that moves the line is caught even though the mutation is not.
         name="body walk drops the trivia separating a statement from its closure signature",
         path="Sources/VerdictUIMacros/BodyProbeWalk.swift",
         old="                        rewritten.with(\\.leadingTrivia, expression.leadingTrivia)",
@@ -858,7 +870,7 @@ MUTATIONS = [
         old="        if !explicitIDs.insert(id).inserted {",
         new="        if false, !explicitIDs.insert(id).inserted {",
         test=(
-            "VerdictUIMacroTests.VerifiableMacroTests/testTwoElementsSharingAnExplicitIdIsAnError"
+            "VerdictUIMacroTests.VerifiableMacroDiagnosticsTests/testTwoElementsSharingAnExplicitIdIsAnError"
         ),
         runner=Runner.SWIFT,
     ),
@@ -872,7 +884,7 @@ MUTATIONS = [
         old="        if Self.rolesRequiringALabel.contains(role), Self.literalTextArgument(of: recursed) == nil {",
         new="        if false, Self.literalTextArgument(of: recursed) == nil {",
         test=(
-            "VerdictUIMacroTests.VerifiableMacroTests/"
+            "VerdictUIMacroTests.VerifiableMacroDiagnosticsTests/"
             "testAnInteractiveElementWithNoLabelIsAWarningCarryingAFixIt"
         ),
         runner=Runner.SWIFT,
@@ -1104,7 +1116,11 @@ MUTATIONS = [
         name="baseline drift ignores a node's suppression directive",
         path="Sources/VerdictUIKernel/Baselines.swift",
         old="        return context.makeFinding(\n            rule: id,\n            node: node,",
-        new="        return Finding(\n            rule: id,\n            severity: .error,\n            nodeID: node.id,",
+        new=(
+            "        return context.makeFinding(\n"
+            "            rule: id,\n"
+            "            node: SemanticNode(id: node.id, role: node.role, frame: node.frame),"
+        ),
         test="BaselinesTests/testSuppressionOnALiveNodeSilencesItsDrift",
     ),
     Mutation(
@@ -1218,6 +1234,12 @@ MUTATIONS = [
         # "Text" generates `struct Text` — which shadows SwiftUI's `Text`
         # inside its own expansion, making every element in the body resolve
         # to the scenario itself.
+        # UNPROVABLE BY CONSTRUCTION. Its own witness is a PURE-FUNCTION test
+        # (`typeName(forScenarioNamed: "Text")`) that needs no expansion, but a
+        # sibling file hard-codes the generated name
+        # (`VerdictScenarioCompilationTests` -> `MacroScenarios.MacroCheckoutScenario`),
+        # so dropping the suffix breaks the TARGET build before any test runs.
+        # Measured: "'MacroCheckoutScenario' is not a member type of enum".
         name="generated scenario type name drops its suffix",
         path="Sources/VerdictUIMacros/VerdictScenarioMacro.swift",
         old='        return out + "Scenario"',
@@ -1234,7 +1256,7 @@ MUTATIONS = [
         name="registry hides duplicate scenario names",
         path="Sources/VerdictUIProbe/ScenarioRegistry.swift",
         old="                duplicates.insert(name)",
-        new="                _ = name",
+        new='                duplicates.insert("@never-a-real-scenario-name")',
         test=(
             "VerdictUIMacroTests.VerdictScenarioCompilationTests/"
             "testDuplicateNamesAreReportedRatherThanSilentlyDropped"
