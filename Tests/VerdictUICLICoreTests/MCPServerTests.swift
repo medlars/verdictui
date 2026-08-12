@@ -76,7 +76,12 @@ final class MCPServerTests: XCTestCase {
     func testToolsRequiringAScenarioSaySoInTheirSchema() {
         for tool in MCPServer.tools {
             let method = MCPServer.daemonMethod(for: tool.name)
-            let methodNeedsScenario = ["render", "verify", "sweep", "baseline_diff"]
+            // Read from the dispatcher's own set rather than restating it: a
+            // hand-copied list here is a second implementation of one rule, and
+            // it went stale the moment `act` was added — the schema and the
+            // dispatcher then disagreed about what a client must send, which is
+            // exactly the divergence this test exists to catch.
+            let methodNeedsScenario = VerdictDaemon.methodsNeedingAScenario
                 .contains(method ?? "")
 
             XCTAssertEqual(

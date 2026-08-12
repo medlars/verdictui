@@ -846,6 +846,20 @@ class TestStageCLISmoke:
         assert "exit codes 0/1/2" in result["detail"]
 
 
+def _served_tools() -> list[dict]:
+    """The tool catalog a healthy binary advertises.
+
+    Spelled once and shared by both fixtures so the bad-handshake test and its
+    control differ in exactly ONE reply. A fixture that also served the wrong
+    catalog would fail for two reasons at once, and the test could no longer
+    show which one the stage actually caught.
+    """
+    return [
+        {"name": name}
+        for name in ("list_scenarios", "render", "verify", "act", "sweep", "baseline_diff")
+    ]
+
+
 class TestStageTransportSmoke:
     """The stage that speaks the MCP wire protocol to the shipped binary.
 
@@ -929,7 +943,12 @@ class TestStageTransportSmoke:
         binary.parent.mkdir(parents=True)
         replies = [
             {"jsonrpc": "2.0", "error": {"code": -32700, "message": "parse error"}},
-            {"jsonrpc": "2.0", "id": 2, "result": {"tools": [{"name": f"t{i}"} for i in range(5)]}},
+            # The real verb names, because the stage asserts WHICH tools are
+            # served rather than how many — placeholder names satisfied the old
+            # count check while telling a reader nothing, and in the
+            # bad-handshake fixture they would make the stage fail for TWO
+            # reasons at once, so it could no longer show which one it caught.
+            {"jsonrpc": "2.0", "id": 2, "result": {"tools": _served_tools()}},
             {
                 "jsonrpc": "2.0",
                 "id": 3,
@@ -953,6 +972,61 @@ class TestStageTransportSmoke:
         )
         assert "initialize" in result["detail"]
 
+    def test_a_missing_tool_fails_the_stage_and_names_it(self, tmp_path, monkeypatch) -> None:
+        """A catalog short one verb must fail, naming which one.
+
+        The count check this replaced could see a wrong SIZE but never say what
+        was absent, and it fired on `act` being ADDED — a stage that fails when
+        the product grows and cannot report what it lost. Everything else in
+        this fixture is well-formed, so the stage can only fail for the catalog.
+        """
+        served = [tool for tool in _served_tools() if tool["name"] != "act"]
+        result = self._drive(tmp_path, monkeypatch, tools=served)
+
+        assert not result["passed"]
+        assert "act" in result["detail"], result["detail"]
+
+    def test_the_destructive_verb_being_advertised_fails_the_stage(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """Serving `baseline_accept` must fail, however complete the rest is.
+
+        Accepting a baseline REPLACES the record of what a screen should look
+        like. The whole catalog is present here, so a stage that only checked
+        for missing verbs would pass this — which is why the absence is asserted
+        separately rather than inferred from a count.
+        """
+        result = self._drive(
+            tmp_path, monkeypatch, tools=_served_tools() + [{"name": "baseline_accept"}]
+        )
+
+        assert not result["passed"]
+        assert "baseline_accept" in result["detail"], result["detail"]
+
+    def _drive(self, tmp_path, monkeypatch, tools: list[dict]) -> dict:
+        """Run the stage against a stub binary serving `tools`."""
+        binary = tmp_path / ".build" / "debug" / "verdictui"
+        binary.parent.mkdir(parents=True)
+        replies = [
+            {"jsonrpc": "2.0", "id": 1, "result": {"protocolVersion": "2024-11-05"}},
+            {"jsonrpc": "2.0", "id": 2, "result": {"tools": tools}},
+            {
+                "jsonrpc": "2.0",
+                "id": 3,
+                "result": {
+                    "isError": False,
+                    "content": [{"text": json.dumps({"status": "FAIL", "findings": [{}]})}],
+                },
+            },
+        ]
+        stdout = "\n".join(json.dumps(r) for r in replies) + "\n"
+        binary.write_text(f"#!/bin/sh\ncat >/dev/null\nprintf '%s' {shlex.quote(stdout)}\n")
+        binary.chmod(0o755)
+        monkeypatch.setattr(_mod, "PROJECT_ROOT", tmp_path)
+
+        pm = VerdictUIPM.__new__(VerdictUIPM)
+        return pm.stage_transport_smoke()
+
     def test_a_well_formed_handshake_still_passes(self, tmp_path, monkeypatch) -> None:
         """Control for the test above: the same fixture, handshake repaired.
 
@@ -964,7 +1038,12 @@ class TestStageTransportSmoke:
         binary.parent.mkdir(parents=True)
         replies = [
             {"jsonrpc": "2.0", "id": 1, "result": {"protocolVersion": "2024-11-05"}},
-            {"jsonrpc": "2.0", "id": 2, "result": {"tools": [{"name": f"t{i}"} for i in range(5)]}},
+            # The real verb names, because the stage asserts WHICH tools are
+            # served rather than how many — placeholder names satisfied the old
+            # count check while telling a reader nothing, and in the
+            # bad-handshake fixture they would make the stage fail for TWO
+            # reasons at once, so it could no longer show which one it caught.
+            {"jsonrpc": "2.0", "id": 2, "result": {"tools": _served_tools()}},
             {
                 "jsonrpc": "2.0",
                 "id": 3,

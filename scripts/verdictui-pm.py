@@ -773,6 +773,14 @@ class VerdictUIPM(PmBase):
         key, the one spelling that decodes either way, and the reply COUNT was
         the only check on it — a parse error is a reply, so the count stayed 3
         while nothing could connect.
+
+        The catalog check asserts the VERBS, not their number. It used to
+        compare `len(catalog) != 5`, which is a copy of the catalog's size
+        rather than a claim about it: adding `act` failed this stage while
+        nothing was wrong, and a bare count could never have said WHICH tool had
+        gone missing. `baseline_accept` is asserted ABSENT in the same place,
+        because the destructive verb reaching an agent is the failure SD4 exists
+        to prevent.
         """
         binary = PROJECT_ROOT / ".build" / "debug" / "verdictui"
         if not binary.exists():
@@ -841,10 +849,29 @@ class VerdictUIPM(PmBase):
             }
 
         catalog = by_id.get(2, {}).get("result", {}).get("tools", [])
-        if len(catalog) != 5:
+        served = {tool.get("name") for tool in catalog}
+        # Assert the VERBS, not a count. A bare number is a copy of the
+        # catalog's size that goes stale the moment a tool is added -- it fired
+        # on `act` -- and it cannot say WHICH tool went missing, which is the
+        # only thing a reader needs. `baseline_accept` is asserted ABSENT for
+        # the same reason MCPServerTests does: the destructive verb must not
+        # reach an agent (SD4).
+        required = {"list_scenarios", "render", "verify", "act", "sweep", "baseline_diff"}
+        if missing := required - served:
             return {
                 "passed": False,
-                "detail": f"tools/list returned {len(catalog)} tools over the wire, expected 5",
+                "detail": (
+                    f"tools/list is missing {sorted(missing)} over the wire — "
+                    f"served: {sorted(served)}"
+                ),
+            }
+        if forbidden := served & {"baseline_accept", "baseline_update"}:
+            return {
+                "passed": False,
+                "detail": (
+                    f"tools/list advertises {sorted(forbidden)} — accepting a baseline is "
+                    "destructive and must stay a foreground command a human watches"
+                ),
             }
 
         call = by_id.get(3, {}).get("result", {})

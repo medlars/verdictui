@@ -159,10 +159,34 @@ public struct MCPTransport: Sendable {
         }
 
         let arguments = parameters.arguments ?? [:]
+        // An `act` needs a verb and a probe, and a client that omits either is
+        // refused HERE rather than by building a half-formed DaemonAction: an
+        // action defaulting its probe to "" reaches the harness as a real
+        // request against a probe that cannot exist, which comes back as
+        // "no action binding registered for probe id ''" — a true sentence that
+        // sends the reader looking at the scenario instead of at their call.
+        var action: DaemonAction?
+        if method == "act" {
+            guard let kind = arguments["action"]?.stringValue else {
+                return Self.toolFailure(id: id, message: "act requires an 'action' argument")
+            }
+            guard let probe = arguments["probe"]?.stringValue else {
+                return Self.toolFailure(id: id, message: "act requires a 'probe' argument")
+            }
+            action = DaemonAction(
+                kind: kind,
+                probe: probe,
+                text: arguments["text"]?.stringValue,
+                value: arguments["value"]?.numberValue
+            )
+        }
+
         let request = DaemonRequest(
             method: method,
             scenario: arguments["scenario"]?.stringValue,
             baseline: arguments["baseline"]?.boolValue,
+            action: action,
+            includeTree: arguments["include_tree"]?.boolValue,
             id: nil
         )
         let response = await VerdictDaemon.handle(request, engine: engine)
@@ -203,6 +227,12 @@ public struct MCPTransport: Sendable {
         case .scenarios(let names): data = try encoder.encode(names)
         case .verdict(let verdict): data = try encoder.encode(verdict)
         case .tree(let tree): data = try encoder.encode(CompactTree(tree))
+        // Already compact: `StepResultWire` carries a `CompactDelta` and an
+        // optional `CompactTree`, so the saving is applied where the value is
+        // BUILT rather than here. Doing it here instead would mean the socket
+        // daemon shipped the raw form while MCP shipped the compact one — two
+        // wires for one method.
+        case .step(let step): data = try encoder.encode(step)
         case .sweep(let report): data = try encoder.encode(report)
         case .findings(let findings): data = try encoder.encode(findings)
         case .pong(let version): data = try encoder.encode(["schemaVersion": version])
@@ -320,6 +350,16 @@ public enum MCPValue: Codable, Sendable {
 
     public var boolValue: Bool? {
         if case .bool(let value) = self { return value }
+        return nil
+    }
+
+    /// The wrapped number, or `nil`.
+    ///
+    /// Deliberately does NOT fall back to parsing a `.string`: a client sending
+    /// `"0.5"` for a slider has sent the wrong type, and quietly accepting it
+    /// would make the schema a suggestion. The refusal names the argument.
+    public var numberValue: Double? {
+        if case .number(let value) = self { return value }
         return nil
     }
 

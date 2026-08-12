@@ -12,21 +12,116 @@ import Foundation
 import VerdictUIKernel
 import VerdictUIProbe
 
+/// An act, in the form a client can put on a wire.
+///
+/// ### Why this is not ``VerdictUIProbe/ProbeAction``
+///
+/// `ProbeAction` carries a `.custom(String, @MainActor (ScenarioState) -> Void)`
+/// case — a closure, which has no serialized form. A wire type that tried to
+/// mirror the enum would either need a `custom` case it can never populate
+/// (advertising a verb no client can use) or would silently drop it on decode.
+///
+/// So the wire vocabulary is the four DATA-carrying cases, spelled here, and
+/// ``probeAction`` is the one place the mapping lives. `.custom` is
+/// deliberately absent rather than stubbed: a scenario-specific mutation is a
+/// thing only the scenario's own author can express, and a remote caller has no
+/// way to name one.
+public struct DaemonAction: Codable, Sendable, Equatable {
+    /// One of `tap`, `toggle`, `setText`, `setSlider`.
+    public let kind: String
+    /// Probe id to act on.
+    public let probe: String
+    /// New text, for `setText`.
+    public let text: String?
+    /// New value, for `setSlider`.
+    public let value: Double?
+
+    public init(kind: String, probe: String, text: String? = nil, value: Double? = nil) {
+        self.kind = kind
+        self.probe = probe
+        self.text = text
+        self.value = value
+    }
+
+    /// Every verb a client may send.
+    public static let kinds = ["tap", "toggle", "setText", "setSlider"]
+
+    /// Why an action could not be understood.
+    ///
+    /// A rejected act reports which field was wrong, because the alternative —
+    /// treating a missing `text` as an empty string — would type nothing into
+    /// the field and then report a verdict about a screen the caller never
+    /// asked for.
+    public enum TranslationError: Error, Equatable, CustomStringConvertible {
+        case unknownKind(String)
+        case missingArgument(kind: String, argument: String)
+
+        public var description: String {
+            switch self {
+            case .unknownKind(let kind):
+                return "unknown action '\(kind)' — expected one of: "
+                    + DaemonAction.kinds.joined(separator: ", ")
+            case .missingArgument(let kind, let argument):
+                return "action '\(kind)' requires a '\(argument)' argument"
+            }
+        }
+    }
+
+    /// The in-process action this describes.
+    public func probeAction() throws -> ProbeAction {
+        switch kind {
+        case "tap":
+            return .tap(probe)
+        case "toggle":
+            return .toggle(probe)
+        case "setText":
+            guard let text else {
+                throw TranslationError.missingArgument(kind: kind, argument: "text")
+            }
+            return .setText(probe, text)
+        case "setSlider":
+            guard let value else {
+                throw TranslationError.missingArgument(kind: kind, argument: "value")
+            }
+            return .setSlider(probe, value)
+        default:
+            throw TranslationError.unknownKind(kind)
+        }
+    }
+}
+
 /// A JSON-RPC request the daemon understands.
 public struct DaemonRequest: Codable, Sendable, Equatable {
-    /// Method name: `list`, `render`, `verify`, `sweep`, `baseline_diff`, `ping`.
+    /// Method name: `list`, `render`, `verify`, `act`, `sweep`, `baseline_diff`, `ping`.
     public let method: String
     /// Scenario the method applies to, when it needs one.
     public let scenario: String?
     /// Whether `verify` should also compare against the baseline.
     public let baseline: Bool?
+    /// What `act` should do.
+    public let action: DaemonAction?
+    /// Whether `act` should also carry the whole after-tree.
+    ///
+    /// Off by default, which is the product decision the compact delta exists
+    /// to serve: an agent in an act loop wants what CHANGED, and a full tree per
+    /// step is the token cost that makes the loop unaffordable.
+    public let includeTree: Bool?
     /// Caller-supplied correlation id, echoed back untouched.
     public let id: String?
 
-    public init(method: String, scenario: String? = nil, baseline: Bool? = nil, id: String? = nil) {
+    public init(
+        method: String,
+        scenario: String? = nil,
+        baseline: Bool? = nil,
+        action: DaemonAction? = nil,
+        includeTree: Bool? = nil,
+        id: String? = nil
+    ) {
         self.method = method
         self.scenario = scenario
         self.baseline = baseline
+        self.action = action
+        self.includeTree = includeTree
         self.id = id
     }
 }
@@ -76,12 +171,13 @@ public enum DaemonResult: Codable, Sendable {
     case scenarios([String])
     case verdict(Verdict)
     case tree(SemanticNode)
+    case step(StepResultWire)
     case sweep(SweepReportWire)
     case findings([Finding])
     case pong(String)
 
     private enum CodingKeys: String, CodingKey, CaseIterable {
-        case scenarios, verdict, tree, sweep, findings, pong
+        case scenarios, verdict, tree, step, sweep, findings, pong
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -90,6 +186,7 @@ public enum DaemonResult: Codable, Sendable {
         case .scenarios(let value): try container.encode(value, forKey: .scenarios)
         case .verdict(let value): try container.encode(value, forKey: .verdict)
         case .tree(let value): try container.encode(value, forKey: .tree)
+        case .step(let value): try container.encode(value, forKey: .step)
         case .sweep(let value): try container.encode(value, forKey: .sweep)
         case .findings(let value): try container.encode(value, forKey: .findings)
         case .pong(let value): try container.encode(value, forKey: .pong)
@@ -108,6 +205,8 @@ public enum DaemonResult: Codable, Sendable {
             self = .verdict(value)
         } else if let value = try container.decodeIfPresent(SemanticNode.self, forKey: .tree) {
             self = .tree(value)
+        } else if let value = try container.decodeIfPresent(StepResultWire.self, forKey: .step) {
+            self = .step(value)
         } else if let value = try container.decodeIfPresent(SweepReportWire.self, forKey: .sweep) {
             self = .sweep(value)
         } else if let value = try container.decodeIfPresent([Finding].self, forKey: .findings) {
@@ -161,6 +260,19 @@ public actor VerdictDaemon {
         self.socketPath = socketPath
     }
 
+    /// Methods that cannot be answered without a scenario name.
+    ///
+    /// Public and named ONCE because two readers need it and they must not
+    /// disagree: `handle` refuses a request missing one, and
+    /// `MCPServerTests.testToolsRequiringAScenarioSaySoInTheirSchema` checks
+    /// that every advertised tool's `required` list matches. That test used to
+    /// carry its own copy of this list, which is a second implementation of one
+    /// rule — adding `act` here left the copy stale, and the schema and the
+    /// dispatcher disagreed about what a client must send.
+    public static let methodsNeedingAScenario: Set<String> = [
+        "render", "verify", "act", "sweep", "baseline_diff",
+    ]
+
     /// Answer one request.
     ///
     /// Separated from the socket plumbing so the whole method surface is
@@ -186,9 +298,8 @@ public actor VerdictDaemon {
         // is a correctness argument a reader has to reconstruct, and a later
         // method added to the list without a matching `!` would crash the
         // daemon rather than answer.
-        let needsScenario = ["render", "verify", "sweep", "baseline_diff"]
         guard let scenario = request.scenario else {
-            if needsScenario.contains(request.method) {
+            if Self.methodsNeedingAScenario.contains(request.method) {
                 return failure("method '\(request.method)' requires a scenario")
             }
             // Methods that need no scenario continue below with a name they
@@ -211,6 +322,29 @@ public actor VerdictDaemon {
                     againstBaseline: request.baseline ?? false
                 )
                 return success(.verdict(verdict))
+
+            case "act":
+                guard let action = request.action else {
+                    return failure("method 'act' requires an action")
+                }
+                // Translation failure is reported as a REFUSAL, not as a
+                // failing step: "I do not understand 'clcik'" is a statement
+                // about the request, and returning it as a FAIL verdict would
+                // tell the agent its UI is broken when its message was.
+                let probeAction: ProbeAction
+                do {
+                    probeAction = try action.probeAction()
+                } catch let error as DaemonAction.TranslationError {
+                    return failure(error.description)
+                }
+                let step = try await engine.act(
+                    scenario: scenario,
+                    action: probeAction,
+                    includeTree: request.includeTree ?? false
+                )
+                return success(
+                    .step(StepResultWire(step, includeTree: request.includeTree ?? false))
+                )
 
             case "sweep":
                 let report = try await engine.sweep(

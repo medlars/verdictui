@@ -95,6 +95,92 @@ are ADDED to the lint verdict rather than replacing it: drift and a rule
 violation are different claims, and a screen can be both unchanged since the
 last accept and wrong.
 
+### `act(scenario, action, probe, text?, value?, include_tree?)`
+
+Capture, act, settle, capture, diff, lint — one call. This is the tightest loop
+an agent runs, so the response carries the DELTA rather than the tree.
+
+`action` is one of `tap`, `toggle`, `setText`, `setSlider`. `setText` requires
+`text` and `setSlider` requires `value`; a missing payload is REFUSED rather
+than defaulted, because an empty string types nothing into the field and then
+reports a verdict about a screen the caller never asked for.
+
+Verbatim from the shipped binary (`verdictui mcp`, the `text` payload of the
+tool result), reformatted only by line breaks:
+
+```json
+{"delta": {
+   "added": [{"index": 1, "node": 0, "path": [0,1]}, {"index": 2, "node": 1, "path": [0,5]}],
+   "moved": [{"from": [50,72,260,28], "path": [0,9], "to": [50,51,260,28]}],
+   "removed": [[0,8]],
+   "nodeIDs": [1,5], "nodeRoles": [2,6], "nodeTexts": [3,-1],
+   "nodeFrames": [50,91,119,16, 50,119,140,30],
+   "nodeParents": [-1,-1], "nodePaths": [4,7],
+   "nodeMetrics": [119,1,1, -1,-1,-1],
+   "strings": ["$root","advanced-detail","text","Cache size: 512 MB","root/text[1]",
+               "clear-cache-button","button","root/button[2]","collapsed-summary",
+               "advanced-toggle"]},
+ "elapsedMs": 51.1385, "findings": [], "probe": "advanced-toggle",
+ "settled": true, "status": "PASS"}
+```
+
+**Reading a delta.** Every path is a run of indices into `strings`, so `[0,1]`
+is `$root/advanced-detail`. Added nodes live in one flat table shared by all
+additions: node `i` has id `strings[nodeIDs[i]]` (`-1` = unprobed), role
+`strings[nodeRoles[i]]`, frame `nodeFrames[i*4..<i*4+4]`, and metrics
+`nodeMetrics[i*3..<i*3+3]` as `intrinsicWidth, renderedLineCount,
+idealLineCount` (all `-1` when the probe reported none). `nodeParents[i] == -1`
+marks an addition root.
+
+**An empty list is OMITTED, not spelled.** Above, `changed` is absent because
+nothing changed. An act that alters nothing structurally therefore answers
+`"delta":{}` — 2 bytes.
+
+**`settled` is a separate claim from `status`.** A timed-out settle says the
+observation may be incomplete; a FAIL says the layout is wrong. An agent that
+read the first as the second would go and fix the wrong thing.
+
+**A FAIL is a successful call.** An act against a probe that does not exist
+returns `isError: false` with `status: FAIL` and a finding citing the probe —
+the request was understood, and the answer is that the UI has no such control:
+
+```json
+{"delta": {}, "elapsedMs": 5.794084, "probe": "no-such-probe",
+ "settled": true, "status": "FAIL",
+ "findings": [{"rule": "probe-action", "severity": "error", "nodeID": "no-such-probe",
+   "message": "no action binding registered for probe id 'no-such-probe'",
+   "suggestion": "Register a compatible binding with .verdictProbe(..., action:) for this probe id."}]}
+```
+
+An UNPARSEABLE act — an unknown verb, a `setText` with no `text` — is a refusal
+instead (`ok: false` on the socket, `isError: true` over MCP), because that is a
+statement about the request rather than about the UI.
+
+#### Wire budget
+
+Measured on the demo catalog, compact against raw:
+
+| Act | Census | Compact | Raw |
+| --- | --- | --- | --- |
+| toggle expand | added 2, removed 1, moved 1 | **498 B** | 702 B |
+| toggle collapse | added 1, removed 2, moved 1 | **419 B** | 544 B |
+| inert tap | nothing changed | **2 B** | 49 B |
+| unknown probe | nothing changed | **2 B** | 49 B |
+
+Gated at **512 B for a structural act** and **64 B for a non-structural one**
+(`ActToolTests`). The plan's original figure was 300 B, written before anything
+could be measured, and it is unreachable for any act that changes the tree: an
+act adding two nodes must name them, their roles, their text and their
+structural paths, which is ~400 B of the 498 — content, not envelope. Four
+rounds of compaction took it from 702 B to 498 B and could go no further without
+dropping information the verdict layer reads. Owner decision 2026-08-12; the
+reasoning is `no.md` #41.
+
+`include_tree: true` adds the whole after-tree as a `CompactTree` under `tree`.
+Off by default — an agent in an act loop wants what changed, and the after-tree
+is reconstructible: replaying the delta onto the before-tree reproduces it
+exactly, which `ActToolTests` asserts against a real act.
+
 ### `sweep(scenario, variants?)`
 
 One verdict per variant cell, plus a markdown rule × variant grid.

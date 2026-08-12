@@ -317,11 +317,11 @@ and the loop the whole project exists for closes.
 
 ### Exit gate
 
-- [ ] End-to-end agent session documented: edit → verify FAIL (evidence cited) → fix → verify PASS, no screenshots involved
-- [ ] Wire-size budgets met (tree ≤ 2 KB, delta ≤ 300 B on demo app; enforced by contract test)
-- [ ] Destructive baseline-accept requires explicit `confirm` (contract test)
-- [ ] MCP tools respond < 100 ms warm (measured through the actual stdio transport)
-- [ ] PM quick Grade A
+- [x] End-to-end agent session documented: edit → verify FAIL (evidence cited) → fix → verify PASS, no screenshots involved — `docs/dogfood-session.md`
+- [x] Wire-size budgets met — tree ≤ 2 KB (measured 362–839 B); act delta gated at **512 B structural / 64 B inert**, NOT the planned 300 B. That figure was written before an act existed to measure and is unreachable for any act that changes the tree: ~400 B of the smallest structural act in the catalog is node ids, roles, text and structural paths, all read by the verdict layer. Four compaction rounds took it 702 → 498 B (and the first attempt made it BIGGER, at 735 B). Budgets set from the measurement by owner decision 2026-08-12; reasoning in `no.md` #41, enforced by `ActToolTests`
+- [x] Destructive baseline-accept requires explicit `confirm` (contract test) — met more strongly by NOT SERVING the verb: `MCPServerTests.testNoToolAcceptsABaseline` and `stage_transport_smoke` both assert its absence over the wire, since a boolean an agent sets as easily as it omits is a speed bump rather than a gate
+- [x] MCP tools respond < 100 ms warm (measured through the actual stdio transport) — SLO 3, gated on the median at 40 ms with the tail recorded; live PM run reads p50 9.24 ms / p95 23.57 ms
+- [x] PM quick Grade A
 
 ---
 
