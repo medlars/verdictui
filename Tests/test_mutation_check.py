@@ -279,11 +279,30 @@ class TestPytestRunner:
                     "reason too short to be one; say what makes the runtime test able to fail here"
                 )
                 continue
-            assert suite.endswith("MacroTests"), (
-                f"macro row {mutation.name!r} is witnessed by {mutation.test!r}, which is not "
-                "an expansion-snapshot suite — a render test executes the previous expansion "
-                "and passes against a broken plugin (no.md #23). If the mutated behaviour is "
-                "not in the expansion, set `runtime_witness_reason` saying why."
+            # Judged by the PROPERTY, not by the class NAME. This assertion
+            # used to read `suite.endswith("MacroTests")`, which is a claim
+            # about spelling: splitting VerifiableMacroTests into a
+            # ...DiagnosticsTests class (CTS-E1A2E56A) made four correct rows
+            # fail a guard that had not changed meaning. A suite is an
+            # expansion-snapshot suite when it CALLS assertMacroExpansion, and
+            # that is what the file says.
+            klass = suite.split(".")[-1]
+            witness_files = [
+                path
+                for path in (_PROJECT_ROOT / "Tests" / "VerdictUIMacroTests").glob("*.swift")
+                if f"class {klass}" in path.read_text(encoding="utf-8")
+            ]
+            assert witness_files, (
+                f"macro row {mutation.name!r} names suite {klass!r}, which no file in "
+                "Tests/VerdictUIMacroTests declares — the row is witnessed by nothing"
+            )
+            assert any(
+                "assertMacroExpansion" in path.read_text(encoding="utf-8") for path in witness_files
+            ), (
+                f"macro row {mutation.name!r} is witnessed by {mutation.test!r}, whose suite "
+                "never calls assertMacroExpansion — a render test executes the previous "
+                "expansion and passes against a broken plugin (no.md #23). If the mutated "
+                "behaviour is not in the expansion, set `runtime_witness_reason` saying why."
             )
 
     def test_a_runtime_witness_opt_out_is_rare_and_declared(self) -> None:
