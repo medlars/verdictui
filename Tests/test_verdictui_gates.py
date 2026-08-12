@@ -10,6 +10,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -406,3 +407,90 @@ class TestValidateContractsFailureBranches:
         code, output = self._run(contracts, kernel)
         assert code == 1
         assert "unsupported $ref" in output, output
+
+
+class TestRunbookCommandsNameRealVerbs:
+    """A runbook command that cannot run is worse than a missing one.
+
+    `floor-check.py` asserts `docs/runbook.md` EXISTS. Presence is not value
+    (lesson 346): on 2026-08-11 the runbook carried a literal
+    `printf … | nc -U ~/.verdictui/daemon.sock` example against a socket
+    nothing in the package ever creates, because `VerdictDaemon` shipped its
+    method surface with no transport. A cold-read audit found it; no automated
+    check could, and the reader most likely to hit it is the one who cannot
+    check (`no.md` #34).
+
+    This closes the narrow, checkable half: every `verdictui <verb>` the
+    runbook invokes must be a subcommand the CLI actually declares. It cannot
+    judge prose — deciding whether an arbitrary paragraph describes shipped
+    code is a judgement, not a pattern — so the runbook's own NOT RUNNABLE YET
+    marker carries the rest, and this test guards the part a machine can see.
+    """
+
+    @staticmethod
+    def _declared_subcommands() -> set[str]:
+        source = (
+            _PROJECT_ROOT / "Sources" / "VerdictUICLICore" / "CommandLineInterface.swift"
+        ).read_text(encoding="utf-8")
+        return set(re.findall(r'commandName:\s*"([a-z][a-z-]*)"', source))
+
+    @staticmethod
+    def _runbook_invocations() -> set[str]:
+        text = (_PROJECT_ROOT / "docs" / "runbook.md").read_text(encoding="utf-8")
+        verbs: set[str] = set()
+        for line in text.splitlines():
+            stripped = line.strip()
+            # Only lines that INVOKE the tool, not prose that names it. A
+            # backticked mention inside a sentence is documentation about a
+            # verb, not a command a reader will paste.
+            for match in re.finditer(r"(?:^|[`\s./])verdictui\s+([a-z][a-z-]*)", stripped):
+                verbs.add(match.group(1))
+        return verbs
+
+    def test_every_runbook_verb_is_a_real_subcommand(self) -> None:
+        declared = self._declared_subcommands()
+        assert declared, "no subcommands parsed — the extractor is broken, not the runbook"
+
+        invoked = self._runbook_invocations()
+        unknown = invoked - declared - {"daemon", "mcp"}  # see the exemption test
+        assert not unknown, (
+            f"docs/runbook.md invokes `verdictui {sorted(unknown)}`, which the CLI does not "
+            f"declare. Declared: {sorted(declared)}. A runbook command that cannot run is "
+            "worse than a missing one (no.md #34)."
+        )
+
+    def test_a_verb_the_cli_lacks_must_be_marked_not_runnable(self) -> None:
+        """The control, and the reason the exemption above is not a hole.
+
+        `daemon` and `mcp` are exempted from the check above because the
+        runbook DISCUSSES them — their transports are CTS-81D9483D. That
+        exemption is only honest while the runbook says so out loud, so this
+        asserts the marker is present. Delete the marker and this fails.
+        """
+        text = (_PROJECT_ROOT / "docs" / "runbook.md").read_text(encoding="utf-8")
+        declared = self._declared_subcommands()
+
+        for verb in ("daemon", "mcp"):
+            if verb in declared:
+                continue  # the transport landed; nothing to mark
+            assert "NOT RUNNABLE YET" in text, (
+                f"the runbook describes `{verb}` but the CLI does not declare it, and the "
+                "NOT RUNNABLE YET marker is gone — a reader would take the description for a "
+                "working feature (no.md #34)"
+            )
+
+    def test_the_runbook_gives_no_command_for_an_absent_transport(self) -> None:
+        """No pasteable example may exist for a verb that cannot run.
+
+        The specific defect: a `nc -U ~/.verdictui/daemon.sock` line against a
+        socket nothing creates. The marker alone is not enough — a reader who
+        skims to the code block never sees it.
+        """
+        text = (_PROJECT_ROOT / "docs" / "runbook.md").read_text(encoding="utf-8")
+        if "daemon" in self._declared_subcommands():
+            return  # the transport exists; an example is now correct
+
+        assert "nc -U" not in text, (
+            "docs/runbook.md gives an `nc -U` example for a socket no code in this package "
+            "binds. Remove the example until the transport ships (CTS-81D9483D)."
+        )
