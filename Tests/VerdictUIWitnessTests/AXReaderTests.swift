@@ -71,6 +71,29 @@ final class AXReaderTests: XCTestCase {
         )
     }
 
+    // MARK: - Recursion bound
+
+    func testTheWalkIsDepthBounded() {
+        // An AXUIElement tree is a GRAPH the platform hands us, not a structure
+        // we own: an element can reference an ancestor, and kAXChildrenAttribute
+        // then yields a cycle. An unbounded walk crashed the runner with SIGSEGV
+        // ("thread stack size exceeded due to excessive recursion") — and it read
+        // as a FLAKY RUNNER rather than a defect, because the process died after
+        // printing its per-test results, so --filter runs reported green.
+        //
+        // Asserting the constant is deliberately weak: this cannot construct a
+        // cyclic AXUIElement (they come from the window server, not from a
+        // caller), so what is pinned is that a bound EXISTS and is sane. The
+        // crash itself is what proved it necessary; this stops the bound being
+        // deleted as unused.
+        XCTAssertGreaterThan(
+            AXReader.maximumDepth, 8,
+            "the bound must clear any real view hierarchy")
+        XCTAssertLessThan(
+            AXReader.maximumDepth, 400,
+            "the bound must stay well inside the stack, or it cannot prevent the crash")
+    }
+
     // MARK: - Coordinate conversion
 
     func testCoordinatesConvertRelativeToTheHostingGroupNotTheScreen() {

@@ -53,9 +53,12 @@ public final class WitnessHost {
         let app = NSApplication.shared
         // `.regular` rather than `.accessory`: an accessory app is not a
         // first-class AX citizen, and the witness has to be readable.
+        // It does NOT activate itself: `open -n -a` already launches this as a
+        // GUI app, and calling `activate(ignoringOtherApps:)` on top of that
+        // terminated the xctest runner when the full suite ran. The witness
+        // must be VISIBLE to the accessibility server, not frontmost.
         app.setActivationPolicy(.regular)
         window.makeKeyAndOrderFront(nil)
-        app.activate(ignoringOtherApps: true)
 
         // The timer fires on a nonisolated context, so the terminate hops back
         // to the main actor explicitly rather than being assumed to be there.

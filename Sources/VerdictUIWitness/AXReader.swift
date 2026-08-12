@@ -76,7 +76,7 @@ public enum AXReader {
         let content = hostingContent(of: window) ?? window
         let origin = frame(of: content)?.origin ?? .zero
 
-        var root = normalize(content, origin: origin)
+        var root = normalize(content, origin: origin, depth: 0)
         // Structural paths are the key the reconciler matches on, and the
         // external channel has no probe ids to fall back to, so assigning them
         // is not optional here.
@@ -103,13 +103,35 @@ public enum AXReader {
         return children.first { string($0, kAXRoleAttribute) == kAXGroupRole as String }
     }
 
+    /// Deepest AX tree this reader will walk.
+    ///
+    /// A bound, not a tuning knob. An `AXUIElement` tree is a graph the platform
+    /// hands us, not a structure we own: an element can reference an ancestor,
+    /// and `kAXChildrenAttribute` then yields a cycle that recurses until the
+    /// stack is gone. Measured 2026-08-12 — an unbounded walk **crashed the test
+    /// runner with SIGSEGV**, "thread stack size exceeded due to excessive
+    /// recursion", inside `AXUIElementCopyAttributeValue`. It read as a flaky
+    /// runner rather than a defect, because the process died AFTER printing its
+    /// per-test results, so `--filter` runs reported the suite green.
+    ///
+    /// 64 is far past any real view hierarchy (the measured demo window is 3
+    /// deep) and far short of the ~500 frames the stack allows.
+    static let maximumDepth = 64
+
     /// Recursively convert an AX element into a ``SemanticNode``.
     ///
     /// `origin` is the hosting group's screen origin; subtracting it converts
     /// AX's screen coordinates into the SwiftUI root coordinates the probe
     /// channel reports. Both are y-down, so no axis flip is involved — the
     /// conversion needs no display metrics and survives a monitor change.
-    static func normalize(_ element: AXUIElement, origin: CGPoint) -> SemanticNode {
+    ///
+    /// `depth` bounds the walk at ``maximumDepth``; see that property for why an
+    /// unbounded one is not merely slow but fatal.
+    static func normalize(
+        _ element: AXUIElement,
+        origin: CGPoint,
+        depth: Int
+    ) -> SemanticNode {
         let axRole = string(element, kAXRoleAttribute) ?? ""
         let subrole = string(element, kAXSubroleAttribute)
         let box = frame(of: element)
@@ -132,9 +154,15 @@ public enum AXReader {
             attributes["toggleOn"] = .bool(number.intValue != 0)
         }
 
+        // Stop descending at the bound rather than truncating silently: the node
+        // itself is still reported, so a tree that hits the limit is visibly
+        // shallow rather than absent, and the reconciler reports the missing
+        // children as visibility gaps instead of agreeing about nothing.
         let children =
-            (copy(element, kAXChildrenAttribute) as? [AXUIElement] ?? [])
-            .map { normalize($0, origin: origin) }
+            depth >= Self.maximumDepth
+            ? []
+            : (copy(element, kAXChildrenAttribute) as? [AXUIElement] ?? [])
+                .map { normalize($0, origin: origin, depth: depth + 1) }
 
         return SemanticNode(
             id: "",  // AX carries no probe ids; identity is the structural path.
@@ -226,9 +254,9 @@ public enum AXReader {
             CFGetTypeID(sizeValue) == AXValueGetTypeID()
         else { return nil }
         // swift-format-ignore: NeverForceUnwrap
-        let position = positionValue as! AXValue  // checked by CFGetTypeID above
+        let position = positionValue as! AXValue  // audit-allow: checked by CFGetTypeID above
         // swift-format-ignore: NeverForceUnwrap
-        let extent = sizeValue as! AXValue  // checked by CFGetTypeID above
+        let extent = sizeValue as! AXValue  // audit-allow: checked by CFGetTypeID above
         var point = CGPoint.zero
         var size = CGSize.zero
         // A getter that fails leaves the out-params untouched, so a false here
