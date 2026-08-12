@@ -30,18 +30,24 @@
   may not import CryptoKit, and is pinned to the published FIPS vectors rather
   than to its own output.
 
-- **`VerdictDaemon`** — warm JSON-RPC over a unix socket, so repeat verifies pay
-  only the render. `ok` reports whether the daemon could LOOK, never what it saw:
-  a FAILING verdict is an ANSWERED request. It deliberately serves no baseline
-  update.
+- **`VerdictDaemon` — METHOD SURFACE ONLY, no transport yet.** `handle()` answers
+  ping/list/render/verify/sweep/baseline_diff and is covered by 10 tests, but
+  nothing binds or listens on a socket and `verdictui` has no `daemon`
+  subcommand, so there is no process to connect to. The design holds: `ok`
+  reports whether the daemon could LOOK, never what it saw (a FAILING verdict is
+  an ANSWERED request), and it deliberately serves no baseline update. The
+  accept loop is Wave 7's remaining work and ships with a subprocess-level smoke
+  test, the way `stage_cli_smoke` covers the CLI.
 
 - **`CompactTree`** — the token-frugal wire format: parallel arrays, a parent
   index, interned strings. 362–839 B against the plan's 2 KB budget.
 
 - **`Expectation.onscreen`** — the predicate the DSL dogfood proved was missing.
 
-- **`MCPServer`** tool catalog + `contracts/mcp-tools.md`; `stage_cli_smoke` in
-  the PM; `docs/runbook.md` filled in and verified by running every command.
+- **`MCPServer` tool CATALOG + `contracts/mcp-tools.md` — also transport-less.**
+  The catalog and its name→method dispatch are built and tested; the stdio read
+  loop is not, so no MCP client can connect yet. `stage_cli_smoke` in the PM and
+  `docs/runbook.md` are real and were verified by RUNNING every command.
 
 **Fixed**
 
