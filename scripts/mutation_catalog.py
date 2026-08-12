@@ -1345,4 +1345,36 @@ MUTATIONS = [
         ),
         runner=Runner.SWIFT,
     ),
+    Mutation(
+        # The published wire shape reverts to Swift's SYNTHESIZED enum encoding,
+        # which wraps every payload in a positional `_0` key. That is exactly
+        # what shipped for a whole wave while contracts/mcp-tools.md documented
+        # the unwrapped form -- and no round-trip test could see it, because
+        # both halves used the same Codable. Only a raw-JSON assertion fails.
+        name="the daemon result reverts to synthesized enum encoding",
+        path="Sources/VerdictUICLICore/Daemon.swift",
+        # Keeps every binding live (no.md #31): the container is still made and
+        # still encoded into, so the mutation compiles under -warnings-as-errors
+        # and the witness genuinely RUNS.
+        old="        case .scenarios(let value): try container.encode(value, forKey: .scenarios)",
+        new=(
+            "        case .scenarios(let value):\n"
+            '            try container.encode(["_0": value], forKey: .scenarios)'
+        ),
+        test=("VerdictUICLICoreTests.DaemonTests/testTheResultShapeIsTheOneTheContractPublishes"),
+        runner=Runner.SWIFT,
+    ),
+    Mutation(
+        # An MCP NOTIFICATION (no id) gets answered. The protocol forbids it,
+        # and a server that replies puts an unexpected message on the wire that
+        # strict clients treat as a protocol error -- presenting to a user as
+        # "the server never finished starting", with nothing in any log to say
+        # which message was the unwanted one.
+        name="the MCP transport answers notifications it is owed no reply for",
+        path="Sources/VerdictUICLICore/MCPTransport.swift",
+        old="        guard let id = message.id else { return nil }",
+        new="        let id = message.id ?? .number(0)",
+        test="VerdictUICLICoreTests.MCPTransportTests/testANotificationIsNotAnswered",
+        runner=Runner.SWIFT,
+    ),
 ]

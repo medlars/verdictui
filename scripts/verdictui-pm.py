@@ -674,6 +674,91 @@ class VerdictUIPM(PmBase):
             "detail": f"{len(expectations)} CLI invocations, exit codes 0/1/2 as documented",
         }
 
+    def stage_transport_smoke(self) -> dict:
+        """Drive the MCP transport as a PROCESS, over real stdin and stdout.
+
+        The library suite cannot see this. `VerdictDaemon.handle` and the MCP
+        catalog were correct and fully tested for a whole wave while NOTHING
+        bound a socket or read stdin — the runbook printed an `nc -U` example
+        against a path that never existed (no.md #34). Everything below the
+        transport was green the entire time.
+
+        So this stage asks the only question a library test structurally
+        cannot: does a client that speaks the wire protocol to the SHIPPED
+        BINARY get answered? The assertions are the two halves of the tool's
+        contract with an agent — the catalog arrives, and a FAILING verdict
+        comes back with `isError: false`, because a broken UI is the ANSWER,
+        not a failure to produce one.
+        """
+        binary = PROJECT_ROOT / ".build" / "debug" / "verdictui"
+        if not binary.exists():
+            return {"passed": False, "detail": f"{binary} missing — run stage_cli_smoke first"}
+
+        # A notification (no id) is deliberately included: it must be answered
+        # with SILENCE, so the reply count is itself an assertion. A server that
+        # replied to everything would return four.
+        messages = [
+            '{"jsonrpc":"2.0","id":1,"method":"initialize"}',
+            '{"jsonrpc":"2.0","method":"notifications/initialized"}',
+            '{"jsonrpc":"2.0","id":2,"method":"tools/list"}',
+            '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":'
+            '{"name":"verify","arguments":{"scenario":"demo-offscreen-button"}}}',
+        ]
+        with tempfile.TemporaryDirectory(prefix="verdictui-mcp-smoke-") as scratch:
+            run = subprocess.run(  # noqa: S603 — fixed argv, input built above
+                [str(binary), "mcp"],
+                input="\n".join(messages) + "\n",
+                cwd=scratch,
+                capture_output=True,
+                text=True,
+                timeout=TIMEOUT_STANDARD,
+            )
+
+        if run.returncode != 0:
+            detail = (run.stderr.strip() or NO_OUTPUT)[:200]
+            return {"passed": False, "detail": f"`verdictui mcp` exited {run.returncode}: {detail}"}
+
+        try:
+            replies = [json.loads(line) for line in run.stdout.splitlines() if line.strip()]
+        except json.JSONDecodeError as e:
+            return {"passed": False, "detail": f"MCP stdout is not newline-delimited JSON: {e}"}
+
+        if len(replies) != 3:
+            return {
+                "passed": False,
+                "detail": (
+                    f"expected 3 replies for 4 messages (the notification is owed none), "
+                    f"got {len(replies)}"
+                ),
+            }
+
+        by_id = {r.get("id"): r for r in replies}
+        catalog = by_id.get(2, {}).get("result", {}).get("tools", [])
+        if len(catalog) != 5:
+            return {
+                "passed": False,
+                "detail": f"tools/list returned {len(catalog)} tools over the wire, expected 5",
+            }
+
+        call = by_id.get(3, {}).get("result", {})
+        if call.get("isError") is not False:
+            return {
+                "passed": False,
+                "detail": (
+                    "a FAILING verdict must arrive with isError:false — the tool answered, and "
+                    "the UI being wrong IS the answer. An agent that read this as a transport "
+                    f"fault would retry a real defect. Got isError={call.get('isError')!r}"
+                ),
+            }
+
+        return {
+            "passed": True,
+            "detail": (
+                f"MCP over stdio: {len(replies)} replies for {len(messages)} messages "
+                f"(notification unanswered), {len(catalog)} tools, failing verdict isError=false"
+            ),
+        }
+
     def stage_mutations(self) -> dict:
         """Every mutation in `scripts/mutation-check.py` still names real source.
 
@@ -940,6 +1025,9 @@ class VerdictUIPM(PmBase):
             ("stage_test_alongside", self.stage_test_alongside),
             ("stage_demo", self.stage_demo),
             ("stage_cli_smoke", self.stage_cli_smoke),
+            # Must follow stage_cli_smoke, which is what builds the binary both
+            # of them drive.
+            ("stage_transport_smoke", self.stage_transport_smoke),
             ("stage_mutations", self.stage_mutations),
             ("stage_stale_buffer", self.stage_stale_buffer),
             ("stage_runtime_bench", self.stage_runtime_bench),

@@ -62,6 +62,16 @@ public struct DaemonResponse: Codable, Sendable {
 /// An enum with explicit cases rather than a free-form dictionary: a client
 /// decoding this knows every shape it may receive, and adding a method is a
 /// compile error at every switch instead of a runtime surprise.
+///
+/// ### Why the coding is hand-written
+///
+/// Swift's SYNTHESIZED encoding for an enum with associated values wraps the
+/// payload in a positional key, so `.scenarios([…])` shipped as
+/// `{"scenarios":{"_0":[…]}}` while `contracts/mcp-tools.md` published
+/// `{"scenarios":[…]}`. Nothing caught it for a wave: every test encoded and
+/// decoded through this same `Codable`, so it agreed with itself no matter what
+/// bytes travelled between. `_0` is also a compiler detail, not a promise — it
+/// would have changed shape the moment a case gained a second value.
 public enum DaemonResult: Codable, Sendable {
     case scenarios([String])
     case verdict(Verdict)
@@ -69,6 +79,52 @@ public enum DaemonResult: Codable, Sendable {
     case sweep(SweepReportWire)
     case findings([Finding])
     case pong(String)
+
+    private enum CodingKeys: String, CodingKey, CaseIterable {
+        case scenarios, verdict, tree, sweep, findings, pong
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .scenarios(let value): try container.encode(value, forKey: .scenarios)
+        case .verdict(let value): try container.encode(value, forKey: .verdict)
+        case .tree(let value): try container.encode(value, forKey: .tree)
+        case .sweep(let value): try container.encode(value, forKey: .sweep)
+        case .findings(let value): try container.encode(value, forKey: .findings)
+        case .pong(let value): try container.encode(value, forKey: .pong)
+        }
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        // Ordered most- to least-specific is not enough on its own, because
+        // each case has a distinct key: exactly one is present, so the first
+        // match IS the answer. A payload with none of them is a malformed
+        // result, reported as such rather than defaulted to an empty case.
+        if let value = try container.decodeIfPresent([String].self, forKey: .scenarios) {
+            self = .scenarios(value)
+        } else if let value = try container.decodeIfPresent(Verdict.self, forKey: .verdict) {
+            self = .verdict(value)
+        } else if let value = try container.decodeIfPresent(SemanticNode.self, forKey: .tree) {
+            self = .tree(value)
+        } else if let value = try container.decodeIfPresent(SweepReportWire.self, forKey: .sweep) {
+            self = .sweep(value)
+        } else if let value = try container.decodeIfPresent([Finding].self, forKey: .findings) {
+            self = .findings(value)
+        } else if let value = try container.decodeIfPresent(String.self, forKey: .pong) {
+            self = .pong(value)
+        } else {
+            throw DecodingError.dataCorrupted(
+                DecodingError.Context(
+                    codingPath: decoder.codingPath,
+                    debugDescription:
+                        "a result carried none of the documented keys: "
+                        + CodingKeys.allCases.map(\.rawValue).joined(separator: ", ")
+                )
+            )
+        }
+    }
 }
 
 /// Serves ``VerdictEngine`` over a unix-domain socket.
