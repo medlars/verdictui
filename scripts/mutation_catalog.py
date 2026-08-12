@@ -1428,4 +1428,43 @@ MUTATIONS = [
         "::test_a_filter_that_matched_nothing_is_a_failure_not_a_pass",
         runner=Runner.PYTEST,
     ),
+    Mutation(
+        # The act delta stops omitting empty lists. Measured 2026-08-12: an act
+        # that changes nothing then costs 170 B to say so, against 2 B -- and
+        # that is the COMMONEST act in a real agent loop, so the compaction
+        # would be winning on the rare payload and losing 4x on the frequent
+        # one. `_ =` rather than deleting the line, so every binding stays live
+        # and the mutation still COMPILES under -warnings-as-errors (no.md #31).
+        name="the act delta spells its empty lists instead of omitting them",
+        path="Sources/VerdictUICLICore/CompactDelta.swift",
+        old="        if !changed.isEmpty { try container.encode(changed, forKey: .changed) }",
+        new="        try container.encode(changed, forKey: .changed)",
+        test="ActToolTests/testTheStepResponsePublishesTheDocumentedKeys",
+    ),
+    Mutation(
+        # Added nodes stop being reachable from exactly one addition. A node
+        # claimed twice, or by nothing, means the table does not describe the
+        # subtrees `added` names -- the one malformed case that rebuilds a
+        # PLAUSIBLE tree rather than crashing, so a client would hold a tree the
+        # engine never rendered and nothing downstream could tell.
+        name="a compact delta stops refusing a node table nothing references",
+        path="Sources/VerdictUICLICore/CompactDelta.swift",
+        old="        guard visited.allSatisfy({ $0 }) else { return nil }",
+        new="        _ = visited.allSatisfy { $0 }",
+        test="ActToolTests/testAMalformedCompactDeltaExpandsToNil",
+    ),
+    Mutation(
+        # An act missing its payload stops being refused and gets a default
+        # instead. `setText` without `text` would type an EMPTY STRING into the
+        # field and then report a verdict about a screen the caller never asked
+        # for -- a true-looking answer to a question nobody posed.
+        name="an act missing its payload is defaulted rather than refused",
+        path="Sources/VerdictUICLICore/Daemon.swift",
+        old="""            guard let text else {
+                throw TranslationError.missingArgument(kind: kind, argument: "text")
+            }
+            return .setText(probe, text)""",
+        new='            return .setText(probe, text ?? "")',
+        test="ActToolTests/testAVerbMissingItsPayloadIsRefusedRatherThanDefaulted",
+    ),
 ]

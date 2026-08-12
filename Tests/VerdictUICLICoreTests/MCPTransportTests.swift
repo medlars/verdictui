@@ -208,17 +208,37 @@ final class MCPTransportTests: XCTestCase {
     /// method answers when driven through the wire. A catalog whose entries
     /// resolve to methods that then fail is the same defect one layer down.
     func testEveryAdvertisedToolAnswersOverTheWire() async throws {
+        // Argument values are looked up per REQUIRED name, so a tool that gains
+        // a required argument fails HERE — at the lookup — rather than silently
+        // being driven with a partial call that the tool then rejects for its
+        // own reasons. `act` needs a probe that exists on the scenario used, so
+        // it is driven against the toggle rather than the clean settings screen.
+        let valuesByName: [String: String] = [
+            "scenario": #""demo-toggle-layout""#,
+            "action": #""toggle""#,
+            "probe": #""advanced-toggle""#,
+        ]
+
         for tool in MCPServer.tools {
+            var pairs: [String] = []
+            for name in tool.inputSchema.required.sorted() {
+                let value = try XCTUnwrap(
+                    valuesByName[name],
+                    "\(tool.name) requires '\(name)', which this test has no value for — add "
+                        + "one rather than dropping the argument, or the tool is driven with a "
+                        + "call it was always going to refuse"
+                )
+                pairs.append(#""\#(name)":\#(value)"#)
+            }
             let arguments =
-                tool.inputSchema.required.contains("scenario")
-                ? #","arguments":{"scenario":"demo-clean-settings"}"# : ""
+                pairs.isEmpty ? "" : #","arguments":{"# + pairs.joined(separator: ",") + "}"
             let replies = try await exchange(
                 [
                     #"{"jsonrpc":"2.0","id":9,"method":"tools/call","params":"#
                         + #"{"name":"\#(tool.name)"\#(arguments)}}"#
                 ],
                 seedBaselineFor: tool.name == "baseline_diff"
-                    ? CleanSettingsScenario.scenarioName : nil
+                    ? ToggleLayoutScenario.scenarioName : nil
             )
 
             let result = try XCTUnwrap(

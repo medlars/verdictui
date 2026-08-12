@@ -124,6 +124,36 @@ public struct VerdictEngine: Sendable {
         return verdict
     }
 
+    /// Act on `scenario` and observe what changed.
+    ///
+    /// The act-then-observe loop is the tightest one an agent runs, and this is
+    /// the single call that closes it: capture, act, settle, capture, diff, lint.
+    ///
+    /// Delegates to ``Harness/perform(_:timeout:)`` rather than reimplementing
+    /// the sequence, for the reason every method here delegates — the CLI, the
+    /// socket daemon and the MCP server must not be able to disagree about what
+    /// acting means. `perform` also never throws for a settle timeout or an
+    /// unknown probe: both come back as a FAILING ``StepResult`` with cited
+    /// evidence, so the only errors escaping here are the ones that mean the
+    /// engine could not look at all.
+    @MainActor
+    public func act(
+        scenario name: String,
+        action: ProbeAction,
+        rules: [any LintRule] = RuleEngine.standardRules,
+        viewport: Size? = nil,
+        deadline: TimeInterval = OracleHost.defaultDeadline,
+        includeTree: Bool = false
+    ) async throws -> StepResult {
+        let entry = try entry(named: name)
+        let harness = Harness(
+            host: entry.host(viewport: viewport, deadline: deadline),
+            rules: rules,
+            includeTree: includeTree
+        )
+        return await harness.perform(action)
+    }
+
     /// Compare `scenario` against its baseline without linting it.
     @MainActor
     public func baselineDiff(scenario name: String) async throws -> BaselineComparison {

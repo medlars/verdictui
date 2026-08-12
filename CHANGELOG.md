@@ -2,6 +2,59 @@
 
 ## [Unreleased]
 
+### 2026-08-12 (Wave 7 closed — the `act` tool, and a compaction that first made things worse)
+
+**Added**
+
+- **`act(scenario, action, probe, …)`** — the act-and-observe loop as an
+  agent-callable verb, on all three surfaces. Capture, act, settle, capture,
+  diff, lint in one call, returning the DELTA rather than the tree.
+  `VerdictEngine.act` delegates to `Harness.perform`, so the CLI, the socket
+  daemon and the MCP server cannot disagree about what acting means —
+  `testActDelegatesToTheHarnessRatherThanReimplementingIt` compares the two
+  directly. Verbs are `tap`, `toggle`, `setText`, `setSlider`; `.custom` is
+  deliberately absent because its payload is a closure, and a wire type
+  advertising a verb no client can populate is worse than one that does not.
+
+- **`CompactDelta`** — the token-frugal delta wire form. Added subtrees share
+  ONE flat node table across the whole delta, every path is a run of indices
+  into a shared string table, `TextMetrics` travels as a flat triple, and empty
+  lists are omitted entirely.
+
+- **`StepResultWire`** — delta plus verdict, with the after-tree only on
+  request. `settled` is carried separately from `status` on purpose: a
+  timed-out settle says the observation may be incomplete, while a FAIL says
+  the layout is wrong, and an agent reading the first as the second goes and
+  fixes the wrong thing.
+
+**Changed**
+
+- **The act delta budget is 512 B structural / 64 B inert, not the planned
+  300 B.** The plan's figure was written before any act existed to measure and
+  is unreachable for any act that changes the tree — roughly 400 B of the
+  smallest structural act in the catalog is node ids, roles, text and
+  structural paths, every one of them read by the verdict layer (dropping
+  `structuralPath` makes unprobed added nodes uncitable; dropping
+  `TextMetrics` blinds `TruncationRule`). Owner decision 2026-08-12, reasoning
+  in `no.md` #41.
+
+  Measured, compact against raw: toggle expand **498 B** (702), collapse
+  **419 B** (544), inert tap **2 B** (49). Four rounds got there, and the
+  first one made it WORSE — reusing `CompactTree` per added subtree produced
+  **735 B**, larger than the raw form, because that format amortizes nine array
+  keys across a whole tree and an added node is typically a subtree of one.
+
+- **`stage_transport_smoke` asserts the tool VERBS, not their count.** The old
+  `len(catalog) != 5` was a copy of the catalog's size rather than a claim
+  about it: it fired on `act` being added, while a genuinely missing tool would
+  have been reported as a number that named nothing. It now also asserts
+  `baseline_accept` is ABSENT, with both branches negative-controlled.
+
+- **`VerdictDaemon.methodsNeedingAScenario` is named once.**
+  `MCPServerTests` carried its own copy of that list, which went stale the
+  moment `act` was added — the schema and the dispatcher then disagreed about
+  what a client must send. Both now read the same set.
+
 ### 2026-08-12 (Wave 7 dogfood — the loop closes, and the first real bytes found a defect no test could)
 
 **Fixed**

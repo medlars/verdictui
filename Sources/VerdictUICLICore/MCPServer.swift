@@ -97,6 +97,43 @@ public enum MCPServer {
                 )
             ),
             MCPTool(
+                name: "act",
+                description:
+                    "Act on a probed control and observe what changed: capture, act, settle, "
+                    + "capture, diff, lint — one call. Returns the DELTA (what appeared, "
+                    + "vanished, moved or changed) plus a verdict, not the whole tree; pass "
+                    + "include_tree:true when you need the full after-tree. 'settled' reports "
+                    + "whether the UI went quiet before the deadline, which is a separate "
+                    + "claim from whether it passed.",
+                inputSchema: MCPSchema(
+                    properties: [
+                        "scenario": scenario,
+                        "action": MCPProperty(
+                            type: "string",
+                            description:
+                                "One of: " + DaemonAction.kinds.joined(separator: ", ") + "."
+                        ),
+                        "probe": MCPProperty(
+                            type: "string",
+                            description: "Probe id to act on, as it appears in a rendered tree."
+                        ),
+                        "text": MCPProperty(
+                            type: "string",
+                            description: "Text to type. Required by setText."
+                        ),
+                        "value": MCPProperty(
+                            type: "number",
+                            description: "Value to set. Required by setSlider."
+                        ),
+                        "include_tree": MCPProperty(
+                            type: "boolean",
+                            description: "Also return the whole after-tree, not just the delta."
+                        ),
+                    ],
+                    required: ["scenario", "action", "probe"]
+                )
+            ),
+            MCPTool(
                 name: "sweep",
                 description:
                     "Render a scenario across a variant matrix; one verdict per cell plus a "
@@ -125,6 +162,7 @@ public enum MCPServer {
         case "list_scenarios": return "list"
         case "render": return "render"
         case "verify": return "verify"
+        case "act": return "act"
         case "sweep": return "sweep"
         case "baseline_diff": return "baseline_diff"
         default: return nil
