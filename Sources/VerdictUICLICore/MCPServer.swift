@@ -107,6 +107,27 @@ public enum MCPServer {
                 )
             ),
             MCPTool(
+                name: "focus",
+                description:
+                    "Return the subtree rooted at one node. The follow-up to a tree that came "
+                    + "back with truncated:true — name the node you want and get its full "
+                    + "contents, instead of re-rendering the whole screen at a bigger budget. "
+                    + "node_path is a structuralPath or a probe id, exactly as render publishes "
+                    + "and every finding cites.",
+                inputSchema: MCPSchema(
+                    properties: [
+                        "scenario": scenario,
+                        "node_path": MCPProperty(
+                            type: "string",
+                            description:
+                                "structuralPath (e.g. root/container[0]/text[2]) or probe id of "
+                                + "the node to expand."
+                        ),
+                    ],
+                    required: ["scenario", "node_path"]
+                )
+            ),
+            MCPTool(
                 name: "act",
                 description:
                     "Act on a probed control and observe what changed: capture, act, settle, "
@@ -171,6 +192,7 @@ public enum MCPServer {
         switch tool {
         case "list_scenarios": return "list"
         case "render": return "render"
+        case "focus": return "focus"
         case "verify": return "verify"
         case "act": return "act"
         case "sweep": return "sweep"
