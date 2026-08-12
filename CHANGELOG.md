@@ -2,6 +2,49 @@
 
 ## [Unreleased]
 
+### 2026-08-12 (Wave 8 Tasks 1-2 — the cross-validation witness and reconciler)
+
+**Added**
+
+- **`VerdictUIWitness`** — the external channel that keeps the fast one honest.
+  Reads an `AXUIElement` tree from a windowed host process and normalizes it into
+  `SemanticNode` through the shared role vocabulary, so a probe that misreports
+  its frame agrees with itself forever but cannot agree with the accessibility
+  tree. A separate target, so Accessibility dependencies never reach the core and
+  `VerdictUIProbe` keeps the windowless property that is its CI story.
+
+- **`Reconcile.compare(internal:external:)`** (kernel) — role, frame and text
+  disagreements, each reported separately so a fix list is a list of facts.
+  Probed-but-AX-absent nodes become an `ax-visibility-gap` warning carrying the
+  `.accessibilityLabel` fix-it, which is the free accessibility audit the plan
+  names as a marketing point. Frames compare within a 1 pt tolerance because the
+  channels measure through different machinery; a non-finite component is
+  reported rather than silently passing a tolerance check every NaN satisfies.
+
+- **`verdictui-witness-host`** — the windowed executable. The one component that
+  runs windowed, and only in middle-loop mode.
+
+**Fixed**
+
+- **`logs/.gitkeep` is now tracked.** `scripts/floor-check.py` requires it while
+  `.gitignore` ignored `logs/` wholesale, so the floor passed only where a
+  leftover untracked file happened to survive — it fails on any fresh clone, git
+  worktree, or CI runner.
+
+**Measured, and it changed the design** (`docs/wave8-ax-findings.md`)
+
+- A process **cannot read its own AX tree** (`-25208`), so the witness is
+  out-of-process by necessity rather than by taste.
+- **`NSApp.run()`** is what registers a process with the accessibility server —
+  not the window, not the bundle, and not `RunLoop.run`.
+- **`AXIsProcessTrusted()` is necessary but not sufficient**: it returned `true`
+  in every failing case, so the permission path must key on the read failing.
+- Text lives in **`AXValue`** for text/fields and **`AXDescription`** for
+  buttons/toggles/images; reading one loses half the vocabulary.
+- A **`Process`-spawned host is invisible to AX**; the launch must route through
+  LaunchServices. `-n` is load-bearing — without it a still-terminating host is
+  reused and the reader verifies the previous scenario's window.
+
 ### 2026-08-12 (Wave 7 closed — the `act` tool, and a compaction that first made things worse)
 
 **Added**
