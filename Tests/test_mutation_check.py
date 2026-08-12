@@ -402,6 +402,57 @@ class TestClassify:
         assert outcome is mod.Outcome.INCONCLUSIVE
         assert "trapped" in reason
 
+    def test_every_swift_mutation_names_a_test_that_still_exists(self) -> None:
+        """A row whose test filter matches nothing is proving nothing, and says
+        so only after a 35-minute sweep.
+
+        Measured 2026-08-11 (no.md #33): a full sweep reported 9 unverified rows
+        against a ticket claiming 7, and FOUR of them had failed with
+        "the filter matched no tests before mutating" — they had been dead
+        before any mutation was applied. Two went stale in that same session,
+        when splitting `VerifiableMacroTests` into a `...DiagnosticsTests` class
+        moved the tests their filters named.
+
+        `--verify-targets` structurally cannot catch this: it checks that the
+        SOURCE anchor resolves to exactly one site and never reads the test
+        filter at all. So this is a static check of the other half — cheap,
+        run in the quick gate, and failing at the moment a rename or a split
+        breaks a row rather than an hour into the next sweep.
+        """
+        mod = _load()
+        swift_rows = [m for m in mod.MUTATIONS if m.runner is mod.Runner.SWIFT]
+        assert swift_rows, "the Swift mutations vanished"
+
+        sources = {
+            path: path.read_text(encoding="utf-8")
+            for path in (_PROJECT_ROOT / "Tests").rglob("*.swift")
+        }
+        assert sources, "no Swift test sources found — this check would pass vacuously"
+
+        stale: list[str] = []
+        for mutation in swift_rows:
+            suite_part, _, method = mutation.test.rpartition("/")
+            klass = suite_part.split(".")[-1]
+
+            # The METHOD must exist, and it must exist in the class the filter
+            # names — a method that moved to a sibling class is exactly the
+            # failure this catches, and searching for the method alone would
+            # miss it.
+            homes = [text for text in sources.values() if f"func {method}(" in text]
+            if not homes:
+                stale.append(f"{mutation.name!r}: no test named {method!r} exists")
+                continue
+            if klass and not any(f"class {klass}" in text for text in homes):
+                stale.append(
+                    f"{mutation.name!r}: {method!r} exists but not in {klass!r} — "
+                    "the filter names a class that does not declare it"
+                )
+
+        assert not stale, (
+            "mutation rows name tests that cannot be selected, so they verify nothing:\n  "
+            + "\n  ".join(stale)
+        )
+
     def test_a_filter_matching_no_tests_is_stale_not_uncovered(self) -> None:
         # Exit 0 with zero tests run. Without the count check this reads as
         # UNNOTICED, sending a reader to audit a guard that is fine while the
