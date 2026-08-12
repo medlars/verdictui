@@ -106,6 +106,13 @@ public struct DaemonRequest: Codable, Sendable, Equatable {
     /// to serve: an agent in an act loop wants what CHANGED, and a full tree per
     /// step is the token cost that makes the loop unaffordable.
     public let includeTree: Bool?
+    /// Whether `verify` should also reconcile against the external witness.
+    ///
+    /// Off by default: it costs a windowed subprocess and an Accessibility
+    /// grant. When ON and the witness cannot run, the verdict carries a
+    /// `cross-validation-skipped` warning — a caller that asked for two
+    /// channels is never quietly given one.
+    public let crossValidate: Bool?
     /// Caller-supplied correlation id, echoed back untouched.
     public let id: String?
 
@@ -115,6 +122,7 @@ public struct DaemonRequest: Codable, Sendable, Equatable {
         baseline: Bool? = nil,
         action: DaemonAction? = nil,
         includeTree: Bool? = nil,
+        crossValidate: Bool? = nil,
         id: String? = nil
     ) {
         self.method = method
@@ -122,6 +130,7 @@ public struct DaemonRequest: Codable, Sendable, Equatable {
         self.baseline = baseline
         self.action = action
         self.includeTree = includeTree
+        self.crossValidate = crossValidate
         self.id = id
     }
 }
@@ -319,7 +328,8 @@ public actor VerdictDaemon {
             case "verify":
                 let verdict = try await engine.verify(
                     scenario: scenario,
-                    againstBaseline: request.baseline ?? false
+                    againstBaseline: request.baseline ?? false,
+                    crossValidate: request.crossValidate ?? false
                 )
                 return success(.verdict(verdict))
 

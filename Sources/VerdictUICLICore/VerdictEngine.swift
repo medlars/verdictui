@@ -7,6 +7,7 @@
 import Foundation
 import VerdictUIKernel
 import VerdictUIProbe
+import VerdictUIWitness
 
 /// Runs scenarios and produces verdicts, trees, sweeps and baseline decisions.
 ///
@@ -95,7 +96,8 @@ public struct VerdictEngine: Sendable {
         againstBaseline useBaseline: Bool = false,
         viewport: Size? = nil,
         deadline: TimeInterval = OracleHost.defaultDeadline,
-        includeTree: Bool = false
+        includeTree: Bool = false,
+        crossValidate: Bool = false
     ) async throws -> Verdict {
         let tree = try await render(scenario: name, viewport: viewport, deadline: deadline)
         let context = LintContext.macOS(viewport: tree.frame, scenario: name)
@@ -105,6 +107,27 @@ public struct VerdictEngine: Sendable {
             context: context,
             includeTree: includeTree
         )
+
+        // Cross-validation is ADDITIVE, like the baseline check below it: the
+        // inner loop's verdict stands, and the external witness can only add
+        // findings. It runs BEFORE the baseline comparison so that a verdict
+        // carrying both reads in pipeline order.
+        if crossValidate {
+            let clock = ContinuousClock()
+            var findings: [Finding] = []
+            let elapsed = clock.measure {
+                findings = Self.crossValidationFindings(for: name, tree: tree)
+            }
+            // Measured on BOTH paths — the successful one and the skipped one.
+            // A budget echoed back as a measurement is the defect `no.md` #12
+            // spent four attempts failing to pin; here the cost of a failed
+            // attempt is real and worth reporting, because "the witness took
+            // 4 s to fail" is the difference between a missing grant and a
+            // hung host.
+            verdict.timing.crossValidateMs = Double(elapsed.components.attoseconds) / 1e15
+            verdict.findings.append(contentsOf: findings)
+            verdict.status = Verdict.Status.derived(from: verdict.findings)
+        }
 
         guard useBaseline else { return verdict }
 
@@ -229,5 +252,42 @@ public struct VerdictEngine: Sendable {
             }
         }
         return SweepReport(scenario: name, cells: cells)
+    }
+
+    // MARK: - Cross-validation (Wave 8)
+
+    /// Reconcile `tree` against the external witness, or say why not.
+    ///
+    /// Never throws and never returns silence: a witness that could not run
+    /// yields exactly one `cross-validation-skipped` warning naming the reason.
+    /// A caller that ASKED for cross-validation and got an ordinary PASS would
+    /// read it as "both channels agree" when only one channel ran, which is the
+    /// distinction the whole wave exists to preserve.
+    @MainActor
+    static func crossValidationFindings(for scenario: String, tree: SemanticNode) -> [Finding] {
+        guard let executable = witnessHostExecutable() else {
+            return [
+                Reconcile.unavailable(
+                    reason: "the verdictui-witness-host executable was not found next to the "
+                        + "verdictui binary; build it with `swift build`")
+            ]
+        }
+        let witness = WitnessHostProcess(executable: executable)
+        return CrossValidation.findings(internalTree: tree) {
+            try witness.readTree(scenario: scenario)
+        }
+    }
+
+    /// Locate `verdictui-witness-host` beside the running executable.
+    ///
+    /// Beside the BINARY rather than relative to the working directory: a CLI
+    /// is run from wherever the user happens to be, and a cwd-relative lookup
+    /// would find the host only when invoked from the package root — working in
+    /// every test and failing for every real caller.
+    static func witnessHostExecutable() -> URL? {
+        let binary = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
+        let candidate = binary.deletingLastPathComponent()
+            .appendingPathComponent("verdictui-witness-host")
+        return FileManager.default.isExecutableFile(atPath: candidate.path) ? candidate : nil
     }
 }

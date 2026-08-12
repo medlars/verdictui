@@ -1481,4 +1481,18 @@ MUTATIONS = [
         new="            return []",
         test="CrossValidationTests/testAFailedReadBecomesAWarningFindingNamingTheReason",
     ),
+    Mutation(
+        # `--cross-validate` becomes a no-op: the engine ignores the flag and
+        # returns an inner-loop-only verdict. The caller then asked for two
+        # channels, was given one, and is told nothing -- the whole point of
+        # Wave 8 lost silently, since an inner-loop PASS looks exactly like a
+        # cross-validated one once the timing and the finding are gone.
+        # `= false` rather than deleting the branch, so every binding stays live
+        # and the mutation still COMPILES under -warnings-as-errors (no.md #31).
+        name="the cross-validate flag stops being honoured",
+        path="Sources/VerdictUICLICore/VerdictEngine.swift",
+        old="        if crossValidate {",
+        new="        if false, crossValidate {",
+        test="CrossValidateFlagTests/testRequestingCrossValidationAlwaysReportsWhatHappened",
+    ),
 ]

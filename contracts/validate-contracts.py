@@ -41,7 +41,7 @@ KERNEL_SCHEMA_VERSION_SOURCE = (
     CONTRACTS.parent / "Sources" / "VerdictUIKernel" / "SchemaVersion.swift"
 )
 
-# `public static let current = "1.0"` — the one declaration the drift check reads.
+# `public static let current = "x.y"` — the one declaration the drift check reads.
 _SWIFT_CURRENT_RE = re.compile(r'static\s+let\s+current\s*=\s*"([^"]+)"')
 
 # Keywords with no effect on validation: documentation and identity only.

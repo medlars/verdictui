@@ -300,7 +300,15 @@ class TestValidateContractsFailureBranches:
     def test_version_drift_between_schema_and_kernel_fails(self, tmp_path: Path) -> None:
         """The behaviour SchemaVersion.swift's doc comment promises."""
         contracts, kernel = self._stage(tmp_path)
-        kernel.write_text(kernel.read_text().replace('current = "1.0"', 'current = "2.0"'))
+        kernel_source = kernel.read_text()
+        kernel.write_text(
+            re.sub(
+                r'(static\s+let\s+current\s*=\s*)"[^"]+"',
+                r'\g<1>"2.0"',
+                kernel_source,
+                count=1,
+            )
+        )
         assert 'current = "2.0"' in kernel.read_text(), "drift was not actually introduced"
         code, output = self._run(contracts, kernel)
         assert code == 1

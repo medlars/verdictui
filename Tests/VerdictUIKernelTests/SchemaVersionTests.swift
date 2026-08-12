@@ -12,7 +12,7 @@ final class SchemaVersionTests: XCTestCase {
         // constant to itself would pass through any accidental bump. The JSON
         // schema pins the same literal, and contracts/validate-contracts.py
         // fails if the two ever drift.
-        XCTAssertEqual(SchemaVersion.current, "1.0")
+        XCTAssertEqual(SchemaVersion.current, "1.1")
         XCTAssertEqual(SchemaVersion.currentMajor, 1)
     }
 

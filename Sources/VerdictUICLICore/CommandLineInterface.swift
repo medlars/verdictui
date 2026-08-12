@@ -110,6 +110,20 @@ public struct VerdictUITool: AsyncParsableCommand {
         @Flag(name: .long, help: "Embed the semantic tree in the verdict.")
         public var includeTree = false
 
+        // The help text is a single literal because `ArgumentHelp` is
+        // `ExpressibleByStringLiteral` — a concatenated expression is a `String`
+        // and does not convert, which also breaks the command's synthesized
+        // `Decodable` conformance and reports as an unrelated error.
+        @Flag(
+            name: .long,
+            help: """
+                Also reconcile against the external accessibility witness. Needs a windowed \
+                session and an Accessibility grant on the launching terminal; when it cannot \
+                run, the verdict says so rather than passing more quietly.
+                """
+        )
+        public var crossValidate = false
+
         @OptionGroup public var formatting: FormattingOptions
 
         @MainActor
@@ -118,7 +132,8 @@ public struct VerdictUITool: AsyncParsableCommand {
             let code = await VerifyCommand(
                 scenario: scenario,
                 useBaseline: baseline,
-                includeTree: includeTree
+                includeTree: includeTree,
+                crossValidate: crossValidate
             ).run(environment, pretty: formatting.pretty, summary: formatting.summary)
             try VerdictUITool.finish(code)
         }

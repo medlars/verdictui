@@ -615,20 +615,20 @@ as a change key.
 
 ## 5. The verdict schema
 
-Pinned by `contracts/verdict-schema.json`. Current version: **1.0**.
+Pinned by `contracts/verdict-schema.json`. Current version: **1.1**.
 
 ### Envelope
 
 | Field | Required | Type | Notes |
 |-------|----------|------|-------|
-| `schemaVersion` | yes | `"1.0"` | always `SchemaVersion.current` on encode |
+| `schemaVersion` | yes | `"1.1"` | always `SchemaVersion.current` on encode |
 | `scenario` | yes | string | name of the scenario that produced the verdict |
 | `timestamp` | yes | string | ISO-8601 UTC at whole-second precision, e.g. `2026-08-04T09:20:31Z` |
 | `status` | yes | `"PASS"` \| `"FAIL"` | uppercase so a shell can grep it |
 | `findings` | yes | array | empty for a clean verdict |
 | `tree` | no | `semanticNode` | present only when the caller asked for it |
 | `delta` | no | `treeDelta` | present only for act-and-observe steps |
-| `timing` | yes | object | `settleMs`, `evaluateMs`, both optional numbers |
+| `timing` | yes | object | `settleMs`, `evaluateMs`, `crossValidateMs` — all optional numbers |
 
 A `Finding` carries `rule`, `severity` (`error` or `warning`), `nodeID`, `message`,
 and an optional `suggestion` — the machine-actionable repair hint that turns a
@@ -638,6 +638,16 @@ verdict into an edit an agent can make without guessing.
 place it is computed — any `error` finding makes the verdict a `FAIL` — and the
 decoder throws if a payload's `status` contradicts its own `findings`. A verdict that
 can lie about its own headline is worse than no verdict.
+
+**`crossValidateMs` distinguishes three states, not two** (added in 1.1). Absent
+means cross-validation was NOT REQUESTED. Present means it was attempted, and the
+number is what the attempt cost — measured on the failing path too, because "the
+witness took 4 s to fail" separates a missing Accessibility grant from a hung
+host. Whether it SUCCEEDED is read from the findings: a `cross-validation-skipped`
+warning names the reason it could not run. Collapsing "not asked for" into "asked
+for and failed" would make an inner-loop-only verdict indistinguishable from one
+whose second channel never reported, which is the distinction Wave 8 exists to
+preserve.
 
 **Absent means absent.** Optional fields are omitted from the JSON, never emitted as
 `null`. The payload crosses a token-metered MCP surface, so `"tree": null` is pure
@@ -649,7 +659,7 @@ cost. `contracts/fixtures/verdict-pass.json` exists to pin exactly this.
 
   ],
   "scenario" : "settings-pane-clean",
-  "schemaVersion" : "1.0",
+  "schemaVersion" : "1.1",
   "status" : "PASS",
   "timestamp" : "2026-08-04T09:20:31Z",
   "timing" : {
