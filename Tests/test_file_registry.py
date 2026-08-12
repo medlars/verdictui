@@ -51,7 +51,12 @@ _NON_SOURCE_SUFFIXES = frozenset({".md", ".yml", ".example", ".resolved"})
 # quietly decide it is not source. If one of those ever arrives, the suffix guard
 # fails and someone decides — at which point the scan needs a name-based arm too,
 # since it selects on suffix alone.
-_NON_SOURCE_FILENAMES = frozenset({".gitignore"})
+# `.gitkeep` is a directory marker, not source: `logs/` is where the PM writes
+# its status, and `scripts/floor-check.py` requires the directory to exist. It
+# must be TRACKED for the floor to pass on a fresh clone, a worktree, or CI —
+# it was untracked until 2026-08-12, so the floor passed only where a leftover
+# untracked file happened to survive.
+_NON_SOURCE_FILENAMES = frozenset({".gitignore", ".gitkeep"})
 
 
 def _text() -> str:

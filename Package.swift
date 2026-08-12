@@ -88,6 +88,16 @@ let package = Package(
             dependencies: ["VerdictUIMacros", "VerdictUIProbe", "VerdictUIKernel"],
             swiftSettings: strictSettings
         ),
+        // Wave 8's external witness. A SEPARATE target so the Accessibility
+        // dependency never reaches the core: a consumer wanting probes gets
+        // neither ApplicationServices nor a windowed host, and `VerdictUIProbe`
+        // stays windowless (its CI story) because the one component that must
+        // run windowed lives here instead.
+        .target(
+            name: "VerdictUIWitness",
+            dependencies: ["VerdictUIKernel"],
+            swiftSettings: strictSettings
+        ),
         .target(
             name: "VerdictUIDemoScenarios",
             dependencies: ["VerdictUIProbe", "VerdictUIKernel"],
@@ -121,9 +131,25 @@ let package = Package(
             dependencies: ["VerdictUICLICore"],
             swiftSettings: strictSettings
         ),
+        // The windowed half of the cross-validation channel, and a separate
+        // PROCESS by necessity rather than by taste: a process cannot read its
+        // own accessibility tree (measured -25208), so the reader and the
+        // rendered window cannot share one.
+        .executableTarget(
+            name: "verdictui-witness-host",
+            dependencies: [
+                "VerdictUIWitness", "VerdictUIDemoScenarios", "VerdictUIProbe", "VerdictUIKernel",
+            ],
+            swiftSettings: strictSettings
+        ),
         .testTarget(
             name: "VerdictUIKernelTests",
             dependencies: ["VerdictUIKernel"],
+            swiftSettings: strictSettings
+        ),
+        .testTarget(
+            name: "VerdictUIWitnessTests",
+            dependencies: ["VerdictUIWitness", "VerdictUIKernel"],
             swiftSettings: strictSettings
         ),
         .testTarget(
