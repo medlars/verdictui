@@ -660,17 +660,46 @@ class VerdictUIPM(PmBase):
         that returns 1 for everything satisfies any check that looks solely at
         the failure path, and the 1-vs-2 distinction is the tool's whole
         contract with an agent.
+
+        The build takes the shared SwiftPM lock, because this stage is reachable
+        from BOTH the pipeline and `stage_pytest` — see the comment at the call.
         """
         if shutil.which("swift") is None:
             return {"passed": False, "detail": "swift not installed — CLI cannot be built"}
 
-        build = subprocess.run(  # noqa: S603 — fixed argv built from constants
-            ["swift", "build", "--product", "verdictui", *SWIFT_PM_FLAGS, *SWIFT_STRICT_FLAGS],
-            cwd=PROJECT_ROOT,
-            capture_output=True,
-            text=True,
-            timeout=TIMEOUT_SWIFT_BUILD,
-        )
+        # Under the SAME SwiftPM lock every other Swift stage takes. Without it
+        # this build contends with a concurrent `swift test` for the package's
+        # single build directory -- and this stage is reachable from BOTH the
+        # pipeline and `stage_pytest` (via
+        # `TestStageCLISmoke::test_it_passes_against_the_real_binary`), so one
+        # PM run can invoke it while its own Swift stage holds the lock. That
+        # produced a Grade B on a clean tree at 629/629 green, with the stage
+        # naming a test that passes in isolation: a gate failing for the
+        # environment rather than the code (no.md #15).
+        build_cmd = [
+            "swift",
+            "build",
+            "--product",
+            "verdictui",
+            *SWIFT_PM_FLAGS,
+            *SWIFT_STRICT_FLAGS,
+        ]
+        _LOCK_DIR.mkdir(parents=True, exist_ok=True)
+        import swift_runner  # type: ignore  # noqa: PLC0415 — lazy, shares PM path setup
+
+        with swift_runner.swiftpm_command_lock(  # type: ignore[attr-defined]
+            build_cmd,
+            cache_dir=_LOCK_DIR,
+            log=_pm_log,
+            stage_name="cli_smoke",
+        ):
+            build = subprocess.run(  # noqa: S603 — fixed argv built from constants
+                build_cmd,
+                cwd=PROJECT_ROOT,
+                capture_output=True,
+                text=True,
+                timeout=TIMEOUT_SWIFT_BUILD,
+            )
         if build.returncode != 0:
             detail = (build.stderr.strip() or build.stdout.strip() or NO_OUTPUT)[:300]
             return {"passed": False, "detail": f"verdictui failed to build: {detail}"}
