@@ -347,8 +347,8 @@ promises.
 ### Exit gate
 
 - [ ] Every deliberate-lie fixture caught (100% — this number is non-negotiable)
-- [ ] Cross-validated verify on demo app < 5 s per scenario (new SLO 3 added to docs/slo.md)
-- [ ] Permission-absent path returns explicit warning finding (SD6 test)
+- [ ] Cross-validated verify on demo app < 5 s per scenario (new **SLO 4** added to docs/slo.md — this line said "SLO 3", written before SLO 3 existed; MCP warm latency took that number in Wave 7 and is gated by `stage_mcp_latency`. Do not renumber the shipped one.)
+- [x] Permission-absent path returns explicit warning finding (SD6 test) — `CrossValidation.findings` + `CrossValidationTests`; every `AXReader.Failure` case enumerated, each paired with a working-reader control
 - [ ] AX-gap findings verified useful: run against SagaMail's main window once, file findings as CIS issues (dogfood + fleet value)
 - [ ] PM quick Grade A (lie fixtures in full mode)
 
