@@ -1377,4 +1377,26 @@ MUTATIONS = [
         test="VerdictUICLICoreTests.MCPTransportTests/testANotificationIsNotAnswered",
         runner=Runner.SWIFT,
     ),
+    Mutation(
+        # The envelope goes back to demanding tools/call's params shape. That is
+        # the shipped defect: `params` is free-form per method, and `initialize`
+        # -- the FIRST message of every real session -- fills it with
+        # protocolVersion/capabilities/clientInfo and no `name`, so a strict
+        # decode rejects the whole ENVELOPE and the message never reaches the
+        # handler that would have answered it. The server then answers every
+        # real client's opening message with a parse error while its own suite
+        # reports the handshake working, because the suite's handshake test
+        # sends `initialize` with no params key at all.
+        #
+        # `try?` -> `try` keeps every binding live and the file compiling, per
+        # no.md #31: a mutation that fails to BUILD scores as if the guard were
+        # tested, because a compiler's exit 1 is indistinguishable from a failing
+        # assertion's at the harness boundary.
+        name="the MCP envelope rejects any params that is not a tools/call params",
+        path="Sources/VerdictUICLICore/MCPTransport.swift",
+        old="        params = try? container.decodeIfPresent(MCPCallParams.self, forKey: .params)",
+        new="        params = try container.decodeIfPresent(MCPCallParams.self, forKey: .params)",
+        test="VerdictUICLICoreTests.MCPTransportTests/testTheHandshakeARealClientSendsIsAnswered",
+        runner=Runner.SWIFT,
+    ),
 ]

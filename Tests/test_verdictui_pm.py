@@ -7,8 +7,10 @@ both files need is `pm_test_support.py`.
 """
 
 import importlib.util
+import inspect
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -865,3 +867,95 @@ class TestStageTransportSmoke:
         result = pm.stage_transport_smoke()
         assert result["passed"], result["detail"]
         assert "isError=false" in result["detail"]
+
+    def test_the_handshake_it_sends_is_the_one_a_real_client_sends(self) -> None:
+        """`initialize` must carry params, because every real client's does.
+
+        This is not cosmetic. `params` is free-form per JSON-RPC method, and a
+        server that decodes it strictly as `tools/call`'s shape rejects the
+        ENVELOPE, so the message never reaches its handler. Sending `initialize`
+        with no `params` key is the ONE spelling that decodes either way — which
+        is why this stage passed for a whole wave against a binary that answered
+        every real client's opening message with a parse error.
+
+        Reading the payload is the only way to see this: the stage's own PASS
+        cannot, by construction, since it was passing throughout.
+        """
+        source = inspect.getsource(VerdictUIPM.stage_transport_smoke)
+        assert '"method":"initialize"' in source, "the stage must exercise the handshake"
+        handshake = next(line for line in source.splitlines() if '"method":"initialize"' in line)
+        assert '"params":' in handshake, (
+            "initialize is sent without params — the one spelling that cannot "
+            f"catch a strict-envelope regression: {handshake.strip()}"
+        )
+
+    def test_a_handshake_that_errors_fails_the_stage(self, tmp_path, monkeypatch) -> None:
+        """The stage must FAIL when initialize is answered with an error.
+
+        The negative control for the assertion above, and the one that matters:
+        counting replies cannot see this defect, because a parse error IS a
+        reply — the count stays 3 while no client can connect at all. Without
+        this test, deleting the handshake check leaves every other assertion
+        green.
+
+        The catalog and tool-call replies below are well-formed on purpose, so
+        the stage can only fail for the handshake.
+        """
+        binary = tmp_path / ".build" / "debug" / "verdictui"
+        binary.parent.mkdir(parents=True)
+        replies = [
+            {"jsonrpc": "2.0", "error": {"code": -32700, "message": "parse error"}},
+            {"jsonrpc": "2.0", "id": 2, "result": {"tools": [{"name": f"t{i}"} for i in range(5)]}},
+            {
+                "jsonrpc": "2.0",
+                "id": 3,
+                "result": {
+                    "isError": False,
+                    "content": [{"text": json.dumps({"status": "FAIL", "findings": [{}]})}],
+                },
+            },
+        ]
+        stdout = "\n".join(json.dumps(r) for r in replies) + "\n"
+        binary.write_text(f"#!/bin/sh\ncat >/dev/null\nprintf '%s' {shlex.quote(stdout)}\n")
+        binary.chmod(0o755)
+        monkeypatch.setattr(_mod, "PROJECT_ROOT", tmp_path)
+
+        pm = VerdictUIPM.__new__(VerdictUIPM)
+        result = pm.stage_transport_smoke()
+
+        assert not result["passed"], (
+            "a handshake answered with a parse error must fail the stage: no MCP "
+            f"client can connect, yet the reply COUNT is still 3 — {result['detail']}"
+        )
+        assert "initialize" in result["detail"]
+
+    def test_a_well_formed_handshake_still_passes(self, tmp_path, monkeypatch) -> None:
+        """Control for the test above: the same fixture, handshake repaired.
+
+        Without it, "fails on a bad handshake" is satisfied by a stage that
+        fails on everything — including this fixture, which differs only in
+        that one reply.
+        """
+        binary = tmp_path / ".build" / "debug" / "verdictui"
+        binary.parent.mkdir(parents=True)
+        replies = [
+            {"jsonrpc": "2.0", "id": 1, "result": {"protocolVersion": "2024-11-05"}},
+            {"jsonrpc": "2.0", "id": 2, "result": {"tools": [{"name": f"t{i}"} for i in range(5)]}},
+            {
+                "jsonrpc": "2.0",
+                "id": 3,
+                "result": {
+                    "isError": False,
+                    "content": [{"text": json.dumps({"status": "FAIL", "findings": [{}]})}],
+                },
+            },
+        ]
+        stdout = "\n".join(json.dumps(r) for r in replies) + "\n"
+        binary.write_text(f"#!/bin/sh\ncat >/dev/null\nprintf '%s' {shlex.quote(stdout)}\n")
+        binary.chmod(0o755)
+        monkeypatch.setattr(_mod, "PROJECT_ROOT", tmp_path)
+
+        pm = VerdictUIPM.__new__(VerdictUIPM)
+        result = pm.stage_transport_smoke()
+
+        assert result["passed"], result["detail"]

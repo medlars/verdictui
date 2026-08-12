@@ -243,11 +243,34 @@ public struct MCPTransport: Sendable {
 // MARK: - Wire types
 
 /// An incoming JSON-RPC message.
+///
+/// ### Why `params` decodes leniently
+///
+/// `params` is typed for `tools/call`, but it is a free-form JSON-RPC field that
+/// every OTHER method fills with its own shape — `initialize` sends
+/// `protocolVersion`/`capabilities`/`clientInfo` and no `name` at all. With the
+/// synthesized decoder, a `params` block of any other shape failed to decode the
+/// whole ENVELOPE, so the message never reached its handler: the server answered
+/// the first message of every real client session with a parse error, while
+/// `initialize` had a correct handler sitting unreachable behind it.
+///
+/// A `params` this type cannot read is therefore recorded as absent rather than
+/// fatal. `callTool` is the only reader and already rejects a missing `params`
+/// with a tool-level error, so a genuinely malformed `tools/call` still fails —
+/// it just fails as that call rather than as the connection.
 public struct MCPRequest: Codable, Sendable {
     public let jsonrpc: String?
     public let id: MCPID?
     public let method: String
     public let params: MCPCallParams?
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        jsonrpc = try container.decodeIfPresent(String.self, forKey: .jsonrpc)
+        id = try container.decodeIfPresent(MCPID.self, forKey: .id)
+        method = try container.decode(String.self, forKey: .method)
+        params = try? container.decodeIfPresent(MCPCallParams.self, forKey: .params)
+    }
 }
 
 /// `tools/call` parameters.
