@@ -29,10 +29,14 @@ left behind by a kill -9.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
+import os
 import re
 import subprocess
 import sys
+import time
+from collections.abc import Iterator
 from enum import Enum
 from pathlib import Path
 
@@ -176,6 +180,68 @@ def run_named_test(test: str, runner: Runner = Runner.SWIFT) -> subprocess.Compl
     # one test target and buys a witness that judges the code on disk.
     refresh_macro_expansions()
     return run(["swift", "test", "--filter", test, "-Xswiftc", "-warnings-as-errors"])
+
+
+class SweepAborted(Exception):
+    """Raised when the tree changed under a running sweep.
+
+    An exception rather than a sentinel return, so the marker's `finally` runs
+    on this path too — an abort that leaked the marker would suppress issue
+    filing until the TTL expired, which is the failure mode the marker exists
+    to avoid rather than to cause.
+    """
+
+
+SWEEP_MARKER = REPO / "logs" / ".mutation-in-progress"
+
+# A marker older than this is treated as abandoned rather than live. A sweep that
+# was SIGKILLed cannot run its `finally`, and a marker with no expiry would then
+# suppress issue filing forever — trading a false-positive problem for a
+# permanently blind one, which is the worse of the two.
+SWEEP_MARKER_TTL_SECONDS = 3600
+
+
+@contextlib.contextmanager
+def sweep_marker() -> Iterator[None]:
+    """Announce that this tree is deliberately being mutated.
+
+    A mutation sweep rewrites source files in place and restores them, so ANY
+    concurrent reader sees a tree the author never intended to ship. `no.md` #14
+    and #21 cover concurrent WRITERS; this covers READERS, which the per-row hash
+    guard cannot see because nothing wrote anything.
+
+    Measured 2026-08-12: a background PM sampled the tree during a hand-applied
+    mutation and filed two P1s (CTS-36AA316A, CTS-D69CD61A) describing a
+    regression that did not exist, each with a precise-looking file:line
+    citation. That is the expensive direction — a fabricated defect reads exactly
+    like a real one, and the next session inherits it as fact.
+    """
+    SWEEP_MARKER.parent.mkdir(parents=True, exist_ok=True)
+    SWEEP_MARKER.write_text(f"{os.getpid()} {time.time()}\n")
+    try:
+        yield
+    finally:
+        # `missing_ok`: a sweep must never fail because its own marker is gone.
+        SWEEP_MARKER.unlink(missing_ok=True)
+
+
+def sweep_in_progress() -> bool:
+    """True when a mutation sweep is live and its marker is fresh.
+
+    Read by anything that would FILE an issue from this tree. Returns False for
+    a stale marker so an abandoned sweep cannot silence reporting indefinitely.
+    """
+    try:
+        raw = SWEEP_MARKER.read_text().split()
+    except OSError:
+        return False
+    if len(raw) != 2:
+        return False
+    try:
+        started = float(raw[1])
+    except ValueError:
+        return False
+    return (time.time() - started) < SWEEP_MARKER_TTL_SECONDS
 
 
 def git_is_clean() -> bool:
@@ -338,22 +404,11 @@ def main(argv: list[str] | None = None) -> int:
         print("working tree is dirty; commit or stash before mutation testing")
         return 2
 
-    failures = []
-    for mutation in MUTATIONS:
-        print(f"\n[{mutation.name}]")
-        print(f"  {mutation.path} :: {mutation.test}")
-        # Re-checked per mutation, not just once at the top. A full sweep runs
-        # for ~30 minutes, and an edit landing mid-run makes every case after it
-        # measure a tree nobody intended: the baseline stops building and the
-        # harness reports SETUP FAILED, which reads as a broken guard rather
-        # than as a dirty tree. Measured twice this session on concurrent doc
-        # edits. Aborting names the real cause instead of filing false gaps.
-        if not git_is_clean():
-            print("  ABORTED: the working tree changed mid-run")
-            print("mutation results are only valid on a tree that stays clean")
-            return 2
-        if not check(mutation):
-            failures.append(mutation.name)
+    try:
+        with sweep_marker():
+            failures = sweep(MUTATIONS)
+    except SweepAborted:
+        return 2
 
     print(f"\n{'=' * 68}")
     if failures:
@@ -367,6 +422,27 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     print("working tree restored byte-identically")
     return 0
+
+
+def sweep(mutations: list[Mutation]) -> list[str]:
+    """Run every mutation, returning the names that went unverified."""
+    failures = []
+    for mutation in mutations:
+        print(f"\n[{mutation.name}]")
+        print(f"  {mutation.path} :: {mutation.test}")
+        # Re-checked per mutation, not just once at the top. A full sweep runs
+        # for ~30 minutes, and an edit landing mid-run makes every case after it
+        # measure a tree nobody intended: the baseline stops building and the
+        # harness reports SETUP FAILED, which reads as a broken guard rather
+        # than as a dirty tree. Measured twice this session on concurrent doc
+        # edits. Aborting names the real cause instead of filing false gaps.
+        if not git_is_clean():
+            print("  ABORTED: the working tree changed mid-run")
+            print("mutation results are only valid on a tree that stays clean")
+            raise SweepAborted
+        if not check(mutation):
+            failures.append(mutation.name)
+    return failures
 
 
 if __name__ == "__main__":

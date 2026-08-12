@@ -14,12 +14,14 @@ The outcome tests drive the pure decision functions with synthetic
 here is a pytest collection pass, which runs no test bodies.
 """
 
+import contextlib
 import hashlib
 import importlib.util
 import os
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -1031,3 +1033,70 @@ class TestMacroExpansionFreshness:
         assert source.stat().st_mtime == stale, (
             "the pytest path touched a Swift source it has no reason to rebuild"
         )
+
+
+class TestSweepMarker:
+    """A mutation sweep must announce itself to READERS, not only to writers.
+
+    `no.md` #14/#21 close the concurrent-WRITER hole: a write during a sweep
+    corrupts the verdict, and the per-row hash guard aborts on it. Neither can
+    see a concurrent READER, because a reader writes nothing — yet a reader that
+    FILES issues turns a deliberate red into a fabricated regression.
+
+    Measured 2026-08-12: a background PM sampled this repo during a hand-applied
+    mutation and filed two P1s (CTS-36AA316A, CTS-D69CD61A) citing exact
+    file:line locations for a defect that did not exist. Both were falsified on
+    a clean tree and closed.
+    """
+
+    def test_the_marker_is_absent_when_no_sweep_is_running(self):
+        mod = _load()
+        # The control. Without it, "the marker suppresses filing" is satisfied
+        # by a marker that is ALWAYS present, which would silence issue filing
+        # permanently — strictly worse than the noise it prevents.
+        assert not mod.sweep_in_progress()
+
+    def test_a_sweep_announces_itself_and_stops_when_it_ends(self, tmp_path, monkeypatch):
+        mod = _load()
+        monkeypatch.setattr(mod, "SWEEP_MARKER", tmp_path / ".mutation-in-progress")
+        assert not mod.sweep_in_progress()
+        with mod.sweep_marker():
+            assert mod.sweep_in_progress(), "a live sweep did not announce itself"
+        assert not mod.sweep_in_progress(), "the marker outlived the sweep"
+
+    def test_the_marker_is_removed_even_when_the_sweep_raises(self, tmp_path, monkeypatch):
+        mod = _load()
+        # The half that matters most. A marker leaked by a crashed sweep would
+        # suppress issue filing until its TTL expired — converting a
+        # false-positive problem into a blind one.
+        monkeypatch.setattr(mod, "SWEEP_MARKER", tmp_path / ".mutation-in-progress")
+        with contextlib.suppress(mod.SweepAborted):
+            with mod.sweep_marker():
+                raise mod.SweepAborted
+        assert not mod.sweep_in_progress(), "an aborted sweep leaked its marker"
+
+    def test_a_stale_marker_does_not_suppress_forever(self, tmp_path, monkeypatch):
+        mod = _load()
+        # A sweep killed by SIGKILL cannot run its `finally`. Without a TTL its
+        # marker would silence reporting for good, and nothing would ever notice
+        # — the failure is that everything looks quiet.
+        marker = tmp_path / ".mutation-in-progress"
+        monkeypatch.setattr(mod, "SWEEP_MARKER", marker)
+        stale = time.time() - mod.SWEEP_MARKER_TTL_SECONDS - 1
+        marker.write_text(f"12345 {stale}\n")
+        assert not mod.sweep_in_progress(), "a stale marker still suppressed filing"
+
+    def test_a_malformed_marker_is_treated_as_absent(self, tmp_path, monkeypatch):
+        mod = _load()
+        # Fail OPEN here, deliberately and unusually: this guard suppresses
+        # reporting, so an unreadable marker must not be able to silence it.
+        # The usual fail-closed rule protects a check that ASSERTS something;
+        # this one only ever excuses, and an excuse that cannot be verified
+        # should not be honoured.
+        marker = tmp_path / ".mutation-in-progress"
+        monkeypatch.setattr(mod, "SWEEP_MARKER", marker)
+        for content in ("", "garbage", "12345 not-a-timestamp", "only-one-field"):
+            marker.write_text(content)
+            assert not mod.sweep_in_progress(), (
+                f"a malformed marker ({content!r}) suppressed filing"
+            )
