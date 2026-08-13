@@ -2,6 +2,45 @@
 
 ## [Unreleased]
 
+### 2026-08-12 (Wave 9 Task 1 — pixel capture)
+
+**Added**
+
+- **`host.capturePixels(backend:)`** — the pixel channel's capture half. Renders
+  the hosted layout to a PNG and returns a `PixelCapture` carrying the bytes,
+  the pixel dimensions, a content hash, the scenario name, and **which backend
+  produced it**. Pixels remain the exception path: every question the semantic
+  tree can answer is still answered there, and this exists for the residue
+  (gradients, shadows, image content, font rendering).
+
+- **Two backends, documented AND asserted as divergent.** `.cacheDisplay`
+  (default) renders the live hosting view, so the pixels and the semantic tree
+  describe one layout pass. `.imageRenderer` re-evaluates the scenario's view
+  through SwiftUI's own renderer. They do not produce the same bytes even at
+  matched dimensions, so a baseline is comparable only to a capture from the
+  same backend — `PixelCapture.backend` is what lets a diff refuse a
+  cross-backend comparison instead of reporting it as a visual change. The
+  divergence is pinned by a test rather than only stated in a comment, because
+  a doc comment is a claim nobody checks.
+
+**Fixed**
+
+- **The capture is pinned to 1 pixel per point, which is not what AppKit does by
+  default.** `bitmapImageRepForCachingDisplay(in:)` answers at the *device*
+  backing scale — measured at 240x160 for a 120x80 view on a Retina machine —
+  so the capture constructs its own `NSBitmapImageRep` at 1x instead of asking
+  the view for one. Without the pin, a baseline written on one machine
+  mismatches every capture from a 1x machine (a CI runner, a non-Retina
+  display) and the pixel channel reports that hardware difference as a UI
+  regression. Determinism was verified across three separate process launches,
+  not merely within one process, so the stability is real rather than a warm
+  font-cache artifact.
+
+- **A zero-area host is refused rather than captured.** `NSBitmapImageRep`
+  accepts a zero dimension and produces a valid, empty PNG that compares equal
+  to every other empty PNG — so a scenario rendering nothing would match any
+  blank baseline and the channel would report PASS for a blank screen.
+
 ### 2026-08-12 (Wave 8 Task 3 — the permission path)
 
 **Added**
