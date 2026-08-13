@@ -114,6 +114,15 @@ CONSTRAINED_TIMING_ENV_MARKERS = (
     "CODEX_SANDBOX",
 )
 
+# How long a mutation-sweep marker stays believable. Must equal
+# `mutation-check.py`'s SWEEP_MARKER_TTL_SECONDS — the harness WRITES the marker
+# and this reads it, so a disagreement is a window where one side thinks a sweep
+# is live and the other does not. Not imported, because `mutation-check.py` is
+# hyphen-named and therefore not importable as a module; the two are bound by
+# `test_the_pm_and_the_harness_agree_on_the_marker_ttl` instead, which is the
+# only thing that can notice a drift (neither file can read the other's value).
+MUTATION_SWEEP_TTL_SECONDS = 3600
+
 
 def mutation_sweep_in_progress() -> bool:
     """True while `scripts/mutation-check.py` is deliberately mutating this tree.
@@ -145,7 +154,7 @@ def mutation_sweep_in_progress() -> bool:
         return False
     # Stale markers do not suppress forever: a SIGKILLed sweep cannot run its
     # `finally`, and a permanent silence is worse than the noise it prevents.
-    return (time.time() - started) < 3600
+    return (time.time() - started) < MUTATION_SWEEP_TTL_SECONDS
 
 
 def _pm_log(message: str, level: str = "INFO") -> None:
