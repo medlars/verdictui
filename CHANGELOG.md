@@ -2,6 +2,38 @@
 
 ## [Unreleased]
 
+### 2026-08-13 (Wave 9 Task 2 — determinism hardening)
+
+**Added**
+
+- **`DeterminismCheck.verify`** — a scenario is refused a pixel baseline unless
+  it renders identically twice. A baseline written for an unstable screen is
+  worse than no baseline: it fails at random on an unrelated commit, and the
+  reader hunts a regression in code that never changed. Two overloads — one
+  taking a scenario, one taking a host FACTORY (for callers like
+  `DemoScenarioEntry` that hide their scenario type behind a closure).
+
+- **Actionable refusals.** `NondeterminismEvidence` carries both content hashes,
+  both byte counts and the backend, and its message names the usual causes (a
+  `Date()` or `UUID()` in `body`, a `.random` value, an animation still running,
+  an unpinned input) plus the alternative: semantic rules do not require byte
+  stability. "This scenario is nondeterministic" is true and unactionable, and
+  an unactionable check gets suppressed.
+
+- **Exit-gate coverage** — every scenario in the demo catalog is verified
+  deterministic, iterating `DemoScenarios.all` rather than a hand-written list,
+  with a vacuity guard so an empty catalog fails instead of passing.
+
+**Notes**
+
+- The two renders each construct their own host, rather than capturing one host
+  twice. A host evaluates `body(state:)` on construction, so this is what makes
+  a re-evaluated `Date()` or counter observable; capturing one existing host
+  twice would re-encode a fixed layout and report every scenario as
+  deterministic. Both overloads settle before capturing, through one shared
+  helper, so a difference in settling can never be misreported as a difference
+  in determinism.
+
 ### 2026-08-12 (Wave 9 Task 1 — pixel capture)
 
 **Added**

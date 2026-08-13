@@ -1549,4 +1549,24 @@ MUTATIONS = [
         new="    public nonisolated static let pixelScale: CGFloat = 2.0",
         test="PixelCaptureTests/testCaptureIsPinnedToOnePixelPerPoint",
     ),
+    Mutation(
+        # The determinism check stops comparing and accepts everything, so a
+        # scenario that renders differently each time is handed a pixel baseline
+        # anyway. The baseline then fails at RANDOM on some later unrelated
+        # commit, and the reader hunts a regression in code that never changed --
+        # strictly worse than having no baseline, which is why the refusal
+        # exists. `false` keeps both bindings live and COMPILES (no.md #31);
+        # deleting the comparison would orphan `second`.
+        name="the determinism check accepts every scenario without comparing",
+        path="Sources/VerdictUIProbe/PixelDeterminism.swift",
+        old="        let first = try await renderOnce(scenario, viewport: viewport, backend: backend)\n"
+        "        let second = try await renderOnce(scenario, viewport: viewport, backend: backend)\n"
+        "\n"
+        "        guard first.png != second.png else {",
+        new="        let first = try await renderOnce(scenario, viewport: viewport, backend: backend)\n"
+        "        let second = try await renderOnce(scenario, viewport: viewport, backend: backend)\n"
+        "\n"
+        "        guard false, second.png.isEmpty else {",
+        test="PixelDeterminismTests/testAScenarioThatChangesBetweenRendersIsRefused",
+    ),
 ]
