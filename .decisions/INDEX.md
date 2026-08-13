@@ -16,6 +16,7 @@
 | [2026-012](2026-012-transports-frame-bytes-and-never-dispatch.md) | Transports frame bytes and never dispatch, and blocking I/O stays off the render actor | 2026-08-12 | Active | daemon, mcp, transport, concurrency, one-implementation |
 | [2026-013](2026-013-slo3-measures-the-wire-and-gates-the-median.md) | SLO 3 measures the artifact's wire latency, and gates the median because the tail is not load-stable | 2026-08-12 | Active | slo, latency, mcp, measurement, one-implementation |
 | [2026-014](2026-014-the-act-delta-shares-one-node-table-and-its-budget-is-measured.md) | The act delta shares one node table across additions, and its budget is a measurement rather than the plan's unreachable 300 B | 2026-08-12 | Active | wire-format, act, budget, measurement, untrusted-input |
+| [2026-015](2026-015-the-witness-mirrors-the-probe-channels-layout.md) | The witness mirrors the probe channel's layout, and frames on the SwiftUI side | 2026-08-12 | Active | wave8, cross-validation, witness, layout, measurement, one-implementation |
 
 > Use the `/adr` skill to create new entries. Each ADR is `YYYY-NNN-slug.md`.
 > ProbeLayout.measure's optional-vs-reduce choice is recorded in `no.md` entry 10

@@ -39,7 +39,41 @@ public final class WitnessHost {
             backing: .buffered,
             defer: false
         )
-        window.contentView = NSHostingView(rootView: content)
+        // The hosting view is made to FILL the window, rather than being left at
+        // its content's natural size.
+        //
+        // `NSHostingView` sizes itself to its content's ideal size and AppKit
+        // then centres it, while `OracleHost` proposes the whole viewport and
+        // lays out from there. A view smaller than its viewport therefore lands
+        // in a different place in each channel, and the reconciler reports that
+        // single uniform offset as a SEPARATE frame disagreement on every node —
+        // blaming the UI for a difference between the two harnesses.
+        //
+        // Measured 2026-08-12 on a 260x120 viewport whose content is naturally
+        // 73x50: the honest control (a scenario that lies about nothing) failed
+        // with two invented disagreements — root width off by 187 pt, the label
+        // off by 93.5 pt in x. The dense demo scenarios hid it because their
+        // content nearly fills its viewport; the minimal lie fixtures exposed it.
+        //
+        // The frame goes on the SWIFTUI side, and that is not interchangeable
+        // with sizing the NSView. Sizing the NSView (`autoresizingMask`, or
+        // assigning `.frame`) was tried FIRST and did not work: measured
+        // 2026-08-12 with a direct probe, both approaches give the hosting view
+        // an NSView frame of 260x120, but `fittingSize` — which is what the
+        // accessibility server publishes — reads 73x49.5 under autoresizing and
+        // 260x120 under the SwiftUI frame. AX reports the CONTENT's size, not
+        // the view's bounds, so only the SwiftUI-side frame changes what a
+        // witness can see.
+        //
+        // The alignment is `.center` (the bare `.frame(width:height:)` default)
+        // to MIRROR `OracleHost`, which applies exactly that modifier. Choosing
+        // `.topLeading` here would be self-consistent and would disagree with
+        // the channel this exists to check — measured at x=109.5 (probe) against
+        // x=16 (witness) for the same label. The two harnesses must agree about
+        // layout, and the probe channel is the one every baseline was recorded
+        // against.
+        window.contentView = NSHostingView(
+            rootView: content.frame(width: size.width, height: size.height))
         window.title = "VerdictUI Witness"
     }
 

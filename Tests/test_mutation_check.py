@@ -33,6 +33,34 @@ pytestmark = pytest.mark.quick
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
+def _load_named(name: str, path: Path) -> Any:
+    """Import a hyphen-named script as a module under `name`.
+
+    Generalised from `_load` rather than copied: two loaders would be two places
+    for the `sys.modules` registration below to go wrong, and the failure is a
+    confusing one (`@dataclass` raises on the decorator, not on anything the
+    test is about).
+    """
+    # Purge the bytecode cache for THIS file before loading. CPython validates a
+    # `.pyc` on mtime PLUS SIZE at one-second granularity, so two edits to one
+    # file inside the same second — which an edit-then-restore control is, by
+    # construction — leave a cache the loader honours over the bytes on disk.
+    # Measured 2026-08-12 while adding this very test: the file read 3600 to
+    # `grep` and 1800 to the loader, and the test failed against source that was
+    # already correct. That is `no.md` #16 one layer up: the harness fixed its
+    # own pytest witness with `-B`, but a loader inside a test is a second cache
+    # consumer nobody had covered.
+    cache = path.parent / "__pycache__"
+    if cache.is_dir():
+        for stale in cache.glob(f"{path.stem}.*.pyc"):
+            stale.unlink(missing_ok=True)
+    spec = importlib.util.spec_from_file_location(name, str(path))
+    mod = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
+    sys.modules[name] = mod
+    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    return mod
+
+
 def _load() -> Any:
     """Import the hyphen-named script as a module. `Any`, because tests rebind
     its `REPO` constant — a `ModuleType` annotation would reject that."""
@@ -1100,3 +1128,27 @@ class TestSweepMarker:
             assert not mod.sweep_in_progress(), (
                 f"a malformed marker ({content!r}) suppressed filing"
             )
+
+    def test_the_pm_and_the_harness_agree_on_the_marker_ttl(self):
+        """The PM READS the marker the harness WRITES, so their TTLs are one rule.
+
+        They cannot import each other — `mutation-check.py` is hyphen-named and
+        so is not importable as a module — which means neither file can read the
+        other's value and a drift is invisible from both sides. That is the
+        two-implementations-of-one-rule shape (`no.md` #45's cousin): each copy's
+        tests assert it against itself and agree.
+
+        A disagreement is a real window, not a tidiness issue: for the interval
+        between the two values, the harness believes a sweep is live while the PM
+        believes it has expired, and the PM resumes filing issues against a tree
+        that is still deliberately mutated — which is the exact defect the marker
+        was built to prevent (CTS-36AA316A, CTS-D69CD61A).
+        """
+        mod = _load()
+        pm = _load_named("verdictui_pm", _PROJECT_ROOT / "scripts" / "verdictui-pm.py")
+        assert mod.SWEEP_MARKER_TTL_SECONDS == pm.MUTATION_SWEEP_TTL_SECONDS, (
+            f"the harness writes a marker it considers valid for "
+            f"{mod.SWEEP_MARKER_TTL_SECONDS}s while the PM reads it as valid for "
+            f"{pm.MUTATION_SWEEP_TTL_SECONDS}s — for the difference, one believes a "
+            f"sweep is live and the other files issues against the mutated tree"
+        )
