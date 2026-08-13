@@ -62,10 +62,23 @@ No arguments. Returns every scenario name the registry holds.
 → {"ok": true, "result": {"scenarios": ["demo-clean-settings", "demo-offscreen-button", …]}}
 ```
 
-### `render(scenario)`
+### `render(scenario, pixels?)`
 
 Returns the semantic tree. Wire form is `CompactTree` — parallel arrays plus a
 parent index, with repeated strings interned.
+
+With `pixels: true` the reply also carries a rendered image — as a **path**,
+never as bytes. The keys are `image` (filesystem path), `pixelsWide`,
+`pixelsHigh`, `backend`, `contentHash` and `cacheHit`, alongside the same
+compact `tree`. A base64 PNG would cost more than every other field of every
+other tool combined, while a path costs a few dozen bytes and an agent that
+wants to look can open it. Verified against the shipped binary: a 360×260
+capture of `demo-clean-settings` reports its path in a payload smaller than the
+image itself.
+
+Pixels are the exception path. Ask for them only when the semantic tree cannot
+answer the question — colour, gradient, shadow, glyph rendering — because every
+geometric question is answered better, and with node ids, by `verify`.
 
 Measured on the demo catalog: 362–839 B compact against 491–1448 B nested, all
 inside the 2 KB budget. The format carries `textMetrics` and `structuralPath`

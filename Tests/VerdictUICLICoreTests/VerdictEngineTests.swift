@@ -39,7 +39,16 @@ final class VerdictEngineTests: XCTestCase {
             registry: DemoScenarios.registry,
             baselines: BaselineStore.standard(root: root)
         )
-        return (CommandEnvironment(engine: engine, output: output), output)
+        return (
+            CommandEnvironment(
+                engine: engine,
+                output: output,
+                // Under the test's own temporary root, so a command that writes
+                // images cannot deposit them in the repository.
+                pixelArtifactRoot: root.appendingPathComponent(PixelArtifact.directory)
+            ),
+            output
+        )
     }
 
     // MARK: - list

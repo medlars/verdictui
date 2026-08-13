@@ -2,6 +2,52 @@
 
 ## [Unreleased]
 
+### 2026-08-13 (Wave 9 Tasks 3–6 — the pixel channel, end to end)
+
+**Added**
+
+- **`PixelDiff`** (kernel, platform-pure) — structural comparison of two RGBA
+  planes: per-channel tolerance, changed-region bounding box, severity-scaled
+  heat map, and refusals for a dimension or backend mismatch. Knows nothing
+  about image formats, so the comparison rules are testable on a machine with
+  no display.
+
+- **`PixelCompare`** (probe) — the platform half: PNG→RGBA decode through a
+  fixed sRGB context, before/after/heat artifacts written to
+  `logs/pixel-diffs/` on failure only, cited BY PATH in a `pixel-diff` finding.
+
+- **Region-scoped diffs** — `PixelRaster.cropped(to:scale:)` and
+  `PixelCompare.compareRegion(...)`: a comparison scoped to one probe's frame,
+  so a failure names the NODE rather than the screen.
+
+- **`PixelCache`** — content-addressed render cache under
+  `~/.verdictui/cache/pixels`, keyed on scenario, tree hash, viewport, variant,
+  backend and build id. Invalidation is by construction; every read failure is
+  a MISS.
+
+- **`render --pixels`** on the CLI, daemon and MCP — reports the image's PATH,
+  never its bytes.
+
+**Notes**
+
+- **The pixel COUNT cannot separate a real regression from an invisible one.**
+  Measured on this capture path: a border going red and a border shifting one
+  shade both touch exactly 196 of 8000 pixels (2.45%). Channel magnitude is the
+  discriminator, so `maxDifferingFraction` defaults to 0 — the opposite of the
+  ~5% several general-purpose diff tools ship, which would swallow the 1-px
+  border regression this channel exists to catch.
+
+- **Sub-pixel anti-aliasing jitter does not occur here.** Offsets of 0.37 and
+  0.5 pt produced byte-identical output; only a whole point changed anything.
+  The non-zero per-channel default is documented as a rounding allowance, not
+  as AA insurance the measurements do not support.
+
+- **The plan's "warm pixel verify ≥ 10× faster than cold" is structurally
+  unreachable.** Measured 5.4–7.0×. The capture is already cheap; the expensive
+  part is the settle, which the cache cannot skip because the tree IS the key —
+  the same property that makes a stale hit impossible. Gate set from the
+  measurement at 3×.
+
 ### 2026-08-13 (Wave 9 Task 2 — determinism hardening)
 
 **Added**
