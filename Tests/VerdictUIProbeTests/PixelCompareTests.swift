@@ -28,6 +28,34 @@ private struct BorderedCardScenario: VerdictScenario {
     }
 }
 
+/// Two independently-probed swatches, so a change to one can be shown NOT to
+/// reach the other's region.
+///
+/// The geometry is fixed and the colours vary, for the same reason as
+/// ``BorderedCardScenario``: a region test proves scoping only if the regions
+/// themselves are identical across instances.
+private struct TwoSwatchScenario: VerdictScenario {
+    let topColor: Color
+    let bottomColor: Color
+
+    var name: String { "two-swatch" }
+
+    func body(state: ScenarioState) -> some View {
+        VStack(spacing: 10) {
+            Rectangle()
+                .fill(topColor)
+                .frame(width: 40, height: 20)
+                .verdictProbe("top", role: .image)
+            Rectangle()
+                .fill(bottomColor)
+                .frame(width: 40, height: 20)
+                .verdictProbe("bottom", role: .image)
+        }
+        .padding(10)
+        .background(Color.white)
+    }
+}
+
 /// The pixel channel's comparison half, driven through real captures.
 ///
 /// The kernel tests cover the comparison RULES on hand-built rasters. These
@@ -132,6 +160,121 @@ final class PixelCompareTests: XCTestCase {
             reported.message.contains("max channel delta"),
             "the finding must lead with the delta: \(reported.message)")
         XCTAssertGreaterThan(result.maxChannelDelta, 100)
+    }
+
+    // MARK: - Region-scoped pixels (Task 4)
+
+    @MainActor
+    private func swatches(
+        top: Color, bottom: Color
+    ) async throws -> (tree: SemanticNode, pixels: PixelCapture) {
+        let host = OracleHost(
+            scenario: TwoSwatchScenario(topColor: top, bottomColor: bottom),
+            viewport: Self.viewport)
+        let tree = try await host.currentTree()
+        return (tree, try host.capturePixels())
+    }
+
+    /// A region diff attributes the change to a NODE, and is blind to changes in
+    /// its sibling.
+    ///
+    /// Both halves are asserted against the SAME pair of captures, which is what
+    /// makes this a test of scoping rather than of two unrelated comparisons: the
+    /// bottom swatch changed, the `bottom` region sees it, the `top` region does
+    /// not, and the whole frame does. A crop that silently returned the full
+    /// frame would fail the middle assertion.
+    @MainActor
+    func testARegionDiffSeesItsOwnNodeAndIsBlindToItsSibling() async throws {
+        let before = try await swatches(top: .green, bottom: .blue)
+        let after = try await swatches(top: .green, bottom: .red)
+
+        // The trees must agree, or the region is tracking a moved element and
+        // the comparison would be about position rather than appearance.
+        XCTAssertEqual(before.tree, after.tree, "only the colour may differ")
+
+        let changed = try PixelCompare.compareRegion(
+            baseline: before.pixels, candidate: after.pixels,
+            nodeID: "bottom", in: after.tree)
+        XCTAssertFalse(changed.result.matches, "the bottom swatch changed colour")
+        let finding = try XCTUnwrap(changed.finding)
+        XCTAssertEqual(finding.nodeID, "bottom", "the finding must name the node, not the screen")
+
+        let untouched = try PixelCompare.compareRegion(
+            baseline: before.pixels, candidate: after.pixels,
+            nodeID: "top", in: after.tree)
+        XCTAssertTrue(untouched.result.matches, "the top swatch did not change")
+        XCTAssertNil(untouched.finding)
+
+        // Control: the change is real and a whole-frame diff sees it, so the
+        // 'top' pass above is scoping rather than a comparison of nothing.
+        let whole = try PixelCompare.compare(baseline: before.pixels, candidate: after.pixels)
+        XCTAssertFalse(whole.result.matches)
+        // And the region really is smaller than the frame — otherwise 'blind to
+        // its sibling' would be satisfied by a crop that returned everything.
+        XCTAssertLessThan(untouched.result.totalPixels, whole.result.totalPixels)
+    }
+
+    @MainActor
+    func testARegionComparisonNamingAnUnknownNodeIsRefused() async throws {
+        let before = try await swatches(top: .green, bottom: .blue)
+        let after = try await swatches(top: .green, bottom: .red)
+
+        XCTAssertThrowsError(
+            try PixelCompare.compareRegion(
+                baseline: before.pixels, candidate: after.pixels,
+                nodeID: "no-such-probe", in: after.tree)
+        ) {
+            guard case let PixelDiffError.unknownRegionNode(nodeID, scenario) = $0 else {
+                return XCTFail("expected unknownRegionNode, got \($0)")
+            }
+            XCTAssertEqual(nodeID, "no-such-probe")
+            XCTAssertEqual(scenario, "two-swatch")
+        }
+    }
+
+    @MainActor
+    func testARegionComparisonRefusesACrossBackendBaseline() async throws {
+        let host = OracleHost(
+            scenario: TwoSwatchScenario(topColor: .green, bottomColor: .blue),
+            viewport: Self.viewport)
+        let tree = try await host.currentTree()
+
+        XCTAssertThrowsError(
+            try PixelCompare.compareRegion(
+                baseline: try host.capturePixels(backend: .cacheDisplay),
+                candidate: try host.capturePixels(backend: .imageRenderer),
+                nodeID: "top", in: tree)
+        ) {
+            guard case PixelDiffError.backendMismatch = $0 else {
+                return XCTFail("expected a backend mismatch, got \($0)")
+            }
+        }
+    }
+
+    @MainActor
+    func testTwoRegionDiffsOfOneScenarioWriteToSeparateArtifactDirectories() async throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("verdictui-region-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let before = try await swatches(top: .green, bottom: .blue)
+        let bothChanged = try await swatches(top: .orange, bottom: .red)
+
+        for node in ["top", "bottom"] {
+            let (_, finding) = try PixelCompare.compareRegion(
+                baseline: before.pixels, candidate: bothChanged.pixels,
+                nodeID: node, in: bothChanged.tree, artifactRoot: root)
+            XCTAssertNotNil(finding, "\(node) changed colour and must report it")
+        }
+
+        // Without a per-node subdirectory the second diff would overwrite the
+        // first, and a reader opening the artifact would see the wrong element.
+        for node in ["top", "bottom"] {
+            let heat = root.appendingPathComponent("two-swatch-\(node)/heat.png")
+            XCTAssertTrue(
+                FileManager.default.fileExists(atPath: heat.path),
+                "\(node)'s heat map was overwritten or never written")
+        }
     }
 
     // MARK: - Refusals

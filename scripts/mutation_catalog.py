@@ -1596,10 +1596,58 @@ MUTATIONS = [
         # expensive shape this product has. Comparing each operand to ITSELF
         # keeps both live and compiles. Hand-verified: 737 tests / 1 failure
         # naming testACrossBackendComparisonIsRefusedBeforeAnyBytesAreRead.
+        # Anchored on the WHOLE-FRAME site specifically. Task 4 gave
+        # `compareRegion` the identical guard, so the bare `guard baseline.backend
+        # == candidate.backend else {` line now matches TWO sites and
+        # --verify-targets correctly refuses it: the harness could not say which
+        # of the two it had broken. Including the following line disambiguates,
+        # and the region site keeps its own row below.
         name="the pixel comparison stops refusing a cross-backend baseline",
         path="Sources/VerdictUIProbe/PixelCompare.swift",
-        old="        guard baseline.backend == candidate.backend else {",
-        new="        guard baseline.backend == baseline.backend, candidate.backend == candidate.backend else {",
+        old="        guard baseline.backend == candidate.backend else {\n"
+        "            throw PixelDiffError.backendMismatch(\n"
+        "                baseline: baseline.backend.rawValue,\n"
+        "                candidate: candidate.backend.rawValue\n"
+        "            )\n"
+        "        }\n"
+        "\n"
+        "        let baseRaster = try PixelRaster(decoding: baseline)",
+        new="        guard baseline.backend == baseline.backend, candidate.backend == candidate.backend else {\n"
+        "            throw PixelDiffError.backendMismatch(\n"
+        "                baseline: baseline.backend.rawValue,\n"
+        "                candidate: candidate.backend.rawValue\n"
+        "            )\n"
+        "        }\n"
+        "\n"
+        "        let baseRaster = try PixelRaster(decoding: baseline)",
         test="PixelCompareTests/testACrossBackendComparisonIsRefusedBeforeAnyBytesAreRead",
+    ),
+    Mutation(
+        # The region crop rounds INWARD instead of outward, so a frame landing on
+        # a fractional point loses a row and a column -- and the edge is exactly
+        # where a border, a shadow or a focus ring lives, i.e. the content this
+        # channel exists to judge. The failure is silent in the expensive
+        # direction: the crop is still a valid raster of a plausible size, both
+        # sides are cropped identically, so the comparison MATCHES and reports
+        # PASS for a regression it clipped out of view.
+        name="the region crop rounds inward and clips the element's own edge",
+        path="Sources/VerdictUIKernel/PixelDiff.swift",
+        old="        let maxX = Int(((rect.x + rect.width) * scale).rounded(.up))",
+        new="        let maxX = Int(((rect.x + rect.width) * scale).rounded(.down))",
+        test="PixelDiffTests/testAFractionalFrameRoundsOutwardSoTheEdgeIsNeverClipped",
+    ),
+    Mutation(
+        # The out-of-bounds region is CLAMPED rather than refused. A clamped crop
+        # compares a different area than the caller asked for while reporting the
+        # answer as the requested one, so a node that moved partly offscreen is
+        # diffed against the wrong pixels and can report a match. `|| true` keeps
+        # every binding live and compiles (no.md #31).
+        name="an out-of-bounds pixel region is accepted instead of refused",
+        path="Sources/VerdictUIKernel/PixelDiff.swift",
+        old="            minX >= 0, minY >= 0, cropWidth > 0, cropHeight > 0,\n"
+        "            maxX <= width, maxY <= height",
+        new="            minX >= 0 || true, minY >= 0, cropWidth > 0, cropHeight > 0,\n"
+        "            maxX <= width || true, maxY <= height",
+        test="PixelDiffTests/testARegionOutsideTheCaptureIsRefusedRatherThanClamped",
     ),
 ]

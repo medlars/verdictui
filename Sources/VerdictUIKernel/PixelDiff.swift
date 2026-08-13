@@ -84,6 +84,61 @@ public struct PixelRaster: Equatable, Sendable {
 
     /// Byte offset of the pixel at (`x`, `y`).
     func offset(x: Int, y: Int) -> Int { (y * width + x) * 4 }
+
+    /// The sub-rectangle of this raster covered by `rect`, as its own raster.
+    ///
+    /// Wave 9 Task 4's primitive: a baseline scoped to one probe's frame is
+    /// smaller to store, cheaper to compare, and — the reason that matters —
+    /// attributable, because a finding can name the node instead of the screen.
+    /// A whole-frame diff says "something changed"; a region diff says which
+    /// element changed.
+    ///
+    /// `rect` arrives in POINTS from a ``SemanticNode``'s frame and is converted
+    /// at `scale`. Coordinates are rounded outward — origin down, extent up — so
+    /// a frame landing between pixel boundaries yields a region that fully
+    /// CONTAINS the element rather than one that clips its edge. Clipping would
+    /// be the worse error by far: the edge is exactly where a border, a shadow
+    /// or a focus ring lives, which is the content this channel exists to judge.
+    ///
+    /// - Throws: ``PixelDiffError/regionOutOfBounds(region:width:height:)`` when
+    ///   the rectangle is not wholly inside the raster. A region that hangs off
+    ///   the edge is NOT silently clamped: a clamped crop compares a different
+    ///   area than the caller asked for and reports the result as if it were the
+    ///   requested one, so a node that moved partly offscreen would be diffed
+    ///   against the wrong pixels and could report a match.
+    public func cropped(to rect: Rect, scale: Double = 1.0) throws -> PixelRaster {
+        // `isEmpty` already treats a NaN or infinite component as empty, which
+        // is the check that matters here: a NaN frame passes every `<`/`>`
+        // comparison below (every comparison against NaN is false), so without
+        // it a broken layout would crop to garbage rather than be refused.
+        guard !rect.isEmpty, scale > 0, scale.isFinite else {
+            throw PixelDiffError.regionOutOfBounds(
+                region: rect, width: width, height: height)
+        }
+
+        let minX = Int((rect.x * scale).rounded(.down))
+        let minY = Int((rect.y * scale).rounded(.down))
+        let maxX = Int(((rect.x + rect.width) * scale).rounded(.up))
+        let maxY = Int(((rect.y + rect.height) * scale).rounded(.up))
+        let cropWidth = maxX - minX
+        let cropHeight = maxY - minY
+
+        guard
+            minX >= 0, minY >= 0, cropWidth > 0, cropHeight > 0,
+            maxX <= width, maxY <= height
+        else {
+            throw PixelDiffError.regionOutOfBounds(
+                region: rect, width: width, height: height)
+        }
+
+        var out = [UInt8]()
+        out.reserveCapacity(cropWidth * cropHeight * 4)
+        for y in minY..<maxY {
+            let rowStart = offset(x: minX, y: y)
+            out.append(contentsOf: samples[rowStart..<(rowStart + cropWidth * 4)])
+        }
+        return try PixelRaster(width: cropWidth, height: cropHeight, samples: out)
+    }
 }
 
 // MARK: - Tolerance
@@ -195,6 +250,17 @@ public enum PixelDiffError: Error, CustomStringConvertible, Equatable {
     /// every single run.
     case backendMismatch(baseline: String, candidate: String)
 
+    /// A region-scoped crop asked for pixels outside the captured frame.
+    ///
+    /// Refused rather than clamped: a clamped crop compares a different area
+    /// than the caller requested while reporting the result as the requested
+    /// one, so a node that moved partly offscreen would be diffed against the
+    /// wrong pixels — and could report a match.
+    case regionOutOfBounds(region: Rect, width: Int, height: Int)
+
+    /// A region-scoped comparison named a probe id the tree does not contain.
+    case unknownRegionNode(nodeID: String, scenario: String)
+
     /// Human-readable refusal naming what could not be compared and what to do.
     ///
     /// Each message ends in an instruction rather than a diagnosis, because a
@@ -220,6 +286,20 @@ public enum PixelDiffError: Error, CustomStringConvertible, Equatable {
                 and the candidate with '\(candidate)'. The two do not produce identical bytes \
                 for the same view, so the difference would be the backend rather than the UI. \
                 Re-capture the candidate with '\(baseline)', or re-record the baseline.
+                """
+        case let .regionOutOfBounds(region, width, height):
+            return """
+                cannot compare pixels: the requested region (\(Int(region.x)), \(Int(region.y))) \
+                \(Int(region.width))x\(Int(region.height)) is not wholly inside the \
+                \(width)x\(height) capture. The node has moved or resized past the viewport — \
+                the semantic channel can name what moved, and `offscreen` or `clipped-content` \
+                will already be reporting it.
+                """
+        case let .unknownRegionNode(nodeID, scenario):
+            return """
+                cannot compare pixels: '\(scenario)' has no probed node '\(nodeID)' to scope the \
+                comparison to. Check the id against `.verdictProbe(_:)`, or compare the whole \
+                frame instead of a region.
                 """
         }
     }

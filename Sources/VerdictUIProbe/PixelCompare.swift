@@ -220,6 +220,82 @@ public enum PixelCompare {
         )
     }
 
+    /// Compare one probed element's pixels against a baseline of that element.
+    ///
+    /// Wave 9 Task 4. Three things get better when a pixel baseline is scoped to
+    /// a node rather than to the screen. The baseline is smaller. The comparison
+    /// is cheaper. And — the one that matters — a failure is ATTRIBUTABLE: the
+    /// finding names the node, so an agent knows which element to look at
+    /// instead of being handed a full-frame image and left to find the change.
+    ///
+    /// Both sides are cropped to the SAME rectangle, taken from `tree`. Cropping
+    /// each to its own tree's frame would silently absorb a move — an element
+    /// that shifted 10 pt would be cropped from its new position, and the two
+    /// crops would match. Movement is the semantic channel's job (it can name
+    /// what moved and by how much); this channel answers "does this element
+    /// still LOOK the same", which is a question about content, not position.
+    ///
+    /// - Parameters:
+    ///   - nodeID: probe id of the element to scope to.
+    ///   - tree: the semantic tree the frame is read from — the candidate's own,
+    ///     so the region tracks the element as authored.
+    /// - Throws: ``PixelDiffError/unknownRegionNode(nodeID:scenario:)`` when the
+    ///   id is not in the tree, plus every refusal
+    ///   ``compare(baseline:candidate:nodeID:tolerance:artifactRoot:)`` makes.
+    public static func compareRegion(
+        baseline: PixelCapture,
+        candidate: PixelCapture,
+        nodeID: String,
+        in tree: SemanticNode,
+        tolerance: PixelTolerance = .standard,
+        artifactRoot: URL? = nil
+    ) throws -> (result: PixelDiffResult, finding: Finding?) {
+        guard baseline.backend == candidate.backend else {
+            throw PixelDiffError.backendMismatch(
+                baseline: baseline.backend.rawValue,
+                candidate: candidate.backend.rawValue
+            )
+        }
+        guard let node = tree.node(withID: nodeID) else {
+            throw PixelDiffError.unknownRegionNode(
+                nodeID: nodeID, scenario: candidate.scenarioName)
+        }
+
+        let scale = Double(OracleHost.pixelScale)
+        let baseRegion = try PixelRaster(decoding: baseline).cropped(to: node.frame, scale: scale)
+        let candidateRegion = try PixelRaster(decoding: candidate)
+            .cropped(to: node.frame, scale: scale)
+        let result = try PixelDiff.compare(
+            baseline: baseRegion, candidate: candidateRegion, tolerance: tolerance)
+
+        guard !result.matches else { return (result, nil) }
+
+        let artifacts = try artifactRoot.map { root in
+            try writeArtifacts(
+                baseline: baseline,
+                candidate: candidate,
+                heat: try PixelDiff.heatMap(
+                    baseline: baseRegion, candidate: candidateRegion, tolerance: tolerance),
+                root: root,
+                // The heat map covers the REGION while the before/after cover the
+                // frame, so the subdirectory says which element was judged —
+                // otherwise two region diffs of one scenario overwrite each other.
+                suffix: nodeID
+            )
+        }
+
+        return (
+            result,
+            finding(
+                for: result,
+                scenario: candidate.scenarioName,
+                nodeID: nodeID,
+                tolerance: tolerance,
+                artifacts: artifacts
+            )
+        )
+    }
+
     /// Turn a failing comparison into a `Finding` that cites its evidence.
     ///
     /// The message leads with the channel delta rather than the pixel count,
@@ -276,16 +352,18 @@ public enum PixelCompare {
         baseline: PixelCapture,
         candidate: PixelCapture,
         heat: PixelRaster,
-        root: URL
+        root: URL,
+        suffix: String? = nil
     ) throws -> PixelDiffArtifacts {
-        // Scenario names reach here from author-supplied strings and become path
-        // components, so anything that could escape the directory is replaced
-        // rather than trusted.
-        let safeName = candidate.scenarioName.map { character in
-            character.isLetter || character.isNumber || character == "-" || character == "_"
-                ? character : "-"
-        }
-        let slug = String(safeName)
+        // Scenario and node names reach here from author-supplied strings and
+        // become path components, so anything that could escape the directory is
+        // replaced rather than trusted.
+        let name = suffix.map { "\(candidate.scenarioName)-\($0)" } ?? candidate.scenarioName
+        let slug = String(
+            name.map { character in
+                character.isLetter || character.isNumber || character == "-" || character == "_"
+                    ? character : "-"
+            })
         let directory = root.appendingPathComponent(slug, isDirectory: true)
 
         do {
