@@ -1152,3 +1152,57 @@ class TestSweepMarker:
             f"{pm.MUTATION_SWEEP_TTL_SECONDS}s — for the difference, one believes a "
             f"sweep is live and the other files issues against the mutated tree"
         )
+
+
+class TestSweep:
+    """`sweep` — the loop that turns a catalog into a verdict.
+
+    Untested until 2026-08-13 (CIS-902C382E), which mattered because the
+    function owns the one behaviour that decides whether a whole run's results
+    mean anything: it re-checks tree cleanliness BETWEEN rows, so a mid-run edit
+    aborts instead of silently scoring every later row against a tree nobody
+    intended (`no.md` #14/#21).
+    """
+
+    def test_it_returns_the_names_that_went_unverified(self, monkeypatch):
+        mod = _load()
+        monkeypatch.setattr(mod, "git_is_clean", lambda: True)
+        # `check` is the per-row verdict; sweep's own job is only to collect the
+        # rows that failed, so it is stubbed by NAME rather than by running any
+        # real mutation.
+        monkeypatch.setattr(mod, "check", lambda m: m.name != "bad")
+        rows = [
+            mod.Mutation(name="good", path="p", old="o", new="n", test="t"),
+            mod.Mutation(name="bad", path="p", old="o", new="n", test="t"),
+        ]
+
+        assert mod.sweep(rows) == ["bad"]
+
+    def test_a_clean_run_reports_no_failures(self, monkeypatch):
+        mod = _load()
+        monkeypatch.setattr(mod, "git_is_clean", lambda: True)
+        monkeypatch.setattr(mod, "check", lambda m: True)
+        rows = [mod.Mutation(name="a", path="p", old="o", new="n", test="t")]
+
+        # The control. Without it, "returns the failures" is satisfied by a
+        # sweep that reports every row as failing.
+        assert mod.sweep(rows) == []
+
+    def test_it_aborts_when_the_tree_changes_between_rows(self, monkeypatch):
+        mod = _load()
+        # Clean for the first row, dirty for the second — the exact shape of an
+        # edit landing mid-run. Scoring the second row here would measure a tree
+        # the author never intended and report SETUP FAILED, which reads as a
+        # broken guard rather than as a dirty tree.
+        clean = iter([True, False])
+        monkeypatch.setattr(mod, "git_is_clean", lambda: next(clean))
+        checked = []
+        monkeypatch.setattr(mod, "check", lambda m: checked.append(m.name) or True)
+        rows = [
+            mod.Mutation(name="first", path="p", old="o", new="n", test="t"),
+            mod.Mutation(name="second", path="p", old="o", new="n", test="t"),
+        ]
+
+        with pytest.raises(mod.SweepAborted):
+            mod.sweep(rows)
+        assert checked == ["first"], "the row after the tree went dirty was still scored"

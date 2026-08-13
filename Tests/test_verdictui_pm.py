@@ -14,6 +14,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import time
 import types
 from pathlib import Path
 
@@ -1062,3 +1063,57 @@ class TestStageTransportSmoke:
         result = pm.stage_transport_smoke()
 
         assert result["passed"], result["detail"]
+
+
+class TestMutationSweepInProgress:
+    """`mutation_sweep_in_progress` — the READER-side half of the sweep guard.
+
+    Untested until 2026-08-13 (CIS-10F7CCF8). It decides whether anything
+    sampling this repo should trust what it sees: a sweep rewrites source in
+    place, so a concurrent reader can file a precise-looking P1 about a
+    regression that does not exist (measured 2026-08-12, two such rows, both
+    falsified on a clean tree at HEAD).
+
+    Both directions matter and they fail differently. Reading FALSE during a
+    live sweep files fabricated defects; reading TRUE forever after a crashed
+    sweep silences real ones — and the silent failure is the one nobody notices.
+    """
+
+    def _marker(self, tmp_path, monkeypatch):
+        """Point the module's marker lookup at a tmp tree.
+
+        The function derives its path from `__file__`, so the redirect is done
+        by faking that parent rather than by patching a constant — there is no
+        constant to patch, which is itself why this needed a test.
+        """
+        logs = tmp_path / "logs"
+        logs.mkdir()
+        monkeypatch.setattr(_mod, "__file__", str(tmp_path / "scripts" / "verdictui-pm.py"))
+        return logs / ".mutation-in-progress"
+
+    def test_no_marker_means_no_sweep(self, tmp_path, monkeypatch):
+        self._marker(tmp_path, monkeypatch)
+        assert _mod.mutation_sweep_in_progress() is False
+
+    def test_a_fresh_marker_reports_a_live_sweep(self, tmp_path, monkeypatch):
+        marker = self._marker(tmp_path, monkeypatch)
+        marker.write_text(f"12345 {time.time()}\n")
+
+        assert _mod.mutation_sweep_in_progress() is True
+
+    def test_a_stale_marker_does_not_suppress_forever(self, tmp_path, monkeypatch):
+        marker = self._marker(tmp_path, monkeypatch)
+        # A SIGKILLed sweep never runs its `finally`, so without a TTL this
+        # marker would silence issue filing permanently — and the symptom of
+        # that is everything looking quiet, which nothing alerts on.
+        marker.write_text(f"12345 {time.time() - _mod.MUTATION_SWEEP_TTL_SECONDS - 1}\n")
+
+        assert _mod.mutation_sweep_in_progress() is False
+
+    def test_a_malformed_marker_is_not_read_as_a_live_sweep(self, tmp_path, monkeypatch):
+        marker = self._marker(tmp_path, monkeypatch)
+        # Fail toward NOISE, never toward silence: an unparseable marker must
+        # not be trusted to suppress reporting.
+        marker.write_text("not-a-marker\n")
+
+        assert _mod.mutation_sweep_in_progress() is False
