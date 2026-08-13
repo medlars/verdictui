@@ -118,6 +118,15 @@ public final class OracleHost {
     /// `body(state:)` evaluation and the target of ``apply(_:)``.
     public let state: ScenarioState
 
+    /// Environment overrides this host rendered with, or ``Variant/baseline``
+    /// when none were supplied.
+    ///
+    /// Retained rather than merely applied, because anything keyed on "what was
+    /// rendered" needs it: the Wave 9 pixel cache keys on this, and without it
+    /// two hosts differing only in locale or colour scheme would produce the
+    /// same key and serve each other's pixels.
+    public let variant: Variant
+
     /// How ``applyStateChange(_:)`` wraps injected mutations. Defaults to
     /// ``SettlePolicy/skipAnimations`` — Wave 3's animation control, not the
     /// unwritable `accessibilityReduceMotion` pin.
@@ -186,6 +195,10 @@ public final class OracleHost {
         self.deadline = deadline
         self.settlePolicy = settlePolicy
         self.clock = clock
+        // `nil` means "the pinned baseline", which IS a variant — recording it
+        // as `.baseline` rather than leaving it optional means every consumer
+        // reads one shape instead of re-deciding what nil meant.
+        self.variant = variant ?? .baseline
         let state = ScenarioState()
         self.state = state
 

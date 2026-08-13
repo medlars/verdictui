@@ -1650,4 +1650,29 @@ MUTATIONS = [
         "            maxX <= width || true, maxY <= height",
         test="PixelDiffTests/testARegionOutsideTheCaptureIsRefusedRatherThanClamped",
     ),
+    Mutation(
+        # The tree hash leaves the cache key, so a screen that has CHANGED is
+        # served the pixels it had before the change. This is the single most
+        # dangerous mutation in the catalog: it does not merely serve stale data,
+        # it reports PASS for a regression using evidence from before the
+        # regression existed -- the exact failure this whole product exists to
+        # prevent, arriving through its own optimisation. Substituting a constant
+        # keeps the parameter live and compiles (no.md #31).
+        name="the pixel cache key stops including the tree, so a changed screen hits",
+        path="Sources/VerdictUIProbe/PixelCache.swift",
+        old="            treeHash: PixelCacheKey.hash(tree: tree),",
+        new='            treeHash: "fixed",',
+        test="PixelCacheTests/testAChangedScreenMissesEvenThoughTheHarnessInputsAreIdentical",
+    ),
+    Mutation(
+        # A cache entry whose bytes do not match their recorded hash is SERVED
+        # instead of missing. That is the shape a crash mid-write leaves behind,
+        # and serving it hands a verification run a truncated image as if it were
+        # a valid capture.
+        name="the pixel cache serves an entry whose bytes contradict its own hash",
+        path="Sources/VerdictUIProbe/PixelCache.swift",
+        old="        guard capture.contentHash == stored.contentHash else { return nil }",
+        new="        guard capture.contentHash == capture.contentHash else { return nil }",
+        test="PixelCacheTests/testACorruptEntryMissesRatherThanBeingServed",
+    ),
 ]
