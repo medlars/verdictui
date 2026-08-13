@@ -1569,4 +1569,37 @@ MUTATIONS = [
         "        guard false, second.png.isEmpty else {",
         test="PixelDeterminismTests/testAScenarioThatChangesBetweenRendersIsRefused",
     ),
+    Mutation(
+        # The per-channel tolerance stops applying, so every rounding difference
+        # in colour conversion counts as a visual change. That is the noisy
+        # direction rather than the silent one, but it is what makes the channel
+        # unusable: a diff that fires on delta-1 noise trains its reader to
+        # ignore it, and the border regression it exists to catch arrives in the
+        # same inbox as the noise. Multiplying by zero keeps `allowance` LIVE --
+        # deleting the guard orphans the binding, which is an error under
+        # -warnings-as-errors and scores a compile failure as a proven guard
+        # (no.md #25/#31). Hand-verified: 737 tests / 2 failures naming
+        # testAChannelDeltaWithinToleranceIsNotADifference, restored to a
+        # byte-identical sha256.
+        name="the pixel diff stops honouring its per-channel tolerance",
+        path="Sources/VerdictUIKernel/PixelDiff.swift",
+        old="        let allowance = Int(tolerance.perChannel)\n        for y in 0..<baseline.height {",
+        new="        let allowance = Int(tolerance.perChannel) * 0\n        for y in 0..<baseline.height {",
+        test="PixelDiffTests/testAChannelDeltaWithinToleranceIsNotADifference",
+    ),
+    Mutation(
+        # The cross-backend refusal stops refusing. Measured in Wave 9 Task 1:
+        # the two backends produce different bytes for the SAME view even at
+        # matched dimensions, so without this guard every comparison across them
+        # reports the backend as a UI regression -- a confident, well-formed
+        # finding about a change that did not happen, which is the most
+        # expensive shape this product has. Comparing each operand to ITSELF
+        # keeps both live and compiles. Hand-verified: 737 tests / 1 failure
+        # naming testACrossBackendComparisonIsRefusedBeforeAnyBytesAreRead.
+        name="the pixel comparison stops refusing a cross-backend baseline",
+        path="Sources/VerdictUIProbe/PixelCompare.swift",
+        old="        guard baseline.backend == candidate.backend else {",
+        new="        guard baseline.backend == baseline.backend, candidate.backend == candidate.backend else {",
+        test="PixelCompareTests/testACrossBackendComparisonIsRefusedBeforeAnyBytesAreRead",
+    ),
 ]
