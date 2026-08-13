@@ -394,6 +394,39 @@ public final class OracleHost {
         )
     }
 
+    /// Draw the live hosting view into `rep`.
+    ///
+    /// The one place ``PixelCapture`` reaches the hosted view. It stays here
+    /// rather than in `PixelCapture.swift` because `hostingView` is private to
+    /// this class BY DESIGN — the host owns the sink wiring, the pinned
+    /// environment and the frame, and a caller holding the view could render it
+    /// at a size or in an environment the host never sanctioned, which is the
+    /// exact class of divergence the pixel channel exists to detect.
+    func renderHostedView(into rep: NSBitmapImageRep) {
+        // Layout before drawing: `cacheDisplay` draws whatever is currently laid
+        // out, so a host whose state changed since the last pass would otherwise
+        // encode the PREVIOUS appearance while reporting the current scenario.
+        hostingView.layoutSubtreeIfNeeded()
+        hostingView.cacheDisplay(in: hostingView.bounds, to: rep)
+    }
+
+    /// An `ImageRenderer` over the same pinned root view the host is showing.
+    ///
+    /// Uses `hostingView.rootView` rather than rebuilding from the scenario, so
+    /// the alternate backend inherits every environment pin — locale, colour
+    /// scheme, calendar, time zone — instead of rendering under whatever the
+    /// process defaults happen to be. A backend that silently dropped the pins
+    /// would diverge from the default backend for a reason that has nothing to
+    /// do with the UI, and the diff would report it as a visual regression.
+    func makeImageRenderer() -> ImageRenderer<AnyView> {
+        ImageRenderer(
+            content: AnyView(
+                hostingView.rootView
+                    .frame(width: hostSize.width, height: hostSize.height)
+            )
+        )
+    }
+
     /// FAIL verdict for a ``SettleResult/timedOut(lastDelta:)``, or `nil` when
     /// `result` was a settle. Uses the sink's latest tree as evidence.
     public func timeoutVerdict(

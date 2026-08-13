@@ -1531,4 +1531,22 @@ MUTATIONS = [
         new="        return all.first { $0.structuralPath == path }",
         test="FocusToolTests/testFocusResolvesAStructuralPathAsWellAsAProbeID",
     ),
+    Mutation(
+        # The pixel capture stops pinning its scale and takes the DEVICE scale.
+        # `bitmapImageRepForCachingDisplay(in:)` is the obvious AppKit call and
+        # is exactly wrong here: it answers at the display's backing scale, so a
+        # baseline written on a Retina machine mismatches every capture from a
+        # 1x one -- a CI runner, a non-Retina display -- and the diff reports
+        # that as a UI regression. Substituting a wrong-but-typed value rather
+        # than deleting the guard keeps every binding live and COMPILES
+        # (no.md #31). Hand-verified 2026-08-12 in both directions: mutated,
+        # exit 1 with 8 tests executed and 4 failures reading "400 is not equal
+        # to 200 - width must be points, not device pixels"; restored, 8 tests /
+        # 0 failures with a byte-identical restore.
+        name="the pixel capture stops pinning 1x and follows the device scale",
+        path="Sources/VerdictUIProbe/PixelCapture.swift",
+        old="    public nonisolated static let pixelScale: CGFloat = 1.0",
+        new="    public nonisolated static let pixelScale: CGFloat = 2.0",
+        test="PixelCaptureTests/testCaptureIsPinnedToOnePixelPerPoint",
+    ),
 ]
