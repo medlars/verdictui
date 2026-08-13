@@ -257,6 +257,102 @@ final class PixelDiffTests: XCTestCase {
         XCTAssertThrowsError(try PixelRaster(width: 0, height: 4, samples: []))
     }
 
+    // MARK: - Region cropping (Task 4)
+
+    func testCroppingReturnsExactlyTheRequestedRectangle() throws {
+        let base = try solid(10, 10, r: 0, g: 0, b: 0)
+        let marked = try mutating(base, x: 4, y: 5, to: (255, 0, 0, 255))
+
+        let crop = try marked.cropped(to: Rect(x: 4, y: 5, width: 2, height: 3))
+
+        XCTAssertEqual(crop.width, 2)
+        XCTAssertEqual(crop.height, 3)
+        // The marked pixel is the crop's origin, which proves the rows were read
+        // from the right offset rather than merely being the right size.
+        XCTAssertEqual(crop.samples[crop.offset(x: 0, y: 0)], 255)
+        XCTAssertEqual(crop.samples[crop.offset(x: 1, y: 0)], 0)
+    }
+
+    /// A region diff must be blind to changes OUTSIDE its region — that is the
+    /// whole point of scoping, and a crop that silently returned the full frame
+    /// would pass every other test in this file.
+    func testAChangeOutsideTheRegionIsInvisibleToARegionDiff() throws {
+        let base = try solid(10, 10, r: 0, g: 0, b: 0)
+        let changedElsewhere = try mutating(base, x: 9, y: 9, to: (255, 0, 0, 255))
+
+        let region = Rect(x: 0, y: 0, width: 3, height: 3)
+        let result = try PixelDiff.compare(
+            baseline: try base.cropped(to: region),
+            candidate: try changedElsewhere.cropped(to: region)
+        )
+        XCTAssertTrue(result.matches, "the change is outside the region")
+        XCTAssertEqual(result.totalPixels, 9, "and the region really is 3x3, not the frame")
+
+        // Control: the same change IS visible to a whole-frame diff, so the
+        // fixture is genuinely different and this is scoping rather than a
+        // comparison that cannot fail.
+        let whole = try PixelDiff.compare(baseline: base, candidate: changedElsewhere)
+        XCTAssertFalse(whole.matches)
+    }
+
+    /// Frames land on fractional points, and rounding INWARD would drop the edge
+    /// — which is exactly where a border, a shadow or a focus ring lives.
+    func testAFractionalFrameRoundsOutwardSoTheEdgeIsNeverClipped() throws {
+        let base = try solid(10, 10, r: 0, g: 0, b: 0)
+
+        let crop = try base.cropped(to: Rect(x: 2.4, y: 3.6, width: 3.2, height: 2.1))
+
+        // x: 2.4 -> 2, (2.4+3.2)=5.6 -> 6, so 4 columns. Rounding inward would
+        // give 3 and lose a column of the element's own border.
+        XCTAssertEqual(crop.width, 4)
+        // y: 3.6 -> 3, (3.6+2.1)=5.7 -> 6, so 3 rows.
+        XCTAssertEqual(crop.height, 3)
+    }
+
+    func testARegionOutsideTheCaptureIsRefusedRatherThanClamped() throws {
+        let base = try solid(10, 10, r: 0, g: 0, b: 0)
+
+        // Clamping would compare a different area than the caller asked for and
+        // report the answer as if it were the requested one.
+        for offending in [
+            Rect(x: 8, y: 0, width: 5, height: 2),  // runs off the right edge
+            Rect(x: -1, y: 0, width: 3, height: 2),  // starts before the origin
+            Rect(x: 0, y: 9, width: 2, height: 4),  // runs off the bottom
+        ] {
+            XCTAssertThrowsError(try base.cropped(to: offending)) {
+                guard case PixelDiffError.regionOutOfBounds = $0 else {
+                    return XCTFail("expected regionOutOfBounds for \(offending), got \($0)")
+                }
+            }
+        }
+    }
+
+    func testANonFiniteOrEmptyFrameIsRefused() throws {
+        let base = try solid(10, 10, r: 0, g: 0, b: 0)
+
+        // Every comparison against NaN is false, so without the explicit guard a
+        // NaN frame would pass the bounds checks and crop to garbage.
+        XCTAssertThrowsError(
+            try base.cropped(to: Rect(x: .nan, y: 0, width: 2, height: 2)))
+        XCTAssertThrowsError(
+            try base.cropped(to: Rect(x: 0, y: 0, width: .infinity, height: 2)))
+        XCTAssertThrowsError(
+            try base.cropped(to: Rect(x: 0, y: 0, width: 0, height: 2)))
+    }
+
+    func testCroppingHonoursTheScale() throws {
+        let base = try solid(20, 20, r: 0, g: 0, b: 0)
+
+        // The same 5x5-point frame is 10x10 pixels at 2x. Getting this wrong
+        // would crop a quarter of the intended element and still return a
+        // perfectly valid raster.
+        let atOne = try base.cropped(to: Rect(x: 0, y: 0, width: 5, height: 5), scale: 1)
+        let atTwo = try base.cropped(to: Rect(x: 0, y: 0, width: 5, height: 5), scale: 2)
+
+        XCTAssertEqual(atOne.width, 5)
+        XCTAssertEqual(atTwo.width, 10)
+    }
+
     // MARK: - Heat map
 
     func testTheHeatMapMarksOnlyThePixelsThatExceededTolerance() throws {
