@@ -189,6 +189,7 @@ public struct MCPTransport: Sendable {
             includeTree: arguments["include_tree"]?.boolValue,
             nodePath: arguments["node_path"]?.stringValue,
             crossValidate: arguments["cross_validate"]?.boolValue,
+            pixels: arguments["pixels"]?.boolValue,
             id: nil
         )
         let response = await VerdictDaemon.handle(request, engine: engine)
@@ -237,6 +238,10 @@ public struct MCPTransport: Sendable {
         case .step(let step): data = try encoder.encode(step)
         case .sweep(let report): data = try encoder.encode(report)
         case .findings(let findings): data = try encoder.encode(findings)
+        // The tree is compacted for the same reason as `.tree` above, and the
+        // image is already a PATH rather than bytes — a base64 PNG here would
+        // cost more than every other field of every other tool combined.
+        case .pixelRender(let report): data = try encoder.encode(CompactPixelRender(report))
         case .pong(let version): data = try encoder.encode(["schemaVersion": version])
         }
         return String(decoding: data, as: UTF8.self)

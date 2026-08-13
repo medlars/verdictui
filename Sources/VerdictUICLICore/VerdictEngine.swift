@@ -83,6 +83,44 @@ public struct VerdictEngine: Sendable {
         }
     }
 
+    /// Render `scenario` and capture its pixels alongside its tree.
+    ///
+    /// Both come from ONE host, so the bitmap and the tree describe a single
+    /// layout pass rather than two independent renders that might have settled
+    /// differently. That is the whole reason this lives on the engine instead of
+    /// being composed by a caller from `render` plus a separate capture.
+    ///
+    /// The capture goes through the cache when one is supplied, and the result
+    /// says whether it hit — a caller reporting a speedup must not have to guess.
+    ///
+    /// - Throws: ``EngineError/renderFailed(scenario:reason:)`` for a settle
+    ///   failure, and the underlying capture error for a bitmap that could not
+    ///   be produced. The two are kept distinct because "the screen never
+    ///   settled" and "the screen settled and could not be photographed" have
+    ///   different fixes.
+    @MainActor
+    public func renderPixels(
+        scenario name: String,
+        viewport: Size? = nil,
+        deadline: TimeInterval = OracleHost.defaultDeadline,
+        backend: PixelBackend = .cacheDisplay,
+        cache: PixelCache? = nil
+    ) async throws -> (tree: SemanticNode, capture: PixelCapture, wasHit: Bool) {
+        let entry = try entry(named: name)
+        let host = entry.host(viewport: viewport, deadline: deadline)
+        let tree: SemanticNode
+        do {
+            tree = try await host.currentTree()
+        } catch {
+            throw EngineError.renderFailed(scenario: name, reason: String(describing: error))
+        }
+        guard let cache else {
+            return (tree, try host.capturePixels(backend: backend), false)
+        }
+        let cached = try host.capturePixelsCached(tree: tree, cache: cache, backend: backend)
+        return (tree, cached.capture, cached.wasHit)
+    }
+
     /// Render `scenario` and judge it.
     ///
     /// - Parameters:

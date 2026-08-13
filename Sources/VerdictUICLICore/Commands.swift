@@ -19,9 +19,17 @@ public struct CommandEnvironment: Sendable {
     public let engine: VerdictEngine
     public let output: OutputSink
 
-    public init(engine: VerdictEngine, output: OutputSink) {
+    /// Where rendered pixel images are written.
+    ///
+    /// Injected rather than derived inside the command so a test can point it
+    /// at a temporary directory — a command that hardcodes its output path can
+    /// only be tested by letting it write into the repository.
+    public let pixelArtifactRoot: URL
+
+    public init(engine: VerdictEngine, output: OutputSink, pixelArtifactRoot: URL) {
         self.engine = engine
         self.output = output
+        self.pixelArtifactRoot = pixelArtifactRoot
     }
 
     /// The default environment: the demo catalog, baselines under the current
@@ -38,7 +46,9 @@ public struct CommandEnvironment: Sendable {
                 registry: DemoScenarios.registry,
                 baselines: BaselineStore.standard(root: root)
             ),
-            output: StandardOutput()
+            output: StandardOutput(),
+            pixelArtifactRoot: root.appendingPathComponent(
+                PixelArtifact.directory, isDirectory: true)
         )
     }
 }
@@ -101,14 +111,129 @@ public struct ListCommand: Sendable {
 /// Prints a scenario's semantic tree.
 public struct RenderCommand: Sendable {
     public let scenario: String
-    public init(scenario: String) { self.scenario = scenario }
+
+    /// Also capture the scenario's pixels, writing the image to disk and
+    /// reporting its PATH.
+    ///
+    /// The image is never inlined into stdout. A base64 PNG would dwarf the
+    /// tree it accompanies and cost more than the rest of the payload on the
+    /// token-metered MCP surface — and an agent that wants to LOOK at it can
+    /// open a path, while one that does not pays nothing.
+    public let pixels: Bool
+
+    public init(scenario: String, pixels: Bool = false) {
+        self.scenario = scenario
+        self.pixels = pixels
+    }
 
     @MainActor
     public func run(_ environment: CommandEnvironment, pretty: Bool) async -> ExitCode {
         await CommandRunner.run(output: environment.output) {
-            let tree = try await environment.engine.render(scenario: scenario)
-            environment.output.writeOut(try VerdictOutput.json(tree, pretty: pretty))
+            guard pixels else {
+                let tree = try await environment.engine.render(scenario: scenario)
+                environment.output.writeOut(try VerdictOutput.json(tree, pretty: pretty))
+                return .pass
+            }
+
+            let rendered = try await environment.engine.renderPixels(
+                scenario: scenario, cache: PixelCache.standard())
+            let path = try PixelArtifact.write(
+                rendered.capture, under: environment.pixelArtifactRoot)
+            environment.output.writeOut(
+                try VerdictOutput.json(
+                    PixelRenderReport(
+                        scenario: scenario,
+                        tree: rendered.tree,
+                        image: path,
+                        pixelsWide: rendered.capture.pixelsWide,
+                        pixelsHigh: rendered.capture.pixelsHigh,
+                        backend: rendered.capture.backend.rawValue,
+                        contentHash: rendered.capture.contentHash,
+                        cacheHit: rendered.wasHit
+                    ),
+                    pretty: pretty))
             return .pass
+        }
+    }
+}
+
+/// What `render --pixels` prints: the tree, plus where the image was written.
+///
+/// A struct rather than a dictionary because this crosses the wire and is read
+/// by a client written against the shape, not against our encoder — the lesson
+/// `no.md` #35 cost a whole wave to learn.
+public struct PixelRenderReport: Codable, Equatable, Sendable {
+    public let scenario: String
+    public let tree: SemanticNode
+    /// Filesystem path of the PNG. A path, never the bytes — see
+    /// ``RenderCommand/pixels``.
+    public let image: String
+    public let pixelsWide: Int
+    public let pixelsHigh: Int
+    public let backend: String
+    public let contentHash: String
+    /// Whether the capture came from the render cache, so a caller can report a
+    /// hit rate rather than infer one from timing.
+    public let cacheHit: Bool
+}
+
+/// The MCP form of a pixel render: the tree compacted, the image still a path.
+///
+/// A separate type rather than a flag on ``PixelRenderReport`` because the two
+/// wires carry genuinely different tree encodings — the socket daemon ships the
+/// full `SemanticNode`, MCP ships the compact form — and a single type with an
+/// either/or field would let a client decode the wrong one silently.
+public struct CompactPixelRender: Codable, Equatable, Sendable {
+    public let scenario: String
+    public let tree: CompactTree
+    /// Path, never bytes. See ``RenderCommand/pixels``.
+    public let image: String
+    public let pixelsWide: Int
+    public let pixelsHigh: Int
+    public let backend: String
+    public let contentHash: String
+    public let cacheHit: Bool
+
+    public init(_ report: PixelRenderReport) {
+        scenario = report.scenario
+        tree = CompactTree(report.tree)
+        image = report.image
+        pixelsWide = report.pixelsWide
+        pixelsHigh = report.pixelsHigh
+        backend = report.backend
+        contentHash = report.contentHash
+        cacheHit = report.cacheHit
+    }
+}
+
+/// Writes a capture to a stable, collision-free path under an artifact root.
+public enum PixelArtifact {
+    /// Default root for rendered images, alongside the diff artifacts.
+    public static let directory = "logs/pixel-renders"
+
+    /// Write `capture` and return its path.
+    ///
+    /// The filename carries the content hash, so re-rendering an unchanged
+    /// screen overwrites the same file instead of accumulating one image per
+    /// invocation — and two DIFFERENT renders of one scenario never collide.
+    ///
+    /// - Throws: ``PixelCompareError/artifactWriteFailed(path:reason:)``.
+    public static func write(_ capture: PixelCapture, under root: URL) throws -> String {
+        // Author-supplied scenario names become path components, so anything
+        // that could escape the directory is replaced rather than trusted.
+        let slug = String(
+            capture.scenarioName.map { character in
+                character.isLetter || character.isNumber || character == "-" || character == "_"
+                    ? character : "-"
+            })
+        do {
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            let url = root.appendingPathComponent("\(slug)-\(capture.contentHash).png")
+            try capture.png.write(to: url)
+            return url.path
+        } catch {
+            throw PixelCompareError.artifactWriteFailed(
+                path: root.path, reason: error.localizedDescription)
         }
     }
 }

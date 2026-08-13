@@ -119,6 +119,15 @@ public struct DaemonRequest: Codable, Sendable, Equatable {
     /// `cross-validation-skipped` warning — a caller that asked for two
     /// channels is never quietly given one.
     public let crossValidate: Bool?
+    /// Whether `render` should also capture pixels.
+    ///
+    /// Off by default. When on, the response carries the image's PATH and never
+    /// its bytes: a base64 PNG would dwarf the tree it accompanies and cost more
+    /// than the entire rest of the payload on a token-metered surface, while an
+    /// agent that wants to look can open a path and one that does not pays
+    /// nothing.
+    public let pixels: Bool?
+
     /// Caller-supplied correlation id, echoed back untouched.
     public let id: String?
 
@@ -130,6 +139,7 @@ public struct DaemonRequest: Codable, Sendable, Equatable {
         includeTree: Bool? = nil,
         nodePath: String? = nil,
         crossValidate: Bool? = nil,
+        pixels: Bool? = nil,
         id: String? = nil
     ) {
         self.method = method
@@ -139,6 +149,7 @@ public struct DaemonRequest: Codable, Sendable, Equatable {
         self.includeTree = includeTree
         self.nodePath = nodePath
         self.crossValidate = crossValidate
+        self.pixels = pixels
         self.id = id
     }
 }
@@ -191,10 +202,11 @@ public enum DaemonResult: Codable, Sendable {
     case step(StepResultWire)
     case sweep(SweepReportWire)
     case findings([Finding])
+    case pixelRender(PixelRenderReport)
     case pong(String)
 
     private enum CodingKeys: String, CodingKey, CaseIterable {
-        case scenarios, verdict, tree, step, sweep, findings, pong
+        case scenarios, verdict, tree, step, sweep, findings, pixelRender, pong
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -206,6 +218,7 @@ public enum DaemonResult: Codable, Sendable {
         case .step(let value): try container.encode(value, forKey: .step)
         case .sweep(let value): try container.encode(value, forKey: .sweep)
         case .findings(let value): try container.encode(value, forKey: .findings)
+        case .pixelRender(let value): try container.encode(value, forKey: .pixelRender)
         case .pong(let value): try container.encode(value, forKey: .pong)
         }
     }
@@ -228,6 +241,10 @@ public enum DaemonResult: Codable, Sendable {
             self = .sweep(value)
         } else if let value = try container.decodeIfPresent([Finding].self, forKey: .findings) {
             self = .findings(value)
+        } else if let value = try container.decodeIfPresent(
+            PixelRenderReport.self, forKey: .pixelRender)
+        {
+            self = .pixelRender(value)
         } else if let value = try container.decodeIfPresent(String.self, forKey: .pong) {
             self = .pong(value)
         } else {
@@ -265,6 +282,13 @@ public actor VerdictDaemon {
     private let engine: VerdictEngine
     private let socketPath: String
 
+    /// Where `render --pixels` writes its images.
+    ///
+    /// Injected rather than derived inside `handle`, so a test can point it at a
+    /// temporary directory instead of letting the daemon write into whatever
+    /// directory it happens to have been started from.
+    private let pixelArtifactRoot: URL
+
     /// Conventional socket location.
     public static var defaultSocketPath: String {
         FileManager.default.homeDirectoryForCurrentUser
@@ -272,9 +296,14 @@ public actor VerdictDaemon {
             .path
     }
 
-    public init(engine: VerdictEngine, socketPath: String = VerdictDaemon.defaultSocketPath) {
+    public init(
+        engine: VerdictEngine,
+        socketPath: String = VerdictDaemon.defaultSocketPath,
+        pixelArtifactRoot: URL = URL(fileURLWithPath: PixelArtifact.directory)
+    ) {
         self.engine = engine
         self.socketPath = socketPath
+        self.pixelArtifactRoot = pixelArtifactRoot
     }
 
     /// Methods that cannot be answered without a scenario name.
@@ -299,7 +328,8 @@ public actor VerdictDaemon {
     @MainActor
     public static func handle(
         _ request: DaemonRequest,
-        engine: VerdictEngine
+        engine: VerdictEngine,
+        pixelArtifactRoot: URL = URL(fileURLWithPath: PixelArtifact.directory)
     ) async -> DaemonResponse {
         func failure(_ message: String) -> DaemonResponse {
             DaemonResponse(ok: false, id: request.id, result: nil, error: message)
@@ -330,8 +360,25 @@ public actor VerdictDaemon {
                 return await handleScenarioFree(request, engine: engine)
 
             case "render":
-                let tree = try await engine.render(scenario: scenario)
-                return success(.tree(tree))
+                guard request.pixels == true else {
+                    let tree = try await engine.render(scenario: scenario)
+                    return success(.tree(tree))
+                }
+                let rendered = try await engine.renderPixels(
+                    scenario: scenario, cache: PixelCache.standard())
+                let path = try PixelArtifact.write(rendered.capture, under: pixelArtifactRoot)
+                return success(
+                    .pixelRender(
+                        PixelRenderReport(
+                            scenario: scenario,
+                            tree: rendered.tree,
+                            image: path,
+                            pixelsWide: rendered.capture.pixelsWide,
+                            pixelsHigh: rendered.capture.pixelsHigh,
+                            backend: rendered.capture.backend.rawValue,
+                            contentHash: rendered.capture.contentHash,
+                            cacheHit: rendered.wasHit
+                        )))
 
             case "focus":
                 // The follow-up verb for `truncated: true`. A tree that says it

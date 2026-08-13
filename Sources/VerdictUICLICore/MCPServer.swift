@@ -77,7 +77,20 @@ public enum MCPServer {
                     "Render a scenario and return its semantic tree in the compact wire form "
                     + "(parallel arrays + parent index, interned strings). Sets truncated:true "
                     + "when the tree was cut to fit.",
-                inputSchema: MCPSchema(properties: ["scenario": scenario], required: ["scenario"])
+                inputSchema: MCPSchema(
+                    properties: [
+                        "scenario": scenario,
+                        "pixels": MCPProperty(
+                            type: "boolean",
+                            description:
+                                "Also capture the rendered pixels. Returns the image's PATH "
+                                + "plus its dimensions and content hash — never the bytes, "
+                                + "which would cost more than every other field combined. "
+                                + "Open the path only when the semantic tree cannot answer "
+                                + "the question (colour, gradient, shadow, glyph rendering)."
+                        ),
+                    ],
+                    required: ["scenario"])
             ),
             MCPTool(
                 name: "verify",

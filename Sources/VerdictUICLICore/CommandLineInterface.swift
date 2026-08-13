@@ -83,12 +83,22 @@ public struct VerdictUITool: AsyncParsableCommand {
         @Argument(help: "Scenario name, as printed by `verdictui list`.")
         public var scenario: String
 
+        @Flag(
+            name: .long,
+            help: """
+                Also capture the rendered pixels. The image is written to \
+                \(PixelArtifact.directory)/ and its PATH is reported — never the bytes, \
+                which would dwarf the tree and cost more than the rest of the payload.
+                """
+        )
+        public var pixels = false
+
         @OptionGroup public var formatting: FormattingOptions
 
         @MainActor
         public func run() async throws {
             let environment = CommandEnvironment.standard()
-            let code = await RenderCommand(scenario: scenario)
+            let code = await RenderCommand(scenario: scenario, pixels: pixels)
                 .run(environment, pretty: formatting.pretty)
             try VerdictUITool.finish(code)
         }
