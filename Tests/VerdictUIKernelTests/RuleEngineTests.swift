@@ -63,7 +63,7 @@ final class RuleEngineTests: XCTestCase {
 
     func testDefaultContextUsesMacOSPointerMinimum() {
         let context = LintContext(viewport: viewport)
-        XCTAssertEqual(context.minimumTapTarget, Size(width: 28, height: 28))
+        XCTAssertEqual(context.minimumTapTarget, Size(width: 12, height: 12))
         XCTAssertEqual(context.truncationTolerance, 0.5)
         XCTAssertEqual(context.scenario, "unnamed")
         XCTAssertTrue(context.disabledRules.isEmpty)

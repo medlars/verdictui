@@ -172,10 +172,14 @@ final class KernelDocumentationTests: XCTestCase {
             frame: viewport,
             structuralPath: "root",
             children: [
+                // 8 x 6 pt, not the 24 x 18 it was until 2026-08-14: the macOS
+                // floor moved from 28 pt (a touch metric, which no native macOS
+                // control can satisfy) to 12 pt, so 24 x 18 stopped producing a
+                // finding at all and this helper stopped exercising the rule.
                 SemanticNode(
                     id: "close",
                     role: .button,
-                    frame: Rect(x: 280, y: 16, width: 24, height: 18),
+                    frame: Rect(x: 280, y: 16, width: 8, height: 6),
                     structuralPath: "root/button[0]"
                 )
             ]

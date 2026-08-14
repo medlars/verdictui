@@ -15,8 +15,8 @@ $ verdictui verify demo-undersized-tap-target
     "rule": "tap-target",
     "nodeID": "dismiss-button",
     "severity": "error",
-    "message": "'dismiss-button' is 18 x 18 pt, below the 28 x 28 pt minimum hit size",
-    "suggestion": "grow the control or add .frame(minWidth: 28, minHeight: 28)"
+    "message": "'dismiss-button' is 6 x 6 pt, below the 12 x 12 pt minimum hit size",
+    "suggestion": "grow the control or add .frame(minWidth: 12, minHeight: 12)"
   }],
   "schemaVersion": "1.1"
 }

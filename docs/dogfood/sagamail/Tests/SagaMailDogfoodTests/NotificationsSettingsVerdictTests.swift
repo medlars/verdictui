@@ -105,52 +105,38 @@ final class NotificationsSettingsVerdictTests: XCTestCase {
 
     // MARK: The verdict
 
-    /// The screen produces exactly ONE class of finding, and it is a known rule
-    /// calibration issue rather than a defect in the screen.
+    /// The screen as SagaMail ships it is CLEAN. This is the assertion a
+    /// SagaMail developer would actually keep in CI.
     ///
-    /// This test deliberately does NOT assert `.pass`. All three `Toggle`s
-    /// measure 18 pt tall against `tap-target`'s 28 pt minimum — and 18 pt is
-    /// the height of a native SwiftUI macOS `Toggle`, verified outside VerdictUI
-    /// entirely (`NSHostingView(rootView: Toggle(...)).fittingSize` → 60×18).
-    /// So the rule fires on idiomatic SwiftUI written exactly as Apple ships it.
-    ///
-    /// Asserting `.pass` here would require either suppressing the rule or
-    /// making the screen non-standard, and both would hide a finding that is
-    /// really about the THRESHOLD (CTS-DB551166). Recording the true state is
-    /// the honest option, and this test fails the moment anything OTHER than
-    /// tap-target appears — which is the regression worth catching.
-    func testTheDefaultScreenProducesOnlyTheKnownTapTargetFindings() async throws {
+    /// It asserted merely "no findings other than tap-target" until 2026-08-14,
+    /// because all three `Toggle`s tripped a 28 pt minimum no standard macOS
+    /// control can reach — the rule was miscalibrated, not the screen. With the
+    /// floor corrected to 12 pt (the measured size of a `.controlSize(.mini)`
+    /// switch) the exemption is gone and the stronger claim holds.
+    func testTheDefaultScreenPassesEveryStandardRule() async throws {
         let tree = try await renderScreen(showAdvanced: false)
         let result = verdict(for: tree, scenario: "sagamail-notifications")
 
-        let unexpected = result.findings.filter { $0.rule != "tap-target" }
-        XCTAssertTrue(
-            unexpected.isEmpty,
-            "findings beyond the known tap-target calibration: "
-                + "\(unexpected.map { "\($0.rule) on \($0.nodeID ?? "-")" })"
+        XCTAssertEqual(
+            result.status, .pass,
+            "unexpected findings: \(result.findings.map { "\($0.rule) on \($0.nodeID ?? "-")" })"
         )
-        // The known findings must still be CITED — an uncitable finding is
-        // unusable whether or not it is expected.
-        for finding in result.findings {
-            XCTAssertNotNil(finding.nodeID, "finding '\(finding.rule)' cites no node")
-        }
     }
 
     /// The expanded state too — the long "Morning & Evening (9 AM / 6 PM)"
     /// label is exactly the kind of string that truncates in a narrow settings
     /// pane, which is why this screen was chosen for the dogfood. Nothing
-    /// truncates at 420 pt, so no `truncated-text` finding should appear.
-    func testTheExpandedScreenAddsNoNewFindingClass() async throws {
+    /// truncates at 420 pt, so the verdict must be clean here as well.
+    func testTheExpandedScreenPassesEveryStandardRule() async throws {
         let tree = try await renderScreen(
             showAdvanced: true, name: "sagamail-notifications-advanced"
         )
         let result = verdict(for: tree, scenario: "sagamail-notifications-advanced")
 
-        let unexpected = result.findings.filter { $0.rule != "tap-target" }
-        XCTAssertTrue(
-            unexpected.isEmpty,
+        XCTAssertEqual(
+            result.status, .pass,
             "the advanced section introduced findings: "
-                + "\(unexpected.map { "\($0.rule) on \($0.nodeID ?? "-")" })"
+                + "\(result.findings.map { "\($0.rule) on \($0.nodeID ?? "-")" })"
         )
     }
 

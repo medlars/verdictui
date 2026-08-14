@@ -25,8 +25,8 @@ itself. A platform-pure kernel turns that into a verdict with cited evidence:
 
     $ verdictui verify demo-undersized-tap-target
     {"status":"FAIL","findings":[{"rule":"tap-target","nodeID":"dismiss-button",
-     "message":"'dismiss-button' is 18 x 18 pt, below the 28 x 28 pt minimum hit size",
-     "suggestion":"grow the control or add .frame(minWidth: 28, minHeight: 28)"}]}
+     "message":"'dismiss-button' is 6 x 6 pt, below the 12 x 12 pt minimum hit size",
+     "suggestion":"grow the control or add .frame(minWidth: 12, minHeight: 12)"}]}
 
 385 bytes. The equivalent screenshot costs an agent 1,365–2,117 vision tokens
 and yields a picture it still has to interpret. That 13–20x token gap is the

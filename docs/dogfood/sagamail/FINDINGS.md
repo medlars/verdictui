@@ -110,12 +110,28 @@ rather than fixed. A developer adopting VerdictUI on any settings screen in any
 Mac app gets three red findings on their first run, all unactionable — the
 suggested fix, `.frame(minHeight: 28)`, would make their app *non-standard*.
 
-**Not fixed here, deliberately.** Recalibrating a rule's threshold is a
-measurement exercise (`ContentOverlapRule` and `excessive-wrap` both set theirs
-that way), and it needs a survey of macOS control metrics — `Toggle`, `Checkbox`,
-`Stepper`, small-control variants — not a number picked to make this screen
-green. Lowering the threshold to fit today's screen is exactly the silencer this
-project forbids. Filed as **CTS-DB551166** with the measurements above.
+**FIXED 2026-08-14 (CTS-DB551166 closed).** The survey this section asked for was
+run, and it settled the question decisively — no standard macOS control reaches
+28 pt in *any* dimension:
+
+| Control | Measured | Control | Measured |
+|---|---|---|---|
+| `Toggle` (switch) | 60 × **18** | `Stepper` | 65 × **26** |
+| `Toggle` (checkbox) | 60 × **18** | `Slider` | 200 × **16** |
+| `Button` | 54 × **24** | `TextField` | 200 × **24** |
+| `Menu` | 94 × **24** | `Picker` | 200 × **24** |
+
+The floor is now **12 × 12 pt**, the size of a `.controlSize(.mini)` switch
+(19 × 12, measured) — the smallest control the platform itself will produce, so
+anything below it was shrunk by a layout accident rather than by an API. The
+demo scenario's planted defect shrank from 18 × 18 to **6 × 6 pt**, because
+18 pt stopped being a defect the moment the threshold became correct: a native
+`Toggle` is exactly that tall, and a demo whose "bug" is a legal size is not a
+demo of anything. `TapTargetPlatformMetricsTests` pins both directions.
+
+> The numbers below this line are the ORIGINAL 2026-08-14 readings against the
+> 28 pt threshold, kept as the record of what the dogfood actually found. The
+> screen itself never changed.
 
 The dogfood test therefore records the finding as expected rather than
 pretending the screen is clean.

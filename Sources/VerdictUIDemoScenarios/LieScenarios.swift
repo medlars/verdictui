@@ -227,7 +227,14 @@ public struct MisreportedRoleScenario: VerdictScenario, Sendable {
     /// Deliberately below `LintContext.macOSMinimumTapTarget` on the vertical
     /// axis, so the misreported role is not merely wrong — it is *load-bearing*
     /// for the verdict. Told the truth, this control fails `tap-target`.
-    public static let buttonSize = Size(width: 80, height: 18)
+    ///
+    /// Was 80 x 18 until 2026-08-14, when the macOS floor was recalibrated from
+    /// 28 pt to 12 pt (no native macOS control reaches 28 pt — see
+    /// ``LintContext/macOSMinimumTapTarget``). 18 pt is a legal control height
+    /// under the corrected floor, so the lie stopped being load-bearing: the
+    /// scenario would have reported PASS whether the role was truthful or not,
+    /// which is exactly the unfalsifiable shape it exists to catch.
+    public static let buttonSize = Size(width: 80, height: 6)
 
     public var name: String { Self.scenarioName }
     public init() {}
