@@ -81,6 +81,26 @@ public enum Quiescence {
     ///
     /// Returns `nil` when settling would be a lie (no tree yet, or virtual-clock
     /// waiters still pending), which resets the pump's agreement streak.
+    /// Folds a node's identity, geometry and text into `hasher`, depth-first.
+    ///
+    /// Recursion is bounded by the tree the probe assembled, which is built
+    /// from a finite view hierarchy — unlike the external AX tree, which is a
+    /// GRAPH the window server owns and needs an explicit depth bound
+    /// (`no.md` #44). Nothing here crosses a trust boundary.
+    static func combine(_ node: SemanticNode, into hasher: inout Hasher) {
+        hasher.combine(node.id)
+        hasher.combine(node.role)
+        hasher.combine(node.frame.x)
+        hasher.combine(node.frame.y)
+        hasher.combine(node.frame.width)
+        hasher.combine(node.frame.height)
+        hasher.combine(node.text)
+        hasher.combine(node.isVisible)
+        for child in node.children {
+            combine(child, into: &hasher)
+        }
+    }
+
     public static func progressToken(
         sink: VerdictTreeSink,
         clock: VerdictClock
@@ -101,6 +121,27 @@ public enum Quiescence {
         hasher.combine(sink.recorder.measurements.count)
         hasher.combine(sink.recorder.placements.count)
         hasher.combine(pendingWaiters)
+        // The tree's CONTENT, not merely how many times it was delivered.
+        //
+        // Every other term above is a COUNT, and a layout can change without
+        // changing any of them: a box alternating between 10 pt and 40 pt wide
+        // delivers the same number of measurements and placements each pass, so
+        // the token went CONSTANT while the tree provably oscillated and
+        // `settle()` reported quiet on a screen that never stopped moving.
+        // Measured 2026-08-14: the tree's box read 40 → 10 → 40 → 10 on
+        // consecutive reads while the token held one value for seven checks
+        // (CI run 31776287835). A quiescence signal that cannot see the thing
+        // it declares quiet is the false-green this engine exists to prevent.
+        //
+        // Folded explicitly rather than by making `SemanticNode: Hashable`:
+        // the kernel type's conformances are its public contract, and widening
+        // one for a probe-side concern would be a breaking-change surface added
+        // for an internal caller. Geometry plus identity is what "the layout is
+        // still moving" means; text and attributes ride along because a label
+        // that keeps changing is movement too.
+        if let tree = sink.latestTree {
+            Quiescence.combine(tree, into: &hasher)
+        }
         return hasher.finalize()
     }
 
