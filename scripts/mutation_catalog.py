@@ -925,6 +925,39 @@ MUTATIONS = [
         runner=Runner.SWIFT,
     ),
     Mutation(
+        # The generated members stop mirroring the host type's access level, so
+        # `verdictProbedContent` is internal again and cannot satisfy the PUBLIC
+        # `VerifiableView` requirement. Every `public` view carrying
+        # `@Verifiable` then fails to compile — which is every view a library
+        # module exports, and is how this shipped for four waves: no fixture in
+        # the macro test target was public, most being nested in an XCTestCase
+        # where `public` is not expressible.
+        #
+        # The `new` returns "" rather than deleting the property, keeping the
+        # plugin itself compilable (no.md #31) — the failure must be the
+        # CONSUMER's build, which is exactly what the witness observes. The
+        # witness is in the module that EXPANDS the macro (no.md #23), and the
+        # harness restamps macro-consuming sources before running it (no.md #28).
+        name="generated members stop matching the host type's access level",
+        path="Sources/VerdictUIMacros/VerifiableMacro.swift",
+        old='        return isPublic ? "public " : ""',
+        new='        return isPublic ? "" : ""',
+        test="VerdictUIMacroTests.PublicVerifiableViewTests/testAPublicViewIsProbedThroughItsPublicConformance",
+        runtime_witness_reason=(
+            "MEASURED, not argued: the mutation was hand-applied and the witness run WITHOUT "
+            "touching any consuming source, and it still failed with the compiler's "
+            "'must be declared public because it matches a requirement in public protocol' "
+            "error. The stale-expansion trap of no.md #23 cannot apply here because the defect "
+            "IS a compile failure in the consuming target — a stale expansion is the BROKEN "
+            "expansion, so re-running against it fails for exactly the same reason rather than "
+            "passing. An assertMacroExpansion snapshot could not witness this at all: the "
+            "generated text differs by one access keyword and is syntactically valid either "
+            "way, so only a real build can tell the two apart. Restored byte-identically "
+            "(sha256 d20d3a26...) and the green control re-ran 2 tests, 0 failures."
+        ),
+        runner=Runner.SWIFT,
+    ),
+    Mutation(
         # A body the walk cannot rewrite silently expands to an unprobed
         # passthrough instead of reporting. It compiles, renders, and yields a
         # tree with a root and nothing under it, so every rule reports PASS on

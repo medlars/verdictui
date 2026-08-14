@@ -56,7 +56,11 @@ _NON_SOURCE_SUFFIXES = frozenset({".md", ".yml", ".example", ".resolved"})
 # must be TRACKED for the floor to pass on a fresh clone, a worktree, or CI —
 # it was untracked until 2026-08-12, so the floor passed only where a leftover
 # untracked file happened to survive.
-_NON_SOURCE_FILENAMES = frozenset({".gitignore", ".gitkeep"})
+# `LICENSE` is legal text, not source: it is never imported, never executed, and
+# its content is a verbatim third-party template that a registry row describing
+# its "purpose" would only restate. It arrived extensionless in Wave 10, which is
+# the case the note above predicted.
+_NON_SOURCE_FILENAMES = frozenset({".gitignore", ".gitkeep", "LICENSE"})
 
 
 def _text() -> str:
