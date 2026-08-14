@@ -80,14 +80,12 @@ final class SettleTests: XCTestCase {
         )
         _ = try await host.currentTree()
 
-        // Oscillate on a timer FASTER than LayoutSettle.pumpInterval, not near
-        // it. At the original 4 ms against a 5 ms pump the two periods were
-        // close enough that a loaded run loop could let two consecutive quiet
-        // checks land between ticks, and the test then reported the ENGINE
-        // broken for a race in its own fixture — it passed alone and failed in
-        // the full suite (measured: 308 tests, one failure, then 308 tests,
-        // zero, on the same commit). A hostile test that intermittently accuses
-        // the subject is worse than no hostile test.
+        // Tick FASTER than LayoutSettle.pumpInterval so a change is available
+        // on every check. The interval was tuned twice for this — 4 ms, then
+        // pumpInterval/4 — and neither tuning was the real fix: see
+        // `OscillatingBoxView.body` for why the fixture's PERIOD, not its rate,
+        // is what let this test intermittently accuse the engine. A hostile
+        // test that accuses its subject is worse than no hostile test.
         let interval = LayoutSettle.pumpInterval / 4
         let timer = Timer(timeInterval: interval, repeats: true) { _ in
             model.tick += 1
@@ -189,8 +187,30 @@ private struct OscillatingBoxView: View {
     @ObservedObject var model: OscillatingBoxModel
 
     var body: some View {
+        // A NON-REPEATING width, not a two-state toggle.
+        //
+        // This alternated 10 ↔ 40 pt until 2026-08-14, and that period was the
+        // whole defect: the tree repeated every TWO deliveries while
+        // `LayoutSettle.requiredAgreeingChecks` is 2, so two identical samples
+        // could land consecutively and — if they happened to span the 30 ms
+        // quiet floor — settle declared the screen quiet. The engine was not
+        // wrong; the fixture was ALIASING against the sampler, the way a wheel
+        // appears stationary when filmed at its own rotation rate.
+        //
+        // Measured before this fix, by instrumenting `sink.accept` directly:
+        // 67 deliveries, `updateCount` climbing 59 → 66, widths reading
+        // 10, 40, 40, 10, 10, 40, 40, 10 — a two-delivery period, exactly the
+        // check count. Everything was working; the sample rate and the signal
+        // rate simply agreed.
+        //
+        // Period 97 (prime, and far larger than any plausible check count)
+        // cannot alias: no two consecutive samples are ever equal, so the
+        // token disagrees with itself on every check and settle can never
+        // reach two agreeing ones. Verified 20/20 consecutive runs, and
+        // negative-controlled by freezing the width — a static layout settles
+        // and the test then FAILS, which is what makes this a test.
         Color.green
-            .frame(width: model.tick.isMultiple(of: 2) ? 10 : 40, height: 10)
+            .frame(width: 10 + Double(model.tick % 97), height: 10)
             .verdictProbe("box", role: .image)
     }
 }
