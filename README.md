@@ -22,7 +22,7 @@ $ verdictui verify demo-undersized-tap-target
 }
 ```
 
-385 bytes. A screenshot of the same screen costs an agent
+383 bytes. A screenshot of the same screen costs an agent
 [1 365–2 117 vision tokens](docs/benchmarks.md#token-cost) — and yields a
 picture it still has to interpret.
 
@@ -138,8 +138,8 @@ swift test -Xswiftc -warnings-as-errors      # the suite as CI runs it
 python3.14 scripts/verdictui-pm.py --quick   # Grade A expected
 ```
 
-775 Swift + 267 Python tests, zero warnings under `-warnings-as-errors`,
-113 mutation guards, 4 SLOs gated in the pipeline.
+784 Swift + 270 Python tests, zero warnings under `-warnings-as-errors`,
+115 mutation guards, 4 SLOs gated in the pipeline.
 
 ## Layout
 

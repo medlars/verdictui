@@ -13,7 +13,7 @@
 | | VerdictUI (MCP, warm) | VerdictUI (CLI, cold) | Screenshot cycle | XCUITest |
 |---|---|---|---|---|
 | Per-check wall clock | **~11 ms** | 90 ms | 140–160 ms *capture alone* | 286 ms *before the first assertion* |
-| Agent tokens per check | **~100** (385 B JSON) | ~100 | **1 365–2 117** (vision) | ~100 (text), plus the wait |
+| Agent tokens per check | **~100** (383 B JSON) | ~100 | **1 365–2 117** (vision) | ~100 (text), plus the wait |
 | Flake over 100 runs | **0** | **0** | not measured (see below) | not measured (see below) |
 | Answers "is this right?" | yes, with cited node + rule | yes | only if the model reads it correctly | yes, if you wrote the assertion |
 | Answers "did the app launch?" | **no** | **no** | yes | **yes** |
@@ -21,7 +21,7 @@
 The headline is not the wall clock; it is the **token cost and the citation**. A
 screenshot costs an agent 1 365–2 117 vision tokens to look at a screen and
 still yields a *description*. A VerdictUI verdict costs ~100 tokens and yields
-`dismiss-button` violates `tap-target`, 18×18 pt against a 28×28 minimum, with
+`dismiss-button` violates `tap-target`, 6×6 pt against a 12×12 minimum, with
 the fix. That is a 13–20x token reduction and a change of kind in the answer.
 
 The wall-clock column is the *weaker* of the two claims and is presented as
@@ -105,11 +105,11 @@ A verdict is JSON, measured directly:
 
 ```bash
 .build/release/verdictui verify demo-clean-settings | wc -c            # 155
-.build/release/verdictui verify demo-undersized-tap-target | wc -c     # 385
+.build/release/verdictui verify demo-undersized-tap-target | wc -c     # 383
 ```
 
 - **PASS verdict: 155 bytes.** ~40 tokens.
-- **FAIL verdict with a complete finding: 385 bytes.** ~100 tokens, and it
+- **FAIL verdict with a complete finding: 383 bytes.** ~100 tokens, and it
   contains the node id, the rule, both measurements, the severity and a
   suggested fix.
 
@@ -126,7 +126,7 @@ documented `(w×h)/750`:
 
 **A single screenshot costs 13–20x the tokens of a complete FAIL verdict**, and
 after paying them the agent has an image it must interpret — it does not have
-`dismiss-button is 18×18 pt against a 28×28 minimum`. A verification loop that
+`dismiss-button is 6×6 pt against a 12×12 minimum`. A verification loop that
 screenshots before and after an action pays that twice per step.
 
 ## Flake rate
