@@ -32,3 +32,4 @@ Tests/untracked_scan_probe_*.py
 # Wave 9 pixel artifacts — evidence for a specific run, never source.
 logs/pixel-renders/
 logs/pixel-diffs/
+.playwright-mcp/
