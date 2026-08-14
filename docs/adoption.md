@@ -40,6 +40,108 @@ element, beneath whatever chain the author wrote.
 
 ---
 
+## Wiring the package (do this before the first probe)
+
+Two targets need dependencies, and the second one is not obvious.
+
+```swift
+// Package.swift
+dependencies: [
+    .package(url: "https://github.com/medlars/verdictui", from: "1.0.0")
+],
+targets: [
+    // The target holding your VIEWS. `VerdictUIMacroSupport` is what provides
+    // `@Verifiable`; take `VerdictUIProbe` instead (or as well) if you want
+    // manual `.verdictProbe(id:)` without paying for SwiftSyntax.
+    .target(
+        name: "MyAppUI",
+        dependencies: [
+            .product(name: "VerdictUIMacroSupport", package: "VerdictUI")
+        ]
+    ),
+
+    // The target holding your TESTS. All three, and the third is the one
+    // everybody misses.
+    .testTarget(
+        name: "MyAppUITests",
+        dependencies: [
+            "MyAppUI",
+            .product(name: "VerdictUIKernel", package: "VerdictUI"),   // Verdict, RuleEngine
+            .product(name: "VerdictUIProbe", package: "VerdictUI"),    // OracleHost, VerdictScenario
+            .product(name: "VerdictUIMacroSupport", package: "VerdictUI"),  // verdictProbing(_:)
+        ]
+    ),
+]
+```
+
+**Why the test target needs `VerdictUIMacroSupport` too.** A scenario that renders
+a `@Verifiable` view calls `verdictProbing(_:)`, and that function lives in
+`VerdictUIMacroSupport` beside the macro rather than in `VerdictUIProbe`.
+Depending only on Kernel + Probe — the intuitive choice for a target that merely
+renders and asserts — fails with:
+
+```text
+error: cannot find 'verdictProbing' in scope
+```
+
+This is not hypothetical: it was the second of two build failures the Wave 10
+fleet dogfood hit before a single assertion ran. `verdictProbing` is what routes
+a `@Verifiable` view's **probed** content into a scenario — hand a scenario the
+bare view and it renders the unprobed body, producing a tree with no probed node
+and a `vacuous-verdict` (ADR 2026-009).
+
+The split exists on purpose: `VerdictUIMacroSupport` drags in SwiftSyntax, the
+heaviest build-time cost in the package, so a consumer wanting probes *without*
+macros must be able to say so. See [Build-time cost](#build-time-cost).
+
+### The smallest scenario that verifies a view
+
+```swift
+import VerdictUIKernel
+import VerdictUIMacroSupport
+import VerdictUIProbe
+import XCTest
+
+@testable import MyAppUI
+
+private struct SettingsScenario: VerdictScenario {
+    let name = "settings"
+
+    @MainActor @ViewBuilder
+    func body(state: ScenarioState) -> some View {
+        verdictProbing(SettingsScreen())   // NOT `SettingsScreen()` on its own
+    }
+}
+
+@MainActor
+final class SettingsVerdictTests: XCTestCase {
+    func testTheScreenIsClean() async throws {
+        let host = OracleHost(
+            scenario: SettingsScenario(),
+            viewport: Size(width: 420, height: 400)
+        )
+        let tree = try await host.currentTree()
+        let verdict = RuleEngine.run(
+            rules: RuleEngine.standardRules,
+            on: tree,
+            context: .macOS(viewport: tree.frame, scenario: "settings")
+        )
+
+        XCTAssertEqual(
+            verdict.status, .pass,
+            "\(verdict.findings.map { "\($0.rule) on \($0.nodeID ?? "-")" })"
+        )
+    }
+}
+```
+
+A worked example of exactly this, against a real app screen, is in
+[`docs/dogfood/sagamail/`](dogfood/sagamail/) — including a control that proves
+the engine can still FAIL, without which the assertion above is satisfied by an
+engine that passes unconditionally.
+
+---
+
 ## Three tiers
 
 Pick per view, not per project. They mix freely in one file.
