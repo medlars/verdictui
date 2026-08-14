@@ -456,3 +456,38 @@ class TestNoSleepsInHarnessSource:
             if self._PATTERN.search(line.split("//", 1)[0])
         ]
         assert offenders, "the sleep detector failed to notice a planted Thread.sleep"
+
+
+class TestSLODocumentStructure:
+    """Every objective in the table has a section explaining it.
+
+    A row without a section is indistinguishable, to a reader, from an
+    objective nobody thought hard about — and it is exactly how CTS-1BB886E8
+    arose: the doc declared four SLOs in its table and explained only two, so
+    an auditor counting `### SLO` headings reported the project as missing
+    objectives it had actually defined. Counting one representation and not the
+    other is what made a complete document read as an incomplete one.
+    """
+
+    _SLO_DOC = _PROJECT_ROOT / "docs" / "slo.md"
+    _ROW = re.compile(r"^\|\s*(\d+)\s*\|", re.MULTILINE)
+    _HEADING = re.compile(r"^### SLO (\d+)", re.MULTILINE)
+
+    def test_every_table_row_has_its_own_section(self) -> None:
+        text = self._SLO_DOC.read_text(encoding="utf-8")
+        rows = {int(m.group(1)) for m in self._ROW.finditer(text)}
+        headings = {int(m.group(1)) for m in self._HEADING.finditer(text)}
+
+        assert rows, "docs/slo.md declares no SLO table rows at all"
+        assert rows == headings, (
+            f"SLO table rows {sorted(rows)} and explanatory sections "
+            f"{sorted(headings)} disagree — every declared objective needs both"
+        )
+
+    def test_the_guard_would_notice_a_missing_section(self) -> None:
+        """The control. Without it, the assertion above is satisfied by a
+        document with no rows AND no sections — two empty sets are equal."""
+        text = "| 1 | A | x | y | z |\n| 2 | B | x | y | z |\n\n### SLO 1 — only one\n"
+        rows = {int(m.group(1)) for m in self._ROW.finditer(text)}
+        headings = {int(m.group(1)) for m in self._HEADING.finditer(text)}
+        assert rows != headings, "the row/section comparison cannot detect a gap"
