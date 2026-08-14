@@ -1,5 +1,56 @@
 # Changelog
 
+## [1.0.0] — 2026-08-14
+
+First public release. **The engine is MIT and the repository is public**
+(<https://github.com/medlars/verdictui>); the whole shipped tree is on the open
+side of the boundary, which ADR 2026-021 draws on the MACHINE rather than the
+feature — everything running on one developer's machine is open, permanently.
+
+Waves 0–9 are complete: in-process instrumentation, virtual-clock settling,
+atomic act-and-observe verdicts, 12 lint rules, an expectations DSL, baselines,
+variant sweeps, state-machine scenarios, a CLI with three-valued exit codes, a
+warm JSON-RPC daemon, an MCP server with 7 tools, AX cross-validation, and a
+pixel channel.
+
+**Added**
+
+- `LICENSE` (MIT) and `CONTRIBUTING.md`, the latter encoding this project's real
+  working rules — mutation rows must compile and their witness must RUN, a
+  library suite cannot see the artifact, a `--filter` green is evidence about
+  the filter, thresholds are measured and never moved to silence a failure.
+- `docs/benchmarks.md` — every figure measured on the artifact, with an honest
+  loss column. Inner loop p50 **48.52 ms** (n=150); warm MCP **11.4 ms** per
+  call; a FAIL verdict is **385 B (~100 tokens)** against **1 365–2 117 vision
+  tokens** for a screenshot, a **13–20x** reduction; **zero flake in 200 runs**
+  with 100/100 identical cited evidence. The screenshot and XCUITest flake
+  columns are deliberately EMPTY — there is no XCUITest target here, so any
+  number would be invented.
+- `docs/bench/{mcp-batch,flake-100}.sh`, so the report cites no command that
+  does not run. Both self-assert that the benchmark actually RAN.
+- `docs/dogfood/sagamail/` — Wave 10's fleet dogfood as a real consumer package.
+
+**Fixed**
+
+- **`@Verifiable` did not compile on any `public` view.** `VerifiableView` is a
+  public protocol and the macro emitted `verdictProbedContent` with no access
+  modifier, so it was internal — and Swift refuses to satisfy a public
+  requirement with an internal member. That is every view a library module
+  exports, so the macro was unusable by its primary audience. Invisible for four
+  waves because every macro fixture in the test target is internal, most nested
+  in an `XCTestCase` where `public` is not expressible. Found by the dogfood's
+  first build.
+- `.mcp.json` hardcoded an absolute `/Users/<name>/…` path, which leaked a
+  username into a public repo and worked on exactly one machine.
+
+**Known**
+
+- `tap-target` fires on every standard macOS `Toggle`. Measured: a native
+  SwiftUI `Toggle` is **18 pt** tall against the rule's 28 pt minimum, so it
+  errors on idiomatic SwiftUI as Apple ships it. Recalibration is CTS-DB551166;
+  it is a measurement exercise, and picking a number that makes one screen green
+  would be the silencer this project forbids.
+
 ## [Unreleased]
 
 ### 2026-08-14 (the witness window nobody's tests could see)
