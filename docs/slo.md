@@ -9,12 +9,34 @@
 
 ## Notes
 
+Each objective below has its own section. Every one is **asserted by a PM stage**,
+not merely described here — the column in the table above names the stage and the
+line it parses, so a claim in this document and the gate that enforces it cannot
+drift apart silently.
+
+### SLO 1 — the product thesis in one number
+
 - SLO 1 is the product thesis in one number: if the in-process loop isn't an order of magnitude faster than a screenshot round trip (~1–10 s with model latency), the product has no reason to exist. Benchmarked on the Wave 2 demo app, macOS 14+, Apple Silicon.
 - **Measured 2026-08-06 (after the settle quiet floor):** act→settle→verdict p50 49.9 ms, p95 54.3 ms over 60 samples. The Wave 1–3 audit found settle reporting quiet after ~5.6 ms while a mutation scheduled 40 ms out had not landed, so `LayoutSettle` now requires the quiet token to hold for a 30 ms wall-clock floor as well as across two checks. That honesty costs ~34 ms of the budget and is charged in `settle()` only — charging `currentTree()` too would pay it three times per `perform()` (measured p95 109.9 ms, an SLO breach). The pre-floor figures were p50 19.9 ms / p95 20.9 ms — roughly 5x headroom against the 100 ms target. The figure is stable in isolation (three consecutive runs: 20.87 / 20.90 / 20.30 ms p95) but degrades sharply under concurrent CPU load — a run sampled while a full package build was compiling measured 92 ms p95. The budget stays at the published 100 ms rather than being tightened to the observed figure, because a threshold set near the quiet-machine number would fail for load rather than for regression.
 - **What is asserted where (2026-08-06, second sweep).** The **median** carries a hard gate in every environment at half the budget (70 ms), because it is load-stable: measured 49.6 / 49.9 / 51.2 ms isolated, under a full suite, and under a full suite that breached. **p95 is asserted only in isolation** and merely recorded under CI or a full-suite run, because it is not load-stable — 56.7 ms isolated versus 64.1 and 102.6 ms when competing with the other 318 tests for cores. A benchmark sharing a machine with 318 tests is measuring the suite, not the engine, and the same reasoning already governed CI. Both figures print everywhere, so a regression is visible in the log even where it is not fatal. Verified: tripling the settle floor to 90 ms fails the p50 gate in a FULL-suite run at 108 ms.
 - **Sampling (2026-08-06, second sweep).** The benchmark takes **150** samples, not 60. After the quiet floor moved p50 from ~20 ms to ~49 ms, the nearest-rank p95 at n=60 sat on the 4th-slowest sample and ranged **50.6–87.8 ms across three runs** on a p50 that never left 49 ms; one full-suite run breached at 120 ms. At n=150 the same spread is **53.5–58.1 ms**. This buys stability by measuring MORE, not by measuring less — the budget, the median, and the tail-gating are all unchanged, and a real regression still moves p95. Rejected: asserting p50 and merely recording p95, which stops gating the tail an agent actually waits on.
 - **Measured, not assumed:** the floor is charged ONCE per cycle, not twice. A cost probe against the shipped engine reads `currentTree` at 6.19 ms and `settle` at 35.03 ms, so the ~49 ms p50 is two cheap captures plus one floor-length settle. An earlier hypothesis that `perform` paid the floor on both the settle and the post-act capture was wrong.
 - **Where the 100 ms is asserted (owner decision 2026-08-06).** SLO 1 is a claim about the product on the hardware named above. A shared GitHub macOS runner is not that hardware: the same commit measures p95 **20.9 ms locally and 154 ms on CI**, and the Wave 2 `currentTree()` gate shows the identical ~7x gap (6.6 ms vs 54.5 ms), so the difference is the machine and not the code. The assertion therefore runs on developer hardware — where PM `stage_runtime_bench` enforces it before every push — while CI **records** the figure as `SLO1-PERFORM-CI` without failing. Everything that proves the benchmark actually ran (sample count, finite samples, every cycle PASSing with a non-empty delta) stays a hard failure in both environments, so a benchmark that silently stopped running can never read as a fast one. Rejected alternatives: raising the product SLO to ~250 ms to accommodate a build machine, which would weaken the published claim below 'an order of magnitude faster than a screenshot round trip'; and a second CI-calibrated ceiling, which is a number that drifts with GitHub's runner specs and that nobody would recalibrate.
+### SLO 2 — the pipeline itself
+
+- **Why a process metric sits beside three latency metrics.** The other three
+  objectives are claims about the shipped engine; this one is a claim about the
+  instrument that verifies them. A suite reporting Grade B is not merely
+  untidy — it means at least one stage is red, and every number the other SLOs
+  publish was produced by that same pipeline. A degraded instrument makes the
+  other three unfalsifiable rather than false, which is the worse failure.
+- **Grade A on EVERY run, not on average.** There is no budget to spend here and
+  no tolerance to tune: the threshold is total because a partial one invites
+  treating a red stage as noise, and the whole point of the gate is that it
+  cannot be discounted.
+- **Enforced by**: `python3.14 scripts/verdictui-pm.py --quick`, which the
+  session protocol runs before every commit, and `--full` before a release.
+
 ### SLO 3 — the number an agent actually experiences
 
 - **Why it is not SLO 1.** SLO 1 times `Harness.perform` INSIDE the test process. That is the engine's number, and an agent never calls `perform` — it writes a JSON frame to a pipe and waits for one back. Process boundary, framing, JSON coding and pipe scheduling all sit between the two, and none of it appears in an in-process timing, so a tool can meet SLO 1 and still be slow to every caller. This is the `no.md` #32 principle applied to latency: a suite verifies code and cannot see the artifact that ships.
