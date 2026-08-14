@@ -109,6 +109,60 @@ final class WitnessIntegrationTests: XCTestCase {
         }
     }
 
+    /// The witness window must be READABLE without being VISIBLE.
+    ///
+    /// The two are independent properties and nothing before this test asserted
+    /// the second one. `no.md` #42/#43 establish that the window must exist and
+    /// be ordered front for the accessibility server to publish it, so the window
+    /// is real by necessity — and the owner reported it flashing at the
+    /// bottom-left of the screen during every run (CTS-75914181).
+    ///
+    /// ### Why this reads the window server rather than the host's own `alphaValue`
+    ///
+    /// The host is a SEPARATE PROCESS, so there is no `NSWindow` here to ask, and
+    /// asking the host to report on itself would be the subject grading its own
+    /// homework. `CGWindowListCopyWindowInfo` is the window server's own answer
+    /// about what is composited on screen.
+    ///
+    /// The instrument was verified in BOTH directions before this assertion was
+    /// written (`no.md` #47). Against the unfixed host, read from OUTSIDE about
+    /// its pid, it reports one entry at `alpha=1.0` with bounds
+    /// `X=0 Y=784 360x292` — measured 2026-08-14, which is the bottom-left flash
+    /// the owner saw on a 1728x1117 display. Read from INSIDE the host it reports
+    /// nothing in either state, because a shell-launched binary is not
+    /// LaunchServices-registered; that is the same mechanism `no.md` #43 records
+    /// for AX, and it is why this must be read from the outside about a pid.
+    ///
+    /// A far-offscreen origin was measured FIRST and rejected: `NSWindow` clamps
+    /// its frame to the visible screen, so `origin: (-20000, -20000)` came back as
+    /// `(160, 800)` — fully on screen. See `no.md` #50.
+    func testTheWitnessWindowIsReadableWithoutBeingVisible() throws {
+        try XCTSkipIf(isHeadless, "no window server on this host")
+        let executable = try XCTUnwrap(
+            hostExecutable, "verdictui-witness-host was not built alongside the tests")
+        try XCTSkipUnless(AXReader.isTrusted, "this process lacks Accessibility permission")
+
+        let host = WitnessHostProcess(executable: executable, lifetime: 20)
+        let composited: [Double]
+        do {
+            composited = try host.compositedAlphas(scenario: "demo-clean-settings")
+        } catch AXReader.Failure.anchorUnreadable {
+            throw XCTSkip("this login session's window server is not publishing new windows")
+        }
+
+        // The window must EXIST. A host publishing no window at all would satisfy
+        // "nothing is visible" while being precisely the unreadable state the rest
+        // of this suite exists to catch — so absence is a failure, not a pass.
+        XCTAssertFalse(
+            composited.isEmpty,
+            "the host published no on-screen window, so the AX server cannot read it")
+        for alpha in composited {
+            XCTAssertEqual(
+                alpha, 0, accuracy: 0.001,
+                "the witness window composites at alpha \(alpha) — it flashes on the owner's screen")
+        }
+    }
+
     func testAMissingHostBinaryIsReportedAsHostUnavailable() {
         let host = WitnessHostProcess(
             executable: URL(fileURLWithPath: "/nonexistent/verdictui-witness-host"),

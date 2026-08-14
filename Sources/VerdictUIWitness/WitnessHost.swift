@@ -92,6 +92,19 @@ public final class WitnessHost {
         // terminated the xctest runner when the full suite ran. The witness
         // must be VISIBLE to the accessibility server, not frontmost.
         app.setActivationPolicy(.regular)
+        // READABLE WITHOUT BEING VISIBLE. The window must exist and be ordered
+        // front for the accessibility server to publish it (`no.md` #42/#43), so
+        // it cannot simply be withheld — but nothing requires it to DRAW. At
+        // alpha 0 the window server still assigns a windowNumber, still lists it
+        // as on-screen, and still publishes its AX tree, while compositing
+        // nothing a person can see.
+        //
+        // An offscreen origin was measured FIRST and REJECTED: `NSWindow`
+        // constrains its frame to the visible screen, so `(-20000, -20000)` came
+        // back as `(160, 800)` — fully on screen — and `setFrameOrigin` after
+        // `orderFront` still leaves a 40x41 pt sliver, because AppKit clamps to
+        // keep part of a titled window reachable. See `no.md` #50.
+        window.alphaValue = 0
         window.makeKeyAndOrderFront(nil)
 
         // The timer fires on a nonisolated context, so the terminate hops back
