@@ -2,7 +2,7 @@
   "mcpServers": {
     "verdictui": {
       "type": "stdio",
-      "command": "/Users/eiman/Projects/VerdictUI/.build/release/verdictui",
+      "command": ".build/release/verdictui",
       "args": ["mcp"]
     }
   }
