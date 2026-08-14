@@ -2,6 +2,39 @@
 
 ## [Unreleased]
 
+### 2026-08-14 (the witness window nobody's tests could see)
+
+**Fixed**
+
+- `WitnessHost` sets `alphaValue = 0`, so the witness window no longer flashes on
+  screen. It stays a real, ordered, AX-published window — which `no.md` #42/#43
+  require — while compositing nothing visible. The owner saw a titled
+  "VerdictUI Witness" window appear bottom-left 8–10 times per run, once per
+  scenario (CTS-75914181).
+- `cis-tdd-cycle-gate.sh` (fleet) skipped only pytest-style `test_` filenames, so
+  every Swift `*Tests.swift` file was treated as production code and the gate
+  blocked the very failing test it was demanding. Both directions verified.
+
+**Added**
+
+- `WitnessHostProcess.compositedAlphas(scenario:)` — the window server's own
+  account of what a host composites, read from OUTSIDE about its pid. From INSIDE
+  the host it returns nothing whether the window is visible or hidden, because a
+  shell-launched binary is not LaunchServices-registered.
+- `testTheWitnessWindowIsReadableWithoutBeingVisible`, which treats an ABSENT
+  window as a failure so invisibility cannot be satisfied by an unreadable
+  witness, plus a mutation row hand-verified NOTICED with a byte-identical
+  restore.
+
+**Decided**
+
+- `no.md` #50 — no offscreen origin for the witness window. `NSWindow` constrains
+  its frame to the visible screen: `(-20000, -20000)` measured back as
+  `(160, 800)`, and `setFrameOrigin` after `orderFront` still leaves a 40x41 pt
+  sliver. The previously recorded fix could not have worked. Readability and
+  visibility are independent properties of one window, and 22 witness tests
+  asserted only the first for a whole wave.
+
 ### 2026-08-13 (Wave 9 Tasks 3–6 — the pixel channel, end to end)
 
 **Added**
