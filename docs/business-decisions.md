@@ -92,10 +92,21 @@ browser concurrency. VerdictUI's web-facing answers, baked into the plan:
 
 **Open-core.** (Decided in the founding session.)
 
+**The boundary is the MACHINE, not the feature** — see
+[ADR 2026-021](../.decisions/2026-021-the-open-core-boundary-is-the-machine-not-the-feature.md),
+which supersedes the founding session's feature-named split:
+
 | Layer | License | Rationale |
 |-------|---------|-----------|
-| Engine: kernel, probe, rules, CLI basics | Open source | The SwiftUI engine is the adoption wedge — nothing comparable exists; open source drives trust + community rule contributions |
-| Team workflow: baseline management, CI integration, dashboards, cross-run analytics | Paid | Teams pay for workflow and history, individuals don't pay for engines |
+| Everything that runs on ONE developer's machine — kernel, probe, macros, witness, pixel channel, CLI, daemon, MCP server, **local baselines including `BaselineStore`** | MIT | The SwiftUI engine is the adoption wedge — nothing comparable exists; open source drives trust + community rule contributions |
+| Anything needing a SECOND PARTY — team-shared baselines with review by someone other than the author, cross-run/cross-machine history, hosted dashboards, a managed CI service on our infrastructure | Paid (none of it built yet) | Teams pay for workflow and history, individuals don't pay for engines |
+
+Two corrections the ADR makes to the original table, both because the code
+disagreed with it: `BaselineStore` was listed as paid "baseline management" but
+is local single-machine file I/O and has shipped in the MIT kernel since Wave 6;
+and **CI integration is NOT reserved** — running the CLI in a customer's own
+runner is a local invocation, and charging for it would require an engine that
+detects its CI environment and degrades.
 
 Explicitly rejected: fully proprietary (kills adoption for a new-category dev
 tool), fully free (no revenue), consulting-led (doesn't scale).
@@ -124,7 +135,8 @@ tool), fully free (no revenue), consulting-led (doesn't scale).
 |------|----------|--------|
 | 2026-08-03 | Problem validated via 5-agent research survey; build decision taken | Done |
 | 2026-08-04 | Name: VerdictUI; domains .com/.dev available, registration pending | Domains pending (owner) |
-| 2026-08-04 | Open-core monetization: open engine, paid team workflow | Standing |
+| 2026-08-04 | Open-core monetization: open engine, paid team workflow | Superseded by ADR 2026-021 |
+| 2026-08-14 | Open-core boundary is the MACHINE not the feature; whole tree ships MIT; CI integration explicitly not reserved | Standing (ADR 2026-021) |
 | 2026-08-04 | XCUITest = thin outer smoke only, never the engine | Standing |
 | 2026-08-04 | Web backend deferred until native engine proves the contract | Standing (`no.md`) |
 | 2026-08-04 | Model for build sessions: Opus; 10-wave plan is execution SSoT | Standing |
