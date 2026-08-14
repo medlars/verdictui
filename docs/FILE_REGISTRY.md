@@ -193,6 +193,12 @@
 | `contracts/validate-contracts.py`                                    | Contract gate: schema integrity, version agreement, fixture round-trip                                                                                 | Active | 2026-08-04 |
 | `contracts/fixtures/verdict-pass.json`                               | Generated fixture — clean verdict, pins the field-omission contract                                                                                    | Active | 2026-08-04 |
 | `contracts/fixtures/verdict-fail.json`                               | Generated fixture — every optional field populated at once                                                                                             | Active | 2026-08-04 |
+| `Tests/VerdictUIMacroTests/PublicVerifiableViewTests.swift`          | `@Verifiable` on a `public` view — the population every other macro fixture omits, since a type nested in an XCTestCase cannot be public                | Active | 2026-08-14 |
+| `docs/bench/mcp-batch.sh`                                            | Warm MCP round-trip benchmark through the shipped binary; self-asserts reply count and refuses error replies                                            | Active | 2026-08-14 |
+| `docs/bench/flake-100.sh`                                            | Flake measurement in BOTH directions plus evidence stability on the failing path                                                                       | Active | 2026-08-14 |
+| `docs/dogfood/sagamail/Package.swift`                                | Wave 10 fleet dogfood — a consumer package depending on VerdictUI through its published products                                                       | Active | 2026-08-14 |
+| `docs/dogfood/sagamail/Sources/SagaMailDogfood/NotificationsSettingsScreen.swift` | A SagaMail settings screen adopted via `@Verifiable`; reproduces the real view's Form/conditional/ForEach/Toggle shapes                    | Active | 2026-08-14 |
+| `docs/dogfood/sagamail/Tests/SagaMailDogfoodTests/NotificationsSettingsVerdictTests.swift` | The dogfood verdicts, expectations owned by the CONSUMER's test target, with a cramped-viewport control                       | Active | 2026-08-14 |
 
 ## Archived / Removed
 

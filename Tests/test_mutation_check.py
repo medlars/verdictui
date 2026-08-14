@@ -341,16 +341,29 @@ class TestPytestRunner:
         # snapshot-witness rule protects nothing and the suite still reads green
         # — the always-true predicate shape of no.md #17.
         #
-        # One is the count today. This is a tripwire, not a budget: a second
-        # legitimate opt-out should raise it deliberately, with the reasoning
-        # written down, rather than arriving unnoticed.
+        # TWO is the count today, raised from one on 2026-08-14 (Wave 10). This
+        # is a tripwire, not a budget: a further legitimate opt-out should raise
+        # it deliberately, with the reasoning written down, rather than arriving
+        # unnoticed.
+        #
+        # The second opt-out is "generated members stop matching the host type's
+        # access level", and it is admitted on a MEASUREMENT rather than an
+        # argument. The mutation was hand-applied and its witness run WITHOUT
+        # touching any consuming source; it still failed, with the compiler's
+        # "must be declared public because it matches a requirement in public
+        # protocol" error. The no.md #23 trap therefore cannot apply: the defect
+        # IS a compile failure in the consuming target, so a stale expansion is
+        # the BROKEN expansion and re-running against it fails identically
+        # instead of passing. An assertMacroExpansion snapshot could not witness
+        # it at all — the generated text differs by one access keyword and is
+        # syntactically valid either way, so only a real build separates them.
         mod = _load()
         opted_out = [
             m
             for m in mod.MUTATIONS
             if m.path.startswith("Sources/VerdictUIMacros/") and m.runtime_witness_reason
         ]
-        assert len(opted_out) == 1, (
+        assert len(opted_out) == 2, (
             "the number of macro rows witnessed by a runtime test changed; each one weakens "
             f"the no.md #23 rule, so raise this deliberately. Opted out: "
             f"{[m.name for m in opted_out]}"
