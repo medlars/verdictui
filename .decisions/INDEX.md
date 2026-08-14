@@ -21,6 +21,7 @@
 | [2026-017](2026-017-a-pixel-baseline-is-refused-to-any-scenario-that-drifts.md) | A pixel baseline is refused to any scenario that does not render identically twice | 2026-08-13 | Active | wave9, pixel, determinism, baseline, falsifiability |
 | [2026-018](2026-018-the-pixel-diff-gates-on-channel-magnitude-not-pixel-count.md) | The pixel diff gates on channel magnitude, not on the differing-pixel count — a real regression and an invisible one touch the same 196 pixels | 2026-08-13 | Active | wave9, pixel, diff, tolerance, measurement, negative-control |
 | [2026-019](2026-019-the-pixel-cache-keys-on-the-tree-and-accepts-a-lower-speedup.md) | The pixel cache keys on the semantic tree, and accepts a 3x gate rather than weaken the key that makes a stale hit impossible | 2026-08-13 | Active | wave9, pixel, cache, sd4, budget, measurement |
+| [2026-020](2026-020-the-witness-window-is-readable-without-being-visible.md) | The witness window is readable without being visible — alpha 0 keeps it AX-published while compositing nothing; an offscreen origin is impossible because NSWindow clamps to the screen | 2026-08-14 | Active | wave8, witness, ax, visibility, measurement, negative-control |
 
 > Use the `/adr` skill to create new entries. Each ADR is `YYYY-NNN-slug.md`.
 > ProbeLayout.measure's optional-vs-reduce choice is recorded in `no.md` entry 10
