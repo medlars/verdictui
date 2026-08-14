@@ -51,6 +51,50 @@ public struct WitnessHostProcess {
         scenario: String,
         readyTimeout: TimeInterval = 20
     ) throws -> SemanticNode {
+        try withHost(scenario: scenario, readyTimeout: readyTimeout) { pid in
+            try AXReader.readTree(pid: pid)
+        }
+    }
+
+    /// The alpha of every window the WINDOW SERVER composites for `scenario`'s host.
+    ///
+    /// Readability and visibility are independent properties of the same window,
+    /// and this reads the second one. It asks `CGWindowListCopyWindowInfo` — the
+    /// window server's own account of what is on screen — rather than the host's
+    /// own `alphaValue`, because the host is a separate process and a subject
+    /// reporting on itself proves nothing.
+    ///
+    /// An empty result means the host published NO on-screen window, which a
+    /// caller must treat as a failure rather than as "nothing is visible": an
+    /// unreadable witness satisfies invisibility trivially.
+    ///
+    /// Read from INSIDE the host this returns nothing in either state, because a
+    /// shell-launched binary is not LaunchServices-registered — the same mechanism
+    /// `no.md` #43 records for AX. It only discriminates from OUTSIDE, about a pid.
+    public func compositedAlphas(
+        scenario: String,
+        readyTimeout: TimeInterval = 20
+    ) throws -> [Double] {
+        try withHost(scenario: scenario, readyTimeout: readyTimeout) { pid in
+            let info =
+                CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID)
+                as? [[String: Any]] ?? []
+            return info
+                .filter { ($0[kCGWindowOwnerPID as String] as? pid_t) == pid }
+                .map { ($0[kCGWindowAlpha as String] as? Double) ?? 1.0 }
+        }
+    }
+
+    /// Launch a host for `scenario`, run `body` against its pid, then terminate it.
+    ///
+    /// Spelled once because two copies of the launch sequence are two places for
+    /// the `-n` flag and the wait-for-WINDOW discipline to drift, and both are
+    /// load-bearing (see `awaitHost`).
+    private func withHost<T>(
+        scenario: String,
+        readyTimeout: TimeInterval,
+        _ body: (pid_t) throws -> T
+    ) throws -> T {
         guard FileManager.default.isExecutableFile(atPath: executable.path) else {
             throw AXReader.Failure.hostUnavailable("no host executable at \(executable.path)")
         }
@@ -78,7 +122,7 @@ public struct WitnessHostProcess {
 
         let pid = try awaitHost(timeout: readyTimeout)
         defer { kill(pid, SIGTERM) }
-        return try AXReader.readTree(pid: pid)
+        return try body(pid)
     }
 
     /// Wait for the launched host to appear and publish a readable window.

@@ -1675,4 +1675,19 @@ MUTATIONS = [
         new="        guard capture.contentHash == capture.contentHash else { return nil }",
         test="PixelCacheTests/testACorruptEntryMissesRatherThanBeingServed",
     ),
+    Mutation(
+        # The witness window starts COMPOSITING again, which is the defect the
+        # owner reported: a titled window flashing at the bottom-left of the
+        # screen once per scenario. Readability and visibility are independent
+        # properties of one window, and 22 witness tests passed for a whole wave
+        # while asserting only the first -- so this row guards the assertion that
+        # closed that gap, not the window's existence (which every other witness
+        # test already covers). Assigning 1 rather than deleting the line keeps
+        # the statement live and compiles (no.md #31).
+        name="the witness window composites again, flashing on the owner's screen",
+        path="Sources/VerdictUIWitness/WitnessHost.swift",
+        old="        window.alphaValue = 0",
+        new="        window.alphaValue = 1",
+        test="WitnessIntegrationTests/testTheWitnessWindowIsReadableWithoutBeingVisible",
+    ),
 ]
