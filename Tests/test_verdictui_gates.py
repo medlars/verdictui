@@ -75,8 +75,6 @@ class TestFloorCheck:
             text=True,
             timeout=120,
         )
-        import json
-
         payload = json.loads(r.stdout)
         assert payload["total"] == 0, f"floor gaps: {payload['gaps']}"
         assert r.returncode == 0
@@ -542,7 +540,13 @@ class TestRunbookCommandsNameRealVerbs:
             pytest.skip("no project-scoped MCP registration")
 
         entry = json.loads(config.read_text(encoding="utf-8"))["mcpServers"]["verdictui"]
+        # The command is RELATIVE to the project root, so resolve it against
+        # that rather than the CWD. It was an absolute `/Users/<name>/...` path
+        # until Wave 10, which both leaked a username into a public repo and
+        # worked on exactly one machine — a config nobody else could paste.
         binary = Path(entry["command"])
+        if not binary.is_absolute():
+            binary = _PROJECT_ROOT / binary
 
         if not binary.parent.exists():
             pytest.skip(f"{binary.parent} absent — nothing built in this checkout yet")
