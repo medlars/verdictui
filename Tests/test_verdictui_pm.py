@@ -826,3 +826,69 @@ class TestKilledRunnerIsInconclusive:
         assert result["passed"], result
         assert not result.get("inconclusive")
         assert result["test_count"] == 5
+
+
+class TestPmBaseImportEnvironment:
+    """The sandbox fallback that lets the PM import shared pm-base at all.
+
+    `reporter` computes CEO lock and dashboard paths at IMPORT time, so a
+    sandbox where the private lock dir exists but rejects `chmod` raises before
+    this PM can dispatch even a local `query`. These three helpers detect that
+    and redirect the paths into the repo just long enough for the import.
+
+    Untested until 2026-08-14 (CIS-E9A52349 / CIS-987186EE / CIS-AAA88402).
+    They are the reason the PM runs in a repair sandbox at all, and a silent
+    regression here would look like "shared-libs is broken" from inside one.
+    """
+
+    def test_available_paths_mean_no_overrides(self, monkeypatch, tmp_path) -> None:
+        """A normal owner shell keeps the GLOBAL paths untouched.
+
+        The empty dict is the load-bearing half: it is what
+        `_restore_pm_base_import_environment` later replays, so an override
+        applied here would silently persist past the import it was for.
+        """
+        monkeypatch.setattr(_mod.Path, "home", staticmethod(lambda: tmp_path))
+        assert _mod._ceo_paths_are_available() is True
+        assert _mod._prepare_pm_base_import_environment() == {}
+
+    def test_an_unwritable_lock_dir_is_reported_unavailable(self, monkeypatch) -> None:
+        """The detector must key on the ACTUAL failure, not on a guess.
+
+        `mkdir` raising OSError is exactly what a restricted sandbox does, and
+        it must read as "unavailable" rather than propagating — a raised
+        exception here aborts the PM before any stage runs.
+        """
+
+        def _refuse(*_args, **_kwargs):
+            raise OSError(1, "Operation not permitted")
+
+        monkeypatch.setattr(_mod.Path, "mkdir", _refuse)
+        assert _mod._ceo_paths_are_available() is False
+
+    def test_unavailable_paths_redirect_into_the_repo_and_restore(self, monkeypatch) -> None:
+        """The whole round trip: override, then put every key back as found.
+
+        Restoration is checked for BOTH shapes — a key that existed before
+        (must return to its old value) and one that did not (must be REMOVED,
+        not set to empty string). Leaving `HOME` pointing into `.build/` would
+        redirect every later subprocess in the session.
+        """
+        monkeypatch.setattr(_mod, "_ceo_paths_are_available", lambda: False)
+        monkeypatch.setenv("HOME", "/original/home")
+        monkeypatch.delenv("PROJECTS_HUB", raising=False)
+
+        previous = _mod._prepare_pm_base_import_environment()
+
+        assert previous, "an unavailable sandbox must produce overrides"
+        assert previous["HOME"] == "/original/home"
+        assert previous["PROJECTS_HUB"] is None, "an absent key records None, not ''"
+        assert os.environ["HOME"] != "/original/home", "HOME was not redirected"
+        assert str(_mod.PROJECT_ROOT) in os.environ["PROJECTS_HUB"]
+
+        _mod._restore_pm_base_import_environment(previous)
+
+        assert os.environ["HOME"] == "/original/home"
+        assert "PROJECTS_HUB" not in os.environ, (
+            "a key absent before the override must be REMOVED, not left set"
+        )
