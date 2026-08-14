@@ -21,6 +21,7 @@ itself, `no.md` #22).
 import inspect
 import json
 import shlex
+import subprocess
 import time
 
 import pytest
@@ -353,3 +354,99 @@ class TestMutationSweepInProgress:
         marker.write_text("not-a-marker\n")
 
         assert _mod.mutation_sweep_in_progress() is False
+
+
+class TestMCPInputSurfaceSurvivesHostileInput:
+    """The MCP server must answer garbage and STAY ALIVE.
+
+    Wave 10 Task 3 asks for the input surface to be fuzzed. The reason is
+    specific to how agents use this binary: an MCP server is a long-lived
+    process reading whatever a client sends, so a crash on a malformed frame is
+    a denial of service for the whole session, and a hang is worse — the agent
+    waits forever on a reply that will never come.
+
+    The assertion that matters is the LAST one: after every malformed frame, a
+    valid request must still be answered. Without it this test is satisfied by
+    a server that dies on frame two, because a dead server also fails to
+    produce a wrong answer.
+    """
+
+    # Each entry is (label, raw line). The frames escalate: malformed JSON,
+    # valid JSON that is not JSON-RPC, valid JSON-RPC naming nothing real, and
+    # valid calls carrying wrong-typed or missing arguments.
+    _HOSTILE = [
+        ("not json at all", "not json at all"),
+        ("no method key", '{"jsonrpc":"2.0"}'),
+        ("unknown method", '{"jsonrpc":"2.0","id":3,"method":"nonexistent/method"}'),
+        (
+            "unknown tool",
+            '{"jsonrpc":"2.0","id":4,"method":"tools/call",'
+            '"params":{"name":"no_such_tool","arguments":{}}}',
+        ),
+        (
+            "unknown scenario",
+            '{"jsonrpc":"2.0","id":5,"method":"tools/call",'
+            '"params":{"name":"verify","arguments":{"scenario":"does-not-exist"}}}',
+        ),
+        (
+            "missing argument",
+            '{"jsonrpc":"2.0","id":6,"method":"tools/call",'
+            '"params":{"name":"verify","arguments":{}}}',
+        ),
+        (
+            "wrong-typed argument",
+            '{"jsonrpc":"2.0","id":7,"method":"tools/call",'
+            '"params":{"name":"verify","arguments":{"scenario":12345}}}',
+        ),
+        ("top-level array", "[]"),
+    ]
+
+    _HANDSHAKE = (
+        '{"jsonrpc":"2.0","id":1,"method":"initialize","params":'
+        '{"protocolVersion":"2024-11-05","capabilities":{},'
+        '"clientInfo":{"name":"fuzz","version":"1"}}}'
+    )
+    _FINAL_PROBE = '{"jsonrpc":"2.0","id":999,"method":"tools/list"}'
+
+    @_needs_dev_machine
+    def test_every_malformed_frame_is_answered_and_the_server_survives(self) -> None:
+        binary = _mod.PROJECT_ROOT / ".build" / "release" / "verdictui"
+        if not binary.exists():
+            pytest.skip(f"{binary} absent — build with swift build -c release")
+
+        frames = [self._HANDSHAKE, *[line for _label, line in self._HOSTILE], self._FINAL_PROBE]
+        completed = subprocess.run(  # noqa: S603 - fixed argv, no shell
+            [str(binary), "mcp"],
+            input="\n".join(frames) + "\n",
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+
+        replies = [json.loads(line) for line in completed.stdout.splitlines() if line.strip()]
+
+        # Every frame answered: nothing swallowed, nothing merged.
+        assert len(replies) == len(frames), (
+            f"sent {len(frames)} frames, got {len(replies)} replies — "
+            "a frame was swallowed or the server died mid-stream"
+        )
+
+        # Every reply is well-formed JSON-RPC carrying exactly one outcome.
+        for reply in replies:
+            assert reply.get("jsonrpc") == "2.0", reply
+            assert ("result" in reply) != ("error" in reply), (
+                f"reply carries both or neither result and error: {reply}"
+            )
+
+        # THE ASSERTION THAT MAKES THIS A TEST: the server answered the final
+        # valid request, so it survived everything before it. A crash on frame
+        # two would satisfy every check above except this one.
+        final = replies[-1]
+        assert final.get("id") == 999, f"final reply is not the probe: {final}"
+        assert "result" in final, f"server degraded before the final probe: {final}"
+        assert final["result"]["tools"], "the catalog came back empty after hostile input"
+
+        # Nothing leaked to stderr: a server that logs a stack trace per bad
+        # frame is one malformed client away from filling a disk.
+        assert completed.stderr == "", f"unexpected stderr: {completed.stderr[:400]!r}"
