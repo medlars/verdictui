@@ -18,7 +18,66 @@ import time
 from collections.abc import Iterator
 from pathlib import Path
 
-sys.path.insert(0, str(Path.home() / "Projects/shared-libs/pm-base"))
+_USER_HOME = Path.home()
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_NAME = "VerdictUI"
+_SHARED_PM_BASE = _USER_HOME / "Projects/shared-libs/pm-base"
+_SHARED_RELEASE_TOOLS = _USER_HOME / "Projects/shared-libs/release-tools"
+
+
+def _ceo_paths_are_available() -> bool:
+    """Whether shared pm-base can initialize CEO paths from this sandbox."""
+    lock_dir = Path.home() / ".cache" / "vohux-ceo" / "locks"
+    try:
+        lock_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        lock_dir.chmod(0o700)
+    except OSError as exc:
+        logging.getLogger(__name__).warning(
+            "CEO lock dir unavailable for PM import (%s) -- using project-local PM paths",
+            exc,
+        )
+        return False
+    return True
+
+
+def _prepare_pm_base_import_environment() -> dict[str, str | None]:
+    """Redirect shared PM import-time paths into this repo only when required.
+
+    The shared reporter computes CEO lock/dashboard paths at import time. In a
+    restricted repair sandbox, the default private lock dir under HOME can exist
+    but reject chmod, which raises before this project PM can even dispatch a
+    local `query`. Normal owner shells keep the global paths; sandboxed repair
+    falls back to writable VerdictUI-local paths just long enough for those
+    import-time constants to be computed.
+    """
+    if _ceo_paths_are_available():
+        return {}
+
+    repair_home = PROJECT_ROOT / ".build" / "pm-home"
+    repair_home.mkdir(parents=True, exist_ok=True)
+    (PROJECT_ROOT / "logs").mkdir(parents=True, exist_ok=True)
+
+    overrides = {
+        "HOME": str(repair_home),
+        "PROJECTS_HUB": str(PROJECT_ROOT),
+        "CEO_DASHBOARD": str(PROJECT_ROOT / "logs" / "ceo-dashboard.json"),
+        "PM_DASHBOARD_FILE": str(PROJECT_ROOT / "logs" / "ceo-dashboard.json"),
+    }
+    previous = {key: os.environ.get(key) for key in overrides}
+    os.environ.update(overrides)
+    return previous
+
+
+def _restore_pm_base_import_environment(previous: dict[str, str | None]) -> None:
+    for key, value in previous.items():
+        if value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = value
+
+
+sys.path.insert(0, str(_SHARED_PM_BASE))
+_pm_base_env = _prepare_pm_base_import_environment()
 # Guarded like every other shared-libs import in this file: shared-libs is a
 # SIBLING repo, absent on CI runners — an unguarded import raises at COLLECTION
 # time and takes down the whole quick gate, not just the PM tests (Lesson 168).
@@ -37,12 +96,11 @@ except ImportError as _imp_err:
             if mode not in ("quick", "full"):
                 raise ValueError(f"invalid mode: {mode!r}")
             raise SystemExit("shared-libs pm-base unavailable — PM cannot run here")
+finally:
+    _restore_pm_base_import_environment(_pm_base_env)
 
 
 _logger = logging.getLogger(__name__)
-
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-PROJECT_NAME = "VerdictUI"
 
 _SWIFT_MODULE_CACHE = PROJECT_ROOT / ".build" / "clang-module-cache"
 _SWIFT_MODULE_CACHE.mkdir(parents=True, exist_ok=True)
@@ -54,7 +112,7 @@ _SWIFTPM_CONFIG.mkdir(parents=True, exist_ok=True)
 
 __all__ = ["PROJECT_ROOT", "PROJECT_NAME", "VerdictUIPM"]
 
-sys.path.insert(0, str(Path.home() / "Projects/shared-libs/release-tools"))
+sys.path.insert(0, str(_SHARED_RELEASE_TOOLS))
 
 _LOCK_DIR = PROJECT_ROOT / "logs"
 

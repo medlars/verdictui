@@ -4,6 +4,7 @@
 <!-- none -->
 
 ## P1 — High Priority
+- [x] (2026-08-14) (P1) PM/repair-sandbox: `python3.14 scripts/verdictui-pm.py query risk --file Tests/VerdictUICLICoreTests/MCPLatencyTests.swift` failed before CLI dispatch because importing shared `pm_base` chmoded `/Users/eiman/.cache/vohux-ceo/locks`, which is blocked in the restricted VerdictUI repair sandbox. Fixed with a project-local pre-import fallback that redirects shared PM import-time CEO/dashboard paths into writable VerdictUI-local paths only when the default CEO lock dir is unavailable; pinned by `Tests/test_verdictui_pm.py::TestLoadsWithoutSharedLibs::test_module_imports_when_default_ceo_lock_dir_rejects_chmod`. Verified focused PM tests 50/50, file registry 8/8, Ruff clean, and PM `--quick` Grade A (100.0) with MCP latency recorded rather than asserted in this constrained timing environment.
 - [x] (2026-08-12) (P1) CEO/stage_floor: VerdictUI floor: 1 gap(s):
   ✗ logs/
 

@@ -89,6 +89,41 @@ class TestLoadsWithoutSharedLibs:
         assert result.returncode != 0, "fallback PmBase must fail closed, not pass"
         assert "shared-libs pm-base unavailable" in result.stderr
 
+    def test_module_imports_when_default_ceo_lock_dir_rejects_chmod(self) -> None:
+        """A repair sandbox can block HOME CEO locks while shared-libs exists.
+
+        This is not the same case as missing shared-libs: the import got as far
+        as reporter.py, then `ceo_lock_path()` raised `PermissionError` before
+        the local `query` command could run. The PM should redirect only the
+        import-time CEO paths into VerdictUI-local writable directories.
+        """
+        probe = (
+            "import importlib.util, json, os\n"
+            "from pathlib import Path\n"
+            "original_home = os.environ.get('HOME')\n"
+            "default_lock = str(Path.home() / '.cache' / 'vohux-ceo' / 'locks')\n"
+            "_real_chmod = os.chmod\n"
+            "def _blocked_default_ceo_chmod(path, mode, *args, **kwargs):\n"
+            "    if str(path).startswith(default_lock):\n"
+            "        raise PermissionError('blocked default CEO lock for test')\n"
+            "    return _real_chmod(path, mode, *args, **kwargs)\n"
+            "os.chmod = _blocked_default_ceo_chmod\n"
+            f"spec = importlib.util.spec_from_file_location('vupm', {_PM_PATH!r})\n"
+            "mod = importlib.util.module_from_spec(spec)\n"
+            "spec.loader.exec_module(mod)\n"
+            "assert os.environ.get('HOME') == original_home, 'PM import leaked HOME override'\n"
+            "import pm_constants\n"
+            "assert pm_constants.DASHBOARD_FILE == "
+            "Path('logs/ceo-dashboard.json').resolve(), pm_constants.DASHBOARD_FILE\n"
+            "code = mod.main(['query', 'risk', '--file', "
+            "'Tests/VerdictUICLICoreTests/MCPLatencyTests.swift'])\n"
+            "print('EXIT', code)\n"
+        )
+        result = subprocess.run([_PYTHON, "-c", probe], capture_output=True, text=True, timeout=60)
+        assert result.returncode == 0, result.stderr
+        assert '"query": "risk"' in result.stdout
+        assert "EXIT 0" in result.stdout
+
 
 class TestPMCLI:
     def test_main_dispatches_query_without_running_pipeline(self, monkeypatch, capsys) -> None:
