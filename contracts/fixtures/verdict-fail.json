@@ -72,7 +72,7 @@
       "suggestion" : "increase frame width to >= intrinsicWidth 212 pt, or allow wrapping"
     },
     {
-      "message" : "'close' is 24 x 18 pt, below the 28 x 28 pt minimum hit size",
+      "message" : "'close' is 8 x 6 pt, below the 12 x 12 pt minimum hit size",
       "nodeID" : "close",
       "rule" : "tap-target",
       "severity" : "warning"
@@ -113,8 +113,8 @@
           "role.hint" : "dismiss"
         },
         "frame" : {
-          "height" : 18,
-          "width" : 24,
+          "height" : 6,
+          "width" : 8,
           "x" : 280,
           "y" : 16
         },

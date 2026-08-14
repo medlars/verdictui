@@ -548,18 +548,18 @@ final class TapTargetRuleTests: XCTestCase {
 
     func testUndersizedControlIsReportedAgainstTheMacOSMinimum() throws {
         let findings = rule.evaluate(
-            Fixture.root([control("close", width: 24, height: 18)]),
+            Fixture.root([control("close", width: 8, height: 6)]),
             context: Fixture.context()
         )
         let finding = try XCTUnwrap(findings.first)
         XCTAssertEqual(finding.severity, .error)
-        XCTAssertEqual(finding.message, "'close' is 24 x 18 pt, below the 28 x 28 pt minimum hit size")
-        XCTAssertEqual(finding.suggestion, "grow the control or add .frame(minWidth: 28, minHeight: 28)")
+        XCTAssertEqual(finding.message, "'close' is 8 x 6 pt, below the 12 x 12 pt minimum hit size")
+        XCTAssertEqual(finding.suggestion, "grow the control or add .frame(minWidth: 12, minHeight: 12)")
     }
 
     func testOneUndersizedDimensionIsEnough() {
         let findings = rule.evaluate(
-            Fixture.root([control("tall", width: 20, height: 100)]),
+            Fixture.root([control("tall", width: 6, height: 100)]),
             context: Fixture.context()
         )
         XCTAssertEqual(findings.map(\.nodeID), ["tall"])
@@ -739,7 +739,7 @@ final class StandardRuleSetTests: XCTestCase {
                     textMetrics: TextMetrics(intrinsicWidth: 212, renderedLineCount: 1, idealLineCount: 2)
                 ),
                 SemanticNode(id: "vanished", role: .image, frame: Rect(x: 0, y: 30, width: 0, height: 0)),
-                SemanticNode(id: "tiny", role: .button, frame: Rect(x: 0, y: 40, width: 20, height: 20)),
+                SemanticNode(id: "tiny", role: .button, frame: Rect(x: 0, y: 40, width: 6, height: 6)),
                 SemanticNode(id: "lost", role: .button, frame: Rect(x: 900, y: 40, width: 40, height: 40)),
                 SemanticNode(id: "under", role: .toggle, frame: Rect(x: 0, y: 100, width: 60, height: 40)),
                 SemanticNode(id: "over", role: .toggle, frame: Rect(x: 40, y: 100, width: 60, height: 40)),
@@ -777,7 +777,7 @@ final class StandardRuleSetTests: XCTestCase {
                     textMetrics: TextMetrics(intrinsicWidth: 212, renderedLineCount: 1, idealLineCount: 2)
                 ),
                 SemanticNode(id: "vanished", role: .image, frame: Rect(x: 0, y: 30, width: 0, height: 0)),
-                SemanticNode(id: "tiny", role: .button, frame: Rect(x: 0, y: 40, width: 20, height: 20)),
+                SemanticNode(id: "tiny", role: .button, frame: Rect(x: 0, y: 40, width: 6, height: 6)),
                 SemanticNode(id: "lost", role: .button, frame: Rect(x: 900, y: 40, width: 40, height: 40)),
                 SemanticNode(id: "under", role: .toggle, frame: Rect(x: 0, y: 100, width: 60, height: 40)),
                 SemanticNode(id: "over", role: .toggle, frame: Rect(x: 40, y: 100, width: 60, height: 40)),

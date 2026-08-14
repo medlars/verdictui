@@ -77,7 +77,7 @@ final class ContractFixtureTests: XCTestCase {
                 SemanticNode(
                     id: "close",
                     role: .button,
-                    frame: Rect(x: 280, y: 16, width: 24, height: 18),
+                    frame: Rect(x: 280, y: 16, width: 8, height: 6),
                     attributes: ["role.hint": .string("dismiss"), "enabled": .bool(true)],
                     structuralPath: "root/button[1]"
                 ),
@@ -126,7 +126,7 @@ final class ContractFixtureTests: XCTestCase {
                     rule: TapTargetRule.id,
                     severity: .warning,
                     nodeID: "close",
-                    message: "'close' is 24 x 18 pt, below the 28 x 28 pt minimum hit size"
+                    message: "'close' is 8 x 6 pt, below the 12 x 12 pt minimum hit size"
                 ),
             ],
             timestamp: instant,

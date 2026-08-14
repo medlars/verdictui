@@ -168,13 +168,13 @@ default: the tree dwarfs the findings and the MCP surface pays per token.
 |-------|---------|---------|
 | `scenario` | `"unnamed"` | recorded in the verdict |
 | `viewport` | *(required)* | `offscreen` |
-| `minimumTapTarget` | `28` × `28` pt (`macOSMinimumTapTarget`) | `tap-target` |
+| `minimumTapTarget` | `12` × `12` pt (`macOSMinimumTapTarget`) | `tap-target` |
 | `truncationTolerance` | `0.5` pt | `truncation` |
 | `severityOverrides` | `[:]` | every rule |
 | `disabledRules` | `[]` | `RuleEngine.run` |
 
 Two convenience constructors set the platform minimum: `LintContext.macOS(viewport:scenario:)`
-uses the macOS pointer minimum of `28` × `28` pt, and `LintContext.touch(viewport:scenario:)`
+uses the macOS pointer minimum of `12` × `12` pt, and `LintContext.touch(viewport:scenario:)`
 uses the `44` × `44` pt touch minimum. The macOS default is the permissive one on
 purpose: measuring a mouse-driven UI against a finger target produces noise, and a
 rule that cries wolf gets switched off.
@@ -400,11 +400,11 @@ macOS pointer minimum, a firing rule means the control is genuinely below the
 platform's documented floor; use `LintContext.touch(viewport:scenario:)` to police
 `44` × `44` pt instead.
 
-A `close` button measuring 24 × 18 pt:
+A `close` button measuring 8 × 6 pt:
 
 ```text
-'close' is 24 x 18 pt, below the 28 x 28 pt minimum hit size
-grow the control or add .frame(minWidth: 28, minHeight: 28)
+'close' is 8 x 6 pt, below the 12 x 12 pt minimum hit size
+grow the control or add .frame(minWidth: 12, minHeight: 12)
 ```
 
 **Suppress**: `verdict.suppress` on the control, `severityOverrides` to demote it,

@@ -925,6 +925,24 @@ MUTATIONS = [
         runner=Runner.SWIFT,
     ),
     Mutation(
+        # The macOS tap-target floor reverts to the touch metric it was until
+        # 2026-08-14. Every standard macOS control is 16-26 pt tall (measured:
+        # Toggle 60x18, Button 54x24, Stepper 65x26, Slider 200x16), so a 28 pt
+        # floor reports EVERY native control as a defect — the rule fires on
+        # idiomatic SwiftUI and gets switched off rather than fixed (no.md #25).
+        #
+        # The witness asserts the platform's own control sizes are accepted, so
+        # this row proves the calibration is load-bearing rather than incidental.
+        # Its sibling test (a 6x6 control must STILL fail) is what stops the
+        # opposite mutation — a floor of 0 — passing as a "fix".
+        name="the macOS tap-target floor reverts to the touch metric",
+        path="Sources/VerdictUIKernel/RuleEngine.swift",
+        old="    public static let macOSMinimumTapTarget = Size(width: 12, height: 12)",
+        new="    public static let macOSMinimumTapTarget = Size(width: 28, height: 28)",
+        test="VerdictUIKernelTests.TapTargetPlatformMetricsTests/testEveryStandardMacOSControlSizeIsAccepted",
+        runner=Runner.SWIFT,
+    ),
+    Mutation(
         # The generated members stop mirroring the host type's access level, so
         # `verdictProbedContent` is internal again and cannot satisfy the PUBLIC
         # `VerifiableView` requirement. Every `public` view carrying

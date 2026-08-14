@@ -31,10 +31,40 @@ public struct LintContext: Sendable {
     /// Wildcard value for ``suppressionKey``.
     public static let suppressAllRules = "*"
 
-    /// macOS pointer-target minimum (Apple HIG). Smaller than the 44×44 pt touch
-    /// minimum on purpose: measuring a mouse-driven UI against a finger target
-    /// produces noise, and a rule that cries wolf gets switched off.
-    public static let macOSMinimumTapTarget = Size(width: 28, height: 28)
+    /// macOS pointer-target minimum. Smaller than the 44×44 pt touch minimum on
+    /// purpose: measuring a mouse-driven UI against a finger target produces
+    /// noise, and a rule that cries wolf gets switched off.
+    ///
+    /// ### 12 pt, and why it is not a preference
+    ///
+    /// This was 28×28 pt until 2026-08-14, when the Wave 10 fleet dogfood
+    /// produced three `tap-target` ERRORS against a settings screen whose
+    /// toggles are exactly the size SwiftUI makes them. Measuring the platform's
+    /// own controls — `NSHostingView(rootView:).fittingSize`, outside VerdictUI
+    /// entirely — showed the threshold could never have been right:
+    ///
+    /// | Control | Measured | | Control | Measured |
+    /// |---|---|---|---|---|
+    /// | `Toggle` (switch) | 60 × **18** | | `Stepper` | 65 × **26** |
+    /// | `Toggle` (checkbox) | 60 × **18** | | `Slider` | 200 × **16** |
+    /// | `Button` | 54 × **24** | | `TextField` | 200 × **24** |
+    /// | `Menu` | 94 × **24** | | `Picker` | 200 × **24** |
+    ///
+    /// **Not one standard macOS control reaches 28 pt.** The old value was a
+    /// touch metric wearing a pointer label, so the rule fired on idiomatic
+    /// SwiftUI written exactly as Apple ships it and its suggested fix would
+    /// have made the adopter's app non-standard — `no.md` #25's shape, and how
+    /// a linter gets switched off rather than fixed.
+    ///
+    /// 12 pt is the floor of what the platform itself will produce:
+    /// `.controlSize(.mini)` yields a 19 × **12** pt switch, the smallest thing
+    /// SwiftUI makes on request. A control below that was not made small by an
+    /// API — it was made small by a layout accident, which is precisely the
+    /// defect this rule exists to catch. The demo scenario's genuinely broken
+    /// 18 × 18 pt dismiss button still FAILS, and
+    /// `TapTargetPlatformMetricsTests` pins both directions so a future change
+    /// cannot silence the rule without a test saying so.
+    public static let macOSMinimumTapTarget = Size(width: 12, height: 12)
 
     /// Touch-target minimum (Apple HIG), for scenarios rendered at iOS metrics.
     public static let touchMinimumTapTarget = Size(width: 44, height: 44)

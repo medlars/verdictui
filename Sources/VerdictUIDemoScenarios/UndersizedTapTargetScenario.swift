@@ -7,12 +7,20 @@ import VerdictUIProbe
 /// minimum in both dimensions.
 /// **Rule that must catch it**: `tap-target`, on probe `dismiss-button`.
 ///
-/// 18 x 18 pt is below the 28 x 28 pt floor
-/// (``LintContext/macOSMinimumTapTarget``) by 10 pt on each axis, so the finding
-/// does not rest on a boundary: a scenario planted at 27 pt would pass or fail
+/// 6 x 6 pt is below the 12 x 12 pt floor
+/// (``LintContext/macOSMinimumTapTarget``) by 6 pt on each axis, so the finding
+/// does not rest on a boundary: a scenario planted at 11 pt would pass or fail
 /// on how a font rounds. It is also comfortably above zero, which keeps
 /// `ZeroSizeRule` — the rule that owns the collapsed-frame defect — silent, so
 /// one planted defect still produces one finding.
+///
+/// **This was 18 x 18 pt until 2026-08-14**, when the macOS floor was recalibrated
+/// from 28 pt to 12 pt because no standard macOS control reaches 28 pt (see
+/// ``LintContext/macOSMinimumTapTarget`` for the measurements). 18 pt is a
+/// perfectly ordinary control height — a native `Toggle` is exactly that — so it
+/// stopped being a planted DEFECT the moment the threshold became correct, and
+/// the scenario had to shrink with it. A demo whose "bug" is a legal size is not
+/// a demo of anything.
 ///
 /// The size is applied *inside* the probe, so the probe reports the control's
 /// own box rather than a container that happens to sit around it. The button is
@@ -34,7 +42,7 @@ public struct UndersizedTapTargetScenario: VerdictScenario, Sendable {
 
     /// The planted hit area, in points. Below
     /// ``LintContext/macOSMinimumTapTarget`` on both axes.
-    public static let buttonSize = Size(width: 18, height: 18)
+    public static let buttonSize = Size(width: 6, height: 6)
 
     public var name: String { Self.scenarioName }
 
