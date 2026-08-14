@@ -81,6 +81,15 @@ public struct WitnessHostProcess {
                 as? [[String: Any]] ?? []
             return info
                 .filter { ($0[kCGWindowOwnerPID as String] as? pid_t) == pid }
+                // `?? 1.0` is the FAIL-SAFE direction, not a neutral default: an
+                // alpha that cannot be read means "assume it is drawing", so the
+                // caller's assertion FAILS rather than reporting a window clean.
+                // `?? 0.0` would claim invisibility from a missing measurement.
+                // Deliberately unpinned by a test — `kCGWindowAlpha` is always
+                // present on this path, so flipping the default is measurably
+                // invisible today (verified 2026-08-14: the guard test still
+                // passes at `?? 0.0`). Recorded rather than asserted, because a
+                // test that cannot fail is not a test (`no.md` #12).
                 .map { ($0[kCGWindowAlpha as String] as? Double) ?? 1.0 }
         }
     }
