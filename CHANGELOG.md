@@ -53,6 +53,53 @@ pixel channel.
 
 ## [Unreleased]
 
+### 2026-08-14 (the threshold that could never have been right)
+
+**Fixed**
+
+- **`tap-target` no longer fires on every standard macOS control.** The floor was
+  28 × 28 pt — a *touch* metric wearing a pointer label. Measured with
+  `NSHostingView(rootView:).fittingSize`, outside VerdictUI entirely: `Toggle`
+  60 × 18, `Button` 54 × 24, `Stepper` 65 × 26, `Slider` 200 × 16, `TextField`
+  and `Picker` 200 × 24. **Not one native control reaches 28 pt**, so the rule
+  could never distinguish "too small to hit" from "a macOS control", and its
+  suggested fix would have made the adopter's app non-standard. The floor is now
+  **12 × 12 pt**, the height of a `.controlSize(.mini)` switch (19 × 12) — the
+  smallest control the platform produces on request. Six dependent fixtures moved
+  with it, including the demo scenario's planted defect (18 × 18 → 6 × 6, because
+  18 pt stopped being a defect once the threshold became correct) and the
+  misreported-role lie scenario, where the lie had quietly stopped being
+  load-bearing.
+
+**Added**
+
+- `TapTargetPlatformMetricsTests` — the floor against measured native control
+  sizes in **both** directions: every standard size accepted, a 6 × 6 pt control
+  still reported at error severity with its node cited, boundary tests either
+  side, and an assertion that the macOS and touch minimums have not converged.
+- An MCP input-surface fuzz regression (Wave 10 Task 3): eight hostile frames —
+  malformed JSON, non-JSON-RPC, unknown method, unknown tool, unknown scenario,
+  missing and wrong-typed arguments, a top-level array. The server answers each
+  with the correct error class, keeps protocol errors distinct from tool-level
+  ones, writes nothing to stderr, and **still answers a valid request
+  afterwards** — the assertion that makes it a test rather than a description.
+- `docs/adoption.md` gains the package wiring, including the test-target
+  dependency on `VerdictUIMacroSupport` that the dogfood tripped over. The
+  example was compiled as a real consumer package, not merely written.
+- **ADR 2026-022** — what 1.0 promises and what it does not. Rule *thresholds*
+  are deliberately excluded: a measurement that is wrong should be corrected, and
+  consumers needing stability against that pin a baseline.
+
+**Changed**
+
+- `docs/slo.md`: all four declared objectives now have explanatory sections
+  (SLO 1's rationale moved out of a generic `## Notes`; SLO 2 gained the section
+  it never had). Guarded by a test comparing table rows against section headings.
+- `Tests/test_verdictui_pm.py` split 1119 → 796 lines along a real seam — the
+  stages whose subject is a *process* moved to
+  `test_verdictui_pm_artifact_stages.py`. Verified behaviour-preserving by count:
+  66 passed before, 66 after.
+
 ### 2026-08-14 (the witness window nobody's tests could see)
 
 **Fixed**
