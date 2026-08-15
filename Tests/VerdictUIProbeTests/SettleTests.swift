@@ -87,42 +87,65 @@ final class SettleTests: XCTestCase {
         // is what let this test intermittently accuse the engine. A hostile
         // test that accuses its subject is worse than no hostile test.
         //
-        // THE REMAINING CI FLAKE IS A TIMER-DELIVERY RACE, and it is NOT closed.
-        // Measured on CI run 31809760395: `settled(after: 0.037 s)` inside a
-        // test that took 0.670 s wall-clock. 37 ms is exactly
-        // requiredAgreeingChecks (2) x pumpInterval (5 ms) plus the 30 ms quiet
-        // floor — one uninterrupted quiet span with no tick landing inside it.
-        // The fixture drives `model.tick` from a Timer on the MAIN RunLoop,
-        // which is the very RunLoop `LayoutSettle.pump` occupies with
-        // `run(until: +pumpInterval)`; a 1.25 ms timer is below what macOS
-        // delivers reliably, so a 2-core shared runner can coalesce the ticks
-        // away for longer than the settle window. The layout is then GENUINELY
-        // static and the engine is RIGHT while this test accuses it.
+        // THE DRIVE IS A RUN-LOOP OBSERVER, NOT A TIMER, and that is the
+        // 2026-08-15 fix for the residual CI flake.
         //
-        // Not reproducible here, and that is the blocker rather than a comfort:
-        // an instrumented probe pumping in 5 ms slices for 200 ms measured a
-        // longest-consecutive-zero-tick run of ZERO, both idle and with 90% of
-        // every slice burned. Load is not the variable (a 6-run batch at load
-        // average 103-109 also passed 6/6). A fix cannot be verified where the
-        // bug does not reproduce (`no.md` #56 rule (b)).
+        // A `Timer` is a request to be woken at a WALL-CLOCK instant, so its
+        // delivery competes with whatever else the loop is doing. `pump` runs
+        // that same loop in 5 ms slices between layout passes, and 1.25 ms is
+        // below what macOS delivers reliably — on a 2-core shared runner the
+        // ticks can be coalesced away for longer than the settle window, at
+        // which point the layout is GENUINELY static and the engine is RIGHT
+        // while this test accuses it. Measured on CI run 31809760395:
+        // `settled(after: 0.037 s)`, which is exactly `requiredAgreeingChecks`
+        // (2) x `pumpInterval` (5 ms) plus the 30 ms quiet floor — one
+        // uninterrupted quiet span with no tick inside it.
         //
-        // REJECTED, with the measurement: driving the tick from inside a custom
-        // `Layout`'s `sizeThatFits` — which `pump` invokes on every iteration,
-        // so it needs no delivery guarantee. Mutating the `@Published` property
-        // during layout re-invalidates the view, which requests another layout,
-        // which ticks again: `swift test` HANGS with no summary line (measured
-        // twice, 200 s timeout each, after a clean `Build complete!`). An
-        // infinite layout loop is strictly worse than an intermittent red, so
-        // the timer drive stays until a mechanism is found that is both
-        // delivery-independent and non-reentrant. Tracked in CTS-9A2A7301.
-        let interval = LayoutSettle.pumpInterval / 4
-        let timer = Timer(timeInterval: interval, repeats: true) { _ in
+        // An observer is a request to be called on every ITERATION the loop
+        // performs. `pump`'s `run(until:)` is what performs them, so the fixture
+        // advances once per thing settle does rather than once per interval it
+        // hopes for: the drive rides the sampler instead of racing it, and there
+        // is no rate left to starve.
+        //
+        // TWO OTHER DRIVES WERE MEASURED AND REJECTED — do not retry either:
+        //
+        // 1. Ticking from a custom `Layout`'s `sizeThatFits`. It does ride the
+        //    sampler, but mutating the `@Published` property during layout
+        //    re-invalidates the view, requesting another layout, which mutates
+        //    again: `swift test` HANGS with no summary line (twice, 200 s
+        //    timeout, each after a clean build).
+        // 2. A plain non-`@Published` counter incremented in `body`. SwiftUI
+        //    caches the view value and re-runs `body` only when OBSERVABLE state
+        //    changes, so it does not re-evaluate per layout pass: measured
+        //    `bodyEvaluationCount` advancing 1 -> 1 across a whole settle, and
+        //    the test then reproduced the CI failure LOCALLY at
+        //    `settled(after: 0.034 s)` — the first local reproduction in four
+        //    sessions, and the reason this mechanism is now confirmed rather
+        //    than inferred. `@Published` is load-bearing, not incidental.
+        let observer = CFRunLoopObserverCreateWithHandler(
+            nil,
+            CFRunLoopActivity.beforeWaiting.rawValue | CFRunLoopActivity.afterWaiting.rawValue,
+            true,
+            0
+        ) { _, _ in
             model.tick += 1
         }
-        RunLoop.main.add(timer, forMode: .common)
-        defer { timer.invalidate() }
+        CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
+        defer { CFRunLoopRemoveObserver(CFRunLoopGetMain(), observer, .commonModes) }
 
+        let ticksBeforeSettle = model.tick
         let result = await host.settle(timeout: .milliseconds(200))
+
+        // The fixture must be shown to have MOVED. Without this, "it timed out"
+        // proves nothing about quiescence — a fixture that silently stopped
+        // drifting would make the test pass for the opposite reason, which is
+        // the shape `no.md` #47 records. It is also the assertion that caught
+        // rejected drive (2) above, immediately and unambiguously.
+        XCTAssertGreaterThan(
+            model.tick, ticksBeforeSettle + LayoutSettle.requiredAgreeingChecks,
+            "the fixture must advance more often than settle's agreement window, otherwise a "
+                + "timeout says nothing about a MOVING screen"
+        )
 
         guard case .timedOut(let delta) = result else {
             XCTFail("oscillating layout must time out, got \(result)")

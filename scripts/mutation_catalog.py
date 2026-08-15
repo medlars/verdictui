@@ -1762,4 +1762,19 @@ MUTATIONS = [
         ),
         runner=Runner.PYTEST,
     ),
+    Mutation(
+        # The hostile fixture must keep MOVING for as long as settle samples it,
+        # or "it timed out" says nothing about quiescence and the test passes for
+        # the opposite reason (no.md #47). Freezing the drive reproduces the CI
+        # signature exactly -- settled(after: ~0.035s), which is 2 checks x 5 ms
+        # plus the 30 ms quiet floor -- so this row guards the assertion that
+        # separates "the screen was moving and settle lied" from "the screen was
+        # static and settle was right". Assigning the model to _ keeps the
+        # closure's capture live and compiles (no.md #31).
+        name="the oscillating fixture stops advancing during settle",
+        path="Tests/VerdictUIProbeTests/SettleTests.swift",
+        old="            model.tick += 1\n        }\n        CFRunLoopAddObserver",
+        new="            _ = model\n        }\n        CFRunLoopAddObserver",
+        test="SettleTests/testOscillatingLayoutTimesOutWithDeltaEvidence",
+    ),
 ]
