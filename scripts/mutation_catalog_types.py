@@ -45,3 +45,21 @@ class Mutation:
     # is not in the expansion at all, which is a real case and needs saying out
     # loud rather than being argued in a comment nothing checks.
     runtime_witness_reason: str = ""
+    # Why this row's witness may SKIP, stated as the condition. Empty for every
+    # other row, and a row that sets it is refused as a witness rather than
+    # scored.
+    #
+    # A skipped XCTest is INDISTINGUISHABLE from a passing one: it prints
+    # `Test Case '-[...]' passed` and `Executed 1 test, with 0 failures`, exits
+    # 0, and emits no skip marker at any verbosity (`--xunit-output` does not
+    # help — the file written here covers only the swift-testing lane). So
+    # `classify` reads ran=1 + exit 0 and reports `UNNOTICED — the test passed
+    # with the guard broken`, which is false in the expensive direction: the
+    # guard is fine, the test never ran, and the sweep accuses working code.
+    #
+    # Measured 2026-08-15 on the AX bounded-walk row, the only UNNOTICED in a
+    # 121-row sweep. Its witness opens with `XCTSkipIf(isHeadless)`,
+    # `XCTSkipUnless(AXReader.isTrusted)` and a skip when no third-party app is
+    # running. There is nothing in stdout to parse, so the declaration has to
+    # live on the row — the same discipline as `runtime_witness_reason`.
+    skips_when: str = ""

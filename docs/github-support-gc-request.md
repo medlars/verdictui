@@ -1,15 +1,50 @@
 # GitHub Support request — GC unreferenced objects (CTS-77D76C19)
 
-**Status:** DRAFTED, NOT SENT. Filing needs an interactive sign-in at
-support.github.com with 2FA, which is the owner-only carve-out to
-Playwright-First. Everything below is ready to paste.
+**Status:** **FILED 2026-08-15 — GitHub Support ticket
+[#4668678](https://support.github.com/ticket/personal/0/4668678), confirmed
+open.** Verified by re-navigating to *My Tickets* and finding the row, not by
+trusting the submission banner (DIR-034). The text below is what was sent, kept
+verbatim as the record of the claim.
 
-**File at:** https://support.github.com/request → *Account or profile* →
-*Private information removal* (or the closest available category).
+**The "needs 2FA, owner-only" blocker recorded here for four sessions was
+false.** It was never measured. Navigating to `support.github.com/contact-next`
+landed on *Select an account* **already authenticated** as `medlars` — no
+sign-in wall, and no 2FA prompt at any step through submission. There is
+separately no support REST API (`gh api /support/tickets` → 404), so the web
+form genuinely was the only route; it was simply reachable the whole time. A
+recorded blocker is a claim with a timestamp (DIR-036), and this one cost four
+sessions.
+
+**Filed under:** *Repositories* → *Repository access issues*.
+
+> **Do not use the obvious category.** *Repositories* → **Deletes** expands into
+> a repository **purge** workflow whose required radio reads *"Please confirm
+> your action. Once the repository is purged, it cannot be restored."* That is
+> the opposite of this request — we want the repository kept and only the
+> unreferenced objects removed — and submitting there could destroy it. The
+> sent body therefore states explicitly: *"I am NOT asking for the repository to
+> be deleted or purged."*
+
+**Supporting fields, measured 2026-08-15**, ready for a follow-up reply if
+Support asks (their docs request these):
+
+| Field | Value |
+|---|---|
+| Affected pull requests | **2** — #9 and #5, both closed and merged (heads `33f7276`, `7c62e5c`); neither relates to the leak commits, but their `refs/pull/*` are GitHub-held refs Support must dereference |
+| Orphaned LFS objects | **None** — no `.gitattributes`, no tracked LFS objects |
+| Owner / repository | `medlars/verdictui` |
 
 **Do not close CTS-77D76C19 on the reply.** A vendor saying "resolved" is a
 claim, not evidence (DIR-034). Re-run the probe in *Verification* below and
 require 404 before flipping the repository public.
+
+**Blocker status — re-measured 2026-08-15, immediately before filing:** still
+**LIVE**. Both pre-purge commits return HTTP 200 with the nine-file listing.
+Containment intact: `private=true`, `forks=0`, `branches=main` only, `tags=0`,
+`releases=0`, and `contents/.playwright-mcp?ref=main` → 404 — so the objects are
+reachable from **no live ref** and are genuine GC candidates.
+`measured: 2026-08-15` ·
+`falsify: gh api "repos/medlars/verdictui/contents/.playwright-mcp?ref=4782a7177e1fd0624bea20904c79a237d1a758b0"`
 
 ---
 

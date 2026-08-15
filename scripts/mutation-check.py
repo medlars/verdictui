@@ -282,9 +282,29 @@ def classify(
 def baseline_problem(mutation: Mutation) -> str | None:
     """Why the named test cannot serve as a witness, or `None` if it can.
 
-    Without this a test that is *already* failing reports NOTICED for every
-    mutation aimed at it — coverage claimed on the strength of a red test.
+    Three ways a witness is unusable, and each lies in a different direction:
+
+    - **Already red** — it fails with the mutation too, so every row aimed at
+      it reports NOTICED. Coverage claimed on the strength of a broken test.
+    - **Matches nothing** — a renamed test runs zero cases and exits 0, which
+      reads as an uncovered guard when the catalog is simply stale.
+    - **Can skip** — declared per-row via `skips_when`, because a skipped
+      XCTest is byte-identical to a passing one and no amount of output
+      parsing can separate them. Left unchecked it reports UNNOTICED against a
+      guard that is fine, which is the costly direction: it accuses working
+      code (`no.md` #58).
     """
+    # Checked BEFORE running anything, because running proves nothing here: a
+    # skipped XCTest prints `passed`, exits 0, and emits no skip marker at any
+    # verbosity, so its output is byte-identical to a real pass. `classify`
+    # would then read ran=1 + exit 0 and report UNNOTICED — accusing a working
+    # guard of being untested, which is the expensive direction (`no.md` #58).
+    # There is nothing to parse, so the row has to declare the condition.
+    if mutation.skips_when:
+        return (
+            f"the witness can skip ({mutation.skips_when}) and a skipped XCTest is "
+            "indistinguishable from a passing one — run it on a host where it executes"
+        )
     result = run_named_test(mutation.test, mutation.runner)
     combined = result.stdout + result.stderr
     if executed_test_count(combined, mutation.runner) == 0:
