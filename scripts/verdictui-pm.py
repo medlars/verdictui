@@ -571,12 +571,17 @@ class VerdictUIPM(PmBase):
         if shutil.which("swift") is None:
             return {"passed": False, "detail": "swift not installed -- tests cannot be verified"}
         _LOCK_DIR.mkdir(parents=True, exist_ok=True)
-        with _swift_timing_environment():
-            return _run_streamed_swift_test(
-                timeout=TIMEOUT_SWIFT_TEST,
-                min_test_count=1,
-                extra_flags=[*SWIFT_PM_FLAGS, *SWIFT_STRICT_FLAGS],
-            )
+        # Do not set VERDICTUI_RECORD_TIMING_ONLY around the whole suite. That
+        # explicit override is intentionally stronger than clock-marker
+        # detection: it also suppresses elapsed-invariant assertions such as the
+        # settle-timeout overshoot guard. Swift tests can detect constrained
+        # clock lanes themselves from CODEX/CI markers and unwritable SwiftPM
+        # caches, while still keeping ordering invariants live.
+        return _run_streamed_swift_test(
+            timeout=TIMEOUT_SWIFT_TEST,
+            min_test_count=1,
+            extra_flags=[*SWIFT_PM_FLAGS, *SWIFT_STRICT_FLAGS],
+        )
 
     def stage_floor(self) -> dict:
         """Floor compliance check."""
