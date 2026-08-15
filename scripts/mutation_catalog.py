@@ -1780,6 +1780,46 @@ MUTATIONS = [
         runner=Runner.PYTEST,
     ),
     Mutation(
+        # The CONSUMER half of the row above. Splitting the predicate fixes
+        # nothing if the site that READS it still names the clock lane, and the
+        # two failures are indistinguishable from outside: both leave the
+        # overshoot guard inert on a read-only-cache host while the suite reads
+        # green. Hand-verified 2026-08-15 -- exit 1 naming the elapsed-invariant
+        # assertion, byte-identical restore.
+        name="the overshoot lane in HarnessTests reads the clock predicate",
+        path="Tests/VerdictUIProbeTests/HarnessTests.swift",
+        old="        !ConstrainedTimingEnvironment.canEvaluateElapsedInvariants",
+        new="        ConstrainedTimingEnvironment.isActive",
+        test=(
+            "Tests/test_verdictui_bench.py::TestStageRuntimeBench"
+            "::test_timeout_fixture_recording_is_not_the_elapsed_invariant_lane"
+        ),
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
+        # VERDICTUI_RECORD_TIMING_ONLY is the EXPLICIT HUMAN OVERRIDE, not a
+        # clock marker: it is the one input that suppresses
+        # canEvaluateElapsedInvariants. Wrapping the FULL suite in it therefore
+        # runs every test with the overshoot invariant switched off -- the gate
+        # that stopped gating, which reads exactly like a gate that passed
+        # (no.md #58). stage_runtime_bench keeps the wrapper, correctly: that
+        # stage measures absolute budgets, which is what the override is for.
+        # Hand-verified 2026-08-15 -- exit 1, byte-identical restore.
+        name="the full suite runs under the record-only override again",
+        path="scripts/verdictui-pm.py",
+        old="        return _run_streamed_swift_test(\n            timeout=TIMEOUT_SWIFT_TEST,",
+        new=(
+            "        with _swift_timing_environment():\n"
+            "            return _run_streamed_swift_test(\n"
+            "            timeout=TIMEOUT_SWIFT_TEST,"
+        ),
+        test=(
+            "Tests/test_verdictui_pm.py::TestSkipSentinel"
+            "::test_stage_test_does_not_force_the_explicit_record_only_override"
+        ),
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
         # The hostile fixture must keep MOVING for as long as settle samples it,
         # or "it timed out" says nothing about quiescence and the test passes for
         # the opposite reason (no.md #47). Freezing the drive reproduces the CI

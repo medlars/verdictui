@@ -475,7 +475,16 @@ class TestSkipSentinel:
 
         assert not _mod._timing_record_only_environment()
 
-    def test_stage_test_exports_record_only_timing_only_during_swift_run(self, monkeypatch) -> None:
+    def test_stage_test_does_not_force_the_explicit_record_only_override(self, monkeypatch) -> None:
+        """The full suite must keep elapsed-invariant assertions live.
+
+        `VERDICTUI_RECORD_TIMING_ONLY` is an explicit human override, not just a
+        clock marker: Swift uses it to suppress ordering assertions such as the
+        settle-timeout overshoot guard. The full suite should let Swift detect
+        clock-constrained hosts from CODEX/CI markers and unwritable SwiftPM
+        caches instead, so absolute budgets record while invariants still
+        assert.
+        """
         observed = []
 
         def run_swift_test(**_kwargs):
@@ -495,7 +504,7 @@ class TestSkipSentinel:
         result = VerdictUIPM.__new__(VerdictUIPM).stage_test()
 
         assert result["passed"], result["detail"]
-        assert observed == ["1"]
+        assert observed == [None]
         assert os.environ.get(_mod.TIMING_RECORD_ONLY_ENV) is None
 
 

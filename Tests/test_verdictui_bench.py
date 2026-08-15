@@ -317,6 +317,32 @@ class TestStageRuntimeBench:
             "is an inference about the machine being used to switch off a correctness check"
         )
 
+    def test_timeout_fixture_recording_is_not_the_elapsed_invariant_lane(self) -> None:
+        """The timeout-path fixture is clock-sensitive; the invariant is not."""
+        source = (
+            _PROJECT_ROOT / "Tests" / "VerdictUIProbeTests" / "HarnessTests.swift"
+        ).read_text()
+
+        assert "recordsTimeoutPathOnly" in source
+        timeout_lane = source.split("private static var recordsTimeoutPathOnly")[1].split("}")[0]
+        assert "ConstrainedTimingEnvironment.isActive" in timeout_lane, (
+            "the settle-timeout fixture proof is a wall-clock path check and must record "
+            "on constrained hosts"
+        )
+
+        assert "recordsElapsedInvariantOnly" in source
+        invariant_lane = source.split("private static var recordsElapsedInvariantOnly")[1].split(
+            "}"
+        )[0]
+        assert "canEvaluateElapsedInvariants" in invariant_lane, (
+            "the overshoot invariant must use the elapsed-invariant lane, not the "
+            "clock-comparability lane"
+        )
+        assert "isActive" not in invariant_lane, (
+            "a clock marker must not suppress an ordering invariant between two durations "
+            "from the same clock"
+        )
+
     def test_swift_failure_is_surfaced_not_swallowed(self, monkeypatch) -> None:
         self._fake_swift(
             monkeypatch,

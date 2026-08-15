@@ -279,6 +279,55 @@ class TestPytestRunner:
                 "an unmutated threshold is a gate nobody has shown can fail"
             )
 
+    def test_both_timing_lane_consumers_are_mutated(self) -> None:
+        """The two SITES that read the timing predicates each need a row.
+
+        `ConstrainedTimingEnvironment` splits one question into two:
+        `isActive` answers "is my wall clock comparable to a developer's?",
+        and `canEvaluateElapsedInvariants` answers "can I order two durations
+        I measured myself?". Splitting the DEFINITION is only half the fix —
+        the catalog already rows that — because the defect recurs at either
+        CONSUMER, and from outside the two are indistinguishable:
+
+        * `HarnessTests` naming the clock lane for the overshoot invariant
+          retires `no.md` #18's discriminator on any read-only-cache host.
+        * `stage_test` wrapping the FULL suite in the explicit human override
+          suppresses that same invariant on EVERY host.
+
+        Both leave a gate inert while the suite reads green, which is the
+        `no.md` #58 shape. Measured 2026-08-15: forcing the record-only lane
+        runs the whole suite to 0 failures, so no existing test can see it.
+
+        Asserts coverage of the two decisive SOURCE LINES rather than a row
+        count — a count would merely need bumping when a row is deleted."""
+        mod = _load()
+        rowed = {(m.path, m.old) for m in mod.MUTATIONS}
+
+        overshoot_lane = "        !ConstrainedTimingEnvironment.canEvaluateElapsedInvariants"
+        harness_tests = _PROJECT_ROOT / "Tests" / "VerdictUIProbeTests" / "HarnessTests.swift"
+        assert overshoot_lane in harness_tests.read_text(), (
+            "HarnessTests no longer assigns the overshoot lane from the "
+            "elapsed-invariant predicate — the guard moved or was retired"
+        )
+        assert ("Tests/VerdictUIProbeTests/HarnessTests.swift", overshoot_lane) in rowed, (
+            "the overshoot lane assignment has no mutation row — nothing shows "
+            "that re-coupling it to the clock lane would be noticed"
+        )
+
+        full_suite_call = (
+            "        return _run_streamed_swift_test(\n            timeout=TIMEOUT_SWIFT_TEST,"
+        )
+        pm_source = (_PROJECT_ROOT / "scripts" / "verdictui-pm.py").read_text()
+        assert full_suite_call in pm_source, (
+            "stage_test no longer calls the streamed runner unwrapped — either "
+            "the override came back or the call was reshaped"
+        )
+        assert ("scripts/verdictui-pm.py", full_suite_call) in rowed, (
+            "stage_test's unwrapped full-suite call has no mutation row — "
+            "nothing shows that re-wrapping it in the record-only override "
+            "would be noticed"
+        )
+
     def test_every_macro_mutation_is_witnessed_by_an_expansion_snapshot(self) -> None:
         # A macro row whose witness is a RENDER test cannot fail for the defect
         # it exists to catch. SwiftPM rebuilds the `.macro` target but does NOT

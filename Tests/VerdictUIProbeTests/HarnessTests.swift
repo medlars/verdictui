@@ -10,6 +10,12 @@ import XCTest
 /// failed — because an agent that gets a thrown error instead of a `StepResult`
 /// has no verdict to cite.
 final class HarnessTests: XCTestCase {
+    /// The timeout-path fixture proof is a wall-clock path check, so it records
+    /// on constrained hosts.
+    private static var recordsTimeoutPathOnly: Bool {
+        ConstrainedTimingEnvironment.isActive
+    }
+
     /// Deliberately NOT ``ConstrainedTimingEnvironment/isActive``.
     ///
     /// This suite's timeout-path test asserts an OVERSHOOT — that a settle which
@@ -22,7 +28,7 @@ final class HarnessTests: XCTestCase {
     ///
     /// Reading `isActive` here would switch that guard off on any host with a
     /// read-only SwiftPM cache while every signal stayed green.
-    private static var recordsTimingOnly: Bool {
+    private static var recordsElapsedInvariantOnly: Bool {
         !ConstrainedTimingEnvironment.canEvaluateElapsedInvariants
     }
 
@@ -217,7 +223,7 @@ final class HarnessTests: XCTestCase {
             // Establishes that this is the timeout path at all. Without it the
             // test would pass on a run that settled cleanly, where the
             // overshoot claim below is vacuous.
-            if Self.recordsTimingOnly {
+            if Self.recordsTimeoutPathOnly {
                 print(
                     "SETTLE-MS-TIMEOUT-PATH recorded rules="
                         + "\(step.verdict.findings.map(\.rule)) settleMs=\(settleMs) "
@@ -274,7 +280,7 @@ final class HarnessTests: XCTestCase {
             "no marker is set in this process, so the elapsed-invariant lane must be live"
         )
         XCTAssertFalse(
-            Self.recordsTimingOnly,
+            Self.recordsElapsedInvariantOnly,
             "with no marker set, the overshoot guard must ASSERT rather than record"
         )
     }
