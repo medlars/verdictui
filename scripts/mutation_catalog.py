@@ -1742,6 +1742,23 @@ MUTATIONS = [
         test="WitnessIntegrationTests/testTheWitnessWindowIsReadableWithoutBeingVisible",
     ),
     Mutation(
+        # The SECOND half of "readable without being visible", and the half that
+        # kept flashing after alphaValue=0 shipped. The window was genuinely
+        # transparent (measured on-screen at alpha=0.0) while the owner still saw
+        # a flash on every run: what he saw was the APPLICATION arriving, not its
+        # window drawing, and `open -n` starts one per scenario (~23 per suite).
+        # The comment claiming .accessory is "not a first-class AX citizen" was
+        # FALSE -- measured with two bundles differing only in the policy, both
+        # read AXerr=0 windows=1 from an external process, and only the foreground
+        # count differed (0 vs 1). Substituting the enum case keeps every binding
+        # live and compiles (no.md #31).
+        name="the witness host becomes a foreground app again, animating on launch",
+        path="Sources/VerdictUIWitness/WitnessHost.swift",
+        old="app.setActivationPolicy(.accessory)",
+        new="app.setActivationPolicy(.regular)",
+        test="WitnessIntegrationTests/testTheWitnessDoesNotRunAsAForegroundApp",
+    ),
+    Mutation(
         # The overshoot discriminator (no.md #18) is a RELATION between two
         # durations from one clock, so a slow host is still a valid witness for
         # it -- unlike the six wall-clock BUDGET lanes, which must record rather

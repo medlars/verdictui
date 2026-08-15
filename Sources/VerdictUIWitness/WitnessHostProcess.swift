@@ -94,6 +94,33 @@ public struct WitnessHostProcess {
         }
     }
 
+    /// Whether the host runs as a FOREGROUND application — a Dock tile, and a
+    /// launch animation every time `open -n` starts one.
+    ///
+    /// This is the second half of "readable without being visible", and it is a
+    /// genuinely different question from ``compositedAlphas``. Measured
+    /// 2026-08-15: the window was `alpha=0.0` — properly transparent — while the
+    /// owner still reported a flash at the bottom-left of the screen on every
+    /// run. What he was seeing was the APPLICATION arriving, not its window
+    /// drawing, and `open -n` starts one per scenario (~23 per suite).
+    ///
+    /// `NSRunningApplication.activationPolicy` is the window server's own answer
+    /// about the process, asked from OUTSIDE about a pid — the host cannot be
+    /// trusted to report on itself (`no.md` #50), and there is no `NSApplication`
+    /// here to ask in any case.
+    public func runsAsForegroundApp(
+        scenario: String,
+        readyTimeout: TimeInterval = 20
+    ) throws -> Bool {
+        try withHost(scenario: scenario, readyTimeout: readyTimeout) { pid in
+            // `?? true` is the FAIL-SAFE direction, matching `compositedAlphas`:
+            // a policy that cannot be read means "assume it is a foreground app",
+            // so the caller's assertion FAILS rather than reporting it hidden.
+            NSRunningApplication(processIdentifier: pid)
+                .map { $0.activationPolicy == .regular } ?? true
+        }
+    }
+
     /// Launch a host for `scenario`, run `body` against its pid, then terminate it.
     ///
     /// Spelled once because two copies of the launch sequence are two places for
@@ -209,6 +236,7 @@ public struct WitnessHostProcess {
             <key>CFBundleName</key><string>VerdictUIWitnessHost</string>
             <key>CFBundlePackageType</key><string>APPL</string>
             <key>NSPrincipalClass</key><string>NSApplication</string>
+            <key>LSUIElement</key><true/>
             </dict></plist>
             """
         try plist.write(
