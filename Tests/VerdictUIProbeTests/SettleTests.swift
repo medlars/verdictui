@@ -86,6 +86,35 @@ final class SettleTests: XCTestCase {
         // `OscillatingBoxView.body` for why the fixture's PERIOD, not its rate,
         // is what let this test intermittently accuse the engine. A hostile
         // test that accuses its subject is worse than no hostile test.
+        //
+        // THE REMAINING CI FLAKE IS A TIMER-DELIVERY RACE, and it is NOT closed.
+        // Measured on CI run 31809760395: `settled(after: 0.037 s)` inside a
+        // test that took 0.670 s wall-clock. 37 ms is exactly
+        // requiredAgreeingChecks (2) x pumpInterval (5 ms) plus the 30 ms quiet
+        // floor — one uninterrupted quiet span with no tick landing inside it.
+        // The fixture drives `model.tick` from a Timer on the MAIN RunLoop,
+        // which is the very RunLoop `LayoutSettle.pump` occupies with
+        // `run(until: +pumpInterval)`; a 1.25 ms timer is below what macOS
+        // delivers reliably, so a 2-core shared runner can coalesce the ticks
+        // away for longer than the settle window. The layout is then GENUINELY
+        // static and the engine is RIGHT while this test accuses it.
+        //
+        // Not reproducible here, and that is the blocker rather than a comfort:
+        // an instrumented probe pumping in 5 ms slices for 200 ms measured a
+        // longest-consecutive-zero-tick run of ZERO, both idle and with 90% of
+        // every slice burned. Load is not the variable (a 6-run batch at load
+        // average 103-109 also passed 6/6). A fix cannot be verified where the
+        // bug does not reproduce (`no.md` #56 rule (b)).
+        //
+        // REJECTED, with the measurement: driving the tick from inside a custom
+        // `Layout`'s `sizeThatFits` — which `pump` invokes on every iteration,
+        // so it needs no delivery guarantee. Mutating the `@Published` property
+        // during layout re-invalidates the view, which requests another layout,
+        // which ticks again: `swift test` HANGS with no summary line (measured
+        // twice, 200 s timeout each, after a clean `Build complete!`). An
+        // infinite layout loop is strictly worse than an intermittent red, so
+        // the timer drive stays until a mechanism is found that is both
+        // delivery-independent and non-reentrant. Tracked in CTS-9A2A7301.
         let interval = LayoutSettle.pumpInterval / 4
         let timer = Timer(timeInterval: interval, repeats: true) { _ in
             model.tick += 1
