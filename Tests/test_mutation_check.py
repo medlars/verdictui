@@ -604,6 +604,97 @@ class TestBaselineProblem:
         assert "renamed" not in problem
 
 
+class TestSkippableWitness:
+    """A test that SKIPS is not a witness, and XCTest will not say it skipped.
+
+    Measured 2026-08-15 on `ThirdPartyAuditTests/testTheReaderIsBoundedAgainst
+    AHostileTree`, whose first three statements are `XCTSkipIf(isHeadless)`,
+    `XCTSkipUnless(AXReader.isTrusted)` and a skip when no third-party app is
+    running. On a host where any of those fires, XCTest prints
+
+        Test Case '-[...]' passed (0.062 seconds)
+        Executed 1 test, with 0 failures (0 unexpected)
+
+    and exits 0 — **byte-identical to a real pass**, with no skip marker
+    anywhere in the output at any verbosity. `--xunit-output` does not rescue
+    it either: the file emitted here covers only the swift-testing lane (0
+    tests), not the XCTest lane.
+
+    So `classify` sees `ran == 1`, `returncode == 0`, and reports
+    `UNNOTICED — the test passed with the guard broken`. That sentence is
+    false in the most expensive direction available: the guard is fine and the
+    test never executed a line of it, yet the sweep accuses working code.
+    It is the `no.md` #58 shape (a gate that stopped gating reads exactly like
+    a gate that passed) arriving through the environment rather than a flag.
+
+    The fix cannot be a stdout parse, because there is nothing to parse. A row
+    whose witness has environmental preconditions must SAY SO on the row —
+    the same discipline as `runtime_witness_reason`, where a claim about the
+    apparatus is stated and checked rather than argued in a comment.
+    """
+
+    def _skippable(self, mod: Any, reason: str) -> Any:
+        return mod.Mutation(
+            name="synthetic",
+            path="Sources/Subject.swift",
+            old="a",
+            new="b",
+            test="T/t",
+            skips_when=reason,
+        )
+
+    def test_a_row_declaring_it_can_skip_is_not_scored_as_a_witness(self, monkeypatch: Any) -> None:
+        # The whole point: a green-looking run from a skippable witness must be
+        # refused BEFORE it can be read as UNNOTICED.
+        mod = _load()
+        monkeypatch.setattr(
+            mod, "run_named_test", lambda _test, _runner=None: _result(0, stdout=_ONE_PASSED)
+        )
+        problem = mod.baseline_problem(self._skippable(mod, "needs a window server"))
+        assert problem is not None
+        assert "skip" in problem.lower()
+        assert "needs a window server" in problem, (
+            "the row's stated reason must reach the operator — a bare 'it can skip' "
+            "gives them nothing to act on"
+        )
+
+    def test_a_row_without_the_declaration_is_still_scored(self, monkeypatch: Any) -> None:
+        # The negative control. Without it, "skippable rows are refused" is
+        # satisfied by an implementation that refuses EVERY row, which would
+        # silently retire the whole sweep while reporting a clean summary
+        # (`no.md` #17 — a predicate whose only exercised branch is the
+        # permissive one cannot be told from one that is always true).
+        mod = _load()
+        monkeypatch.setattr(
+            mod, "run_named_test", lambda _test, _runner=None: _result(0, stdout=_ONE_PASSED)
+        )
+        assert mod.baseline_problem(mod.MUTATIONS[0]) is None
+
+    def test_the_ax_bounded_row_declares_its_preconditions(self) -> None:
+        """The row this defect was found on must carry the declaration.
+
+        Pinned by NAME rather than by a count, so deleting the declaration
+        fails here instead of quietly restoring the false UNNOTICED. Measured
+        2026-08-15: this row was the ONLY UNNOTICED in a 121-row sweep, and it
+        was not a coverage gap at all — the witness had skipped.
+        """
+        mod = _load()
+        row = next(
+            (
+                m
+                for m in mod.MUTATIONS
+                if m.test.startswith("ThirdPartyAuditTests/testTheReaderIsBounded")
+            ),
+            None,
+        )
+        assert row is not None, "the AX bounded-walk row has been renamed or removed"
+        assert row.skips_when, (
+            "this witness skips on a headless host, without Accessibility trust, or when no "
+            "third-party app is running — and XCTest reports every one of those as 'passed', "
+            "so without the declaration the sweep reports the guard as unverified"
+        )
+
+
 class TestTargetProblem:
     """The text a mutation replaces must exist exactly once."""
 

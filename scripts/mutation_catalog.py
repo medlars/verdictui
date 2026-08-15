@@ -1569,6 +1569,18 @@ MUTATIONS = [
         old="    static let maximumNodes = 4096",
         new="    static let maximumNodes = Int.max",
         test="ThirdPartyAuditTests/testTheReaderIsBoundedAgainstAHostileTree",
+        # Measured 2026-08-15: this row was the ONLY UNNOTICED in a 121-row
+        # sweep, and it was not a coverage gap — the witness had SKIPPED. Its
+        # first three statements are XCTSkipIf(isHeadless),
+        # XCTSkipUnless(AXReader.isTrusted), and a skip when no third-party app
+        # is running, and XCTest reports every one of those as
+        # `passed (0.062 seconds)` with `Executed 1 test, with 0 failures` and
+        # exit 0 — no skip marker at any verbosity. So the harness read a
+        # perfectly good guard as untested and accused working code.
+        skips_when=(
+            "the host is headless, lacks Accessibility trust, or is running no "
+            "third-party app with a readable window"
+        ),
     ),
     Mutation(
         # `focus` stops resolving probe ids and honours structural paths only.
@@ -1776,6 +1788,26 @@ MUTATIONS = [
         test=(
             "Tests/test_verdictui_bench.py::TestStageRuntimeBench"
             "::test_the_elapsed_invariant_lane_is_not_the_clock_lane"
+        ),
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
+        # Restores the state where a SKIPPED witness is scored as a passing
+        # one. A skipped XCTest prints `passed`, exits 0, and emits no skip
+        # marker at any verbosity, so `classify` reads ran=1 + exit 0 and
+        # reports `UNNOTICED — the test passed with the guard broken`. That
+        # sentence is false in the expensive direction: it accuses a working
+        # guard of being untested, which is what invites rewriting correct
+        # code. Measured 2026-08-15 — exactly this produced the only UNNOTICED
+        # in a 121-row sweep, against an AX guard that was entirely fine.
+        # `if False` keeps every binding live and compiles (`no.md` #31).
+        name="a witness that can skip is scored as if it had run",
+        path="scripts/mutation-check.py",
+        old="    if mutation.skips_when:",
+        new="    if False:",
+        test=(
+            "Tests/test_mutation_check.py::TestSkippableWitness"
+            "::test_a_row_declaring_it_can_skip_is_not_scored_as_a_witness"
         ),
         runner=Runner.PYTEST,
     ),
