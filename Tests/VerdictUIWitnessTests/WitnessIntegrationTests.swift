@@ -163,6 +163,50 @@ final class WitnessIntegrationTests: XCTestCase {
         }
     }
 
+    /// The witness must not run as a FOREGROUND app — no Dock tile, no launch
+    /// animation.
+    ///
+    /// This is the half `testTheWitnessWindowIsReadableWithoutBeingVisible` does
+    /// not cover, and the gap was not academic: after `alphaValue = 0` shipped,
+    /// the window measured `alpha=0.0` — genuinely transparent — and the owner
+    /// STILL reported a flash at the bottom-left on every run, twice, across two
+    /// sessions. What he saw was the APPLICATION arriving, not its window
+    /// drawing, and `open -n` starts one per scenario (~23 per suite).
+    ///
+    /// The cause was a comment asserting that `.accessory` is "not a first-class
+    /// AX citizen". Measured 2026-08-15 with two bundles differing only in the
+    /// policy, each read from an external process:
+    ///
+    ///   `.accessory` + `LSUIElement` -> AXerr=0 windows=1, foreground procs 0
+    ///   `.regular`,  no `LSUIElement` -> AXerr=0 windows=1, foreground procs 1
+    ///
+    /// Identical AX visibility. The claim was false, and it is what kept the
+    /// flashing in place — which is why this test asserts the CONSEQUENCE rather
+    /// than trusting the comment.
+    ///
+    /// Paired with the alpha test on purpose: an implementation that hid the app
+    /// but drew the window, or drew the app but hid the window, fails exactly one
+    /// of the two. Neither alone is sufficient.
+    func testTheWitnessDoesNotRunAsAForegroundApp() throws {
+        try XCTSkipIf(isHeadless, "no window server on this host")
+        let executable = try XCTUnwrap(
+            hostExecutable, "verdictui-witness-host was not built alongside the tests")
+        try XCTSkipUnless(AXReader.isTrusted, "this process lacks Accessibility permission")
+
+        let host = WitnessHostProcess(executable: executable, lifetime: 20)
+        let isForeground: Bool
+        do {
+            isForeground = try host.runsAsForegroundApp(scenario: "demo-clean-settings")
+        } catch AXReader.Failure.anchorUnreadable {
+            throw XCTSkip("this login session's window server is not publishing new windows")
+        }
+
+        XCTAssertFalse(
+            isForeground,
+            "the witness host runs as a foreground app — it takes a Dock tile and animates on "
+                + "launch, which is the flash the owner sees once per scenario")
+    }
+
     func testAMissingHostBinaryIsReportedAsHostUnavailable() {
         let host = WitnessHostProcess(
             executable: URL(fileURLWithPath: "/nonexistent/verdictui-witness-host"),

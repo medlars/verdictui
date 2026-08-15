@@ -85,13 +85,39 @@ public final class WitnessHost {
     /// stuck host is a visible, confusing artifact, not merely a leaked process.
     public func run(lifetime: TimeInterval) -> Never {
         let app = NSApplication.shared
-        // `.regular` rather than `.accessory`: an accessory app is not a
-        // first-class AX citizen, and the witness has to be readable.
-        // It does NOT activate itself: `open -n -a` already launches this as a
-        // GUI app, and calling `activate(ignoringOtherApps:)` on top of that
-        // terminated the xctest runner when the full suite ran. The witness
-        // must be VISIBLE to the accessibility server, not frontmost.
-        app.setActivationPolicy(.regular)
+        // `.accessory`, paired with `LSUIElement` in the generated Info.plist.
+        //
+        // This was `.regular` until 2026-08-15, on the stated grounds that "an
+        // accessory app is not a first-class AX citizen, and the witness has to
+        // be readable". That claim is FALSE, and it is what kept a window
+        // flashing at the bottom-left of the owner's screen for two sessions
+        // after the `alphaValue = 0` fix had already landed.
+        //
+        // Measured with two bundles differing only in this policy, each read
+        // from an EXTERNAL process by `AXUIElementCopyAttributeValue`:
+        //
+        //   .accessory + LSUIElement -> AXerr=0 windows=1, foreground procs 0
+        //   .regular,   no LSUIElement -> AXerr=0 windows=1, foreground procs 1
+        //
+        // Identical AX visibility; the only difference is the Dock tile and the
+        // launch animation that comes with being a foreground app — which
+        // `open -n` triggers ~23 times per suite run. `alphaValue = 0` was never
+        // the incomplete half: the WINDOW was genuinely transparent all along
+        // (verified on-screen at `alpha=0.0`), and what a person saw was the
+        // APPLICATION arriving, not its window drawing.
+        //
+        // BOTH halves are required and neither is redundant. `LSUIElement` is
+        // read by LaunchServices BEFORE the process starts, which is the only
+        // point early enough to suppress the launch animation; the runtime call
+        // is what keeps the policy once `NSApplication` is up, and it OVERRIDES
+        // the plist, so setting the plist alone leaves a foreground app
+        // (measured: LSUIElement + `.regular` still reported 1 foreground proc).
+        //
+        // It still does NOT activate itself: `open -n -a` already launches this
+        // as a GUI app, and calling `activate(ignoringOtherApps:)` on top of
+        // that terminated the xctest runner when the full suite ran. The witness
+        // must be READABLE by the accessibility server, never frontmost.
+        app.setActivationPolicy(.accessory)
         // READABLE WITHOUT BEING VISIBLE. The window must exist and be ordered
         // front for the accessibility server to publish it (`no.md` #42/#43), so
         // it cannot simply be withheld — but nothing requires it to DRAW. At
