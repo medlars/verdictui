@@ -10,8 +10,20 @@ import XCTest
 /// failed — because an agent that gets a thrown error instead of a `StepResult`
 /// has no verdict to cite.
 final class HarnessTests: XCTestCase {
+    /// Deliberately NOT ``ConstrainedTimingEnvironment/isActive``.
+    ///
+    /// This suite's timeout-path test asserts an OVERSHOOT — that a settle which
+    /// gave up at its deadline spent strictly more than that deadline — which is
+    /// a relation between two durations from the same clock, not an absolute
+    /// budget. Contention inflates both sides, so a slow host is if anything a
+    /// better witness for it, and `no.md` #18 records that this discriminator is
+    /// the only assertion the correct and the budget-echoing implementations do
+    /// not both satisfy.
+    ///
+    /// Reading `isActive` here would switch that guard off on any host with a
+    /// read-only SwiftPM cache while every signal stayed green.
     private static var recordsTimingOnly: Bool {
-        ConstrainedTimingEnvironment.isActive
+        !ConstrainedTimingEnvironment.canEvaluateElapsedInvariants
     }
 
     override func invokeTest() {
@@ -232,6 +244,71 @@ final class HarnessTests: XCTestCase {
                 "settleMs is part of the step, so it cannot exceed it"
             )
         }
+    }
+
+    // MARK: - The overshoot guard is not a timing budget
+
+    /// A slow host must NOT switch off `no.md` #18's discriminator.
+    ///
+    /// ### What this catches, and why nothing else could
+    ///
+    /// The overshoot assertion is a RELATION between two durations from one
+    /// clock, so contention inflates both sides and a constrained host remains a
+    /// valid witness. The six wall-clock budget lanes are the opposite: their
+    /// figures are absolute, so a shared runner must record rather than assert.
+    /// Both questions were once answered by `ConstrainedTimingEnvironment`
+    /// `.isActive`, and on 2026-08-15 that predicate was widened to cover an
+    /// unwritable SwiftPM cache — correct for the budgets, and it would have
+    /// silently retired this guard on every host with a read-only cache.
+    ///
+    /// Nothing in the suite could have noticed: forcing the record-only lane
+    /// runs 784 tests to 0 failures with 3 skipped, because a gate that stops
+    /// gating reads exactly like a gate that passed.
+    ///
+    /// Asserted through the CONSEQUENCE rather than the predicate — an
+    /// `XCTAssertTrue` on the flag itself would pass whichever way it branched
+    /// (`no.md` #12/#17).
+    func testAConstrainedHostStillJudgesTheOvershootInvariant() throws {
+        XCTAssertTrue(
+            ConstrainedTimingEnvironment.canEvaluateElapsedInvariants,
+            "no marker is set in this process, so the elapsed-invariant lane must be live"
+        )
+        XCTAssertFalse(
+            Self.recordsTimingOnly,
+            "with no marker set, the overshoot guard must ASSERT rather than record"
+        )
+    }
+
+    /// The negative control for the test above.
+    ///
+    /// Without it, "a constrained host still judges the invariant" is satisfied
+    /// by a property hard-coded to `true` — the always-true rule `no.md` #17
+    /// records, whose every test passes while the guard it governs is inert.
+    /// A marker that means "your CLOCK is not comparable" must NOT reach a claim
+    /// about ordering, while the explicit human override must still suppress it.
+    func testTheElapsedInvariantLaneIgnoresClockMarkersButHonoursTheOverride() {
+        XCTAssertFalse(
+            ConstrainedTimingEnvironment.markers.isEmpty,
+            "the marker list is the subject of this test; an empty one proves nothing"
+        )
+        XCTAssertTrue(
+            ConstrainedTimingEnvironment.markers.contains(
+                ConstrainedTimingEnvironment.recordTimingOnlyOverride
+            ),
+            "the override must remain a member of the clock-marker set, so a PM that sets it "
+                + "still moves the budget lanes to record-only"
+        )
+        // The distinction this whole split exists for: a host can be
+        // clock-incomparable (isActive) and still a valid witness for an
+        // ordering relation (canEvaluateElapsedInvariants).
+        let clockMarkersOtherThanTheOverride = ConstrainedTimingEnvironment.markers.filter {
+            $0 != ConstrainedTimingEnvironment.recordTimingOnlyOverride
+        }
+        XCTAssertFalse(
+            clockMarkersOtherThanTheOverride.isEmpty,
+            "if every marker were the override, the two lanes would be the same predicate "
+                + "again and this split would be decorative"
+        )
     }
 
     // MARK: - Act failure is a verdict, not a throw

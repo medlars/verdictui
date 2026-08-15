@@ -1741,4 +1741,25 @@ MUTATIONS = [
         new="        window.alphaValue = 1",
         test="WitnessIntegrationTests/testTheWitnessWindowIsReadableWithoutBeingVisible",
     ),
+    Mutation(
+        # The overshoot discriminator (no.md #18) is a RELATION between two
+        # durations from one clock, so a slow host is still a valid witness for
+        # it -- unlike the six wall-clock BUDGET lanes, which must record rather
+        # than assert on a shared runner. Re-coupling the two is silent in the
+        # expensive direction: widening isActive to cover an unwritable SwiftPM
+        # cache is right for the budgets and would retire the overshoot check on
+        # any read-only-cache host, while every signal stayed green. Measured
+        # 2026-08-15: forcing the record-only lane runs 784 tests to 0 failures
+        # with 3 skipped. Substituting the clock predicate keeps every binding
+        # live and compiles (no.md #31).
+        name="the overshoot invariant is gated on the wall-clock lane again",
+        path="Sources/VerdictUIProbe/ConstrainedTimingEnvironment.swift",
+        old="        ProcessInfo.processInfo.environment[recordTimingOnlyOverride] == nil",
+        new="        !hasUnwritableSwiftPMCache",
+        test=(
+            "Tests/test_verdictui_bench.py::TestStageRuntimeBench"
+            "::test_the_elapsed_invariant_lane_is_not_the_clock_lane"
+        ),
+        runner=Runner.PYTEST,
+    ),
 ]
