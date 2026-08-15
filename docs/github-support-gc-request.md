@@ -42,9 +42,17 @@ a payment-account identifier.
 - Deleted the `v1.0.0` tag and its release, because a tag is a live ref that
   kept the old commits reachable.
 
-**Verified current state:** live refs are `main` only, `forks_count` is 0, there
-are 0 tags and 0 releases, and no reachable history matches any of the personal
-data strings.
+**Verified current state (re-measured 2026-08-15, immediately before writing):**
+`branches` returns `main` only, `forks_count` is 0, `tags` is 0, there are 0
+releases, and `contents/.playwright-mcp?ref=main` returns 404. No reachable
+history matches any of the personal data strings.
+
+That enumeration is the precondition for this request rather than a formality.
+Objects reachable from ANY live ref are never garbage-collected, so a GC request
+against them is a no-op that closes the ticket while the data stays fetchable —
+measured elsewhere in this fleet, where data believed to be orphaned was
+reachable from 28 live branches. Here the objects are reachable from no live ref,
+which is what makes them genuine GC candidates.
 
 **Why I still need your help.** A force-push moves a ref; it does not delete
 objects. Both pre-purge commits remain fetchable by direct SHA:
