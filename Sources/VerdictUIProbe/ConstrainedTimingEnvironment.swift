@@ -19,10 +19,10 @@ import Foundation
 /// on source that measures ~49 ms locally, producing three P1 tickets for a
 /// regression that did not exist.
 ///
-/// Keep in step with `CONSTRAINED_TIMING_ENV_MARKERS` in
-/// `scripts/verdictui-pm.py`, which is the same class read from Python;
-/// `test_the_swift_and_python_timing_lanes_agree` pins the two together,
-/// because neither language can read the other's list.
+/// Keep in step with `CONSTRAINED_TIMING_ENV_MARKERS` and
+/// `_timing_record_only_environment()` in `scripts/verdictui-pm.py`, which is
+/// the same class read from Python; `test_the_swift_and_python_timing_lanes_agree`
+/// pins the two together, because neither language can read the other's list.
 ///
 /// ### Why it lives in the library rather than a test target
 ///
@@ -47,18 +47,99 @@ public enum ConstrainedTimingEnvironment {
     ///   developer hardware unless named.
     public static let markers = [
         "CI",
-        "VERDICTUI_RECORD_TIMING_ONLY",
+        recordTimingOnlyOverride,
         "CODEX_CI",
         "CODEX_SANDBOX",
     ]
+
+    /// The one marker that is an explicit instruction rather than a deduction
+    /// about the machine.
+    ///
+    /// It is spelled here and referenced from ``markers`` so the two cannot
+    /// drift: a second literal would be a second place to change, and changing
+    /// one alone leaves the other's tests green — the copy problem ADR 2026-013
+    /// rejected for this very type.
+    public static let recordTimingOnlyOverride = "VERDICTUI_RECORD_TIMING_ONLY"
+
+    /// SwiftPM cache locations whose presence without write access marks this
+    /// process as timing-incomparable to developer hardware.
+    ///
+    /// This mirrors the PM's Python-side fallback. Some repair sandboxes do not
+    /// export `CODEX_CI` / `CODEX_SANDBOX`, but they do expose the same
+    /// condition through denied user-level SwiftPM caches. A direct `swift test`
+    /// run then has no PM wrapper to inject `VERDICTUI_RECORD_TIMING_ONLY`, so
+    /// the Swift lane must be able to recognize the host itself.
+    public static var constrainedSwiftPMCachePaths: [String] {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        return [
+            home.appendingPathComponent("Library/org.swift.swiftpm").path,
+            home.appendingPathComponent("Library/Caches/org.swift.swiftpm").path,
+        ]
+    }
+
+    /// True when a known SwiftPM user cache exists but this process cannot
+    /// write to it.
+    public static var hasUnwritableSwiftPMCache: Bool {
+        constrainedSwiftPMCachePaths.contains { path in
+            FileManager.default.fileExists(atPath: path)
+                && !FileManager.default.isWritableFile(atPath: path)
+        }
+    }
 
     /// True when any marker is present in this process's environment.
     ///
     /// Presence, not truthiness: a runner that exports `CI=false` is still a
     /// runner, and reading the value would make the lane depend on a string
     /// nobody in this repo controls.
-    public static var isActive: Bool {
+    public static var hasMarker: Bool {
         let environment = ProcessInfo.processInfo.environment
         return markers.contains { environment[$0] != nil }
+    }
+
+    /// True when this host cannot produce a WALL CLOCK comparable to developer
+    /// hardware — the membership test for the record-only lane.
+    ///
+    /// Read this to decide whether to ASSERT or merely RECORD a latency budget
+    /// (a p50, a p95, a cache speedup). Never read it to decide whether to
+    /// check a correctness invariant: see ``canEvaluateElapsedInvariants``.
+    public static var isActive: Bool {
+        hasMarker || hasUnwritableSwiftPMCache
+    }
+
+    /// True when this host can still judge an ORDERING or OVERSHOOT relation
+    /// between two durations it measured itself.
+    ///
+    /// ### Why this is a second question, and not the same one
+    ///
+    /// ``isActive`` answers "is my wall clock comparable to a developer's?".
+    /// A shared runner's answer is no: its p50 for unchanged code spanned
+    /// 74.2–119.9 ms against a 70 ms budget, so asserting an ABSOLUTE figure
+    /// there fails for the neighbour rather than for the code (`no.md` #15).
+    ///
+    /// But a RELATIVE claim between two durations from the SAME clock survives a
+    /// slow machine, because contention inflates both sides. `no.md` #18's
+    /// discriminator is exactly that shape: a settle that gave up at its
+    /// deadline has spent strictly MORE than the deadline, while an
+    /// implementation echoing the budget back reports exactly `150.0` for a
+    /// 150 ms budget and can never exceed it. Load makes the overshoot LARGER,
+    /// never smaller — so a constrained host is, if anything, a *better* witness
+    /// for it. That guard took four failed attempts to establish, and every
+    /// assertion that looked like it worked (`> 0`, `<= elapsedMs`) was
+    /// satisfied by both the correct and the broken implementation.
+    ///
+    /// Folding the two questions into one predicate is how the guard would be
+    /// lost: widening ``isActive`` to cover an unwritable SwiftPM cache is
+    /// correct for the six budget lanes and would silently switch the overshoot
+    /// check off on any host with a read-only cache. Measured 2026-08-15 —
+    /// forcing `VERDICTUI_RECORD_TIMING_ONLY=1` runs 784 tests to 0 failures
+    /// with 3 skipped, i.e. the gates stop gating and every signal stays green.
+    /// That is the `no.md` #17 shape: a predicate whose only exercised branch is
+    /// the permissive one cannot distinguish a working rule from one that is
+    /// always true.
+    ///
+    /// Only `VERDICTUI_RECORD_TIMING_ONLY` suppresses these, and it is the
+    /// explicit human override rather than an inference about the host.
+    public static var canEvaluateElapsedInvariants: Bool {
+        ProcessInfo.processInfo.environment[recordTimingOnlyOverride] == nil
     }
 }

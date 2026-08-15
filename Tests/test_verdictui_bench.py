@@ -246,12 +246,75 @@ class TestStageRuntimeBench:
         ).read_text()
         block = re.search(r"static let markers = \[(.*?)\]", source, re.DOTALL)
         assert block is not None, "ConstrainedTimingEnvironment.markers is no longer a list literal"
-        swift_markers = set(re.findall(r'"([^"]+)"', block.group(1)))
+
+        # An entry may be a literal OR a reference to a constant declared in the
+        # same type. Resolving the reference is required, not a nicety: the
+        # override is spelled once and cited from `markers` so the two cannot
+        # drift, and a literal-only reader would silently see a SHORTER list and
+        # report a parity break that does not exist -- which is exactly what a
+        # literal-only reader did on 2026-08-15.
+        entries = [entry.strip() for entry in block.group(1).split(",") if entry.strip()]
+        swift_markers: set[str] = set()
+        for entry in entries:
+            if entry.startswith('"') and entry.endswith('"'):
+                swift_markers.add(entry.strip('"'))
+                continue
+            resolved = re.search(rf'static let {re.escape(entry)} = "([^"]+)"', source)
+            assert resolved is not None, (
+                f"markers cites `{entry}`, which is not a string constant declared in "
+                "ConstrainedTimingEnvironment — the parity check cannot resolve it, and an "
+                "unresolvable entry reads as an ABSENT marker rather than as an error"
+            )
+            swift_markers.add(resolved.group(1))
 
         assert swift_markers == set(_mod.CONSTRAINED_TIMING_ENV_MARKERS), (
             f"Swift marks {sorted(swift_markers)} as timing-constrained but the PM marks "
             f"{sorted(_mod.CONSTRAINED_TIMING_ENV_MARKERS)} — a host in one set and not the "
             "other asserts a budget it cannot hold, or exempts one it can"
+        )
+        assert "hasUnwritableSwiftPMCache" in source
+        assert "Library/org.swift.swiftpm" in source
+        assert "Library/Caches/org.swift.swiftpm" in source
+        assert "hasUnwritableSwiftPMCache" in source.split("public static var isActive")[1], (
+            "the PM also marks an unwritable SwiftPM user cache as record-only; direct Swift "
+            "runs need the same detector because the PM wrapper is not there to inject "
+            "VERDICTUI_RECORD_TIMING_ONLY"
+        )
+
+    def test_the_elapsed_invariant_lane_is_not_the_clock_lane(self) -> None:
+        """An ordering claim must not be gated on a WALL-CLOCK marker.
+
+        ``isActive`` answers "is my clock comparable to a developer's?" and a
+        shared runner's answer is no. But an OVERSHOOT -- a settle that gave up
+        at its deadline spent strictly more than that deadline -- is a relation
+        between two durations from the same clock, so contention inflates both
+        sides and a slow host stays a valid witness. `no.md` #18 records that
+        this discriminator took four attempts and is the only assertion the
+        correct and the budget-echoing implementations do not both satisfy.
+
+        Folding the two questions into one predicate is how it would be lost:
+        widening ``isActive`` to cover an unwritable SwiftPM cache is right for
+        the six budget lanes and would silently retire the overshoot check on
+        any read-only-cache host. Nothing in the suite could notice -- forcing
+        the record-only lane runs the Swift suite to 0 failures, because a gate
+        that stops gating reads exactly like a gate that passed.
+        """
+        source = (
+            _PROJECT_ROOT / "Sources" / "VerdictUIProbe" / "ConstrainedTimingEnvironment.swift"
+        ).read_text()
+
+        assert "canEvaluateElapsedInvariants" in source, (
+            "the elapsed-invariant lane must exist as its own predicate; without it the "
+            "overshoot guard is gated on the clock lane again"
+        )
+        lane = source.split("public static var canEvaluateElapsedInvariants")[1]
+        assert "hasUnwritableSwiftPMCache" not in lane.split("}")[0], (
+            "the elapsed-invariant lane must NOT consult the unwritable-cache detector — a "
+            "read-only cache says nothing about whether two durations can be ordered"
+        )
+        assert "recordTimingOnlyOverride" in lane.split("}")[0], (
+            "only the explicit human override may suppress an ordering claim; anything else "
+            "is an inference about the machine being used to switch off a correctness check"
         )
 
     def test_swift_failure_is_surfaced_not_swallowed(self, monkeypatch) -> None:
