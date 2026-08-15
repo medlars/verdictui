@@ -784,6 +784,54 @@ class TestKilledRunnerIsInconclusive:
         assert not result.get("inconclusive"), result
         assert "1 test failure(s)" in result["detail"], result["detail"]
 
+    def test_a_skipped_test_is_reported_rather_than_silently_counted_as_verified(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        """A SKIP is "could not observe" — neither pass nor fail.
+
+        The summary regex discarded the skip count in a non-capturing group, so
+        a run that stopped observing anything printed exactly like one that
+        observed everything. Measured 2026-08-15: the five AX witness tests
+        skipped on a degraded window server while the PM reported Grade A,
+        leaving the cross-validation channel — the middle of the product's three
+        loops, including every planted-lie test — unverified with no signal
+        anywhere.
+
+        Reported, never gated. Skipping rather than accusing is the CORRECT
+        response to an environment the suite cannot see (`no.md` #15), so the
+        run must still PASS; what changes is that the silence becomes audible.
+        """
+        result = self._fake_run(
+            monkeypatch,
+            tmp_path,
+            returncode=0,
+            log_text="Executed 786 tests, with 5 tests skipped and 0 failures\n",
+        )
+
+        assert result["passed"], result
+        assert result["skipped_count"] == 5, result
+        assert "5 SKIPPED" in result["detail"], result["detail"]
+        assert "unverified" in result["detail"], result["detail"]
+
+    def test_a_run_with_no_skips_says_nothing_about_skipping(self, monkeypatch, tmp_path) -> None:
+        """The control.
+
+        Without it, "reports skips" is satisfied by a detail string that always
+        carries the warning — which would make the signal permanent noise and
+        so worth exactly nothing, the always-true-rule shape of `no.md` #17.
+        """
+        result = self._fake_run(
+            monkeypatch,
+            tmp_path,
+            returncode=0,
+            log_text="Executed 786 tests, with 0 failures\n",
+        )
+
+        assert result["passed"], result
+        assert result["skipped_count"] == 0, result
+        assert "SKIPPED" not in result["detail"], result["detail"]
+        assert result["detail"] == "786 tests PASS", result["detail"]
+
     def test_a_summaryless_log_never_reports_a_failure_count(self, monkeypatch, tmp_path) -> None:
         """The issue's OTHER half: "require a summary line before claiming any
         failure count". A log of test STARTS with no `Executed N tests` line

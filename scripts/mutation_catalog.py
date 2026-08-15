@@ -1777,4 +1777,25 @@ MUTATIONS = [
         new="            _ = model\n        }\n        CFRunLoopAddObserver",
         test="SettleTests/testOscillatingLayoutTimesOutWithDeltaEvidence",
     ),
+    Mutation(
+        # A SKIP is "could not observe" -- neither pass nor fail. The summary
+        # regex discarded the count in a non-capturing group, so a run that
+        # stopped observing anything printed exactly like one that observed
+        # everything: measured 2026-08-15, the five AX witness tests skipped on
+        # a degraded window server while the PM reported Grade A, leaving the
+        # cross-validation channel unverified with no signal anywhere. Reported,
+        # never gated -- skipping rather than accusing is correct for an
+        # environment the suite cannot see (no.md #15), so this row guards the
+        # AUDIBILITY of the silence, not a new failure mode. Assigning "" keeps
+        # the binding live and compiles (no.md #31).
+        name="a skipped test is silently counted as verified again",
+        path="scripts/verdictui-pm.py",
+        old='skipped_note = f" ({exec_skipped} SKIPPED — unverified)" if exec_skipped else ""',
+        new='skipped_note = ""',
+        test=(
+            "Tests/test_verdictui_pm.py::TestKilledRunnerIsInconclusive"
+            "::test_a_skipped_test_is_reported_rather_than_silently_counted_as_verified"
+        ),
+        runner=Runner.PYTEST,
+    ),
 ]

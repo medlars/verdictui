@@ -405,11 +405,22 @@ def _run_streamed_swift_test(
 
     output = swift_log.read_text(encoding="utf-8", errors="replace")
     exec_matches = re.findall(
-        r"Executed (\d+) tests?, with (?:\d+ tests? skipped and )?(\d+) failures?",
+        r"Executed (\d+) tests?, with (?:(\d+) tests? skipped and )?(\d+) failures?",
         output,
     )
     exec_count = max((int(match[0]) for match in exec_matches), default=0)
-    exec_failures = max((int(match[1]) for match in exec_matches), default=0)
+    exec_failures = max((int(match[2]) for match in exec_matches), default=0)
+    # A SKIP is "could not observe", which is neither pass nor fail — and it was
+    # previously discarded by a non-capturing group, so a suite that stopped
+    # observing anything reported exactly like one that observed everything.
+    # Measured 2026-08-15: the five AX witness tests skipped on a degraded
+    # window server while the PM reported Grade A, leaving the cross-validation
+    # channel (the middle of the product's three loops, including every
+    # planted-lie test) unverified with no signal anywhere. Reported, never
+    # gated: skipping rather than accusing is the CORRECT behaviour for an
+    # environment the suite cannot see (`no.md` #15), so the fix is to make the
+    # silence audible rather than to turn it red.
+    exec_skipped = max((int(match[1]) for match in exec_matches if match[1]), default=0)
     swift_summary = re.search(
         r"Test run with (\d+) tests? (?:in \d+ suites? )?(?:passed|failed)",
         output,
@@ -427,12 +438,20 @@ def _run_streamed_swift_test(
     has_summary = bool(exec_matches) or swift_summary is not None
 
     if returncode == 0 and fail_count == 0 and test_count >= min_test_count:
-        _pm_log(f"Tests: PASS — {test_count} tests", "INFO")
+        # A skip is reported, never gated. Skipping rather than accusing is the
+        # correct response to an environment the suite cannot observe, but a
+        # SILENT skip makes "verified everything" and "verified nothing" print
+        # the same line — which is how the AX cross-validation channel sat
+        # unverified while the PM read Grade A.
+        skipped_note = f" ({exec_skipped} SKIPPED — unverified)" if exec_skipped else ""
+        level = "WARN" if exec_skipped else "INFO"
+        _pm_log(f"Tests: PASS — {test_count} tests{skipped_note}", level)
         return {
             "passed": True,
-            "detail": f"{test_count} tests PASS",
+            "detail": f"{test_count} tests PASS{skipped_note}",
             "output": output,
             "test_count": test_count,
+            "skipped_count": exec_skipped,
         }
     # Checked BEFORE the count and failure branches, not merely before the
     # generic one. A NEGATIVE returncode is a signal, not a verdict: Python
