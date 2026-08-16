@@ -26,6 +26,7 @@
 | [2026-022](2026-022-what-1-0-promises-and-what-it-does-not.md) | What 1.0 promises and what it does not — the wire, CLI exit codes, MCP tool names and kernel types are covered; rule THRESHOLDS deliberately are not, because a measurement that is wrong should be corrected | 2026-08-14 | Active | wave10, semver, api, release, thresholds |
 | [2026-023](2026-023-quiescence-hashes-the-tree-not-the-counters.md) | Quiescence hashes the TREE, not the counters that describe it — a layout alternating 10/40 pt kept every count identical, so the token went constant while the screen moved | 2026-08-14 | Active | wave10, settle, quiescence, false-green, measurement |
 | [2026-024](2026-024-a-witness-declares-what-the-runner-cannot-report.md) | A witness declares what the runner cannot report — a skipped XCTest is byte-identical to a passing one, so a working AX guard was scored UNNOTICED; where the runner emits no signal, the catalog carries the claim | 2026-08-15 | Active | mutation-harness, false-green, apparatus, measurement |
+| [2026-025](2026-025-judge-takes-a-tree-rather-than-rendering-foreign-ui.md) | `judge` takes a tree rather than rendering foreign UI — the kernel imports only Foundation, so the barrier to judging React/Flutter/Compose was a missing entry point, not the engine; producing the tree stays the caller's job | 2026-08-16 | Active | cli, language-agnostic, contract, no-md-3 |
 
 > Use the `/adr` skill to create new entries. Each ADR is `YYYY-NNN-slug.md`.
 > ProbeLayout.measure's optional-vs-reduce choice is recorded in `no.md` entry 10
