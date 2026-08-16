@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+**Added**
+
+- **`docs/adoption.md` Tier 2b — verifying a view you cannot edit.** Tiers 1–3 all
+  assume the adopter can change the view's source; a consumer verifying a
+  dependency, a design-system package, or another team's module can only wrap it
+  from outside. Declaring that wrapper `.container` hands `EmptyContainerRule` a
+  node whose children do not paint, so it correctly reports that a fully
+  populated vendor sheet "renders nothing". The correct role is `.custom(_:)`,
+  which the rule already excludes for exactly this reason — an unclassified node
+  reported as an empty container states more than the tree supports. Measured on
+  KastDrive's shipped `ConflictResolutionView` at 480 pt: `.container` warns,
+  `.custom("opaque")` gives `status=pass findings=0` on the identical view. The
+  new tier also BOUNDS what it can verify — outer geometry only, so a PASS is a
+  claim about the box and never its contents. Found by dogfooding the engine
+  against real fleet code rather than its own fixtures; nothing in the kernel
+  changed, because the escape hatch already existed and was undocumented.
+
 **Fixed**
 
 - **The PM ran the whole Swift suite with a correctness invariant switched off.**
