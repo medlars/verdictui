@@ -1,0 +1,4 @@
+{
+  "runner": ".build/release/verdictui",
+  "note": "VerdictUI's own scenarios ARE the demo catalog compiled into this binary, so the runner is the binary itself. A consumer points this at an executable of their own that links VerdictUIProbe and answers the same verbs."
+}
