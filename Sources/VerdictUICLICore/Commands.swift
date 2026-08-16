@@ -26,7 +26,18 @@ public struct CommandEnvironment: Sendable {
     /// only be tested by letting it write into the repository.
     public let pixelArtifactRoot: URL
 
-    public init(engine: VerdictEngine, output: OutputSink, pixelArtifactRoot: URL) {
+    /// - Parameter usesFallbackCatalog: defaults to `false` so a caller that
+    ///   builds its own registry (every test, the daemon, an embedder) is not
+    ///   forced to reason about a flag that does not apply to it. Only
+    ///   ``standard(root:)`` derives it, because only it can silently substitute
+    ///   the demo catalog for a project's own.
+    public init(
+        usesFallbackCatalog: Bool = false,
+        engine: VerdictEngine,
+        output: OutputSink,
+        pixelArtifactRoot: URL
+    ) {
+        self.usesFallbackCatalog = usesFallbackCatalog
         self.engine = engine
         self.output = output
         self.pixelArtifactRoot = pixelArtifactRoot
@@ -39,9 +50,29 @@ public struct CommandEnvironment: Sendable {
     /// scenarios arrive through the Wave 6 Task 3 integration path (building
     /// the consumer's package and loading it), and shipping a CLI that can only
     /// say "no scenarios" would make the whole surface untestable end to end.
+    /// Whether the registry this environment carries is VerdictUI's own demo
+    /// catalog rather than the invoking project's.
+    ///
+    /// The catalog is COMPILED IN, so `list` returns the same six `demo-*`
+    /// scenarios from any directory on the machine (measured 2026-08-16 in
+    /// LaunchGate, `/tmp` and VerdictUI — CTS-99986645). A caller that reports
+    /// those as the edited project's findings states something false, so it
+    /// needs to be able to ask.
+    ///
+    /// Derived from the project manifest rather than from the scenario NAMES:
+    /// a consumer is free to name a scenario `demo-anything`, and string-matching
+    /// the prefix would then mislabel their real catalog as borrowed.
+    public let usesFallbackCatalog: Bool
+
     @MainActor
     public static func standard(root: URL = URL(fileURLWithPath: ".")) -> CommandEnvironment {
-        CommandEnvironment(
+        // A project that declares a runner owns its scenarios; the demo catalog
+        // is the FALLBACK, and callers are told which they got.
+        let declaresOwnScenarios = ProjectScenarios.findProjectRoot(startingAt: root)
+            .flatMap { ProjectScenarios.declaredRunner(projectRoot: $0) } != nil
+
+        return CommandEnvironment(
+            usesFallbackCatalog: !declaresOwnScenarios,
             engine: VerdictEngine(
                 registry: DemoScenarios.registry,
                 baselines: BaselineStore.standard(root: root)
@@ -94,12 +125,31 @@ public enum CommandRunner {
 
 /// Names every scenario the tool can run.
 public struct ListCommand: Sendable {
+    /// Told to a caller whose project has no scenarios of its own.
+    ///
+    /// A stored constant rather than an inline interpolation: the concatenated
+    /// form timed out Swift's type checker ("unable to type-check this
+    /// expression in reasonable time"), which is a build failure rather than a
+    /// style note.
+    public static let fallbackCatalogNote = """
+        note: these are VerdictUI's own demo scenarios, not this project's — the catalog is \
+        compiled into the binary. This project declares no .verdictui/config.json, so any \
+        verdict about them describes VerdictUI's fixtures rather than your code. \
+        See docs/adoption.md.
+        """
+
     public init() {}
 
     @MainActor
     public func run(_ environment: CommandEnvironment, pretty: Bool) async -> ExitCode {
         await CommandRunner.run(output: environment.output) {
             let names = environment.engine.scenarioNames
+            // STDERR, never stdout: `list` emits a bare JSON array that callers
+            // parse. A note prepended to stdout would break every one of them,
+            // which is a worse defect than the one being reported.
+            if environment.usesFallbackCatalog {
+                environment.output.writeError(Self.fallbackCatalogNote)
+            }
             environment.output.writeOut(try VerdictOutput.json(names, pretty: pretty))
             return .pass
         }
