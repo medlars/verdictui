@@ -203,6 +203,44 @@ walk can know that.
 
 The demo catalog is entirely tier 2, for exactly these reasons.
 
+### Tier 2b — a view you CANNOT edit
+
+Tiers 1–3 all assume you can change the view's source. When the view belongs to
+a dependency, a design-system package, or another team's module, you cannot —
+and the only move left is to probe it from the outside:
+
+```swift
+VendorSheet(model: model)
+    .frame(width: 480)
+    .verdictProbe("vendor-sheet", role: .custom("opaque"))
+```
+
+**Use `.custom(_:)`, never `.container`.** The role is load-bearing, not
+cosmetic. `EmptyContainerRule` polices `.container`, `.list` and `.listRow` —
+roles whose entire job is holding content — so an outside probe declared as a
+container hands the rule a node with no probed children, and it correctly
+reports that a fully-populated vendor view "renders nothing". `.custom(_:)`
+means *the probe could not classify this node*, which is exactly true here, and
+the rule already excludes it for that reason: reporting an unclassified node as
+an empty container states more than the tree supports.
+
+Measured 2026-08-16 against KastDrive's shipped `ConflictResolutionView` at
+480 pt: `.container` yields `empty-container [warning] — 'root' reserves
+480 x 425 pt but renders nothing`; `.custom("opaque")` on the identical view
+yields `status=pass findings=0`.
+
+**What this tier can and cannot verify.** It sees the subtree's OUTER
+geometry — frame, position, clipping against its parent, presence at all — and
+that is enough for the regressions that actually bite when a dependency
+updates: a sheet that stopped fitting its window, a row that collapsed to zero
+height, a panel pushed offscreen. It cannot see INSIDE: no rule can name the
+vendor's button, read its text, or measure its tap targets, because no probe
+reached them. A verdict from this tier is a claim about the box, never its
+contents — do not read a PASS here as "the vendor's UI is correct".
+
+If you need the inside, you need the source: upstream a `@Verifiable`, vendor
+the view, or wrap it in your own instrumented equivalent.
+
 ### Tier 3 — hybrid (common in practice)
 
 `@Verifiable` for the bulk, explicit probes where you have an opinion.

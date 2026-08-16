@@ -268,6 +268,57 @@ final class EmptyContainerRuleTests: XCTestCase {
         }
     }
 
+    /// The Tier 2b contract in `docs/adoption.md`: a view the adopter cannot
+    /// edit is probed from OUTSIDE, and the role must be `.custom(_:)`.
+    ///
+    /// This pins a DOCUMENTED PROMISE, not an implementation detail. The doc
+    /// tells adopters that `.custom("opaque")` is the correct role for an
+    /// uninstrumentable subtree and that `.container` is not; if the policed
+    /// set ever gains `.custom`, that advice silently becomes wrong and every
+    /// external adopter gets a permanent unfixable warning on their first run
+    /// — which is exactly how this was found (measured 2026-08-16 against
+    /// KastDrive's shipped `ConflictResolutionView`).
+    ///
+    /// The `.container` half is the NEGATIVE CONTROL: without it, "the opaque
+    /// role is exempt" is satisfied by a rule that reports nothing at all.
+    func testTheOpaqueOutsideProbeTierIsExemptButAContainerIsNot() {
+        let opaque = rule.evaluate(
+            root([box("vendor-sheet", role: .custom("opaque"))]),
+            context: context()
+        )
+        XCTAssertTrue(
+            opaque.isEmpty,
+            "an outside probe on an un-editable view must not be reported as an empty "
+                + "container — docs/adoption.md Tier 2b promises adopters this exact role"
+        )
+
+        // CONTROL. The same subtree declared `.container` MUST still be
+        // reported, or the exemption above proves nothing.
+        //
+        // It carries a non-painting child rather than being childless: a
+        // CHILDLESS container is deliberately exempt (a probed leaf that paints
+        // itself is indistinguishable from content that failed to arrive), so a
+        // childless control would pass for the wrong reason and this test would
+        // be unfalsifiable. This shape — children present, none painting — is
+        // what an outside-probed vendor view actually produces, measured
+        // 2026-08-16 on `ConflictResolutionView`.
+        let container = rule.evaluate(
+            root([
+                box(
+                    "vendor-sheet",
+                    role: .container,
+                    children: [box("inner", role: .container)]
+                )
+            ]),
+            context: context()
+        )
+        XCTAssertFalse(
+            container.isEmpty,
+            "control: a .container whose children do not paint must still be reported, "
+                + "or the exemption above proves nothing"
+        )
+    }
+
     /// A NaN or infinite frame cannot be placed at all; `zero-size` owns that
     /// defect. Reporting it here would name the wrong rule in the evidence.
     func testANonFiniteFrameIsLeftToZeroSizeRule() {
