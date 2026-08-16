@@ -1,5 +1,36 @@
 # Changelog
 
+## [Unreleased]
+
+**Fixed**
+
+- **The PM ran the whole Swift suite with a correctness invariant switched off.**
+  `stage_test` wrapped the entire run in `VERDICTUI_RECORD_TIMING_ONLY`, which is
+  the explicit human override rather than a clock marker — it is the sole input
+  suppressing `ConstrainedTimingEnvironment.canEvaluateElapsedInvariants`. So the
+  settle-overshoot discriminator was inert on every host, on every run, while the
+  suite reported 787 tests green. `stage_runtime_bench` keeps the wrapper and is
+  right to: that stage measures absolute budgets, which is what the override is
+  for. `HarnessTests` now splits its two predicates to match — the timeout-path
+  fixture proof records on the clock lane, the overshoot invariant does not.
+  (`no.md` #61)
+- **The mutation harness scored a SKIPPED witness as a passing one.** A skipped
+  XCTest prints `passed`, exits 0, and emits no skip marker at any verbosity, so
+  a sweep reported `UNNOTICED — the test passed with the guard broken` against an
+  AX safety bound whose witness had never executed a line. That accusation points
+  at working code, which is the expensive direction. A row whose witness has
+  environmental preconditions now declares them (`skips_when`) and is refused as
+  a witness before anything runs, with the condition named so an operator can act
+  on it. (`no.md` #62)
+
+**Changed**
+
+- Mutation targets **119 → 122**. The two new consumer rows close the gap that
+  hid the first defect: the catalog rowed the predicate *definition* but neither
+  *reader*, and from outside a re-coupled lane is indistinguishable from a
+  correct one. Each row was hand-mutated in both directions with a byte-identical
+  `sha256` restore.
+
 ## [1.0.0] — 2026-08-14
 
 First public release. **The engine is MIT and the repository is public**
