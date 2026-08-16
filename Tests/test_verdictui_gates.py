@@ -544,9 +544,24 @@ class TestRunbookCommandsNameRealVerbs:
         # that rather than the CWD. It was an absolute `/Users/<name>/...` path
         # until Wave 10, which both leaked a username into a public repo and
         # worked on exactly one machine — a config nobody else could paste.
-        binary = Path(entry["command"])
-        if not binary.is_absolute():
-            binary = _PROJECT_ROOT / binary
+        command = entry["command"]
+        # THREE cases, not two. A bare name (no separator) is neither absolute
+        # nor repo-relative -- it is resolved from PATH, which is the correct
+        # registration for an INSTALLED tool and the one that lets a consumer
+        # in another project reach it at all. Resolving it with `which` checks
+        # the same claim the other branches check: that the command exists.
+        if "/" not in command:
+            resolved = shutil.which(command)
+            if resolved is None:
+                pytest.skip(
+                    f"{command!r} is not on PATH in this environment — "
+                    "could not observe, which is not the same as broken"
+                )
+            binary = Path(resolved)
+        else:
+            binary = Path(command)
+            if not binary.is_absolute():
+                binary = _PROJECT_ROOT / binary
 
         if not binary.parent.exists():
             pytest.skip(f"{binary.parent} absent — nothing built in this checkout yet")

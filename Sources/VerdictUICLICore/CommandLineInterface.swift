@@ -35,7 +35,7 @@ public struct VerdictUITool: AsyncParsableCommand {
             """,
         version: SchemaVersion.current,
         subcommands: [
-            List.self, Render.self, Verify.self, Baseline.self, SweepRun.self,
+            List.self, Render.self, Verify.self, Judge.self, Baseline.self, SweepRun.self,
             Daemon.self, MCP.self,
         ],
         defaultSubcommand: List.self
@@ -144,6 +144,60 @@ public struct VerdictUITool: AsyncParsableCommand {
                 useBaseline: baseline,
                 includeTree: includeTree,
                 crossValidate: crossValidate
+            ).run(environment, pretty: formatting.pretty, summary: formatting.summary)
+            try VerdictUITool.finish(code)
+        }
+    }
+
+    public struct Judge: AsyncParsableCommand {
+        public static let configuration = CommandConfiguration(
+            commandName: "judge",
+            abstract: "Judge a semantic tree you supply — any language, any renderer.",
+            discussion: """
+                Every other verb renders SwiftUI first, which limits this tool to
+                Swift UI. The rule engine never had that limit: it imports only
+                Foundation, so it can judge a tree produced by a DOM walk, a
+                Flutter semantics dump, a Compose hierarchy or an accessibility
+                scrape.
+
+                It does NOT render non-Swift UI. Producing the tree is the
+                caller's job; `judge` reads what you send and applies the same
+                rules `verify` applies. Exit 1 means the UI failed, exit 2 means
+                the tree could not be read — the two are never conflated.
+
+                The tree shape is a JSON `SemanticNode`; see docs/tree-contract.md.
+                """
+        )
+        public init() {}
+
+        @Argument(help: "Path to a JSON semantic tree, or `-` to read stdin.")
+        public var tree: String
+
+        @Option(
+            name: .long,
+            help: "Viewport width in points. Defaults to the root node's own width."
+        )
+        public var viewportWidth: Double = 0
+
+        @Option(
+            name: .long,
+            help: "Viewport height in points. Defaults to the root node's own height."
+        )
+        public var viewportHeight: Double = 0
+
+        @Option(name: .long, help: "Name to file the verdict under.")
+        public var name: String = "judged-tree"
+
+        @OptionGroup public var formatting: FormattingOptions
+
+        @MainActor
+        public func run() async throws {
+            let environment = CommandEnvironment.standard()
+            let code = await JudgeCommand(
+                treePath: tree,
+                viewportWidth: viewportWidth,
+                viewportHeight: viewportHeight,
+                scenarioName: name
             ).run(environment, pretty: formatting.pretty, summary: formatting.summary)
             try VerdictUITool.finish(code)
         }

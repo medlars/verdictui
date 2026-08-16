@@ -457,3 +457,102 @@ public enum VariantParsing {
         )
     }
 }
+
+// MARK: - judge
+
+/// Judges a semantic tree the CALLER produced — the language-agnostic verb.
+///
+/// Every other command renders SwiftUI first, which limits the engine to Swift
+/// UI. `VerdictUIKernel` never had that limit: it imports only `Foundation`,
+/// `Rect` is hand-rolled so it compiles anywhere (`no.md` #5), and
+/// `SemanticNode` is `Codable`. So the barrier to judging a React, Flutter or
+/// Compose screen was never the rule engine — it was the absence of a way to
+/// hand it a tree.
+///
+/// What this verb does NOT do, stated plainly because the distinction is the
+/// whole contract: it does not RENDER non-Swift UI. Producing the tree is the
+/// caller's job (a DOM walk, a Flutter semantics dump, an AX scrape). VerdictUI
+/// judges what it is given. A tool that claimed to render everything and
+/// silently rendered nothing is the failure this project exists to prevent.
+public struct JudgeCommand: Sendable {
+    /// Path to a JSON `SemanticNode`, or `-` for stdin.
+    public let treePath: String
+    /// Viewport the rules judge against. A tree carries frames but not the
+    /// screen they were laid out in, and `OffscreenRule` needs the screen.
+    public let viewportWidth: Double
+    public let viewportHeight: Double
+    /// Name the verdict is filed under, so a caller judging many trees can tell
+    /// them apart in a report.
+    public let scenarioName: String
+
+    public init(
+        treePath: String,
+        viewportWidth: Double = 0,
+        viewportHeight: Double = 0,
+        scenarioName: String = "judged-tree"
+    ) {
+        self.treePath = treePath
+        self.viewportWidth = viewportWidth
+        self.viewportHeight = viewportHeight
+        self.scenarioName = scenarioName
+    }
+
+    /// Read the tree bytes, from a file or stdin.
+    static func read(_ path: String) throws -> Data {
+        if path == "-" {
+            return FileHandle.standardInput.readDataToEndOfFile()
+        }
+        return try Data(contentsOf: URL(fileURLWithPath: path))
+    }
+
+    /// Judge `tree`, deriving the viewport from the root frame when the caller
+    /// did not supply one.
+    ///
+    /// Separated from `run` so the decision is testable without a process: a
+    /// command that only works through argv can only be tested through argv.
+    public static func judge(
+        tree: SemanticNode,
+        viewportWidth: Double,
+        viewportHeight: Double,
+        scenarioName: String
+    ) -> Verdict {
+        // A zero viewport is not a viewport. Falling back to the root's own
+        // frame means OffscreenRule compares against the surface the caller
+        // actually laid out in, rather than an empty rect in which every node
+        // is offscreen and every verdict is noise.
+        let width = viewportWidth > 0 ? viewportWidth : tree.frame.width
+        let height = viewportHeight > 0 ? viewportHeight : tree.frame.height
+        let context = LintContext.macOS(
+            viewport: Rect(x: 0, y: 0, width: width, height: height),
+            scenario: scenarioName
+        )
+        return RuleEngine.run(rules: RuleEngine.standardRules, on: tree, context: context)
+    }
+
+    public func run(
+        _ environment: CommandEnvironment,
+        pretty: Bool,
+        summary: Bool
+    ) async -> ExitCode {
+        await CommandRunner.run(output: environment.output) {
+            let data = try JudgeCommand.read(treePath)
+            // A decode failure is a TOOL error (exit 2), never a failing
+            // verdict (exit 1) -- "your UI is broken" and "I could not read
+            // what you sent me" are different answers, and CommandRunner keeps
+            // them apart by letting this throw.
+            let tree = try JSONDecoder().decode(SemanticNode.self, from: data)
+            let verdict = JudgeCommand.judge(
+                tree: tree,
+                viewportWidth: viewportWidth,
+                viewportHeight: viewportHeight,
+                scenarioName: scenarioName
+            )
+            environment.output.writeOut(
+                summary
+                    ? VerdictOutput.humanReadable(verdict)
+                    : try VerdictOutput.json(verdict, pretty: pretty)
+            )
+            return verdict.status == .pass ? .pass : .verdictFailed
+        }
+    }
+}
