@@ -2,7 +2,7 @@
   "mcpServers": {
     "verdictui": {
       "type": "stdio",
-      "command": ".build/release/verdictui",
+      "command": "verdictui",
       "args": ["mcp"]
     }
   }
