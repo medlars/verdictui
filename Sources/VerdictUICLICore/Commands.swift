@@ -630,10 +630,14 @@ public struct InspectCommand: Sendable {
     public let pid: pid_t
     /// When set, PRESS the element with this name instead of printing the tree.
     public let press: String?
+    /// When set, PRESS the element at this structural path — the identity the
+    /// tree itself prints, so read-then-press round-trips (CIS-3DDA018A).
+    public let pressPath: String?
 
-    public init(pid: pid_t, press: String? = nil) {
+    public init(pid: pid_t, press: String? = nil, pressPath: String? = nil) {
         self.pid = pid
         self.press = press
+        self.pressPath = pressPath
     }
 
     @MainActor
@@ -643,6 +647,15 @@ public struct InspectCommand: Sendable {
             // Pre-checking here would put the rule in two places where they can
             // disagree — and the reader's answer is authoritative, since
             // `AXIsProcessTrusted()` can be true while a read still fails.
+            // PATH FIRST: it is the identity the tree prints, so it is what a
+            // caller who just read the tree actually holds. A name is a
+            // convenience for a human typing one, and two controls can share it.
+            if let path = pressPath {
+                try AXReader.press(pid: pid, atPath: path)
+                environment.output.writeOut(
+                    try VerdictOutput.json(["pressed": path], pretty: pretty))
+                return .pass
+            }
             if let name = press {
                 try AXReader.press(pid: pid, named: name)
                 environment.output.writeOut(

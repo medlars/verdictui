@@ -128,3 +128,94 @@ final class AXPressTests: XCTestCase {
             .processIdentifier
     }
 }
+
+/// READ-THEN-PRESS must round-trip: an identity taken from ``AXReader/readTree(pid:)``
+/// must resolve in ``AXReader/press``.
+///
+/// CIS-3DDA018A. The two searched different vocabularies AND different subtrees,
+/// so the natural workflow — read the tree, act on what you saw — was exactly
+/// the one that failed, and the obvious conclusion (the press is broken) was
+/// wrong. Measured 2026-08-17, two independent causes:
+///
+///  1. ATTRIBUTE ORDER. `readTree` names an element Value → Description →
+///     Title; the first `press` tried Title → Description → Value. Same element,
+///     different name, no overlap guaranteed.
+///  2. ANCHOR. `readTree` walks from the HOSTING CONTENT GROUP (so frames are in
+///     root coordinates); `press` walked from the WINDOW. Different subtrees, so
+///     even an identical name could be absent.
+///
+/// Fixed by pressing on STRUCTURAL PATH, which is the identity `readTree`
+/// already assigns ("AX carries no probe ids; identity is the structural path").
+/// A path is positional and unambiguous where a name is a coincidence that two
+/// controls can share.
+final class ReadThenPressRoundTripTests: XCTestCase {
+
+    private var isHeadless: Bool {
+        let e = ProcessInfo.processInfo.environment
+        return e["CI"] != nil || e["CODEX_CI"] != nil || e["VERDICTUI_SKIP_WITNESS"] != nil
+    }
+
+    private static func finderPID() -> pid_t? {
+        NSRunningApplication
+            .runningApplications(withBundleIdentifier: "com.apple.finder")
+            .first(where: { !$0.isTerminated })?
+            .processIdentifier
+    }
+
+    /// Every structural path in the tree, which is what a caller reads.
+    private static func paths(_ node: SemanticNode) -> [String] {
+        var out = node.structuralPath.isEmpty ? [] : [node.structuralPath]
+        for child in node.children { out += paths(child) }
+        return out
+    }
+
+    /// A path READ FROM THE TREE must RESOLVE — the round trip itself.
+    ///
+    /// Asserts resolution, not a successful click: many elements legitimately do
+    /// not advertise AXPress, and `actionRefused` proves the element WAS found,
+    /// which is the half this test exists for. `elementNotFound` is the failure
+    /// that means the round trip is broken.
+    func testAPathReadFromTheTreeResolvesInPress() throws {
+        try XCTSkipIf(isHeadless, "no window server on this host")
+        try XCTSkipUnless(AXReader.isTrusted, "this process lacks Accessibility permission")
+        guard let pid = Self.finderPID() else { throw XCTSkip("Finder is not running") }
+
+        let tree = try AXReader.readTree(pid: pid)
+        let all = Self.paths(tree)
+        // Precondition, or "it resolved" would be vacuously true over no paths.
+        XCTAssertFalse(all.isEmpty, "the tree published no structural paths to press")
+
+        for path in all.prefix(12) {
+            do {
+                try AXReader.press(pid: pid, atPath: path)
+            } catch AXReader.Failure.actionRefused {
+                continue  // found, declined — the round trip worked
+            } catch AXReader.Failure.elementNotFound {
+                return XCTFail(
+                    """
+                    '\(path)' was read from this very tree and did not resolve in \
+                    press. Read-then-press is the natural workflow and the one \
+                    that must not fail (CIS-3DDA018A).
+                    """
+                )
+            }
+        }
+    }
+
+    /// NEGATIVE CONTROL. Without it the assertion above is satisfied by a
+    /// resolver that matches ANY path — which would press an arbitrary element
+    /// and report success, a worse defect than not resolving at all.
+    func testAPathThatIsNotInTheTreeIsReportedNotFound() throws {
+        try XCTSkipIf(isHeadless, "no window server on this host")
+        try XCTSkipUnless(AXReader.isTrusted, "this process lacks Accessibility permission")
+        guard let pid = Self.finderPID() else { throw XCTSkip("Finder is not running") }
+
+        XCTAssertThrowsError(
+            try AXReader.press(pid: pid, atPath: "root/nonexistent[99]/absent[\(UUID())]")
+        ) {
+            XCTAssertEqual(
+                $0 as? AXReader.Failure, .elementNotFound,
+                "a path absent from the tree must not resolve to some other element")
+        }
+    }
+}
