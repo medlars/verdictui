@@ -128,6 +128,20 @@ public struct DaemonRequest: Codable, Sendable, Equatable {
     /// nothing.
     public let pixels: Bool?
 
+    /// Path to the consumer's AppKit runner executable, for `judge_appkit`.
+    ///
+    /// A SEPARATE field from `scenario` rather than a reuse of it, because the
+    /// two name different kinds of thing: a scenario is a key into a registry
+    /// compiled into this binary, while a runner is a path to a binary this one
+    /// did not build. Overloading `scenario` would make
+    /// `methodsNeedingAScenario` a lie for one member and hand
+    /// `MCPServerTests`' catalog walk a registry name that nothing reads.
+    public let runner: String?
+
+    /// Which screen the runner should render, for `judge_appkit`.
+    /// `nil` asks the runner to LIST what it has, mirroring the CLI verb.
+    public let subject: String?
+
     /// Caller-supplied correlation id, echoed back untouched.
     public let id: String?
 
@@ -140,8 +154,12 @@ public struct DaemonRequest: Codable, Sendable, Equatable {
         nodePath: String? = nil,
         crossValidate: Bool? = nil,
         pixels: Bool? = nil,
+        runner: String? = nil,
+        subject: String? = nil,
         id: String? = nil
     ) {
+        self.runner = runner
+        self.subject = subject
         self.method = method
         self.scenario = scenario
         self.baseline = baseline
@@ -338,6 +356,22 @@ public actor VerdictDaemon {
             DaemonResponse(ok: true, id: request.id, result: result, error: nil)
         }
 
+        // `judge_appkit` is handled BEFORE the scenario guard because it needs
+        // no scenario: it drives a binary the consumer compiled, not an entry in
+        // the registry compiled into this one. Falling through to
+        // `handleScenarioFree` would be the alternative, and it is wrong for the
+        // same reason — that helper answers methods that read nothing but the
+        // engine, and this one reads a path and spawns a process.
+        if request.method == "judge_appkit" {
+            guard let runner = request.runner, !runner.isEmpty else {
+                // Named HERE rather than left to surface from two layers down as
+                // a path error about the empty string, which sends the reader
+                // looking at their filesystem instead of at their call.
+                return failure("method 'judge_appkit' requires a runner")
+            }
+            return await handleAppKit(request, runner: runner)
+        }
+
         // Methods needing a scenario resolve it ONCE, here, so a missing
         // argument is reported as a missing argument rather than surfacing as
         // "no scenario named ''" from two layers down. Bound to a local rather
@@ -448,6 +482,75 @@ public actor VerdictDaemon {
         } catch {
             return failure(String(describing: error))
         }
+    }
+
+    /// Serve `judge_appkit`: run the consumer's AppKit runner and judge what it
+    /// printed.
+    ///
+    /// Shares `AppKitCommand`'s process plumbing rather than re-implementing it.
+    /// A second spawn-and-decode here is how two surfaces drift into two answers
+    /// about the same runner — the reason every other method in this file
+    /// delegates rather than deciding.
+    ///
+    /// ### `ok` reports whether we could LOOK, never what we saw
+    ///
+    /// A failing verdict comes back `ok: true` carrying that verdict: the daemon
+    /// did its job. Only a runner that could not be executed, exited non-zero,
+    /// or printed something that is not a tree sets `ok: false`. An agent that
+    /// conflated the two would retry a real layout defect as a transport fault,
+    /// and would report an infrastructure outage as a UI bug.
+    @MainActor
+    private static func handleAppKit(
+        _ request: DaemonRequest,
+        runner: String
+    ) async -> DaemonResponse {
+        func failure(_ message: String) -> DaemonResponse {
+            DaemonResponse(ok: false, id: request.id, result: nil, error: message)
+        }
+
+        guard let subject = request.subject, !subject.isEmpty else {
+            switch AppKitCommand.invoke(runner: runner, arguments: ["list"]) {
+            case .produced(let text):
+                let names = text.split(separator: "\n")
+                    .map { $0.trimmingCharacters(in: .whitespaces) }
+                    .filter { !$0.isEmpty }
+                return DaemonResponse(
+                    ok: true, id: request.id, result: .scenarios(names), error: nil)
+            case .failed(let reason):
+                return failure(reason)
+            }
+        }
+
+        let text: String
+        switch AppKitCommand.invoke(runner: runner, arguments: ["render", subject]) {
+        case .produced(let produced): text = produced
+        case .failed(let reason): return failure(reason)
+        }
+
+        let tree: SemanticNode
+        do {
+            tree = try JSONDecoder().decode(SemanticNode.self, from: Data(text.utf8))
+        } catch {
+            return failure("runner output is not a semantic tree: \(error)")
+        }
+
+        // `includeTree` off by default, for the reason the field documents: an
+        // agent wants the verdict, and a full tree per call is the token cost
+        // that makes an agent loop unaffordable. It can ask.
+        guard request.includeTree != true else {
+            return DaemonResponse(ok: true, id: request.id, result: .tree(tree), error: nil)
+        }
+
+        // Through `JudgeCommand.judge`, which is where the viewport fallback and
+        // the vacuity guard live. Re-deriving them here would give the MCP
+        // surface its own opinion about what an unobserved screen means.
+        let verdict = JudgeCommand.judge(
+            tree: tree,
+            viewportWidth: 0,
+            viewportHeight: 0,
+            scenarioName: subject
+        )
+        return DaemonResponse(ok: true, id: request.id, result: .verdict(verdict), error: nil)
     }
 
     /// The methods that read nothing but the engine itself.
