@@ -41,6 +41,19 @@ public enum AXReader {
         /// zero AXError would misreport this as success, and `.zero` as a
         /// fallback origin would leave every node in screen coordinates.
         case anchorUnreadable
+        /// No element in the tree carries the requested name.
+        ///
+        /// A press MUST distinguish this from success. A verb that reports
+        /// "pressed" for a name it never matched makes "I pressed the control"
+        /// and "I pressed nothing" the same answer, which leaves every caller's
+        /// verdict unfalsifiable.
+        case elementNotFound
+        /// The element was found, but AppKit refused the press.
+        ///
+        /// Separate from ``elementNotFound`` because the two have opposite
+        /// meanings for the caller: the name is right and the control declined,
+        /// versus the name is wrong.
+        case actionRefused(axError: Int32)
 
         public var description: String {
             switch self {
@@ -53,6 +66,10 @@ public enum AXReader {
             case .anchorUnreadable:
                 "the host window published no geometry for its hosting group, so node "
                     + "coordinates cannot be converted to root space"
+            case .elementNotFound:
+                "no element in the tree carries that name"
+            case .actionRefused(let code):
+                "the element was found but refused the press (AXError \(code))"
             }
         }
     }
@@ -62,6 +79,87 @@ public enum AXReader {
     /// Necessary but **not sufficient** — see ``Failure/noWindow(axError:)``.
     /// Callers must treat a failed read as authoritative over this flag.
     public static var isTrusted: Bool { AXIsProcessTrusted() }
+
+    /// Press the first element named `name` in `pid`'s window.
+    ///
+    /// The ACT half of third-party observation. ``readTree(pid:)`` already
+    /// observes an app VerdictUI did not write; this drives one. The daemon's
+    /// `act` verb cannot: it operates on a SCENARIO, an in-process instrumented
+    /// view, so it has no reach into an external application.
+    ///
+    /// **Why by NAME rather than by coordinate.** Measured on LaunchGate
+    /// 2026-08-17: synthesised clicks at centres read off a rendered image did
+    /// not change the window content at all, and System Events could not
+    /// enumerate that window (`entire contents` returned empty), so coordinates
+    /// were the only handle and they did not work. `AXPress` resolves the
+    /// element itself and bypasses the question.
+    ///
+    /// **Why the name search reads several attributes.** SwiftUI leaves
+    /// `AXTitle` empty and puts the label in `AXDescription`. System Events'
+    /// `name`, `title`, `value` and `help` all return `missing value` for these
+    /// controls — four attributes agreeing on "absent" from one blind
+    /// instrument, which is one reading, not four.
+    ///
+    /// - Throws: ``Failure/elementNotFound`` when no element carries the name,
+    ///   and ``Failure/actionRefused(axError:)`` when one does and AppKit
+    ///   declines. Those are opposite facts for the caller, so they are opposite
+    ///   errors — a single "press failed" would collapse them.
+    public static func press(pid: pid_t, named name: String) throws {
+        guard isTrusted else { throw Failure.notTrusted }
+
+        let app = AXUIElementCreateApplication(pid)
+        var raw: CFTypeRef?
+        let status = AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &raw)
+        guard status == .success, let windows = raw as? [AXUIElement], let window = windows.first
+        else {
+            throw Failure.noWindow(axError: status.rawValue)
+        }
+
+        guard let target = firstElement(in: window, named: name) else {
+            throw Failure.elementNotFound
+        }
+        let result = AXUIElementPerformAction(target, kAXPressAction as CFString)
+        guard result == .success else {
+            throw Failure.actionRefused(axError: result.rawValue)
+        }
+    }
+
+    /// Depth-first search for an element whose name matches, bounded by the same
+    /// node budget the tree read uses — an unbounded walk on a hostile tree is
+    /// the hazard ``maximumNodes`` already exists to cap.
+    private static func firstElement(
+        in element: AXUIElement, named name: String, budget: inout Int
+    ) -> AXUIElement? {
+        guard budget > 0 else { return nil }
+        budget -= 1
+        if accessibleName(of: element) == name { return element }
+        let kids =
+            (attribute(element, kAXChildrenAttribute) as? [AXUIElement]) ?? []
+        for child in kids {
+            if let hit = firstElement(in: child, named: name, budget: &budget) { return hit }
+        }
+        return nil
+    }
+
+    private static func firstElement(in element: AXUIElement, named name: String) -> AXUIElement? {
+        var budget = Self.maximumNodes
+        return firstElement(in: element, named: name, budget: &budget)
+    }
+
+    /// The label a user would call this control, trying every attribute SwiftUI
+    /// might populate (see ``press(pid:named:)`` for why one is not enough).
+    private static func accessibleName(of element: AXUIElement) -> String {
+        for key in [kAXTitleAttribute, kAXDescriptionAttribute, kAXValueAttribute] as [String] {
+            if let value = attribute(element, key) as? String, !value.isEmpty { return value }
+        }
+        return ""
+    }
+
+    private static func attribute(_ element: AXUIElement, _ key: String) -> CFTypeRef? {
+        var out: CFTypeRef?
+        return AXUIElementCopyAttributeValue(element, key as CFString, &out) == .success
+            ? out : nil
+    }
 
     /// Read the first window of `pid` and normalize it into a semantic tree.
     ///
