@@ -36,7 +36,7 @@ public struct VerdictUITool: AsyncParsableCommand {
         version: SchemaVersion.current,
         subcommands: [
             List.self, Render.self, Verify.self, Judge.self, Baseline.self, SweepRun.self,
-            Daemon.self, MCP.self,
+            Inspect.self, Daemon.self, MCP.self,
         ],
         defaultSubcommand: List.self
     )
@@ -69,6 +69,36 @@ public struct VerdictUITool: AsyncParsableCommand {
         public func run() async throws {
             let environment = CommandEnvironment.standard()
             let code = await ListCommand().run(environment, pretty: formatting.pretty)
+            try VerdictUITool.finish(code)
+        }
+    }
+
+    public struct Inspect: AsyncParsableCommand {
+        public static let configuration = CommandConfiguration(
+            commandName: "inspect",
+            abstract: "Read (or press) the UI of a RUNNING app by pid — no adoption needed."
+        )
+        public init() {}
+
+        @Option(name: .long, help: "Process id of the running application to inspect.")
+        public var pid: Int32
+
+        @Option(
+            name: .long,
+            help: """
+                Press the element with this name instead of printing the tree. \
+                Names come from the tree above; note they are matched against the \
+                RAW accessibility tree (CIS-3DDA018A).
+                """)
+        public var press: String?
+
+        @OptionGroup public var formatting: FormattingOptions
+
+        @MainActor
+        public func run() async throws {
+            let environment = CommandEnvironment.standard()
+            let code = await InspectCommand(pid: pid, press: press)
+                .run(environment, pretty: formatting.pretty)
             try VerdictUITool.finish(code)
         }
     }
