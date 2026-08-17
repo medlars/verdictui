@@ -16,6 +16,11 @@ import VerdictUIKernel
 /// a few-line executable that links `VerdictUIAppKit` and names its screens, and
 /// this command runs it and judges what it prints. No plugin ABI, no version
 /// handshake — the same shape `ProjectScenarios` already uses for SwiftUI.
+///
+/// This does NOT contradict ADR 2026-025 ("judge takes a tree rather than
+/// rendering foreign UI"). That ADR draws the line at NON-SWIFT UI, and AppKit
+/// is Swift. `appkit` is a first-party PRODUCER for the same `judge` pipeline,
+/// not a second rule engine.
 public struct AppKitCommand: Sendable {
     /// Path to the consumer's runner executable.
     public let runner: String
