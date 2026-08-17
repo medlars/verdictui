@@ -139,3 +139,34 @@ passes against a binary that never registered the subcommand. Mutation-verified
 The rule to carry: **"is it committed" and "can anyone reach it" are different
 questions, and only the second one is integration.** Ask the second by running
 the shipped binary, never by reading the source.
+
+## Read and act must share one identity, or the round trip is a coincidence
+
+**2026-08-17, CIS-3DDA018A.** `readTree` and `press` searched different
+vocabularies AND different subtrees, so the natural workflow — read the tree,
+act on what you saw — was precisely the one that failed. Worse, the obvious
+conclusion from that failure ("the press is broken") was wrong, which is the
+expensive part: a caller debugs the wrong half.
+
+Two independent causes, and finding only one would have left it broken:
+
+1. **Attribute order.** `readTree` names an element Value → Description → Title;
+   `press(named:)` tried Title → Description → Value.
+2. **Anchor.** `readTree` walks from the hosting content group so frames land in
+   root coordinates; `press` walked from the window.
+
+Fixed by pressing on **structural path** — the identity `readTree` already
+assigns — and by extracting `anchoredWindow()` so the two cannot drift onto
+different anchors again. The path walk mirrors
+`SemanticNode.withAssignedStructuralPaths` deliberately: **a resolver that
+indexes differently from the assigner is a second implementation of one rule,**
+and neither copy's tests can see the other's drift.
+
+Two mutations were needed, not one. "Never resolves" and "resolves to the
+**wrong** element" are different defects, and the second is worse — it reports
+success while pressing something else. A guard that only catches the first is
+half a guard.
+
+**The rule: when one component names things and another acts on those names,
+the naming must have exactly one implementation.** Two is a coincidence waiting
+to expire.
