@@ -186,6 +186,44 @@ public enum MCPServer {
                 inputSchema: MCPSchema(properties: ["scenario": scenario], required: ["scenario"])
             ),
             MCPTool(
+                name: "judge_appkit",
+                description:
+                    "Judge an AppKit/Swift screen headlessly — no screenshot, no Automator, no "
+                    + "running app and no visible window. Drives a small runner executable the "
+                    + "DEVELOPER builds (a few lines linking VerdictUIAppKit that names their "
+                    + "NSViewControllers), lays the view out off-screen, and judges the "
+                    + "resulting tree with the same rules every other verb uses. Omit 'subject' "
+                    + "to list the screens the runner exposes. A FAILING verdict is a "
+                    + "SUCCESSFUL call — isError is set only when the runner could not be run "
+                    + "or did not emit a tree.",
+                inputSchema: MCPSchema(
+                    properties: [
+                        "runner": MCPProperty(
+                            type: "string",
+                            description:
+                                "Path to the developer's runner executable, e.g. "
+                                + ".build/debug/MyRunner."
+                        ),
+                        "subject": MCPProperty(
+                            type: "string",
+                            description:
+                                "Screen to judge, as named in the runner. Omit to list what the "
+                                + "runner has."
+                        ),
+                        "include_tree": MCPProperty(
+                            type: "boolean",
+                            description:
+                                "Return the semantic tree instead of a verdict. Off by default: "
+                                + "a full tree per call is the token cost that makes an agent "
+                                + "loop unaffordable."
+                        ),
+                    ],
+                    // `runner` and NOT `scenario`: this tool drives a binary the
+                    // consumer compiled, so there is no registry entry to name.
+                    required: ["runner"]
+                )
+            ),
+            MCPTool(
                 name: "baseline_diff",
                 description:
                     "Findings describing how a scenario has drifted from its recorded "
@@ -210,6 +248,7 @@ public enum MCPServer {
         case "act": return "act"
         case "sweep": return "sweep"
         case "baseline_diff": return "baseline_diff"
+        case "judge_appkit": return "judge_appkit"
         default: return nil
         }
     }

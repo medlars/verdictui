@@ -190,6 +190,12 @@ public struct MCPTransport: Sendable {
             nodePath: arguments["node_path"]?.stringValue,
             crossValidate: arguments["cross_validate"]?.boolValue,
             pixels: arguments["pixels"]?.boolValue,
+            // `judge_appkit`'s two arguments. Forwarded unconditionally rather
+            // than behind a `method ==` check: a method that does not read them
+            // is unaffected, while a check here is a second place the tool's
+            // argument list is written down and can drift from the catalog.
+            runner: arguments["runner"]?.stringValue,
+            subject: arguments["subject"]?.stringValue,
             id: nil
         )
         let response = await VerdictDaemon.handle(request, engine: engine)

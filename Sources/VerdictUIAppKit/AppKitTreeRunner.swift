@@ -68,7 +68,7 @@ public struct AppKitSubject {
 /// import VerdictUIAppKit
 /// import MyAppUI
 ///
-/// AppKitTreeRunner.main(subjects: [
+/// AppKitTreeRunner.launch(subjects: [
 ///     .controller("startup-manager") { StartupManagerViewController() },
 ///     .controller("trust-scores", viewport: CGSize(width: 900, height: 600)) {
 ///         TrustScoresViewController()
@@ -113,6 +113,15 @@ public enum AppKitTreeRunner {
     /// context". Measured against a real consumer package before this note
     /// existed: three errors, none of which name the fix. ``launch(subjects:)``
     /// is nonisolated and does the hop itself.
+    ///
+    /// The rename is a `renamed:` deprecation rather than a doc note, because a
+    /// doc note is only read by someone who already suspects a problem — and the
+    /// person hitting this is looking at three isolation errors that name
+    /// neither this method nor the fix. The compiler's fix-it names both.
+    @available(*, deprecated, renamed: "launch(subjects:)", message: """
+        call launch(subjects:) from main.swift — top-level code is not \
+        main-actor-isolated, so calling this @MainActor method there fails to compile
+        """)
     public static func main(subjects: [AppKitSubject]) -> Never {
         exit(runMain(subjects: subjects).rawValue)
     }

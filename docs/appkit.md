@@ -55,6 +55,20 @@ verdictui appkit --runner .build/debug/VerdictUIRunner --subject startup-manager
 Exit codes are the tool's usual three, never conflated: `0` passed, `1` a
 verdict was produced and FAILED, `2` no verdict could be produced.
 
+An agent uses the same capability through MCP, as the `judge_appkit` tool:
+
+```json
+{"method":"tools/call","params":{"name":"judge_appkit",
+ "arguments":{"runner":".build/debug/MyRunner","subject":"startup-manager"}}}
+```
+
+Omit `subject` to list the runner's screens. `isError` reports whether the tool
+could ANSWER, never what the answer was — a screen with a real defect comes back
+`isError: false` carrying a FAILING verdict, while a runner that cannot be
+executed is `isError: true`. An agent that conflated the two would retry a real
+layout defect as a transport fault, and report an infrastructure outage as a UI
+bug.
+
 ---
 
 ## Why a runner executable rather than "point the CLI at my app"
