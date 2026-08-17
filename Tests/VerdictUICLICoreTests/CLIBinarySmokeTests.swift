@@ -103,6 +103,44 @@ final class CLIBinarySmokeTests: XCTestCase {
         XCTAssertFalse(names.isEmpty, "list returned no scenarios")
     }
 
+    /// The pid-based reader must be REACHABLE from the shipped binary.
+    ///
+    /// `AXReader.readTree(pid:)` and `AXReader.press(pid:named:)` have existed
+    /// as library API, tested and correct, while no CLI verb, MCP tool or
+    /// production caller could reach them. That is a PORT, not an integration:
+    /// the capability is available only to someone writing Swift against the
+    /// package, which is precisely the audience that does not need a tool.
+    ///
+    /// It is the same defect this session already guarded against one level
+    /// down — a Core rule is only worth the call site that invokes it — and it
+    /// shipped anyway, which is why the assertion lives on the ARTIFACT rather
+    /// than on the command object: an in-process test of `InspectCommand` would
+    /// pass against a binary that never registered the subcommand.
+    ///
+    /// Asserts on `--help` rather than a live read, deliberately: a real
+    /// inspection needs a windowed app and Accessibility trust, so gating this
+    /// on either would make it skip on exactly the machines that most need to
+    /// know the verb is wired.
+    func testTheInspectVerbIsReachableFromTheBinary() throws {
+        guard let result = try run(["inspect", "--help"], in: try temporaryDirectory()) else {
+            throw XCTSkip("verdictui has not been built — run `swift build --product verdictui`")
+        }
+
+        XCTAssertEqual(
+            result.exitCode, 0,
+            """
+            `verdictui inspect --help` did not run, so the pid-based AX reader \
+            is unreachable from the shipped tool no matter how correct the \
+            library API is.\nstderr: \(result.standardError)
+            """
+        )
+        let help = result.standardOutput + result.standardError
+        XCTAssertTrue(
+            help.contains("--pid"),
+            "inspect does not take a --pid, so it cannot target a running app: \(help)"
+        )
+    }
+
     /// The three-valued exit contract, asserted on the shipped artifact.
     ///
     /// Table-driven across all three codes in one test because the contract is

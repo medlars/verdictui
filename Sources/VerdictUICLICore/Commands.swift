@@ -9,6 +9,7 @@ import SwiftUI
 import VerdictUIDemoScenarios
 import VerdictUIKernel
 import VerdictUIProbe
+import VerdictUIWitness
 
 /// The scenarios and baseline location a command runs against.
 ///
@@ -603,6 +604,54 @@ public struct JudgeCommand: Sendable {
                     : try VerdictOutput.json(verdict, pretty: pretty)
             )
             return verdict.status == .pass ? .pass : .verdictFailed
+        }
+    }
+}
+
+// MARK: - inspect
+
+/// Read — and optionally press — the UI of a RUNNING application by pid.
+///
+/// The reachable surface for ``AXReader``, which had none. `readTree(pid:)` and
+/// `press(pid:named:)` were correct, tested library API that no CLI verb, MCP
+/// tool or production caller could reach, so the capability existed only for
+/// someone already writing Swift against the package — precisely the audience
+/// that does not need a tool. That is a PORT, not an integration.
+///
+/// Distinct from `render` on purpose. `render` asks a SCENARIO — an in-process
+/// instrumented view VerdictUI owns — what it drew. This asks a process the
+/// tool did not write and cannot instrument, which is the only question
+/// available for a shipped `.app`, and the one that found two real defects in
+/// LaunchGate that a 331-test green suite had shipped.
+///
+/// No adoption step: it takes a pid, so it answers questions about any GUI
+/// product today, before that product declares a single scenario.
+public struct InspectCommand: Sendable {
+    public let pid: pid_t
+    /// When set, PRESS the element with this name instead of printing the tree.
+    public let press: String?
+
+    public init(pid: pid_t, press: String? = nil) {
+        self.pid = pid
+        self.press = press
+    }
+
+    @MainActor
+    public func run(_ environment: CommandEnvironment, pretty: Bool) async -> ExitCode {
+        await CommandRunner.run(output: environment.output) {
+            // Trust is checked by the reader and surfaces as a typed failure.
+            // Pre-checking here would put the rule in two places where they can
+            // disagree — and the reader's answer is authoritative, since
+            // `AXIsProcessTrusted()` can be true while a read still fails.
+            if let name = press {
+                try AXReader.press(pid: pid, named: name)
+                environment.output.writeOut(
+                    try VerdictOutput.json(["pressed": name], pretty: pretty))
+                return .pass
+            }
+            let tree = try AXReader.readTree(pid: pid)
+            environment.output.writeOut(try VerdictOutput.json(tree, pretty: pretty))
+            return .pass
         }
     }
 }
