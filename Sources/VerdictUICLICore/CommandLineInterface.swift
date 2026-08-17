@@ -92,12 +92,21 @@ public struct VerdictUITool: AsyncParsableCommand {
                 """)
         public var press: String?
 
+        @Option(
+            name: .long,
+            help: """
+                Press the element at this structural path — the `structuralPath` \
+                the tree itself prints. Round-trips with the tree output, which \
+                --press by name does not always (CIS-3DDA018A).
+                """)
+        public var pressPath: String?
+
         @OptionGroup public var formatting: FormattingOptions
 
         @MainActor
         public func run() async throws {
             let environment = CommandEnvironment.standard()
-            let code = await InspectCommand(pid: pid, press: press)
+            let code = await InspectCommand(pid: pid, press: press, pressPath: pressPath)
                 .run(environment, pretty: formatting.pretty)
             try VerdictUITool.finish(code)
         }

@@ -41,7 +41,7 @@ public enum AXReader {
         /// zero AXError would misreport this as success, and `.zero` as a
         /// fallback origin would leave every node in screen coordinates.
         case anchorUnreadable
-        /// No element in the tree carries the requested name.
+        /// No element in the tree matches the requested name OR path.
         ///
         /// A press MUST distinguish this from success. A verb that reports
         /// "pressed" for a name it never matched makes "I pressed the control"
@@ -67,7 +67,10 @@ public enum AXReader {
                 "the host window published no geometry for its hosting group, so node "
                     + "coordinates cannot be converted to root space"
             case .elementNotFound:
-                "no element in the tree carries that name"
+                // Says NAME OR PATH because both lookups raise this, and a
+                // message naming only one sends a caller who passed the other
+                // to check the wrong thing.
+                "no element in the tree matches that name or path"
             case .actionRefused(let code):
                 "the element was found but refused the press (AXError \(code))"
             }
@@ -79,6 +82,81 @@ public enum AXReader {
     /// Necessary but **not sufficient** — see ``Failure/noWindow(axError:)``.
     /// Callers must treat a failed read as authoritative over this flag.
     public static var isTrusted: Bool { AXIsProcessTrusted() }
+
+    /// Press the element at `path` — the identity ``readTree(pid:)`` assigns.
+    ///
+    /// THE ROUND TRIP: read the tree, act on what you saw. That workflow used to
+    /// fail (CIS-3DDA018A) because `press(pid:named:)` searched a different
+    /// vocabulary AND a different subtree from the reader — it tried Title →
+    /// Description → Value from the WINDOW, while `readTree` names elements
+    /// Value → Description → Title from the HOSTING CONTENT GROUP. So a name
+    /// plainly visible in the output could be genuinely absent from the search,
+    /// and the obvious conclusion (the press is broken) was wrong.
+    ///
+    /// A path is the better handle regardless: it is positional and unambiguous,
+    /// where a name is a coincidence that two controls can share. This walk
+    /// mirrors ``SemanticNode/withAssignedStructuralPaths(rootPath:)`` exactly —
+    /// same anchor, same child order, same `role[index]` segments — because a
+    /// resolver that indexes differently from the assigner is a second
+    /// implementation of one rule, and the two drift silently.
+    public static func press(pid: pid_t, atPath path: String) throws {
+        guard isTrusted else { throw Failure.notTrusted }
+        let (_, content) = try anchoredWindow(pid: pid)
+
+        guard let target = element(at: path, from: content) else {
+            throw Failure.elementNotFound
+        }
+        let result = AXUIElementPerformAction(target, kAXPressAction as CFString)
+        guard result == .success else {
+            throw Failure.actionRefused(axError: result.rawValue)
+        }
+    }
+
+    /// Walk `path` from the SAME anchor and in the SAME child order the reader
+    /// uses, so a path it emitted resolves here by construction.
+    private static func element(at path: String, from content: AXUIElement) -> AXUIElement? {
+        var segments = path.split(separator: "/").map(String.init)
+        // The first segment names the root itself ("root"); anything else is not
+        // a path this reader could have emitted.
+        guard let root = segments.first, root == "root" else { return nil }
+        segments.removeFirst()
+
+        var current = content
+        for segment in segments {
+            // `role[index]` — the index is authoritative; the role is checked so
+            // a path that resolves to a DIFFERENT element than it names fails
+            // loudly rather than pressing the wrong control.
+            guard let open = segment.lastIndex(of: "["), segment.hasSuffix("]") else { return nil }
+            let roleName = String(segment[segment.startIndex..<open])
+            let digits = segment[segment.index(after: open)..<segment.index(before: segment.endIndex)]
+            guard let index = Int(digits) else { return nil }
+
+            let children = (copy(current, kAXChildrenAttribute) as? [AXUIElement]) ?? []
+            guard index < children.count else { return nil }
+            let child = children[index]
+
+            let childRole = role(
+                axRole: string(child, kAXRoleAttribute) ?? "",
+                subrole: string(child, kAXSubroleAttribute))
+            guard childRole.identifier == roleName else { return nil }
+            current = child
+        }
+        return current
+    }
+
+    /// The window and its hosting content group, resolved the way `readTree`
+    /// resolves them. Extracted so the reader and the presser cannot drift onto
+    /// different anchors — which is half of what CIS-3DDA018A was.
+    private static func anchoredWindow(pid: pid_t) throws -> (AXUIElement, AXUIElement) {
+        let app = AXUIElementCreateApplication(pid)
+        var raw: CFTypeRef?
+        let status = AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &raw)
+        guard status == .success, let windows = raw as? [AXUIElement], let window = windows.first
+        else {
+            throw Failure.noWindow(axError: status.rawValue)
+        }
+        return (window, hostingContent(of: window) ?? window)
+    }
 
     /// Press the first element named `name` in `pid`'s window.
     ///
