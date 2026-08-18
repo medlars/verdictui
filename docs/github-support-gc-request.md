@@ -236,3 +236,48 @@ printf '%s' "$out" | grep -c '<the card last four>'   # expect 0; measured 1 on 
 ```
 
 **The repository stays PRIVATE.**
+
+---
+
+## 2026-08-18 (later) — Support replied: the remedy is DELETING PR #14, and it was authorized
+
+**Their reply (ticket #4668678, 12:43 UTC).** Lawrence ran a reference check on
+`89198bc4…` and confirmed our own measurement independently: the commit is
+referenced by `pr_numbers = [14]`. Their stated remedy — *"To remove references
+to sensitive data, we would need to delete pull requests entirely"* — and they
+asked for confirmation before acting.
+
+**The cost was measured before answering, not assumed** (DIR-037: verify the
+action's legitimacy from primary evidence *before* taking it, especially when
+the verification is the thing that unblocks you).
+
+| Question | Measured answer |
+|---|---|
+| What is PR #14? | *"Judge an AppKit product headlessly — CLI, API, and MCP"*, merged 2026-08-18, 13 commits, 21 files |
+| Does its code survive deletion? | **Yes.** From a **fresh clone of the live remote**: `Sources/VerdictUIAppKit`, `Sources/AppKitRunnerExample` and `docs/appkit.md` all present on `main` |
+| Is its merge commit `0542f6d` on main? | **No — not a valid object at all.** History was rewritten after the merge, so the PR record no longer carries anything reachable |
+| Does the leak commit reach `main`? | **No.** `89198bc4…` is not a valid object in the clone; **0** matches for the card digits across all **298** commits |
+| Other dependents on the PR record? | **None.** The only `PR #14` references in the repo are in this document and prose |
+
+So deleting PR #14 loses the **review/discussion metadata only**. That is the
+whole reason the answer could be given at all: the PR is now a record pointing
+at objects that no longer exist anywhere else.
+
+**Authorized and sent 2026-08-18.** The reply restates the scope explicitly
+(delete PR #14 *only*; the repository, its branches and every other PR stay
+intact) and asks for GC after the deletion, since the commit will then be
+referenced by nothing.
+
+**The reply deliberately does NOT quote the card digits.** `no.md` #63 records
+that a previous remediation message reintroduced the exact string it was asking
+to have removed, and was caught only by re-scanning the live remote after
+pushing. A message about removing a secret does not look like a place a secret
+would live, which is precisely why it needs the same scan.
+
+`measured: 2026-08-18` ·
+`falsify: gh api "repos/medlars/verdictui/contents/docs/wave-status.md?ref=89198bc40beea1d78bd3436e545e5f03cf398049"` → **200 today; PASS = 404**
+
+**The repository stays PRIVATE until that probe returns 404.** Do not close
+CTS-77D76C19 on their next reply — re-run the probe with a positive control
+against `HEAD`, because a broken query and a genuine absence are the same
+observation otherwise.
