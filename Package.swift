@@ -33,7 +33,19 @@ let package = Package(
         // LaunchGate targets .v13 and could not resolve VerdictUI at all until
         // `verdictNamedCoordinateSpace()` split the one macOS 14 call site.
         // Raising this again needs a no.md entry naming the API that forced it.
-        .macOS(.v13)
+        .macOS(.v13),
+        // iOS 16, added 2026-08-18 for KastTune. Declaring NO iOS platform does
+        // not mean "macOS only" — it means iOS resolves to SwiftPM's ancient
+        // default floor, and `Duration` (SchemaVersion.swift) is iOS 16+, so an
+        // iOS consumer failed to COMPILE the kernel with
+        // "'Duration' is only available in iOS 16.0 or newer".
+        //
+        // That failure was invisible from `swift test`, which builds for macOS:
+        // KastTune's snapshot battery is `#if os(iOS)` and only runs under
+        // xcodebuild on a simulator, so adopting VerdictUI broke 54 tests that
+        // nothing in CI executes. Raising this floor needs a no.md entry naming
+        // the API that forced it, same rule as macOS above.
+        .iOS(.v16)
     ],
     products: [
         .library(name: "VerdictUIKernel", targets: ["VerdictUIKernel"]),
