@@ -281,3 +281,61 @@ would live, which is precisely why it needs the same scan.
 CTS-77D76C19 on their next reply — re-run the probe with a positive control
 against `HEAD`, because a broken query and a genuine absence are the same
 observation otherwise.
+
+---
+
+## 2026-08-18 (later still) — THE EMAIL REPLY CHANNEL IS DEAD; the authorization was auto-declined and had to be re-posted on the web ticket
+
+**What happened.** The authorization above was sent as an email reply, because
+every prior message on this ticket arrived as email and the footer invites one
+(*"You can also add a comment by replying to this email"*). It was **auto-declined**:
+
+> We now require that new support requests be created using our Support website
+> … Please do not reply to this email, as it will not be seen by our team.
+
+**It was read as a NEW REQUEST, not as a reply**, and the evidence is in the
+headers rather than the prose — this is the part worth keeping:
+
+| Signal | The ticket thread | The decline |
+|---|---|---|
+| Gmail thread id | `1a011001f3d95072` | **`1a016856aee59b39`** (new) |
+| Case reference | `[K70J0E-9PV2M]` | **`[K7RD39-5LERM]`** (new) |
+| Subject | `Re: Remove unreferenced objects…` | `IMPORTANT: Support Ticket Declined` |
+
+A different thread and a different case reference mean the message never joined
+ticket #4668678 at all. **Confirmed by consequence, not by inference:** the web
+ticket's last comment was still Lawrence's, and PR #14 was still `merged=true`
+with the leak commit still served at HTTP 200 / 153746 bytes — so nothing had
+been acted on.
+
+**Re-posted through the web ticket** (`support.github.com/ticket/personal/0/4668678`,
+already authenticated, no 2FA prompt — the same finding as the original filing).
+Two mechanics worth recording for the next session:
+
+- **The Comment button is `disabled` until the textarea emits a real `input` event.**
+  Playwright's `fill()` sets `.value` without firing it, so the button stays
+  disabled and a click times out. Dispatching `input`/`change` enables it.
+  Do NOT force the click past the disabled state — that risks submitting an
+  empty payload.
+- **Verify by RE-NAVIGATING, never by the post-submit redirect.** The URL
+  advancing to `?sequence=5` is a banner, not evidence (`no.md` #63 (a)). The
+  check that counts is reloading the ticket and finding the comment text, with
+  a positive control proving the scan reads the page.
+
+**The general rule: a reply channel is a claim about routing, and an invitation
+in a footer is not evidence that the route still exists.** When a vendor's own
+message says "reply to this email" and the reply bounces as a new case, the
+authorization silently did not happen — and the only way to know is to check
+the SUBJECT the request was about (was the PR deleted? is the commit still
+served?), never the delivery receipt.
+
+**Playwright artifacts from this session were scanned and deleted** — 6 files in
+`~/Projects/.playwright-mcp/` (the hub, deliberately not a git repo, so they
+were never committable). Zero matches for any real PII pattern. This is the
+mechanism that caused the original leak (`no.md` #54); it gets checked every
+time, not when convenient.
+
+`measured: 2026-08-18` · blocker UNCHANGED and still LIVE ·
+`falsify: gh api "repos/medlars/verdictui/contents/docs/wave-status.md?ref=89198bc40beea1d78bd3436e545e5f03cf398049"` → **200 / 153746 today; PASS = 404**
+
+**The repository stays PRIVATE.**
