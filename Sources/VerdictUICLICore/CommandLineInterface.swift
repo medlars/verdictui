@@ -36,7 +36,7 @@ public struct VerdictUITool: AsyncParsableCommand {
         version: SchemaVersion.current,
         subcommands: [
             List.self, Render.self, Verify.self, Judge.self, Baseline.self, SweepRun.self,
-            Inspect.self, Daemon.self, MCP.self,
+            Inspect.self, AppKit.self, Daemon.self, MCP.self,
         ],
         defaultSubcommand: List.self
     )
@@ -108,6 +108,54 @@ public struct VerdictUITool: AsyncParsableCommand {
             let environment = CommandEnvironment.standard()
             let code = await InspectCommand(pid: pid, press: press, pressPath: pressPath)
                 .run(environment, pretty: formatting.pretty)
+            try VerdictUITool.finish(code)
+        }
+    }
+
+    public struct AppKit: AsyncParsableCommand {
+        public static let configuration = CommandConfiguration(
+            commandName: "appkit",
+            abstract: "Judge an AppKit screen headlessly — no snapshot, no Automator.",
+            discussion: """
+                Runs a runner executable YOU build (a few lines linking \
+                VerdictUIAppKit) and judges the tree it prints. Nothing is \
+                screenshotted, no window is shown, and the app never runs.
+
+                  verdictui appkit --runner .build/debug/MyRunner
+                  verdictui appkit --runner .build/debug/MyRunner --subject login --judge
+
+                Omit --subject to list the subjects the runner exposes.
+                """
+        )
+        public init() {}
+
+        @Option(name: .long, help: "Path to your runner executable.")
+        public var runner: String
+
+        @Option(name: .long, help: "Subject to render. Omit to list what the runner has.")
+        public var subject: String?
+
+        @Flag(name: .long, help: "Judge the tree instead of only printing it.")
+        public var judge = false
+
+        @Option(name: .long, help: "Viewport width the rules judge against.")
+        public var viewportWidth: Double = 0
+
+        @Option(name: .long, help: "Viewport height the rules judge against.")
+        public var viewportHeight: Double = 0
+
+        @OptionGroup public var formatting: FormattingOptions
+
+        @MainActor
+        public func run() async throws {
+            let environment = CommandEnvironment.standard()
+            let code = await AppKitCommand(
+                runner: runner,
+                subject: subject,
+                judge: judge,
+                viewportWidth: viewportWidth,
+                viewportHeight: viewportHeight
+            ).run(environment, pretty: formatting.pretty, summary: formatting.summary)
             try VerdictUITool.finish(code)
         }
     }

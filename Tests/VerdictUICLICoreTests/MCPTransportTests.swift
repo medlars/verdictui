@@ -202,6 +202,32 @@ final class MCPTransportTests: XCTestCase {
         XCTAssertEqual(result["isError"] as? Bool, true)
     }
 
+    /// An executable standing in for a consumer's AppKit runner, printing one
+    /// clean tree. `judge_appkit` drives a binary the consumer compiled, so the
+    /// catalog walk needs a real one to hand it.
+    private func makeAppKitRunner() throws -> String {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mcp-appkit-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let path = directory.appendingPathComponent("runner")
+        try """
+            #!/bin/bash
+            if [ "$1" = "list" ]; then echo "a-screen"; exit 0; fi
+            cat <<'TREE'
+            {"id":"root","role":"container",
+             "frame":{"x":0,"y":0,"width":200,"height":100},
+             "children":[{"id":"label","role":"text",
+               "frame":{"x":0,"y":0,"width":180,"height":20},"text":"short",
+               "textMetrics":{"intrinsicWidth":40,"renderedLineCount":1,"idealLineCount":1},
+               "children":[]}]}
+            TREE
+            """.write(to: path, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o755], ofItemAtPath: path.path)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        return path.path
+    }
+
     /// Every advertised tool actually runs over the transport.
     ///
     /// `MCPServerTests` proves each tool NAMES a daemon method; this proves the
@@ -213,6 +239,11 @@ final class MCPTransportTests: XCTestCase {
         // being driven with a partial call that the tool then rejects for its
         // own reasons. `act` needs a probe that exists on the scenario used, so
         // it is driven against the toggle rather than the clean settings screen.
+        // A WORKING runner, not a placeholder path, for the same reason
+        // `node_path` names a real node: `judge_appkit` spawns what it is given,
+        // and a made-up path is a call the tool was always going to refuse.
+        let runner = try makeAppKitRunner()
+
         let valuesByName: [String: String] = [
             "scenario": #""demo-toggle-layout""#,
             "action": #""toggle""#,
@@ -222,6 +253,7 @@ final class MCPTransportTests: XCTestCase {
             // with a call it was always going to refuse — which is what this
             // test's own XCTUnwrap message warns against.
             "node_path": #""advanced-toggle""#,
+            "runner": #""\#(runner)""#,
         ]
 
         for tool in MCPServer.tools {

@@ -38,6 +38,10 @@ let package = Package(
     products: [
         .library(name: "VerdictUIKernel", targets: ["VerdictUIKernel"]),
         .library(name: "VerdictUIProbe", targets: ["VerdictUIProbe"]),
+        // Wave 11. The AppKit producer — a SEPARATE product from the probe so an
+        // AppKit-only app never resolves SwiftUI instrumentation it cannot use,
+        // and a SwiftUI-only app never links AppKit view walking it does not need.
+        .library(name: "VerdictUIAppKit", targets: ["VerdictUIAppKit"]),
         // Opt-in. Naming it as its own product is the whole isolation mechanism:
         // `VerdictUIProbe` stays buildable without resolving SwiftSyntax at all.
         .library(name: "VerdictUIMacroSupport", targets: ["VerdictUIMacroSupport"]),
@@ -98,6 +102,16 @@ let package = Package(
             dependencies: ["VerdictUIKernel"],
             swiftSettings: strictSettings
         ),
+        // Wave 11's AppKit producer. Depends on the KERNEL only — never on
+        // `VerdictUIProbe` — because the probe is SwiftUI instrumentation and an
+        // AppKit app has no use for it. That is also what keeps this target
+        // honest about what it is: a pure view-hierarchy -> `SemanticNode` walk,
+        // with no scenario machinery, no settle pump, and no SwiftUI at all.
+        .target(
+            name: "VerdictUIAppKit",
+            dependencies: ["VerdictUIKernel"],
+            swiftSettings: strictSettings
+        ),
         .target(
             name: "VerdictUIDemoScenarios",
             dependencies: ["VerdictUIProbe", "VerdictUIKernel"],
@@ -151,6 +165,11 @@ let package = Package(
         .testTarget(
             name: "VerdictUIKernelTests",
             dependencies: ["VerdictUIKernel"],
+            swiftSettings: strictSettings
+        ),
+        .testTarget(
+            name: "VerdictUIAppKitTests",
+            dependencies: ["VerdictUIAppKit", "VerdictUIKernel"],
             swiftSettings: strictSettings
         ),
         .testTarget(
