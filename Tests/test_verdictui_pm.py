@@ -1136,3 +1136,115 @@ def test_installed_binary_exposes_every_built_subcommand() -> None:
         f"installed verdictui is STALE — missing {sorted(missing)}. "
         f"Reinstall: install -m 755 {built} $(command -v verdictui)"
     )
+
+
+# --- stage_appkit_example / stage_installed_parity ---------------------------
+#
+# Both stages were shipped without unit tests (CIS-2B676829, CIS-59139B0E).
+# They are ASSERTION stages — their whole value is failing on a specific shape —
+# so a test that only exercises the happy path would leave the failure branches
+# unverified, which is the defect they exist to prevent. Every branch below is
+# reachable, and each asserts the DETAIL text too: an operator reads that string,
+# and a stage that fails without naming the fix is a stage that gets ignored.
+
+
+class _FakeCompleted:
+    """Minimal stand-in for subprocess.CompletedProcess."""
+
+    def __init__(self, returncode: int = 0, stdout: str = "") -> None:
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = ""
+
+
+class TestStageAppkitExample:
+    """The falsifiability control: defect must FAIL (1), clean must PASS (0)."""
+
+    def _pm_with(self, monkeypatch, codes: dict[str, int], *, exists: bool = True):
+        pm = VerdictUIPM()
+        monkeypatch.setattr(_mod.Path, "exists", lambda _self: exists)
+
+        def fake_run(argv, **_kw):
+            subject = argv[argv.index("--subject") + 1]
+            return _FakeCompleted(returncode=codes[subject])
+
+        monkeypatch.setattr(_mod.subprocess, "run", fake_run)
+        return pm
+
+    def test_passes_when_the_defect_fails_and_the_clean_screen_passes(self, monkeypatch):
+        pm = self._pm_with(monkeypatch, {"defective-screen": 1, "clean-screen": 0})
+        result = pm.stage_appkit_example()
+        assert result["passed"], result
+        assert "defect FAILS (1)" in result["detail"]
+
+    def test_fails_when_the_known_defect_goes_undetected(self, monkeypatch):
+        """The load-bearing branch: a producer that stopped emitting findings."""
+        pm = self._pm_with(monkeypatch, {"defective-screen": 0, "clean-screen": 0})
+        result = pm.stage_appkit_example()
+        assert not result["passed"], result
+        assert "expected 1" in result["detail"]
+        assert "undetected" in result["detail"]
+
+    def test_fails_when_a_clean_screen_is_judged_unclean(self, monkeypatch):
+        pm = self._pm_with(monkeypatch, {"defective-screen": 1, "clean-screen": 1})
+        result = pm.stage_appkit_example()
+        assert not result["passed"], result
+        assert "expected 0" in result["detail"]
+
+    def test_reports_the_missing_artifact_rather_than_a_bare_failure(self, monkeypatch):
+        """An absent runner is an environment gap; the detail must name the fix."""
+        pm = self._pm_with(monkeypatch, {}, exists=False)
+        result = pm.stage_appkit_example()
+        assert not result["passed"]
+        assert "swift build" in result["detail"]
+
+
+class TestStageInstalledParity:
+    """The installed binary must not lag the repo's subcommand surface."""
+
+    _HELP = "USAGE: verdictui <subcommand>\n\nSUBCOMMANDS:\n  list\n  render\n  appkit\n"
+
+    def _pm_with(self, monkeypatch, installed_help: str | None, built_help: str = _HELP):
+        pm = VerdictUIPM()
+        monkeypatch.setattr(
+            _mod.shutil,
+            "which",
+            lambda _n: None if installed_help is None else "/usr/local/bin/verdictui",
+        )
+        monkeypatch.setattr(_mod.Path, "exists", lambda _self: True)
+
+        def fake_run(argv, **_kw):
+            is_built = ".build" in str(argv[0])
+            return _FakeCompleted(stdout=built_help if is_built else (installed_help or ""))
+
+        monkeypatch.setattr(_mod.subprocess, "run", fake_run)
+        return pm
+
+    def test_passes_when_the_surfaces_match(self, monkeypatch):
+        pm = self._pm_with(monkeypatch, self._HELP)
+        result = pm.stage_installed_parity()
+        assert result["passed"], result
+        assert "parity ok" in result["detail"]
+
+    def test_fails_and_names_every_missing_subcommand(self, monkeypatch):
+        """The defect this stage was written for: a stale install, 41h behind."""
+        stale = "USAGE: verdictui <subcommand>\n\nSUBCOMMANDS:\n  list\n  render\n"
+        pm = self._pm_with(monkeypatch, stale)
+        result = pm.stage_installed_parity()
+        assert not result["passed"], result
+        assert "appkit" in result["detail"]
+        assert "install -m 755" in result["detail"], "must print the exact reinstall command"
+
+    def test_absence_is_advisory_never_a_silent_pass(self, monkeypatch):
+        """No install is a legitimate state (fresh clone, CI) — but say so."""
+        pm = self._pm_with(monkeypatch, None)
+        result = pm.stage_installed_parity()
+        assert result["passed"]
+        assert "no installed verdictui" in result["detail"]
+
+    def test_an_unparseable_built_help_fails_rather_than_passing_empty(self, monkeypatch):
+        """An empty parse must not read as 'nothing missing, therefore parity'."""
+        pm = self._pm_with(monkeypatch, self._HELP, built_help="garbage with no subcommands block")
+        result = pm.stage_installed_parity()
+        assert not result["passed"], result
+        assert "could not parse" in result["detail"]
