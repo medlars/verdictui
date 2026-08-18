@@ -10,8 +10,10 @@ import importlib.util
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
+import time
 import types
 from pathlib import Path
 
@@ -359,9 +361,18 @@ class TestStageBuild:
         assert not result["passed"]
         assert "Package.swift" in result["detail"]
 
-    def test_swift_runner_tolerates_timed_out_lock_sweep(self, monkeypatch) -> None:
+    def test_swift_runner_tolerates_timed_out_lock_sweep(self, monkeypatch, tmp_path) -> None:
         def raw_kill(_project_root: Path) -> list[int]:
             raise subprocess.TimeoutExpired(cmd="lsof", timeout=5)
+
+        import contextlib
+
+        lock_calls = []
+
+        @contextlib.contextmanager
+        def raw_lock(*_args, **kwargs):
+            lock_calls.append(kwargs)
+            yield
 
         def run_swift_build() -> None:
             return None
@@ -371,6 +382,7 @@ class TestStageBuild:
 
         fake = types.SimpleNamespace(
             kill_zombie_swift_processes=raw_kill,
+            swiftpm_command_lock=raw_lock,
             run_swift_build=run_swift_build,
             run_swift_test=run_swift_test,
         )
@@ -381,7 +393,13 @@ class TestStageBuild:
         assert safe_kill(_PROJECT_ROOT) == []
         assert build.__globals__["kill_zombie_swift_processes"] is safe_kill
         assert test.__globals__["kill_zombie_swift_processes"] is safe_kill
+        with build.__globals__["swiftpm_command_lock"](
+            ["swift", "build"], cache_dir=tmp_path, log=lambda *_a: None
+        ):
+            pass
+        assert lock_calls[0]["max_wait_seconds"] == _mod.SWIFTPM_COMMAND_LOCK_WAIT_SECONDS
         assert getattr(fake, _mod._RAW_KILL_ATTR) is raw_kill
+        assert getattr(fake, _mod._RAW_SWIFTPM_LOCK_ATTR) is raw_lock
 
     def test_the_pm_script_is_pyright_clean(self) -> None:
         # The runtime tests above monkeypatch `swift_runner`, so they pass
@@ -474,6 +492,41 @@ class TestSkipSentinel:
         monkeypatch.setattr(_mod.Path, "home", classmethod(lambda _cls: tmp_path))
 
         assert not _mod._timing_record_only_environment()
+
+    def test_timing_record_only_probes_actual_cache_writes(self, tmp_path) -> None:
+        """Mode bits are not enough in a sandbox; the PM probes the operation."""
+        assert _mod._can_write_existing_directory(tmp_path)
+        assert not list(tmp_path.glob(".verdictui-write-probe-*"))
+
+        regular_file = tmp_path / "not-a-directory"
+        regular_file.write_text("", encoding="utf-8")
+
+        assert not _mod._can_write_existing_directory(regular_file)
+
+    def test_timing_record_only_uses_the_configured_swiftpm_cache_write_probe(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        """The fallback must classify by the operation SwiftPM will attempt."""
+        for name in _mod.CONSTRAINED_TIMING_ENV_MARKERS:
+            monkeypatch.delenv(name, raising=False)
+        monkeypatch.setattr(_mod.Path, "home", classmethod(lambda _cls: tmp_path))
+
+        (tmp_path / "Library" / "org.swift.swiftpm").mkdir(parents=True)
+        (tmp_path / "Library" / "Caches" / "org.swift.swiftpm").mkdir(parents=True)
+        denied = tmp_path / "Library" / "Caches" / "org.swift.swiftpm"
+        observed = []
+
+        def can_write(path):
+            observed.append(path)
+            return path != denied
+
+        monkeypatch.setattr(_mod, "_can_write_existing_directory", can_write)
+
+        assert _mod._timing_record_only_environment()
+        assert observed == [
+            tmp_path / "Library" / "org.swift.swiftpm",
+            denied,
+        ]
 
     def test_stage_test_does_not_force_the_explicit_record_only_override(self, monkeypatch) -> None:
         """The full suite must keep elapsed-invariant assertions live.
@@ -793,6 +846,53 @@ class TestKilledRunnerIsInconclusive:
         assert not result.get("inconclusive"), result
         assert "1 test failure(s)" in result["detail"], result["detail"]
 
+    def test_an_interrupted_streamed_run_kills_the_child_before_releasing_the_lock(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        """Ctrl-C during `proc.wait()` must not leave SwiftPM holding `.build`."""
+        monkeypatch.setattr(_mod, "PROJECT_ROOT", tmp_path)
+        monkeypatch.setattr(_mod, "_LOCK_DIR", tmp_path / ".lock")
+        monkeypatch.setattr(_mod, "_swift_runner", lambda: (lambda _root: [], None, None))
+
+        class _FakeProc:
+            pid = 4242
+            waits = 0
+
+            def wait(self, timeout=None):  # noqa: ARG002 — signature parity
+                self.waits += 1
+                if self.waits == 1:
+                    raise KeyboardInterrupt
+                return 0
+
+        def _popen(_cmd, **kwargs):
+            kwargs["stdout"].write("started\n")
+            kwargs["stdout"].flush()
+            return _FakeProc()
+
+        import contextlib
+
+        fake_swift_runner = types.SimpleNamespace(
+            swiftpm_command_lock=lambda *_a, **_k: contextlib.nullcontext()
+        )
+        kills = []
+        cleaned = []
+        monkeypatch.setattr(_mod.subprocess, "Popen", _popen)
+        monkeypatch.setattr(_mod.os, "killpg", lambda pid, sig: kills.append((pid, sig)))
+        monkeypatch.setattr(
+            _mod,
+            "_clear_project_swiftpm_lock_files",
+            lambda root: cleaned.append(root) or 0,
+        )
+        monkeypatch.setitem(sys.modules, "swift_runner", fake_swift_runner)
+
+        with pytest.raises(KeyboardInterrupt):
+            _mod._run_streamed_swift_test(
+                extra_flags=[], timeout=60, min_test_count=1, log_name="probe.log"
+            )
+
+        assert kills == [(4242, _mod.signal.SIGTERM)]
+        assert cleaned == [tmp_path]
+
     def test_a_skipped_test_is_reported_rather_than_silently_counted_as_verified(
         self, monkeypatch, tmp_path
     ) -> None:
@@ -949,3 +1049,115 @@ class TestPmBaseImportEnvironment:
         assert "PROJECTS_HUB" not in os.environ, (
             "a key absent before the override must be REMOVED, not left set"
         )
+
+
+class TestTerminateProcessGroup:
+    """`_terminate_process_group` against REAL process groups.
+
+    Every test here spawns an actual child with `start_new_session=True` (the
+    same way the PM starts `swift`) and asserts the process is GONE afterwards.
+    A test that only asserts `killpg` was called cannot distinguish a working
+    terminator from one that signals the wrong pid (`no.md` #12).
+    """
+
+    @staticmethod
+    def _spawn_group(command: list[str]) -> subprocess.Popen:
+        return subprocess.Popen(  # noqa: S603 — fixed argv, no shell
+            command,
+            start_new_session=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+    def test_a_live_process_group_is_actually_terminated(self) -> None:
+        proc = self._spawn_group(["sleep", "30"])
+        try:
+            assert proc.poll() is None, "the fixture died before the terminator ran"
+
+            started = time.monotonic()
+            _mod._terminate_process_group(proc)
+            elapsed = time.monotonic() - started
+
+            # `wait` here is the assertion: the process must already be reaped.
+            # A timeout means the terminator returned while the child lived on.
+            assert proc.wait(timeout=5) is not None
+            assert proc.returncode is not None, "the child outlived the terminator"
+            # WHICH signal ended it is the discriminator. Asserting only "it is
+            # gone" passes against a terminator that never sends SIGTERM at all:
+            # the graceful wait then times out and the SIGKILL fallback reaps it
+            # anyway, ~10s later (`no.md` #12 -- an assertion both the correct
+            # and the broken implementation satisfy is not a test).
+            assert proc.returncode == -signal.SIGTERM, (
+                f"expected a graceful SIGTERM death, got returncode {proc.returncode}"
+            )
+            assert elapsed < _mod.TIMEOUT_PROC_TERM_GRACE, (
+                f"took {elapsed:.2f}s -- it waited out the grace period, so the "
+                "SIGKILL fallback did the work the SIGTERM path should have"
+            )
+        finally:
+            if proc.poll() is None:  # pragma: no cover — only on a failed run
+                proc.kill()
+                proc.wait(timeout=5)
+
+    def test_a_child_ignoring_sigterm_is_escalated_to_sigkill(self) -> None:
+        """The escalation path: SIGTERM is trapped, so only SIGKILL can end it.
+
+        The grace period is shortened so the test measures the ESCALATION rather
+        than the production 10s wait. Without the SIGKILL branch this hangs at
+        the grace timeout and then fails, rather than passing slowly.
+        """
+        # Trap SIGTERM and keep running: only an uncatchable signal ends this.
+        script = "trap '' TERM; while :; do sleep 0.2; done"
+        proc = self._spawn_group(["/bin/sh", "-c", script])
+        try:
+            assert proc.poll() is None, "the fixture died before the terminator ran"
+            # Let the shell install its trap before signalling it.
+            time.sleep(0.5)
+
+            original_grace = _mod.TIMEOUT_PROC_TERM_GRACE
+            _mod.TIMEOUT_PROC_TERM_GRACE = 1
+            try:
+                _mod._terminate_process_group(proc)
+            finally:
+                _mod.TIMEOUT_PROC_TERM_GRACE = original_grace
+
+            assert proc.wait(timeout=5) is not None
+            assert proc.returncode is not None, (
+                "a SIGTERM-ignoring child survived — the SIGKILL escalation did not run"
+            )
+            # -9 is the signal that actually ended it; -15 would mean the trap
+            # never installed and the test proved nothing about escalation.
+            assert proc.returncode == -signal.SIGKILL, (
+                f"expected death by SIGKILL, got returncode {proc.returncode}"
+            )
+        finally:
+            if proc.poll() is None:  # pragma: no cover — only on a failed run
+                proc.kill()
+                proc.wait(timeout=5)
+
+    def test_an_already_exited_process_does_not_raise(self) -> None:
+        """The PM calls this from an `except BaseException` handler, where the
+        child has often already died. Raising there would mask the original
+        error with a ProcessLookupError.
+        """
+        proc = self._spawn_group(["/bin/sh", "-c", "exit 0"])
+        proc.wait(timeout=5)
+        assert proc.returncode is not None, "the fixture did not exit"
+
+        # No assertion beyond "this returns": the contract is that it is safe.
+        _mod._terminate_process_group(proc)
+
+    def test_a_reaped_process_group_is_tolerated(self) -> None:
+        """`killpg` on a fully-reaped group raises ProcessLookupError, which the
+        terminator must swallow rather than propagate to the PM's error path.
+        """
+        proc = self._spawn_group(["/bin/sh", "-c", "exit 0"])
+        proc.wait(timeout=5)
+
+        # Signal 0 probes existence without delivering anything: this asserts the
+        # fixture really is gone, so the terminator below is exercising the
+        # already-reaped path rather than quietly killing a live process.
+        with pytest.raises(ProcessLookupError):
+            os.killpg(proc.pid, 0)
+
+        _mod._terminate_process_group(proc)
