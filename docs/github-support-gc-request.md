@@ -102,7 +102,7 @@ gh api "repos/medlars/verdictui/contents/.playwright-mcp?ref=4782a7177e1fd0624be
 ```
 
 returns HTTP 200 with a listing of all nine files rather than 404. The same is
-true for the second commit, and blob `12a918388197733800f668d2173a600b4f0a9ef3`
+true for the second commit, and blob `12a9183` (full sha in the ticket)
 is served directly.
 
 Anyone who recorded a SHA during the public window can still retrieve the data.
