@@ -1099,7 +1099,7 @@ class TestTerminateProcessGroup:
                 proc.kill()
                 proc.wait(timeout=5)
 
-    def test_a_child_ignoring_sigterm_is_escalated_to_sigkill(self, monkeypatch) -> None:
+    def test_a_child_ignoring_sigterm_is_escalated_to_sigkill(self, monkeypatch, tmp_path) -> None:
         """The escalation path: SIGTERM is trapped, so only SIGKILL can end it.
 
         The grace period is shortened so the test measures the ESCALATION rather
@@ -1107,12 +1107,27 @@ class TestTerminateProcessGroup:
         the grace timeout and then fails, rather than passing slowly.
         """
         # Trap SIGTERM and keep running: only an uncatchable signal ends this.
-        script = "trap '' TERM; while :; do sleep 0.2; done"
+        # The shell TOUCHES a readiness file after installing the trap, so the
+        # test can wait for the real precondition instead of guessing at it.
+        ready = tmp_path / "trap-installed"
+        script = f"trap '' TERM; : > {ready}; while :; do sleep 0.2; done"
         proc = self._spawn_group(["/bin/sh", "-c", script])
         try:
             assert proc.poll() is None, "the fixture died before the terminator ran"
-            # Let the shell install its trap before signalling it.
-            time.sleep(0.5)
+            # POLL for the trap, never a fixed sleep. A sleep that is long enough
+            # on an idle machine is a claim about an idle machine (lesson 357),
+            # and this fleet routinely runs several sessions plus their test
+            # runners at once — the old time.sleep(0.5) was a race that passes
+            # until the box is busy, then signals a shell with no trap installed
+            # and silently tests the WRONG path (CIS-5BD2FEBC).
+            deadline = time.monotonic() + 10
+            while not ready.exists():
+                assert proc.poll() is None, "the fixture died before installing its trap"
+                assert time.monotonic() < deadline, (
+                    "the shell never installed its SIGTERM trap — the escalation "
+                    "path cannot be exercised, so this test would prove nothing"
+                )
+                time.sleep(0.01)
 
             # monkeypatch, not a bare attribute assignment: `_mod` is loaded at
             # runtime via spec_from_file_location, so pyright types it as a plain
