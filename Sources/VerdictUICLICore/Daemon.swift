@@ -222,9 +222,12 @@ public enum DaemonResult: Codable, Sendable {
     case findings([Finding])
     case pixelRender(PixelRenderReport)
     case pong(String)
+    /// Probe id -> the ``ProbeAction`` verbs that probe accepts.
+    case actions([String: [String]])
 
     private enum CodingKeys: String, CodingKey, CaseIterable {
         case scenarios, verdict, tree, step, sweep, findings, pixelRender, pong
+        case actions
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -238,6 +241,7 @@ public enum DaemonResult: Codable, Sendable {
         case .findings(let value): try container.encode(value, forKey: .findings)
         case .pixelRender(let value): try container.encode(value, forKey: .pixelRender)
         case .pong(let value): try container.encode(value, forKey: .pong)
+        case .actions(let value): try container.encode(value, forKey: .actions)
         }
     }
 
@@ -265,6 +269,10 @@ public enum DaemonResult: Codable, Sendable {
             self = .pixelRender(value)
         } else if let value = try container.decodeIfPresent(String.self, forKey: .pong) {
             self = .pong(value)
+        } else if let value = try container.decodeIfPresent(
+            [String: [String]].self, forKey: .actions)
+        {
+            self = .actions(value)
         } else {
             throw DecodingError.dataCorrupted(
                 DecodingError.Context(
@@ -334,7 +342,7 @@ public actor VerdictDaemon {
     /// rule — adding `act` here left the copy stale, and the schema and the
     /// dispatcher disagreed about what a client must send.
     public static let methodsNeedingAScenario: Set<String> = [
-        "render", "verify", "focus", "act", "sweep", "baseline_diff",
+        "render", "verify", "focus", "act", "actions", "sweep", "baseline_diff",
     ]
 
     /// Answer one request.
@@ -462,6 +470,9 @@ public actor VerdictDaemon {
                 return success(
                     .step(StepResultWire(step, includeTree: request.includeTree ?? false))
                 )
+
+            case "actions":
+                return success(.actions(try await engine.actionableProbes(scenario: scenario)))
 
             case "sweep":
                 let report = try await engine.sweep(

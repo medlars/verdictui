@@ -35,7 +35,8 @@ public struct VerdictUITool: AsyncParsableCommand {
             """,
         version: SchemaVersion.current,
         subcommands: [
-            List.self, Render.self, Verify.self, Judge.self, Baseline.self, SweepRun.self,
+            List.self, Render.self, Actions.self, Verify.self, Judge.self, Baseline.self,
+            SweepRun.self,
             Inspect.self, AppKit.self, Daemon.self, MCP.self,
         ],
         defaultSubcommand: List.self
@@ -186,6 +187,27 @@ public struct VerdictUITool: AsyncParsableCommand {
         public func run() async throws {
             let environment = CommandEnvironment.standard()
             let code = await RenderCommand(scenario: scenario, pixels: pixels)
+                .run(environment, pretty: formatting.pretty)
+            try VerdictUITool.finish(code)
+        }
+    }
+
+    public struct Actions: AsyncParsableCommand {
+        public static let configuration = CommandConfiguration(
+            commandName: "actions",
+            abstract: "List which probes accept an act, and which verbs each accepts."
+        )
+        public init() {}
+
+        @Argument(help: "Scenario name, as printed by `verdictui list`.")
+        public var scenario: String
+
+        @OptionGroup public var formatting: FormattingOptions
+
+        @MainActor
+        public func run() async throws {
+            let environment = CommandEnvironment.standard()
+            let code = await ActionsCommand(scenario: scenario)
                 .run(environment, pretty: formatting.pretty)
             try VerdictUITool.finish(code)
         }

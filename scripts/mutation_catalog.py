@@ -1519,6 +1519,37 @@ MUTATIONS = [
         test="ActToolTests/testAVerbMissingItsPayloadIsRefusedRatherThanDefaulted",
     ),
     Mutation(
+        # Discovery starts reporting every probe it was ever asked about
+        # rather than only the ones with a binding. That is the always-true
+        # failure (no.md #17): an agent reading it would act on probes that
+        # refuse -- the exact state this feature was built to end -- and it
+        # reads as a MORE helpful answer, so nothing about it looks wrong.
+        # The `new` keeps every binding live and compiles (no.md #31): it
+        # widens the map rather than deleting the computation.
+        name="actionability reports unbound probes as actionable",
+        path="Sources/VerdictUIProbe/Scenario.swift",
+        old='        for id in strings.keys { result[id, default: []].append("setText") }',
+        new="""        for id in strings.keys { result[id, default: []].append("setText") }
+        result["never-registered", default: []].append("tap")""",
+        test="ActionDiscoveryTests/testStateReportsRegisteredProbesAndOmitsUnregisteredOnes",
+    ),
+    Mutation(
+        # A tool is served under a name the published contract does not carry,
+        # which is invisible to every client author reading the contract. Found
+        # live on this guard's FIRST run -- judge_appkit had shipped served and
+        # undocumented since 2026-08-17 with nothing able to see it.
+        #
+        # The mutation renames the SERVED tool rather than weakening the test:
+        # a row that made the assertion self-referential (`served = documented`)
+        # scored UNNOTICED and was right to -- no test can witness its own
+        # vacuity, so a mutation must break the SUBJECT, not the witness.
+        name="a served MCP tool goes undocumented in the published contract",
+        path="Sources/VerdictUICLICore/MCPServer.swift",
+        old='                name: "actions",',
+        new='                name: "actions_undocumented",',
+        test=("MCPServerTests/testEveryServedToolIsDocumentedAndEveryDocumentedToolIsServed"),
+    ),
+    Mutation(
         # The SD6 permission path stops reporting itself. A caller that ASKED
         # for cross-validation and could not get it then receives an ordinary
         # PASS -- "the two channels agree" and "only one channel ran" arriving

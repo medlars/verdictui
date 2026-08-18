@@ -72,7 +72,11 @@ public struct OffscreenButtonScenario: VerdictScenario, Sendable {
             Button("Apply") {}
                 .buttonStyle(.plain)
                 .frame(width: Self.buttonSize.width, height: Self.buttonSize.height)
-                .verdictProbe("apply-button", role: .button)
+                // Inert by design: the planted defect is the button's POSITION,
+                // so a handler that moved anything would erase the measurement.
+                // The binding exists so the shipped catalog demonstrates
+                // `actions`/`act` on more than one scenario.
+                .verdictProbe("apply-button", role: .button, action: .tap {})
                 .offset(x: Self.buttonOffset, y: 40)
         }
     }

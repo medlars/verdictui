@@ -141,6 +141,19 @@ public enum MCPServer {
                 )
             ),
             MCPTool(
+                name: "actions",
+                description:
+                    "List which probes in a scenario accept an act, and which verbs each one "
+                    + "accepts. Call this BEFORE act: a node's role says what it IS, not what "
+                    + "this tool can DRIVE — a probe can be role 'toggle' with no binding "
+                    + "behind it, and acting on one is refused. Returns probe id -> accepted "
+                    + "verbs; a probe absent from the map is not actionable.",
+                inputSchema: MCPSchema(
+                    properties: ["scenario": scenario],
+                    required: ["scenario"]
+                )
+            ),
+            MCPTool(
                 name: "act",
                 description:
                     "Act on a probed control and observe what changed: capture, act, settle, "
@@ -246,6 +259,7 @@ public enum MCPServer {
         case "focus": return "focus"
         case "verify": return "verify"
         case "act": return "act"
+        case "actions": return "actions"
         case "sweep": return "sweep"
         case "baseline_diff": return "baseline_diff"
         case "judge_appkit": return "judge_appkit"

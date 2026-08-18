@@ -72,6 +72,58 @@ final class MCPServerTests: XCTestCase {
         XCTAssertTrue(names.contains("baseline_diff"), "the read-only diff must still be offered")
     }
 
+    /// Every served tool is documented in the published contract.
+    ///
+    /// `contracts/mcp-tools.md` is what a client author reads, and nothing
+    /// previously compared it to the catalog — so a tool could ship served but
+    /// undocumented (invisible to every consumer) or documented but unserved
+    /// (`no.md` #34, where a runbook described a transport that did not exist).
+    /// Both are silent, and both are the same defect: a published claim with no
+    /// test behind it.
+    ///
+    /// Asserted in BOTH directions. Checking only "every tool is documented"
+    /// would stay green against a doc listing tools nobody serves.
+    func testEveryServedToolIsDocumentedAndEveryDocumentedToolIsServed() throws {
+        let contract = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()  // VerdictUICLICoreTests
+            .deletingLastPathComponent()  // Tests
+            .deletingLastPathComponent()  // repo root
+            .appendingPathComponent("contracts/mcp-tools.md")
+        let text = try String(contentsOf: contract, encoding: .utf8)
+
+        // Headings are `### \`name(args)\`` — take the name up to `(` or the
+        // closing backtick. `baseline_accept` is documented precisely as NOT
+        // served, so it is excluded by the same heading that says so.
+        var documented: Set<String> = []
+        for line in text.split(separator: "\n") where line.hasPrefix("### `") {
+            let body = line.dropFirst(5)
+            let name = String(body.prefix { $0 != "(" && $0 != "`" })
+            guard !line.contains("NOT SERVED") else { continue }
+            documented.insert(name)
+        }
+
+        // The control: if the parse found nothing, every assertion below is
+        // vacuously satisfiable and this test would pass against an empty doc.
+        XCTAssertGreaterThan(
+            documented.count, 3,
+            "parsed \(documented.count) tool headings out of the contract — the parser is "
+                + "broken, and every comparison below would be meaningless"
+        )
+
+        let served = Set(MCPServer.tools.map(\.name))
+
+        XCTAssertEqual(
+            served.subtracting(documented), [],
+            "these tools are SERVED but absent from contracts/mcp-tools.md — a client author "
+                + "reading the contract cannot discover them"
+        )
+        XCTAssertEqual(
+            documented.subtracting(served), [],
+            "these tools are DOCUMENTED but not served — a client following the contract "
+                + "would call them and get 'unknown method'"
+        )
+    }
+
     /// Every tool's schema names the arguments its method actually needs.
     func testToolsRequiringAScenarioSaySoInTheirSchema() {
         for tool in MCPServer.tools {
