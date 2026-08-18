@@ -1099,7 +1099,7 @@ class TestTerminateProcessGroup:
                 proc.kill()
                 proc.wait(timeout=5)
 
-    def test_a_child_ignoring_sigterm_is_escalated_to_sigkill(self) -> None:
+    def test_a_child_ignoring_sigterm_is_escalated_to_sigkill(self, monkeypatch) -> None:
         """The escalation path: SIGTERM is trapped, so only SIGKILL can end it.
 
         The grace period is shortened so the test measures the ESCALATION rather
@@ -1114,12 +1114,14 @@ class TestTerminateProcessGroup:
             # Let the shell install its trap before signalling it.
             time.sleep(0.5)
 
-            original_grace = _mod.TIMEOUT_PROC_TERM_GRACE
-            _mod.TIMEOUT_PROC_TERM_GRACE = 1
-            try:
-                _mod._terminate_process_group(proc)
-            finally:
-                _mod.TIMEOUT_PROC_TERM_GRACE = original_grace
+            # monkeypatch, not a bare attribute assignment: `_mod` is loaded at
+            # runtime via spec_from_file_location, so pyright types it as a plain
+            # ModuleType and rejects assigning an attribute it cannot see
+            # (CIS-014FAE5E / CIS-32D281B3). setattr also restores on teardown, so
+            # a failure between the two assignments cannot leak the shortened
+            # grace period into the next test.
+            monkeypatch.setattr(_mod, "TIMEOUT_PROC_TERM_GRACE", 1)
+            _mod._terminate_process_group(proc)
 
             assert proc.wait(timeout=5) is not None
             assert proc.returncode is not None, (
