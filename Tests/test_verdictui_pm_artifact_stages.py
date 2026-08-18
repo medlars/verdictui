@@ -21,8 +21,11 @@ itself, `no.md` #22).
 import inspect
 import json
 import shlex
+import signal
 import subprocess
+import sys
 import time
+import types
 
 import pytest
 from pm_test_support import _needs_dev_machine, load_pm
@@ -58,14 +61,52 @@ class TestStageCLISmoke:
         SwiftPM invocations to reproduce, which a unit test cannot stage
         deterministically. What CAN be asserted is that the lock is taken.
         """
-        source = inspect.getsource(VerdictUIPM.stage_cli_smoke)
-        assert "swiftpm_command_lock" in source, (
+        stage_source = inspect.getsource(VerdictUIPM.stage_cli_smoke)
+        helper_source = inspect.getsource(_mod._run_locked_swift_build_product)
+        assert "_run_locked_swift_build_product" in stage_source
+        assert "swiftpm_command_lock" in helper_source, (
             "stage_cli_smoke builds without the shared SwiftPM lock, so it "
             "contends with a concurrent swift test for the build directory"
         )
-        lock_at = source.index("swiftpm_command_lock")
-        build_at = source.index("subprocess.run")
+        lock_at = helper_source.index("swiftpm_command_lock")
+        build_at = helper_source.index("subprocess.Popen")
         assert lock_at < build_at, "the lock must be acquired BEFORE the build runs"
+
+    def test_an_interrupted_build_kills_the_child_before_releasing_the_lock(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        """Ctrl-C during CLI build must not leave SwiftPM holding `.build`."""
+        monkeypatch.setattr(_mod, "PROJECT_ROOT", tmp_path)
+        monkeypatch.setattr(_mod, "_LOCK_DIR", tmp_path / ".lock")
+
+        class _FakeProc:
+            pid = 4242
+
+            def communicate(self, timeout=None):  # noqa: ARG002 — signature parity
+                raise KeyboardInterrupt
+
+            def wait(self, timeout=None):  # noqa: ARG002 — signature parity
+                return 0
+
+        fake_swift_runner = types.SimpleNamespace(
+            swiftpm_command_lock=lambda *_a, **_k: _mod.contextlib.nullcontext()
+        )
+        kills = []
+        cleaned = []
+        monkeypatch.setattr(_mod.subprocess, "Popen", lambda *_a, **_k: _FakeProc())
+        monkeypatch.setattr(_mod.os, "killpg", lambda pid, sig: kills.append((pid, sig)))
+        monkeypatch.setattr(
+            _mod,
+            "_clear_project_swiftpm_lock_files",
+            lambda root: cleaned.append(root) or 0,
+        )
+        monkeypatch.setitem(sys.modules, "swift_runner", fake_swift_runner)
+
+        with pytest.raises(KeyboardInterrupt):
+            _mod._run_locked_swift_build_product(timeout=60)
+
+        assert kills == [(4242, signal.SIGTERM)]
+        assert cleaned == [tmp_path]
 
     def test_it_is_registered_in_the_quick_pipeline(self) -> None:
         """`swift test` does not build executable PRODUCTS, so without this
