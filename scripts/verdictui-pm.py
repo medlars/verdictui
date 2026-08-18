@@ -1121,6 +1121,59 @@ class VerdictUIPM(PmBase):
             "detail": (r.stdout.strip() or r.stderr.strip() or NO_OUTPUT)[:300],
         }
 
+    def stage_installed_parity(self) -> dict:
+        """The binary a developer/agent invokes must not lag the repo's surface.
+
+        `stage_cli_smoke` builds and exercises the REPO binary; nothing observed
+        the installed copy on PATH, which is the artifact every other project
+        and every MCP client actually reaches. Measured 2026-08-18: that copy
+        was 41h stale and served neither the `appkit` subcommand nor the
+        `judge_appkit` MCP tool, while every stage stayed green — and two more
+        subcommands (`adoption`, `inspect`) were missing that nobody had noticed.
+        A check blind to the artifact that ships cannot fail for its own reason.
+
+        ADVISORY: an absent install is a legitimate state (a fresh clone, CI),
+        so it reports rather than fails. A STALE install is the defect.
+        """
+        installed = shutil.which("verdictui")
+        if installed is None:
+            return {"passed": True, "detail": "no installed verdictui on PATH — nothing to compare"}
+        built = PROJECT_ROOT / ".build" / "release" / "verdictui"
+        if not built.exists():
+            return {"passed": True, "detail": "no release build — run swift build -c release"}
+
+        def subcommands(binary: str) -> set[str]:
+            r = subprocess.run(  # noqa: S603 — argv from resolved paths
+                [binary, "--help"], capture_output=True, text=True, timeout=60
+            )
+            names: set[str] = set()
+            seen = False
+            for line in r.stdout.splitlines():
+                if line.startswith("SUBCOMMANDS:"):
+                    seen = True
+                    continue
+                if seen:
+                    if line and not line.startswith(" "):
+                        break
+                    tok = line.strip().split(" ", 1)[0]
+                    if tok and tok.isidentifier():
+                        names.add(tok)
+            return names
+
+        built_names = subcommands(str(built))
+        if not built_names:
+            return {"passed": False, "detail": "could not parse subcommands from the built binary"}
+        missing = sorted(built_names - subcommands(installed))
+        if missing:
+            return {
+                "passed": False,
+                "detail": (
+                    f"installed verdictui STALE — missing {missing}. "
+                    f"Fix: install -m 755 {built} {installed}"
+                ),
+            }
+        return {"passed": True, "detail": f"installed parity ok ({len(built_names)} subcommands)"}
+
     def stage_stale_buffer(self) -> dict:
         """No tracked file was overwritten by a stale editor buffer.
 
@@ -1439,6 +1492,7 @@ class VerdictUIPM(PmBase):
             # of them drive.
             ("stage_transport_smoke", self.stage_transport_smoke),
             ("stage_mutations", self.stage_mutations),
+            ("stage_installed_parity", self.stage_installed_parity),
             ("stage_stale_buffer", self.stage_stale_buffer),
             ("stage_runtime_bench", self.stage_runtime_bench),
             # SLO 3. Also needs the binary stage_cli_smoke builds, and sits

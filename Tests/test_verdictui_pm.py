@@ -1083,3 +1083,56 @@ class TestPmBaseImportEnvironment:
         assert "PROJECTS_HUB" not in os.environ, (
             "a key absent before the override must be REMOVED, not left set"
         )
+
+
+# --- installed-binary parity (CIS: stale ~/.local/bin/verdictui) -------------
+#
+# The repo binary and the binary a developer or agent actually invokes are two
+# different artifacts. `stage_cli_smoke` builds and exercises the former, so an
+# installed copy can fall arbitrarily far behind while every stage stays green
+# — measured 2026-08-18, when ~/.local/bin/verdictui was 41h stale and served
+# neither the `appkit` subcommand nor the `judge_appkit` MCP tool, both of
+# which had shipped the day before. A check that cannot observe the artifact
+# that ships cannot fail for the reason it exists.
+
+
+def _installed_verdictui() -> str | None:
+    return shutil.which("verdictui")
+
+
+@pytest.mark.skipif(
+    _installed_verdictui() is None,
+    reason="no installed verdictui on PATH — nothing to compare against",
+)
+def test_installed_binary_exposes_every_built_subcommand() -> None:
+    """The binary on PATH must not lag the repo's subcommand surface."""
+    built = _PROJECT_ROOT / ".build" / "release" / "verdictui"
+    if not built.exists():
+        pytest.skip("no release build to compare against — run swift build -c release")
+
+    def subcommands(binary: str) -> set[str]:
+        proc = subprocess.run([binary, "--help"], capture_output=True, text=True, timeout=60)
+        # ArgumentParser lists subcommands indented under SUBCOMMANDS:.
+        out, seen = proc.stdout, False
+        names: set[str] = set()
+        for line in out.splitlines():
+            if line.startswith("SUBCOMMANDS:"):
+                seen = True
+                continue
+            if seen:
+                if line and not line.startswith(" "):
+                    break
+                token = line.strip().split(" ", 1)[0]
+                if token and token.isidentifier():
+                    names.add(token)
+        return names
+
+    installed_names = subcommands(str(_installed_verdictui()))
+    built_names = subcommands(str(built))
+
+    assert built_names, "could not parse subcommands from the built binary"
+    missing = built_names - installed_names
+    assert not missing, (
+        f"installed verdictui is STALE — missing {sorted(missing)}. "
+        f"Reinstall: install -m 755 {built} $(command -v verdictui)"
+    )
