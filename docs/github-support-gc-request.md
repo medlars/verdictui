@@ -129,3 +129,62 @@ Only after both return 404:
 2. Tag a fresh version — `v1.0.1`, never `v1.0.0`, whose SHA is burned.
 3. Cut a release and restore `Formula/verdictui.rb` in `medlars/homebrew-tap`
    with a **re-measured** sha256.
+
+---
+
+## Follow-up request — 2026-08-17: `refs/pull/14/head` pins a second fragment
+
+The first request (ticket **#4668678**) succeeded: both original leak commits
+now return **404**, verified with a probe proven live in both directions
+(a positive control against `HEAD` returns the real sha and file listing, so
+the 404 is a real absence and not a broken apparatus).
+
+A follow-up is needed for a **different** commit, found by scanning reachable
+history for the identifier **strings** rather than the filenames — the same
+two-shapes lesson as before (`no.md` #54): the tool-written FILES and the
+human-written PROSE describing them are separate leaks, and removing one does
+nothing about the other.
+
+**What remains:** commit `89198bc40beea1d78bd3436e545e5f03cf398049`,
+file `docs/wave-status.md`, contains a payment-card last-four written out in prose. The email beside it was already correctly redacted.
+
+**Remediation already done on our side (2026-08-17):**
+
+- History rewritten with `git filter-repo --replace-text`, replacing the exact
+  phrase with a redaction marker (a replacement, not a deletion — the marker is
+  present in the rewritten commit, which proves the file survived intact).
+- `main` force-pushed: `a0433db` → `f325b99`
+- `feat/appkit-merged` force-pushed: `a011999` → `f5befcf`
+- Verified from a **fresh clone of the live remote**: all branch refs return
+  **0** matches for the payment-card phrase. 278 commits preserved on `main`.
+
+**Why we cannot finish it ourselves:** the commit is pinned alive by
+`refs/pull/14/head` (PR #14, MERGED). That is a GitHub-held ref — a force-push
+cannot move it. Measured against the live remote after our push:
+
+| ref | the payment-card phrase matches |
+|---|---|
+| `refs/heads/main` | 0 |
+| `refs/heads/feat/appkit-merged` | 0 |
+| `refs/pull/5/head`, `refs/pull/9/head` | 0 |
+| **`refs/pull/14/head`** | **1** |
+
+And it is still served:
+`gh api "repos/medlars/verdictui/contents/docs/wave-status.md?ref=89198bc4…"`
+returns 200 with content containing the string (size 153746).
+
+**The ask:** please dereference/expire `refs/pull/14/head` for PR #14 and run
+GC so commit `89198bc40beea1d78bd3436e545e5f03cf398049` is no longer fetchable.
+As before: **we are NOT asking for the repository to be deleted or purged.**
+
+**Verification we will run before considering this closed** (per DIR-034 — the
+vendor's reply is a claim, not evidence):
+
+```
+gh api "repos/medlars/verdictui/contents/docs/wave-status.md?ref=89198bc40beea1d78bd3436e545e5f03cf398049"
+```
+
+must return **404**. Note the quoting: an unquoted `?` makes zsh fail with a
+glob error whose exit 1 reads exactly like a 404 and is not one.
+
+**The repository stays PRIVATE until that probe returns 404.**
