@@ -170,3 +170,110 @@ half a guard.
 **The rule: when one component names things and another acts on those names,
 the naming must have exactly one implementation.** Two is a coincidence waiting
 to expire.
+
+## The witness skips are the HOST refusing to publish new windows, not an anchor defect
+
+Measured 2026-08-17, with **no VerdictUI code in the path** — a 20-line probe
+that opens an `NSWindow` and a separate reader process that asks the
+accessibility server what it publishes:
+
+| Target | `kAXWindowsAttribute` | Windows | Geometry |
+|---|---|---|---|
+| Freshly-launched GUI process | **-25204** (`kAXErrorAPIDisabled`) | 0 | — |
+| Finder | 0 | 1 | readable |
+| Same fresh process, after 6 s | **-25204** | 0 | — |
+
+The fresh process reports `NSApp.windows = 1` in the same instant. So the window
+exists, the accessibility API works (Finder proves it), and the grant is intact
+— but a **newly-launched** GUI app is not published to the AX server in this
+login session. Not a timing race: it is stable at 6 s and across three
+consecutive suite runs.
+
+### Why this is not CIS-C5D9A5E8, despite sharing a throw site
+
+Both surface as `Failure.anchorUnreadable`, which invites the conclusion that
+one fix closes both. It does not:
+
+- **CIS-C5D9A5E8** is `hostingContent(of:)` finding no `AXHostingView` and no
+  `AXGroup` on a pure-AppKit app. The window IS published; its anchor is not
+  classifiable.
+- **These skips** are one line lower, at `frame(of: content)`. The witness host
+  is SwiftUI (`verdictui-witness-host/main.swift` imports SwiftUI;
+  `WitnessHost` builds an `NSHostingView`), so it publishes a perfectly good
+  `AXHostingView` — there is simply no window to find it in.
+
+The window fallback a reader reaches for (`?? window`) is **already present** at
+`AXReader.swift:262` and cannot help: the window publishes no geometry either,
+because it is not published at all.
+
+**A shared throw site is not a shared cause.** Two conditions reaching one
+`throw` look identical in a test report and need opposite fixes — the general
+shape of lesson 231, arriving through an error type rather than a symptom.
+
+### What follows for the verification bar
+
+"`swift test --filter VerdictUIWitnessTests` reports 0 skipped" **cannot be a
+release criterion for an anchor fix.** On a healthy login session it is already
+0 (measured today at 17:32); on a degraded one no code change can make it 0. A
+criterion that no code change can satisfy is not a test of the code.
+
+Scope an anchor fix to what it actually governs — `inspect --pid` exits 0 on a
+pure-AppKit app — and treat the witness channel as an environment precondition,
+which is what its own skip text has said all along.
+
+### The recurrence, and the one cheap experiment
+
+The same transition happened on 2026-08-12 (`WitnessIntegrationTests.swift:55`):
+passing 17:22:55, failing 18:04, source byte-identical. Today: 0 skips at 17:32,
+6 at 18:09. Nearly the same clock window, five days apart, both after a session
+of launching and killing unsigned GUI apps.
+
+That is a correlation with two observations, not a cause — but it is cheap to
+test and nobody has: **reboot, then re-run the probe above.** If a fresh login
+session publishes new windows, the contaminant is session-accumulated state and
+the suite needs no change. It is the owner's machine, so it is the owner's call.
+
+## The titlebar-corrected anchor fallback cannot be built on this host, and its premise is not universal
+
+Attempted 2026-08-17, stopped deliberately before writing code. Two measurements
+say why.
+
+**1. The subject cannot be observed here.** A pure-AppKit window — the exact
+shape CIS-C5D9A5E8 is about — was built and launched (`NSWindow` + `NSTextField`
++ `NSButton`, zero SwiftUI). Reading it cross-process returns **no window at
+all**, because this login session does not publish newly-launched GUI apps (see
+the entry above). Every app that DOES read here — Finder — was launched
+2026-08-16, before the degradation.
+
+So on this host the anchor gap is unobservable: the read fails earlier, for an
+unrelated reason. Writing the fix now would mean shipping a correction whose
+before-state was never seen and whose after-state cannot be verified. That is
+the "plausible-looking lie" the existing comments guard against, one level up.
+
+**2. The 32 pt premise does not generalise.** `AXReader.swift:259` records the
+window frame as including "a titlebar (measured at 32 pt)", and a correction of
+that size is the obvious fix. Measured against Finder:
+
+```
+WINDOW    frame=(0, 0, 1728, 1117)
+  [0]     role=AXGroup  frame=(0, 0, 1728, 1117)
+```
+
+**Identical.** The offset is 0, not 32. So the correction is not a constant to
+subtract — it is a per-window quantity that must be DERIVED from the content
+element, and on the window whose content element is missing (the whole failing
+case) there is nothing to derive it from.
+
+That is the trap: a fix that subtracts a hardcoded 32 would corrupt every frame
+by 32 pt on windows like Finder's, in exchange for maybe-correcting windows
+nobody could measure. It would convert a loud failure (`anchorUnreadable`,
+exit 2, honest) into a silent one (a tree whose every frame is wrong by a
+constant) — the precise inversion `frame(of:)`'s own comment warns about when it
+refuses to return `.zero`.
+
+**What a correct fix needs, when a host can run it:** a window that publishes no
+usable content element, read on a session that publishes new windows, plus a
+control window on the same session where the derived offset can be checked
+against a known-good `AXGroup` anchor. Until both exist in one session, the
+honest state is `anchorUnreadable` — which names the failure accurately and
+costs a caller nothing but an exit 2.

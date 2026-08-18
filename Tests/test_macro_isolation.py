@@ -80,6 +80,15 @@ _SWIFTSYNTAX_FREE_TARGETS = frozenset(
         "VerdictUIWitness",
         "VerdictUIWitnessTests",
         "verdictui-witness-host",
+        # Wave 11's headless AppKit renderer. SwiftSyntax-free, and the
+        # classification is not a formality here: this target exists so an
+        # AppKit product can be judged WITHOUT adopting probes, so a macro
+        # dependency would reintroduce the build-time cost the whole path is
+        # meant to avoid. It depends on VerdictUIKernel alone — verified, not
+        # assumed: no SwiftSyntax or VerdictUIMacros reference appears anywhere
+        # under Sources/VerdictUIAppKit or Tests/VerdictUIAppKitTests.
+        "VerdictUIAppKit",
+        "VerdictUIAppKitTests",
     }
 )
 
