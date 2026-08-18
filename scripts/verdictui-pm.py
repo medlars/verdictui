@@ -1121,6 +1121,50 @@ class VerdictUIPM(PmBase):
             "detail": (r.stdout.strip() or r.stderr.strip() or NO_OUTPUT)[:300],
         }
 
+    def stage_appkit_example(self) -> dict:
+        """The documented AppKit runner builds AND judges in both directions.
+
+        `docs/appkit.md` tells an adopter to write a runner and to verify their
+        setup against a KNOWN defect, because a tree that always passes may mean
+        the UI is clean or may mean the producer emits nothing useful — and
+        those are indistinguishable from a single passing render. This stage is
+        that control, run on every PM: `defective-screen` must FAIL (exit 1) and
+        `clean-screen` must PASS (exit 0).
+
+        Asserting BOTH is the point. A producer that stopped emitting findings
+        entirely would satisfy a check that only looked at the clean subject,
+        and a runner hard-failing on everything would satisfy one that only
+        looked at the defective subject (CTS-491C01E5).
+        """
+        exe = PROJECT_ROOT / ".build" / "debug" / "AppKitRunnerExample"
+        if not exe.exists():
+            return {"passed": False, "detail": "AppKitRunnerExample not built — run swift build"}
+        cli = PROJECT_ROOT / ".build" / "debug" / "verdictui"
+        if not cli.exists():
+            return {"passed": False, "detail": "verdictui not built — run stage_cli_smoke first"}
+
+        def judge(subject: str) -> int:
+            r = subprocess.run(  # noqa: S603 — argv from resolved paths
+                [str(cli), "appkit", "--runner", str(exe), "--subject", subject, "--judge"],
+                capture_output=True,
+                text=True,
+                timeout=TIMEOUT_STANDARD,
+            )
+            return r.returncode
+
+        bad, good = judge("defective-screen"), judge("clean-screen")
+        if bad != 1:
+            return {
+                "passed": False,
+                "detail": f"defective-screen returned {bad}, expected 1 — the known defect went undetected",
+            }
+        if good != 0:
+            return {
+                "passed": False,
+                "detail": f"clean-screen returned {good}, expected 0 — a clean screen was judged unclean",
+            }
+        return {"passed": True, "detail": "appkit example: defect FAILS (1), clean PASSES (0)"}
+
     def stage_installed_parity(self) -> dict:
         """The binary a developer/agent invokes must not lag the repo's surface.
 
@@ -1492,6 +1536,7 @@ class VerdictUIPM(PmBase):
             # of them drive.
             ("stage_transport_smoke", self.stage_transport_smoke),
             ("stage_mutations", self.stage_mutations),
+            ("stage_appkit_example", self.stage_appkit_example),
             ("stage_installed_parity", self.stage_installed_parity),
             ("stage_stale_buffer", self.stage_stale_buffer),
             ("stage_runtime_bench", self.stage_runtime_bench),

@@ -61,6 +61,10 @@ _SWIFTSYNTAX_FREE_TARGETS = frozenset(
         "VerdictUIProbe",
         "VerdictUIDemoScenarios",
         "VerdictUIDemo",
+        # The shipped AppKit example runner: depends only on VerdictUIAppKit ->
+        # VerdictUIKernel, so it must never reach SwiftSyntax. It is what an
+        # adopter compiles, and adopters do not build macro plugins.
+        "AppKitRunnerExample",
         "VerdictUIKernelTests",
         "VerdictUIProbeTests",
         "VerdictUIDemoScenariosTests",
