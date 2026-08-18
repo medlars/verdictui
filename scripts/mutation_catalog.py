@@ -1771,6 +1771,24 @@ MUTATIONS = [
         test="WitnessIntegrationTests/testTheWitnessDoesNotRunAsAForegroundApp",
     ),
     Mutation(
+        # Restores the mode-bit check the write probe replaced. The two agree on
+        # healthy developer hardware, so the sibling test that reads the REAL
+        # cache paths holds under either implementation and cannot fail for this
+        # reason -- the no.md #17 shape, where a predicate's tests only ever
+        # exercise the agreeing branch. Measured 2026-08-18: this mutation passed
+        # 2/2 before the negative control existed. A writable REGULAR FILE
+        # separates them without a sandbox: isWritableFile returns true for it
+        # while writing a child into it fails, because it is not a directory.
+        name="the SwiftPM cache check trusts permission bits over a real write",
+        path="Sources/VerdictUIProbe/ConstrainedTimingEnvironment.swift",
+        old="                && !canWriteExistingDirectory(at: path)",
+        new="                && !FileManager.default.isWritableFile(atPath: path)",
+        test=(
+            "ConstrainedTimingEnvironmentTests"
+            "/testTheCacheCheckRejectsAPathOnlyARealWriteCanRuleOut"
+        ),
+    ),
+    Mutation(
         # The overshoot discriminator (no.md #18) is a RELATION between two
         # durations from one clock, so a slow host is still a valid witness for
         # it -- unlike the six wall-clock BUDGET lanes, which must record rather
