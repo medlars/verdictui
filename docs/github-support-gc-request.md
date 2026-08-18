@@ -188,3 +188,51 @@ must return **404**. Note the quoting: an unquoted `?` makes zsh fail with a
 glob error whose exit 1 reads exactly like a 404 and is not one.
 
 **The repository stays PRIVATE until that probe returns 404.**
+
+---
+
+## 2026-08-18 re-measurement — still live, and the shape has narrowed
+
+Measured today (DIR-036: a recorded blocker is re-run, never inherited).
+
+**The `.playwright-mcp` probe now returns 404 — and that is NOT the all-clear.**
+All three named commits (`4782a71`, `27de0b5`, `89198bc`) return 404 for the
+`.playwright-mcp` *path*. The tool-written FILES are gone. But that probe asks a
+PATH question, and what remains is PROSE — exactly `no.md` #63's rule, that
+"which files contain this" is narrower than "which bytes contain this". A
+session that ran only the path probe would flip the repo public on a false
+all-clear.
+
+**What is still served.** `89198bc` still returns `docs/wave-status.md` at
+**153,746 bytes**. Fetched through the blob API and decoded in full, asserting
+the decoded length against the reported size — `no.md` #64 trap (b): a large
+file comes back as `encoding: "none"` with empty `content`, and a scan of that
+response reports zero markers, which is indistinguishable from a clean file.
+A control term certainly present in the document matched 76 times, so the scan
+demonstrably works rather than silently reading nothing.
+
+Result: **0** card-shaped digit runs and **0** contact-shaped matches (phone,
+postal code, `@nynorth.ca`) — the earlier prose scrub holds. **One** match
+remains: the payment card's last four digits, in a sentence beside the
+already-redacted account identifier.
+
+**Reachability, isolated exactly.** `89198bc` is an ancestor of
+`refs/pull/14/head` **only** — not of `origin/main`, and not of
+`origin/feat/appkit-merged`. GitHub owns `refs/pull/*` and a force-push cannot
+move it, so this is genuinely Support-side. Ticket **#4668678** remains the
+only remedy, and the objects are true GC candidates because no ref we control
+reaches them.
+
+**Replacement verification.** The probe above still works, but prefer this one:
+it fails LOUDLY instead of reporting a clean `0` when the fetch itself fails —
+a failed command writes nothing and `grep -c` then reports `0`, identical to
+"the pattern is absent" (lesson 393 / AP-2721).
+
+```sh
+out=$(gh api repos/medlars/verdictui/git/blobs/e6d9a92b90d511912c73d96158613244fb44a38a --jq .content | base64 -d) \
+  || { echo UNREADABLE; exit 1; }
+[ ${#out} -eq 153746 ] || { echo TRUNCATED; exit 1; }
+printf '%s' "$out" | grep -c '<the card last four>'   # expect 0; measured 1 on 2026-08-18
+```
+
+**The repository stays PRIVATE.**
