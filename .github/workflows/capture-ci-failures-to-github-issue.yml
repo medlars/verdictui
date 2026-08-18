@@ -221,10 +221,38 @@ jobs:
           # Match the exact title format the capture job uses:
           # "CI failure: <WorkflowName> (<branch>)"
           TITLE="CI failure: ${WORKFLOW_NAME} (${HEAD_BRANCH})"
-          ISSUE=$(gh issue list --repo "${{ github.repository }}" \
-            --label "ci-failure" --state open \
-            --search "in:title \"$TITLE\"" \
-            --json number --jq '.[0].number // empty')
+
+          # Retry the lookup, and never let it fail the run. This step is
+          # BOOKKEEPING for a build that already passed, so a GitHub API blip
+          # must not turn a green build red — which is exactly what happened on
+          # 2026-08-17: `gh issue list` got "503 Service Unavailable" during a
+          # GitHub outage and, under `bash -e`, failed the whole workflow while
+          # CI itself was green on the same SHA.
+          #
+          # Note the two failure modes are NOT the same and must not be conflated:
+          # an empty result means "no issue to close" (fine), while an API error
+          # means "could not look" — so the error path says so explicitly instead
+          # of silently taking the nothing-to-close branch.
+          ISSUE=""
+          LOOKUP_OK=""
+          for attempt in 1 2 3; do
+            if ISSUE=$(gh issue list --repo "${{ github.repository }}" \
+                --label "ci-failure" --state open \
+                --search "in:title \"$TITLE\"" \
+                --json number --jq '.[0].number // empty' 2>/dev/null); then
+              LOOKUP_OK=1
+              break
+            fi
+            echo "issue lookup attempt $attempt failed (transient?); retrying"
+            sleep $((attempt * 5))
+          done
+
+          if [ -z "$LOOKUP_OK" ]; then
+            echo "::warning::Could not query issues after 3 attempts (GitHub API unavailable)."
+            echo "Skipping auto-close. This does NOT mean there was no issue to close."
+            exit 0
+          fi
+
           if [ -n "$ISSUE" ]; then
             RUN_URL="${{ github.event.workflow_run.html_url }}"
             HEAD_SHA="${{ github.event.workflow_run.head_sha }}"
