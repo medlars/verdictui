@@ -28,6 +28,8 @@ Tests/untracked_scan_probe_*.py
 # Machine-local and rewritten every turn, so it is a build artifact rather than
 # work product — the DIR-031 exception, as KastTune and SagaMail already treat it.
 .claude/
+# Codex CLI/plugin runtime state. Machine-local configuration, not product source.
+.codex/
 
 # Wave 9 pixel artifacts — evidence for a specific run, never source.
 logs/pixel-renders/
