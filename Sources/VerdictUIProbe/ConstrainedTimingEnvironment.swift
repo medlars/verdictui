@@ -80,9 +80,40 @@ public enum ConstrainedTimingEnvironment {
     /// True when a known SwiftPM user cache exists but this process cannot
     /// write to it.
     public static var hasUnwritableSwiftPMCache: Bool {
-        constrainedSwiftPMCachePaths.contains { path in
+        hasUnwritableCache(among: constrainedSwiftPMCachePaths)
+    }
+
+    /// ``hasUnwritableSwiftPMCache`` over a caller-supplied path list.
+    ///
+    /// The seam exists so a test can supply a path where a mode-bit check and a
+    /// real write DISAGREE. On healthy developer hardware the configured cache
+    /// paths are writable by both methods, so an assertion over them holds under
+    /// either implementation and cannot fail for the reason it exists
+    /// (`no.md` #17).
+    static func hasUnwritableCache(among paths: [String]) -> Bool {
+        paths.contains { path in
             FileManager.default.fileExists(atPath: path)
-                && !FileManager.default.isWritableFile(atPath: path)
+                && !canWriteExistingDirectory(at: path)
+        }
+    }
+
+    /// True when this process can create and remove a probe file in a directory.
+    ///
+    /// Sandbox denials can disagree with mode-bit checks. The timing lane cares
+    /// about the operation SwiftPM will actually attempt, so it probes the write
+    /// path directly instead of trusting static permissions.
+    static func canWriteExistingDirectory(at path: String) -> Bool {
+        let directory = URL(fileURLWithPath: path, isDirectory: true)
+        let probe = directory.appendingPathComponent(
+            ".verdictui-write-probe-\(UUID().uuidString)"
+        )
+        do {
+            try Data().write(to: probe, options: .withoutOverwriting)
+            try? FileManager.default.removeItem(at: probe)
+            return true
+        } catch {
+            try? FileManager.default.removeItem(at: probe)
+            return false
         }
     }
 
