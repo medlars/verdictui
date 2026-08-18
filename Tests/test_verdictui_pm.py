@@ -121,7 +121,21 @@ class TestLoadsWithoutSharedLibs:
             "'Tests/VerdictUICLICoreTests/MCPLatencyTests.swift'])\n"
             "print('EXIT', code)\n"
         )
-        result = subprocess.run([_PYTHON, "-c", probe], capture_output=True, text=True, timeout=60)
+        # cwd=_PROJECT_ROOT, matching the sibling probe above. The probe asserts
+        # pm_constants.DASHBOARD_FILE == Path("logs/ceo-dashboard.json").resolve(),
+        # and a RELATIVE path resolves against the CHILD's cwd — which it inherits
+        # from pytest. Run from the project root it passes; run from ~/Projects,
+        # which is exactly how check.py invokes the quick tier (it passes an
+        # absolute test dir and never chdirs), it resolves to
+        # ~/Projects/logs/ceo-dashboard.json and fails. The test was measuring
+        # the runner's working directory, not the PM's constants.
+        result = subprocess.run(
+            [_PYTHON, "-c", probe],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            cwd=_PROJECT_ROOT,
+        )
         assert result.returncode == 0, result.stderr
         assert '"query": "risk"' in result.stdout
         assert "EXIT 0" in result.stdout
