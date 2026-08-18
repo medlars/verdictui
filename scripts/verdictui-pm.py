@@ -224,6 +224,11 @@ def _pm_log(message: str, level: str = "INFO") -> None:
 _RAW_KILL_ATTR = "_verdictui_raw_kill_zombie_swift_processes"
 _RAW_SWIFTPM_LOCK_ATTR = "_verdictui_raw_swiftpm_command_lock"
 SWIFTPM_COMMAND_LOCK_WAIT_SECONDS = 10.0
+# How long `verdictui --help` may hang before stage_installed_parity gives up.
+# Generous on purpose: the probe runs the INSTALLED binary, which may be a cold
+# first exec off a slow volume, and a false timeout here reports a stale install
+# that is not stale — the expensive direction, since it accuses working code.
+HELP_PROBE_TIMEOUT_SECONDS = 60
 
 
 def _clear_project_swiftpm_lock_files(project_root: Path) -> int:
@@ -1188,7 +1193,10 @@ class VerdictUIPM(PmBase):
 
         def subcommands(binary: str) -> set[str]:
             r = subprocess.run(  # noqa: S603 — argv from resolved paths
-                [binary, "--help"], capture_output=True, text=True, timeout=60
+                [binary, "--help"],
+                capture_output=True,
+                text=True,
+                timeout=HELP_PROBE_TIMEOUT_SECONDS,
             )
             names: set[str] = set()
             seen = False

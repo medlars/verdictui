@@ -1248,3 +1248,29 @@ class TestStageInstalledParity:
         result = pm.stage_installed_parity()
         assert not result["passed"], result
         assert "could not parse" in result["detail"]
+
+    def test_the_help_probe_timeout_is_a_named_constant_not_a_literal(self):
+        """CIS-91403A32: a bare `timeout=60` states a number without stating why.
+
+        The value is a real policy choice — how long `verdictui --help` may hang
+        before the parity stage gives up — and a literal cannot be found, tuned,
+        or explained by the next reader, who sees a magic number beside three
+        other subprocess calls that each chose their own.
+
+        Asserted on the SOURCE rather than by timing a call, because the defect
+        is the spelling: a behavioural test passes identically against the
+        literal and the constant, so it could not fail for this reason.
+        """
+        import re
+
+        source = Path(_PM_PATH).read_text()
+        parity = source.split("def subcommands(")[1].split("\n\n")[0]
+        assert "timeout=60" not in parity, (
+            "the --help probe still hardcodes timeout=60; name it as a constant"
+        )
+        assert "HELP_PROBE_TIMEOUT_SECONDS" in parity, (
+            "the --help probe must take its timeout from the named constant"
+        )
+        assert re.search(r"^HELP_PROBE_TIMEOUT_SECONDS\s*=\s*\d+", source, re.MULTILINE), (
+            "HELP_PROBE_TIMEOUT_SECONDS must be defined at module scope"
+        )
