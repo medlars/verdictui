@@ -112,6 +112,13 @@ let package = Package(
             dependencies: ["VerdictUIKernel"],
             swiftSettings: strictSettings
         ),
+        // Ships the runner `docs/appkit.md` documents, so that snippet is
+        // compile-checked rather than only prose (CTS-491C01E5).
+        .executableTarget(
+            name: "AppKitRunnerExample",
+            dependencies: ["VerdictUIAppKit"],
+            swiftSettings: strictSettings
+        ),
         .target(
             name: "VerdictUIDemoScenarios",
             dependencies: ["VerdictUIProbe", "VerdictUIKernel"],
