@@ -430,7 +430,29 @@ class TestStageBuild:
             cwd=_PROJECT_ROOT,
             check=False,
         )
-        summary = json.loads(proc.stdout)["summary"]
+        report = json.loads(proc.stdout)
+        # `extraPaths` in pyproject.toml is RELATIVE to the project root, so the
+        # shared-libs siblings only resolve when the checkout sits beside them
+        # under ~/Projects. A detached worktree elsewhere (/tmp/...) resolves
+        # ../shared-libs to a directory that does not exist, and pyright then
+        # reports reportMissingImports for modules that are present and fine.
+        # Asserting the raw error count there blames the CODE for a property of
+        # the CHECKOUT LOCATION -- a check failing for a reason other than the
+        # one it exists for, which teaches its reader to discount it. So name
+        # that condition explicitly instead of reporting it as a type error.
+        unresolved_siblings = [
+            d
+            for d in report["generalDiagnostics"]
+            if d.get("rule") == "reportMissingImports"
+            and not (_PROJECT_ROOT / ".." / "shared-libs").resolve().is_dir()
+        ]
+        if unresolved_siblings:
+            pytest.skip(
+                "shared-libs is not a sibling of this checkout "
+                f"({_PROJECT_ROOT}), so pyright's relative extraPaths cannot "
+                "resolve it; run this from a checkout under ~/Projects"
+            )
+        summary = report["summary"]
         assert summary["errorCount"] == 0, proc.stdout
 
     def test_timed_out_lock_sweep_clears_project_lock_sentinels(

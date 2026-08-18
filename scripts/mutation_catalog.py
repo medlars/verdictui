@@ -1771,6 +1771,22 @@ MUTATIONS = [
         test="WitnessIntegrationTests/testTheWitnessDoesNotRunAsAForegroundApp",
     ),
     Mutation(
+        # Restores the raw errorCount assertion the skip guard replaced. The
+        # guard exists so a checkout that is NOT a sibling of shared-libs
+        # (a detached worktree under /tmp) skips with a named reason instead
+        # of reporting reportMissingImports as a type error in the code -- a
+        # check failing for a reason other than the one it exists for. The
+        # witness asserts the guard is present and reachable rather than
+        # relying on a diagnostic the main tree does not produce, since in a
+        # sibling checkout there are no missing imports to filter at all.
+        name="the pyright check asserts the raw error count with no checkout guard",
+        path="Tests/test_verdictui_pm.py",
+        old="        report = json.loads(proc.stdout)",
+        new='        report = {"summary": {"errorCount": 1}, "generalDiagnostics": []}',
+        test=("Tests/test_verdictui_pm.py::TestStageBuild::test_the_pm_script_is_pyright_clean"),
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
         # Restores the mode-bit check the write probe replaced. The two agree on
         # healthy developer hardware, so the sibling test that reads the REAL
         # cache paths holds under either implementation and cannot fail for this
