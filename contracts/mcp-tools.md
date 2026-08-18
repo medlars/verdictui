@@ -223,6 +223,32 @@ Off by default — an agent in an act loop wants what changed, and the after-tre
 is reconstructible: replaying the delta onto the before-tree reproduces it
 exactly, which `ActToolTests` asserts against a real act.
 
+### `actions(scenario)`
+
+Which probes accept an act, and which verbs each accepts. Call it BEFORE `act`.
+
+```json
+{"advanced-toggle": ["tap", "toggle"]}
+```
+
+The result is an object keyed by probe id. **A probe absent from the map is not
+actionable** — there is no `false` entry, because on a real screen most probes
+are not drivable and paying to say so per node is the distribution error
+`no.md` #41 records for the compact tree.
+
+The reason this tool exists is that `role` cannot answer the question. A role is
+a claim about what a node IS; actionability is a claim about what the harness
+can DRIVE, and a probe may carry `role: "toggle"` with no binding behind it —
+`act` then refuses it, correctly. Without `actions`, a caller discovers
+actionability only by being refused.
+
+Verbs are the ones that will be ACCEPTED, not the storage's name: a bool binding
+reports `["tap", "toggle"]` because a tap on a bool with no separate handler
+falls through to a toggle.
+
+An empty object `{}` means the scenario binds no actions at all — a real answer,
+not a failure.
+
 ### `sweep(scenario, variants?)`
 
 One verdict per variant cell, plus a markdown rule × variant grid.
@@ -234,6 +260,25 @@ it was fine".
 ### `baseline_diff(scenario)`
 
 Findings only, no write.
+
+### `judge_appkit(runner, subject?, include_tree?)`
+
+Judge an AppKit/Swift screen headlessly — no screenshot, no Automator, no
+running app and no visible window.
+
+Unlike every other tool here it takes **`runner`, not `scenario`**: it drives a
+small executable the *developer* builds (a few lines linking `VerdictUIAppKit`
+that names their `NSViewController`s), so there is no registry entry to name.
+It lays the view out off-screen and judges the resulting tree with the same
+rules every other verb uses.
+
+Omit `subject` to list the screens the runner exposes. `include_tree` returns
+the semantic tree instead of a verdict, off by default because a full tree per
+call is the token cost that makes an agent loop unaffordable.
+
+**A FAILING verdict is a SUCCESSFUL call.** `isError` is set only when the
+runner could not be run or did not emit a tree — the same
+could-not-look / looked-and-it-failed distinction the CLI's exit codes draw.
 
 ### `baseline_accept` — DELIBERATELY NOT SERVED
 

@@ -54,15 +54,19 @@ public struct UndersizedTapTargetScenario: VerdictScenario, Sendable {
                 .verdictProbe("notifications-title", role: .text, text: "Notifications")
 
             Button {
-                // Wave 2 has no action injection; the button exists to be
-                // measured, not pressed. Wave 3 gives it something to do.
+                // Deliberately inert: the planted defect is the hit AREA, and a
+                // handler that changed the layout would move the measurement
+                // this scenario exists to make. The binding is here so the
+                // catalog demonstrates `actions`/`act` on more than one
+                // scenario — an agent exploring it was previously refused
+                // everywhere but demo-toggle-layout.
             } label: {
                 Image(systemName: "xmark")
                     .imageScale(.small)
             }
             .buttonStyle(.plain)
             .frame(width: Self.buttonSize.width, height: Self.buttonSize.height)
-            .verdictProbe("dismiss-button", role: .button)
+            .verdictProbe("dismiss-button", role: .button, action: .tap {})
         }
     }
 }

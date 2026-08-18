@@ -364,6 +364,20 @@ public final class OracleHost {
         caTransactionFlushCount += AnimationControl.apply(settlePolicy, body)
     }
 
+    /// Which probes in the rendered scenario accept an act, and which verbs.
+    ///
+    /// The discovery half of ``apply(_:)``: a caller holding a tree can ask
+    /// which of its probes are drivable instead of learning it from a refusal.
+    ///
+    /// Forces a layout pass for the SAME reason ``apply(_:)`` does — bindings
+    /// register during view evaluation, so asking before any render would
+    /// report an empty set and read as "nothing here is actionable", which is
+    /// a wrong answer rather than an absent one.
+    public var actionableProbes: [String: [String]] {
+        hostingView.layoutSubtreeIfNeeded()
+        return state.actionableProbes
+    }
+
     /// Apply a ``ProbeAction`` to ``state`` under ``settlePolicy``.
     ///
     /// Forces one layout pass first so `.verdictProbe(..., action:)` sites and

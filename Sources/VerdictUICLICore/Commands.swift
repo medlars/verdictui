@@ -208,6 +208,36 @@ public struct RenderCommand: Sendable {
     }
 }
 
+/// Print which probes in a scenario accept an act, and which verbs.
+///
+/// The discovery half of acting. Without it a caller reads `role` off a
+/// rendered tree, guesses, and is refused — and on the shipped catalog it
+/// guesses wrong far more often than right, because a role is a claim about
+/// what a node IS while actionability is a claim about what the harness can
+/// DRIVE.
+///
+/// Prints a bare `{probe: [verbs]}` object, so a probe ABSENT from the map is
+/// not actionable. An `actionable: false` entry per probe was the alternative
+/// and is worse for the same reason the compact tree omits empty lists: the
+/// common case is "not actionable", and paying to say so on every node is the
+/// distribution error `no.md` #41 records.
+public struct ActionsCommand: Sendable {
+    public let scenario: String
+
+    public init(scenario: String) {
+        self.scenario = scenario
+    }
+
+    @MainActor
+    public func run(_ environment: CommandEnvironment, pretty: Bool) async -> ExitCode {
+        await CommandRunner.run(output: environment.output) {
+            let actionable = try await environment.engine.actionableProbes(scenario: scenario)
+            environment.output.writeOut(try VerdictOutput.json(actionable, pretty: pretty))
+            return .pass
+        }
+    }
+}
+
 /// What `render --pixels` prints: the tree, plus where the image was written.
 ///
 /// A struct rather than a dictionary because this crosses the wire and is read

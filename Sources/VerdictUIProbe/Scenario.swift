@@ -119,6 +119,46 @@ public final class ScenarioState: ObservableObject {
         }
     }
 
+    // MARK: - Discovery
+
+    /// Every probe that has a binding registered, mapped to the ``ProbeAction``
+    /// verbs it accepts.
+    ///
+    /// This exists because `role` cannot answer the question. A role is a claim
+    /// about what a node IS; actionability is a claim about what the harness can
+    /// DRIVE, and a probe may carry `.toggle` with no binding behind it. Without
+    /// this, a caller discovers actionability only by acting and being refused —
+    /// which is discovery by failure, and on the shipped catalog it fails far
+    /// more often than it succeeds.
+    ///
+    /// Derived from the same dictionaries ``performTap(_:)`` and its siblings
+    /// consult, so the answer cannot drift from the behaviour: a second registry
+    /// listing "what is actionable" would be a claim about the first one, and
+    /// the two would disagree the moment either changed.
+    ///
+    /// A bool reports both `tap` and `toggle` because ``performTap(_:)`` falls
+    /// through to a toggle when no separate handler is registered — the verbs
+    /// listed are the ones that will actually be ACCEPTED, not the ones the
+    /// storage is named after.
+    ///
+    /// Verbs are spelled out rather than derived from `ProbeAction` case names:
+    /// an interpolated case is a compiler detail that may change between
+    /// toolchains, the same reason ``ProbeAction/description`` spells its own.
+    public var actionableProbes: [String: [String]] {
+        var result: [String: [String]] = [:]
+        for id in taps.keys { result[id, default: []].append("tap") }
+        for id in bools.keys {
+            // `tap` first: that is the order performTap tries them in.
+            var verbs = result[id] ?? []
+            if !verbs.contains("tap") { verbs.append("tap") }
+            verbs.append("toggle")
+            result[id] = verbs
+        }
+        for id in strings.keys { result[id, default: []].append("setText") }
+        for id in doubles.keys { result[id, default: []].append("setSlider") }
+        return result
+    }
+
     // MARK: - ProbeAction performance
 
     func performTap(_ id: String) throws {

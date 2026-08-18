@@ -249,6 +249,10 @@ public struct MCPTransport: Sendable {
         // cost more than every other field of every other tool combined.
         case .pixelRender(let report): data = try encoder.encode(CompactPixelRender(report))
         case .pong(let version): data = try encoder.encode(["schemaVersion": version])
+        // Already minimal: one entry per ACTIONABLE probe, and on a real screen
+        // most probes are not. There is nothing to compact — a per-node form
+        // carrying `false` for every other probe is what this shape avoids.
+        case .actions(let actionable): data = try encoder.encode(actionable)
         }
         return String(decoding: data, as: UTF8.self)
     }

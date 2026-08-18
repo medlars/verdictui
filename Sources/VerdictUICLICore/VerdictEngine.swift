@@ -83,6 +83,32 @@ public struct VerdictEngine: Sendable {
         }
     }
 
+    /// Which probes in `scenario` accept an act, and which verbs each accepts.
+    ///
+    /// The discovery half of ``act(scenario:action:rules:viewport:deadline:includeTree:)``.
+    /// Without it a caller can only learn actionability by acting and being
+    /// refused: `role` says what a node IS, not what the harness can DRIVE, and
+    /// a probe may carry `.toggle` with no binding behind it.
+    ///
+    /// Renders first, because bindings register during view evaluation — a
+    /// query before any render reports an empty set, which reads as "nothing
+    /// here is actionable" and is a wrong answer rather than an absent one.
+    @MainActor
+    public func actionableProbes(
+        scenario name: String,
+        viewport: Size? = nil,
+        deadline: TimeInterval = OracleHost.defaultDeadline
+    ) async throws -> [String: [String]] {
+        let entry = try entry(named: name)
+        let host = entry.host(viewport: viewport, deadline: deadline)
+        do {
+            _ = try await host.currentTree()
+        } catch {
+            throw EngineError.renderFailed(scenario: name, reason: String(describing: error))
+        }
+        return host.actionableProbes
+    }
+
     /// Render `scenario` and capture its pixels alongside its tree.
     ///
     /// Both come from ONE host, so the bitmap and the tree describe a single
