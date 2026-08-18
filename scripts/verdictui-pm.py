@@ -222,6 +222,8 @@ def _pm_log(message: str, level: str = "INFO") -> None:
 # Where `_swift_runner` stashes the unwrapped sweep on the shared-libs module.
 # Spelled once so the read, the write, and the test agree by construction.
 _RAW_KILL_ATTR = "_verdictui_raw_kill_zombie_swift_processes"
+_RAW_SWIFTPM_LOCK_ATTR = "_verdictui_raw_swiftpm_command_lock"
+SWIFTPM_COMMAND_LOCK_WAIT_SECONDS = 10.0
 
 
 def _clear_project_swiftpm_lock_files(project_root: Path) -> int:
@@ -285,7 +287,21 @@ def _timing_record_only_environment() -> bool:
         Path.home() / "Library" / "org.swift.swiftpm",
         Path.home() / "Library" / "Caches" / "org.swift.swiftpm",
     )
-    return any(path.exists() and not os.access(path, os.W_OK) for path in swiftpm_paths)
+    return any(path.exists() and not _can_write_existing_directory(path) for path in swiftpm_paths)
+
+
+def _can_write_existing_directory(path: Path) -> bool:
+    """Probe real write access; sandbox denials can disagree with mode bits."""
+    probe = path / f".verdictui-write-probe-{os.getpid()}-{time.monotonic_ns()}"
+    try:
+        fd = os.open(probe, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except OSError:
+        return False
+    try:
+        os.close(fd)
+    finally:
+        probe.unlink(missing_ok=True)
+    return True
 
 
 @contextlib.contextmanager
@@ -318,6 +334,12 @@ def _swift_runner():  # noqa: ANN201 — heterogeneous tuple of shared-libs call
         swift_runner.kill_zombie_swift_processes,
     )
     setattr(swift_runner, _RAW_KILL_ATTR, raw_kill)
+    raw_lock = getattr(
+        swift_runner,
+        _RAW_SWIFTPM_LOCK_ATTR,
+        swift_runner.swiftpm_command_lock,
+    )
+    setattr(swift_runner, _RAW_SWIFTPM_LOCK_ATTR, raw_lock)
 
     def kill_zombie_swift_processes(project_root: Path) -> list[int]:
         try:
@@ -332,13 +354,36 @@ def _swift_runner():  # noqa: ANN201 — heterogeneous tuple of shared-libs call
                 _pm_log(f"Removed {removed} stale SwiftPM lock sentinel(s)", "WARN")
             return []
 
+    @contextlib.contextmanager
+    def swiftpm_command_lock(
+        cmd: list[str],
+        *,
+        cache_dir: Path,
+        log,
+        stage_name: str = "",
+        project_label: str = "SwiftPM",
+        max_wait_seconds: float | None = SWIFTPM_COMMAND_LOCK_WAIT_SECONDS,
+    ) -> Iterator[None]:
+        with raw_lock(
+            cmd,
+            cache_dir=cache_dir,
+            log=log,
+            stage_name=stage_name,
+            project_label=project_label,
+            max_wait_seconds=max_wait_seconds,
+        ):
+            yield
+
     swift_runner.kill_zombie_swift_processes = kill_zombie_swift_processes
+    swift_runner.swiftpm_command_lock = swiftpm_command_lock
     swift_runner.run_swift_build.__globals__["kill_zombie_swift_processes"] = (
         kill_zombie_swift_processes
     )
     swift_runner.run_swift_test.__globals__["kill_zombie_swift_processes"] = (
         kill_zombie_swift_processes
     )
+    swift_runner.run_swift_build.__globals__["swiftpm_command_lock"] = swiftpm_command_lock
+    swift_runner.run_swift_test.__globals__["swiftpm_command_lock"] = swiftpm_command_lock
 
     return (
         kill_zombie_swift_processes,
@@ -386,14 +431,8 @@ def _run_streamed_swift_test(
         try:
             returncode = proc.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
-            try:
-                os.killpg(proc.pid, signal.SIGTERM)
-                proc.wait(timeout=TIMEOUT_PROC_TERM_GRACE)
-            except (ProcessLookupError, subprocess.TimeoutExpired):
-                try:
-                    os.killpg(proc.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
+            _terminate_process_group(proc)
+            _clear_project_swiftpm_lock_files(PROJECT_ROOT)
             output = swift_log.read_text(encoding="utf-8", errors="replace")
             _pm_log(f"Tests: FAIL — timed out after {timeout}s", "ERROR")
             return {
@@ -402,6 +441,10 @@ def _run_streamed_swift_test(
                 "output": output,
                 "test_count": 0,
             }
+        except BaseException:
+            _terminate_process_group(proc)
+            _clear_project_swiftpm_lock_files(PROJECT_ROOT)
+            raise
 
     output = swift_log.read_text(encoding="utf-8", errors="replace")
     exec_matches = re.findall(
@@ -536,6 +579,74 @@ def _run_streamed_swift_test(
         "output": output,
         "test_count": test_count,
     }
+
+
+def _run_locked_swift_build_product(*, timeout: int) -> subprocess.CompletedProcess[str]:
+    """Build the shipped CLI product under the shared lock and clean up interrupts."""
+    build_cmd = [
+        "swift",
+        "build",
+        "--product",
+        "verdictui",
+        *SWIFT_PM_FLAGS,
+        *SWIFT_STRICT_FLAGS,
+    ]
+    _LOCK_DIR.mkdir(parents=True, exist_ok=True)
+
+    import swift_runner  # type: ignore  # noqa: PLC0415 — lazy, shares PM path setup
+
+    with swift_runner.swiftpm_command_lock(  # type: ignore[attr-defined]
+        build_cmd,
+        cache_dir=_LOCK_DIR,
+        log=_pm_log,
+        stage_name="cli_smoke",
+    ):
+        proc = subprocess.Popen(
+            build_cmd,
+            cwd=PROJECT_ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            start_new_session=True,
+        )
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            _terminate_process_group(proc)
+            _clear_project_swiftpm_lock_files(PROJECT_ROOT)
+            stdout, stderr = proc.communicate()
+            return subprocess.CompletedProcess(
+                build_cmd,
+                124,
+                stdout=stdout,
+                stderr=(stderr or "") + f"\nswift build timed out after {timeout}s",
+            )
+        except BaseException:
+            _terminate_process_group(proc)
+            _clear_project_swiftpm_lock_files(PROJECT_ROOT)
+            raise
+
+    return subprocess.CompletedProcess(
+        build_cmd,
+        proc.returncode,
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+
+def _terminate_process_group(proc) -> None:  # noqa: ANN001 — subprocess-like in tests
+    """Terminate a started Swift process group before releasing the PM lock."""
+    try:
+        os.killpg(proc.pid, signal.SIGTERM)
+        proc.wait(timeout=TIMEOUT_PROC_TERM_GRACE)
+    except (ProcessLookupError, subprocess.TimeoutExpired):
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+            proc.wait(timeout=TIMEOUT_PROC_TERM_GRACE)
+        except ProcessLookupError:
+            pass
+        except subprocess.TimeoutExpired:
+            pass
 
 
 class VerdictUIPM(PmBase):
@@ -792,39 +903,7 @@ class VerdictUIPM(PmBase):
         if shutil.which("swift") is None:
             return {"passed": False, "detail": "swift not installed — CLI cannot be built"}
 
-        # Under the SAME SwiftPM lock every other Swift stage takes. Without it
-        # this build contends with a concurrent `swift test` for the package's
-        # single build directory -- and this stage is reachable from BOTH the
-        # pipeline and `stage_pytest` (via
-        # `TestStageCLISmoke::test_it_passes_against_the_real_binary`), so one
-        # PM run can invoke it while its own Swift stage holds the lock. That
-        # produced a Grade B on a clean tree at 629/629 green, with the stage
-        # naming a test that passes in isolation: a gate failing for the
-        # environment rather than the code (no.md #15).
-        build_cmd = [
-            "swift",
-            "build",
-            "--product",
-            "verdictui",
-            *SWIFT_PM_FLAGS,
-            *SWIFT_STRICT_FLAGS,
-        ]
-        _LOCK_DIR.mkdir(parents=True, exist_ok=True)
-        import swift_runner  # type: ignore  # noqa: PLC0415 — lazy, shares PM path setup
-
-        with swift_runner.swiftpm_command_lock(  # type: ignore[attr-defined]
-            build_cmd,
-            cache_dir=_LOCK_DIR,
-            log=_pm_log,
-            stage_name="cli_smoke",
-        ):
-            build = subprocess.run(  # noqa: S603 — fixed argv built from constants
-                build_cmd,
-                cwd=PROJECT_ROOT,
-                capture_output=True,
-                text=True,
-                timeout=TIMEOUT_SWIFT_BUILD,
-            )
+        build = _run_locked_swift_build_product(timeout=TIMEOUT_SWIFT_BUILD)
         if build.returncode != 0:
             detail = (build.stderr.strip() or build.stdout.strip() or NO_OUTPUT)[:300]
             return {"passed": False, "detail": f"verdictui failed to build: {detail}"}
@@ -1268,6 +1347,7 @@ class VerdictUIPM(PmBase):
             [sys.executable, "-m", "pytest", "Tests", "-q", "-p", "no:cacheprovider"],
             cwd=PROJECT_ROOT,
             capture_output=True,
+            env={**os.environ, "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1"},
             text=True,
             timeout=TIMEOUT_PYTEST,
         )
