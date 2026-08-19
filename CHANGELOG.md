@@ -48,6 +48,20 @@
 
 **Fixed**
 
+- **A wire gate required six MCP verbs while the product served nine.**
+  `stage_transport_smoke` drives the shipped binary over the real stdio
+  transport and asserted a HAND-COPIED set of tool names. It was correct when
+  written; `focus`, `judge_appkit` and `actions` then shipped past it across
+  three waves, so the gate silently stopped covering the three most recently
+  added tools — the least proven ones. It kept passing, and its own detail line
+  had been printing the true count all along with nothing comparing the two.
+  The set is now derived from `contracts/mcp-tools.md`, so a tool is covered the
+  moment it is documented, and the converse check (every served tool must BE
+  documented) closes the other direction. Both failure modes the derivation
+  introduces are pinned: a parse finding nothing FAILS the stage rather than
+  requiring nothing, and the verb documented as deliberately NOT served stays
+  excluded so the gate cannot invert into demanding it.
+
 - **Nothing compared the published MCP contract to the served tool catalog.** A
   tool could ship served-but-undocumented (invisible to every consumer) or
   documented-but-unserved (a client following the contract gets "unknown
