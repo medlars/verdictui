@@ -51,14 +51,14 @@
   ✗ GitHub remote
   ✗ .github/workflows/ci.yml
 
-- [ ] Execute Wave 1 (kernel: full semantic tree model + verdict schema + rule engine) per docs/implementation-plan.md
-- [ ] Register verdictui.com + verdictui.dev (owner action — confirmed available 2026-08-04)
-- [ ] Fill in docs/runbook.md start/stop commands once the daemon exists (Wave 6)
+- [x] (2026-08-18) Execute Wave 1 (kernel: full semantic tree model + verdict schema + rule engine). STALE, not open — closed on measurement during the 2026-08-18 cold check. `Sources/VerdictUIKernel/` carries `SemanticNode`, `Verdict`, `RuleEngine`, `SchemaVersion`, `Baselines`, `PixelDiff`, `Reconcile`, `Expectations` and **12 rules** under `Rules/`. Waves 1-9 all closed with their gates met; Wave 10 shipped the AppKit path. Evidence: `ls Sources/VerdictUIKernel/Rules/ | wc -l` -> 12.
+- [ ] Register verdictui.com (owner action). Tracked as **CTS-962D387A**; the `.dev` half was DECLINED by the owner 2026-08-14 as unnecessary for one docs site, so this narrows to the `.com`. Genuinely owner-only and NOT re-testable: it needs a payment plus a PayPal-hosted approval window, and DIR-034 excludes payments from autonomous action — either reason alone is sufficient. Set Organization to **Vohux Inc.** (the form pre-fills the clinical corporation, which mismatches the LICENSE holder).  measured: 2026-08-18  falsify: `dig +short NS verdictui.com`
+- [x] (2026-08-18) Fill in docs/runbook.md start/stop commands once the daemon exists. STALE, not open — the daemon shipped in Wave 6/7 and the runbook documents all three verbs. Evidence: `grep -cE 'daemon start|daemon stop|daemon status' docs/runbook.md` -> 3.
 
 ## P2 — Normal
 - [x] (2026-08-12) SLO 3 — warm MCP round-trip latency through the real stdio transport. Gated at p50 < 40 ms by `MCPLatencyTests` + PM `stage_mcp_latency`; tail recorded, not gated (measured: median 8.3 → 11.3 ms under load, tail 8.4 → 45.8 ms on unchanged code)
-- [ ] Add a further SLO (cross-validation loop latency) once Wave 8 lands
-- [ ] Homebrew tap + stage_auto_release wiring at first public release (registered False in CEO PROPAGATION_PATTERNS until then)
+- [x] (2026-08-18) Add a further SLO (cross-validation loop latency) once Wave 8 lands. STALE, not open — **SLO 4 IS that SLO**: "the honest middle loop", budgeted at 5 s precisely because cross-validation launches a real windowed subprocess through LaunchServices and reads an accessibility tree, which is OS work VerdictUI does not control. Evidence: `grep '### SLO' docs/slo.md` -> 4 SLOs, SLO 4 named.
+- [ ] Homebrew tap + stage_auto_release wiring at first public release (registered False in CEO PROPAGATION_PATTERNS until then). **BLOCKED, and the blocker is named rather than implied (DIR-036):** `Formula/verdictui.rb` was WITHDRAWN during the PII incident because the `v1.0.0` tag had to be deleted (a tag is a live ref that pins the leaked objects alive), so the formula's sha256 refers to a burned commit. Unblocks with CTS-77D76C19: after its probe returns 404, tag `v1.0.1` (never `v1.0.0`), cut a release, and restore the formula with a **re-measured** sha256.  measured: 2026-08-18  falsify: `gh api "repos/medlars/verdictui/contents/docs/wave-status.md?ref=89198bc40beea1d78bd3436e545e5f03cf398049"` (PASS = 404; returned 200/153746 today)
 
 ## Done
 - [x] Deep research: 5-agent survey of UI-verification methods (CTS-5BABC171, 2026-08-03)

@@ -26,6 +26,7 @@ import subprocess
 import sys
 import time
 import types
+from pathlib import Path
 
 import pytest
 from pm_test_support import _needs_dev_machine, load_pm
@@ -34,6 +35,10 @@ pytestmark = pytest.mark.quick
 
 _mod = load_pm()
 VerdictUIPM = _mod.VerdictUIPM
+
+# Resolved from this file rather than from the PM module, whose PROJECT_ROOT the
+# fixtures below deliberately monkeypatch away.
+_REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 class TestStageCLISmoke:
@@ -76,6 +81,7 @@ class TestStageCLISmoke:
         self, monkeypatch, tmp_path
     ) -> None:
         """Ctrl-C during CLI build must not leave SwiftPM holding `.build`."""
+        _link_contract_into(tmp_path)
         monkeypatch.setattr(_mod, "PROJECT_ROOT", tmp_path)
         monkeypatch.setattr(_mod, "_LOCK_DIR", tmp_path / ".lock")
 
@@ -125,6 +131,24 @@ class TestStageCLISmoke:
         assert "exit codes 0/1/2" in result["detail"]
 
 
+def _link_contract_into(root) -> None:
+    """Copy the real MCP contract under a fixture root.
+
+    These fixtures repoint `PROJECT_ROOT` at a tmp dir so the stage finds a STUB
+    BINARY rather than the built one. The stage also reads its required-verb set
+    from `contracts/mcp-tools.md` under that same root, so without this the
+    contract is absent and the stage fails for a reason no fixture intended —
+    which reads exactly like the stage being broken.
+
+    The real file is copied rather than a fake written, so a fixture cannot
+    quietly disagree with the contract the product ships.
+    """
+    contract = _REPO_ROOT / "contracts" / "mcp-tools.md"
+    target = root / "contracts"
+    target.mkdir(parents=True, exist_ok=True)
+    (target / "mcp-tools.md").write_text(contract.read_text(encoding="utf-8"), encoding="utf-8")
+
+
 def _served_tools() -> list[dict]:
     """The tool catalog a healthy binary advertises.
 
@@ -132,11 +156,15 @@ def _served_tools() -> list[dict]:
     control differ in exactly ONE reply. A fixture that also served the wrong
     catalog would fail for two reasons at once, and the test could no longer
     show which one the stage actually caught.
+
+    DERIVED FROM THE CONTRACT (2026-08-18), never listed here. A literal list
+    was the same hand-copied claim the stage itself used to carry, and it rots
+    the same way: it named six verbs and had already stopped covering `focus`,
+    `judge_appkit` and `actions`. Worse in a FIXTURE than in the stage — a
+    healthy-catalog fixture missing a real verb makes the control fail for a
+    reason the test never intended, which reads as the stage being broken.
     """
-    return [
-        {"name": name}
-        for name in ("list_scenarios", "render", "verify", "act", "sweep", "baseline_diff")
-    ]
+    return [{"name": name} for name in sorted(_mod._documented_mcp_tools())]
 
 
 class TestStageTransportSmoke:
@@ -155,6 +183,7 @@ class TestStageTransportSmoke:
         missing would report clean on exactly the builds where the artifact is
         broken.
         """
+        _link_contract_into(tmp_path)
         monkeypatch.setattr(_mod, "PROJECT_ROOT", tmp_path)
         pm = VerdictUIPM.__new__(VerdictUIPM)
         result = pm.stage_transport_smoke()
@@ -240,6 +269,7 @@ class TestStageTransportSmoke:
         stdout = "\n".join(json.dumps(r) for r in replies) + "\n"
         binary.write_text(f"#!/bin/sh\ncat >/dev/null\nprintf '%s' {shlex.quote(stdout)}\n")
         binary.chmod(0o755)
+        _link_contract_into(tmp_path)
         monkeypatch.setattr(_mod, "PROJECT_ROOT", tmp_path)
 
         pm = VerdictUIPM.__new__(VerdictUIPM)
@@ -301,6 +331,7 @@ class TestStageTransportSmoke:
         stdout = "\n".join(json.dumps(r) for r in replies) + "\n"
         binary.write_text(f"#!/bin/sh\ncat >/dev/null\nprintf '%s' {shlex.quote(stdout)}\n")
         binary.chmod(0o755)
+        _link_contract_into(tmp_path)
         monkeypatch.setattr(_mod, "PROJECT_ROOT", tmp_path)
 
         pm = VerdictUIPM.__new__(VerdictUIPM)
@@ -335,6 +366,7 @@ class TestStageTransportSmoke:
         stdout = "\n".join(json.dumps(r) for r in replies) + "\n"
         binary.write_text(f"#!/bin/sh\ncat >/dev/null\nprintf '%s' {shlex.quote(stdout)}\n")
         binary.chmod(0o755)
+        _link_contract_into(tmp_path)
         monkeypatch.setattr(_mod, "PROJECT_ROOT", tmp_path)
 
         pm = VerdictUIPM.__new__(VerdictUIPM)
@@ -491,3 +523,79 @@ class TestMCPInputSurfaceSurvivesHostileInput:
         # Nothing leaked to stderr: a server that logs a stack trace per bad
         # frame is one malformed client away from filling a disk.
         assert completed.stderr == "", f"unexpected stderr: {completed.stderr[:400]!r}"
+
+
+class TestDocumentedMCPTools:
+    """The required-verb set that `stage_transport_smoke` asserts over the wire.
+
+    That set used to be a literal written in the stage, and it had ALREADY
+    rotted: it named six tools and silently stopped covering `focus`,
+    `judge_appkit` and `actions` as each shipped, so the gate could not fail for
+    the three most recently added — the ones most likely to break. A hand-copied
+    membership list is blind to everything it omits (lessons 219/240), and the
+    omission is invisible because the gate keeps passing.
+
+    Reading the contract instead means a tool is covered the moment it is
+    documented. That moves the failure mode rather than removing it, so both new
+    ways to be wrong are pinned here: a parse that finds NOTHING (which would
+    make the gate require nothing of any catalog), and a parse that wrongly
+    includes the one tool documented as deliberately absent.
+    """
+
+    def test_it_parses_the_tools_the_contract_documents(self) -> None:
+        tools = _mod._documented_mcp_tools()
+
+        # The verbs a client can actually call. Named individually rather than
+        # compared to a count: a count is the same hand-copied claim one step
+        # removed, and it cannot say WHICH tool disappeared.
+        for verb in (
+            "list_scenarios",
+            "render",
+            "focus",
+            "verify",
+            "act",
+            "actions",
+            "sweep",
+            "baseline_diff",
+            "judge_appkit",
+        ):
+            assert verb in tools, (
+                f"contracts/mcp-tools.md documents '{verb}' but the parser missed it — "
+                f"stage_transport_smoke would stop requiring it over the wire. Parsed: "
+                f"{sorted(tools)}"
+            )
+
+    def test_the_deliberately_unserved_verb_is_excluded(self) -> None:
+        """`baseline_accept` is documented precisely as NOT SERVED.
+
+        The negative control, and it is not decoration: without it, "reads the
+        contract" is satisfied by a parser that returns every heading, which
+        would make `stage_transport_smoke` demand that the destructive verb
+        ANSWER over the wire — inverting the SD4 guarantee the very next
+        assertion in that stage checks.
+        """
+        tools = _mod._documented_mcp_tools()
+
+        assert "baseline_accept" not in tools, (
+            "baseline_accept is documented as DELIBERATELY NOT SERVED, so requiring it "
+            "over the wire would invert SD4 — the destructive verb must not reach an agent"
+        )
+
+    def test_an_unreadable_contract_yields_nothing_rather_than_a_guess(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path
+    ) -> None:
+        """A contract that cannot be read returns the empty set.
+
+        The stage treats that as a FAILURE rather than an empty requirement,
+        which is the half that matters: a required-set of nothing is satisfied
+        by any catalog at all, including an empty one, so a silent parse failure
+        would turn a wire gate into a check that cannot fail (lesson 202).
+        """
+        # Deliberately NOT linked: tmp_path holds no contract, which is the
+        # whole subject of this test.
+        monkeypatch.setattr(_mod, "PROJECT_ROOT", tmp_path)
+
+        assert _mod._documented_mcp_tools() == set(), (
+            "an absent contract must yield the empty set so the caller can fail loudly, "
+            "never a partial guess that looks like a real requirement"
+        )
