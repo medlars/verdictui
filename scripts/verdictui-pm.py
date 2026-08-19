@@ -1586,7 +1586,10 @@ class VerdictUIPM(PmBase):
                 stage_cis_health_impl,
             )
         except ImportError as e:
-            return {"passed": False, "detail": f"could not observe — CIS skipped (shared-libs unavailable): {e}"}
+            return {
+                "passed": False,
+                "detail": f"could not observe — CIS skipped (shared-libs unavailable): {e}",
+            }
         return self._skip_unavailable_external_store(
             stage_cis_health_impl(project_name=self.PROJECT_NAME)
         )
