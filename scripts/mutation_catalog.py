@@ -1550,6 +1550,23 @@ MUTATIONS = [
         test=("MCPServerTests/testEveryServedToolIsDocumentedAndEveryDocumentedToolIsServed"),
     ),
     Mutation(
+        # The wire gate stops excluding the verb documented as NOT SERVED,
+        # so stage_transport_smoke would REQUIRE baseline_accept to answer
+        # over the wire -- inverting the SD4 guarantee the same stage checks
+        # two assertions later. The failure is silent in the dangerous
+        # direction: the gate still passes on a catalog that serves the
+        # destructive verb, and fails on the correct catalog that does not.
+        name="the wire gate stops excluding the deliberately unserved verb",
+        path="scripts/verdictui-pm.py",
+        old='        if not line.startswith("### `") or "NOT SERVED" in line:',
+        new='        if not line.startswith("### `"):',
+        test=(
+            "Tests/test_verdictui_pm_artifact_stages.py::TestDocumentedMCPTools::"
+            "test_the_deliberately_unserved_verb_is_excluded"
+        ),
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
         # The SD6 permission path stops reporting itself. A caller that ASKED
         # for cross-validation and could not get it then receives an ordinary
         # PASS -- "the two channels agree" and "only one channel ran" arriving

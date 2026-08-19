@@ -215,6 +215,42 @@ def mutation_sweep_in_progress() -> bool:
     return (time.time() - started) < MUTATION_SWEEP_TTL_SECONDS
 
 
+def _documented_mcp_tools() -> set[str]:
+    """Tool names the published MCP contract documents as SERVED.
+
+    `stage_transport_smoke` asserts that every one of these answers over the
+    real wire. Deriving the set means a newly shipped tool is covered the
+    moment it is documented; the alternative — a literal set in the stage —
+    is a hand-copied claim about the catalog that goes stale silently. That
+    is not hypothetical: the literal it replaced named six verbs and had
+    stopped covering `focus`, `judge_appkit` and `actions` as each shipped,
+    so the gate could not fail for the three most recently added tools.
+
+    Headings are third-level and backtick-quoted, `name(args)`. One marked NOT SERVED is
+    excluded by the same line that says so — `baseline_accept` is documented
+    precisely as absent, and asserting it must ANSWER would invert the SD4
+    guarantee this stage checks two lines later.
+
+    Returns an empty set when the contract cannot be read, and the caller
+    FAILS on that rather than proceeding: a required-set of nothing is
+    satisfied by any catalog, including an empty one, so a silent parse
+    failure would turn this gate into a check that cannot fail.
+    """
+    contract = PROJECT_ROOT / "contracts" / "mcp-tools.md"
+    try:
+        text = contract.read_text(encoding="utf-8")
+    except OSError:
+        return set()
+    tools: set[str] = set()
+    for line in text.splitlines():
+        if not line.startswith("### `") or "NOT SERVED" in line:
+            continue
+        name = line[5:].split("(")[0].split("`")[0].strip()
+        if name:
+            tools.add(name)
+    return tools
+
+
 def _pm_log(message: str, level: str = "INFO") -> None:
     _logger.log(getattr(logging, level, logging.INFO), message)
 
@@ -990,6 +1026,16 @@ class VerdictUIPM(PmBase):
         gone missing. `baseline_accept` is asserted ABSENT in the same place,
         because the destructive verb reaching an agent is the failure SD4 exists
         to prevent.
+
+        The verb list itself is now READ FROM THE CONTRACT (2026-08-18) rather
+        than written here. A hand-copied set is a claim about the catalog with
+        nothing keeping the two in step, and this one had already rotted: it
+        named six tools and had silently stopped covering `focus`,
+        `judge_appkit` and `actions` as each shipped, so the gate could not fail
+        for the three most recently added — the ones most likely to break. Same
+        shape as the count it replaced, one level up. `_documented_mcp_tools()`
+        returning nothing is a FAILURE here, never an empty requirement: a
+        required-set of nothing is satisfied by any catalog at all.
         """
         binary = PROJECT_ROOT / ".build" / "debug" / "verdictui"
         if not binary.exists():
@@ -1065,7 +1111,23 @@ class VerdictUIPM(PmBase):
         # only thing a reader needs. `baseline_accept` is asserted ABSENT for
         # the same reason MCPServerTests does: the destructive verb must not
         # reach an agent (SD4).
-        required = {"list_scenarios", "render", "verify", "act", "sweep", "baseline_diff"}
+        # The required set is READ FROM THE PUBLISHED CONTRACT, never hand-copied
+        # here. A literal set is a claim about the catalog that goes stale the
+        # moment a tool ships: this one was written with six verbs and silently
+        # stopped covering `focus`, `judge_appkit` and `actions` as each landed,
+        # so the gate could not fail for the tools most recently added — exactly
+        # the ones most likely to break. Deriving it means a new tool is covered
+        # the moment it is documented, and a tool that is served but undocumented
+        # is caught by its own test in MCPServerTests.
+        required = _documented_mcp_tools()
+        if not required:
+            return {
+                "passed": False,
+                "detail": (
+                    "could not parse any tool from contracts/mcp-tools.md — the gate would "
+                    "otherwise pass vacuously, requiring nothing of the served catalog"
+                ),
+            }
         if missing := required - served:
             return {
                 "passed": False,
