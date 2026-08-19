@@ -101,11 +101,20 @@ class TestStageCLISmoke:
         cleaned = []
         monkeypatch.setattr(_mod.subprocess, "Popen", lambda *_a, **_k: _FakeProc())
         monkeypatch.setattr(_mod.os, "killpg", lambda pid, sig: kills.append((pid, sig)))
-        monkeypatch.setattr(
-            _mod,
-            "_clear_project_swiftpm_lock_files",
-            lambda root: cleaned.append(root) or 0,
-        )
+
+        def _record_cleanup(root) -> int:
+            """Record the cleaned root and report zero files removed.
+
+            Spelled as a def rather than `lambda root: cleaned.append(root) or 0`.
+            That idiom works — `append` returns None, so `or 0` yields the int the
+            real function returns — but it reads as a bug and a type checker calls
+            it one ("append of list does not return a value"), which is a finding
+            a reader has to re-derive every time they meet it.
+            """
+            cleaned.append(root)
+            return 0
+
+        monkeypatch.setattr(_mod, "_clear_project_swiftpm_lock_files", _record_cleanup)
         monkeypatch.setitem(sys.modules, "swift_runner", fake_swift_runner)
 
         with pytest.raises(KeyboardInterrupt):
