@@ -590,6 +590,71 @@ class TestDocumentedMCPTools:
             "over the wire would invert SD4 — the destructive verb must not reach an agent"
         )
 
+    def test_it_reads_a_heading_a_human_would_call_the_same(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path
+    ) -> None:
+        """Heading whitespace is FORMATTING, not contract.
+
+        A literal `startswith("### `")` reads the contract's typography as part
+        of the contract: one extra space, or a reflow by any markdown formatter,
+        and the parser returns nothing. That fails CLOSED — the caller errors on
+        an empty parse rather than requiring nothing — but for a reason no error
+        message could explain, and a gate that breaks on cosmetics is a gate
+        people learn to route around.
+
+        Measured before this was written: `###   `render(a)`` returned the empty
+        set against the original parser.
+        """
+        contract = tmp_path / "contracts"
+        contract.mkdir()
+        (contract / "mcp-tools.md").write_text(
+            "###   `spaced_out(a)`\n###\t`tabbed()`\n  ### `indented()`\n### `plain()`\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(_mod, "PROJECT_ROOT", tmp_path)
+
+        assert _mod._documented_mcp_tools() == {
+            "spaced_out",
+            "tabbed",
+            "indented",
+            "plain",
+        }, "heading whitespace must not decide which tools the wire gate requires"
+
+    def test_a_deeper_heading_level_is_not_a_tool(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path
+    ) -> None:
+        """The control for the tolerance above.
+
+        Widening the heading match is only safe because something ELSE still
+        rejects deeper levels — and it is worth naming WHICH, because the
+        obvious answer is wrong. `####` DOES satisfy `startswith("###")`. What
+        excludes it is the next line: after dropping exactly three characters
+        the marker reads `#`, not a backtick, so the row is skipped. Measured,
+        not reasoned: a mutation that loosened the heading test alone left this
+        test PASSING (both implementations agree), while one that changed the
+        drop to `lstrip("#")` made it FAIL naming both sub-headings. An
+        assertion satisfied by the correct and the broken form alike is not a
+        weak test, it is not a test (`no.md` #12) — so the mutation that proves
+        this one is the second, and the docstring says so rather than pointing
+        a future reader at the line that does not carry the weight.
+
+        The failure it prevents: a contract documenting a tool's OPTIONS under
+        `####` would silently add those option names to the set of verbs the
+        wire gate demands answer, failing the stage against a correct catalog.
+        """
+        contract = tmp_path / "contracts"
+        contract.mkdir()
+        (contract / "mcp-tools.md").write_text(
+            "### `real_tool()`\n#### `not_a_tool()`\n##### `also_not()`\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(_mod, "PROJECT_ROOT", tmp_path)
+
+        assert _mod._documented_mcp_tools() == {"real_tool"}, (
+            "a #### sub-heading documents an ARGUMENT, not a served tool — "
+            "requiring it over the wire would fail the gate on a correct catalog"
+        )
+
     def test_an_unreadable_contract_yields_nothing_rather_than_a_guess(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path
     ) -> None:
