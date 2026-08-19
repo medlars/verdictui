@@ -242,10 +242,20 @@ def _documented_mcp_tools() -> set[str]:
     except OSError:
         return set()
     tools: set[str] = set()
-    for line in text.splitlines():
-        if not line.startswith("### `") or "NOT SERVED" in line:
+    for raw in text.splitlines():
+        line = raw.strip()
+        # Tolerant of whitespace between the marker and the backtick: a literal
+        # `startswith("### \x60")` reads the contract's FORMATTING as part of the
+        # contract, so `ruff`-style reflow or a hand-typed extra space would
+        # empty the required set. That fails CLOSED (the caller errors on an
+        # empty parse) but for a reason no message could explain, so the parser
+        # accepts what a human would call the same heading.
+        if not line.startswith("###") or "NOT SERVED" in line:
             continue
-        name = line[5:].split("(")[0].split("`")[0].strip()
+        marker = line[3:].lstrip()
+        if not marker.startswith("`"):
+            continue
+        name = marker[1:].split("(")[0].split("`")[0].strip()
         if name:
             tools.add(name)
     return tools

@@ -1558,11 +1558,30 @@ MUTATIONS = [
         # destructive verb, and fails on the correct catalog that does not.
         name="the wire gate stops excluding the deliberately unserved verb",
         path="scripts/verdictui-pm.py",
-        old='        if not line.startswith("### `") or "NOT SERVED" in line:',
-        new='        if not line.startswith("### `"):',
+        old='        if not line.startswith("###") or "NOT SERVED" in line:',
+        new='        if not line.startswith("###"):',
         test=(
             "Tests/test_verdictui_pm_artifact_stages.py::TestDocumentedMCPTools::"
             "test_the_deliberately_unserved_verb_is_excluded"
+        ),
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
+        # The contract parser stops distinguishing a tool heading from a
+        # SUB-heading, so option names documented under #### become verbs
+        # the wire gate demands answer -- failing the stage against a
+        # correct catalog. The obvious guard (startswith("###")) does NOT
+        # catch this: #### satisfies it too. What rejects a sub-heading is
+        # dropping exactly three characters and requiring a backtick, so
+        # THAT is the line this row breaks. Measured: loosening the heading
+        # test alone left the witness PASSING (no.md #12).
+        name="the contract parser stops rejecting deeper heading levels",
+        path="scripts/verdictui-pm.py",
+        old="        marker = line[3:].lstrip()",
+        new='        marker = line.lstrip("#").lstrip()',
+        test=(
+            "Tests/test_verdictui_pm_artifact_stages.py::TestDocumentedMCPTools::"
+            "test_a_deeper_heading_level_is_not_a_tool"
         ),
         runner=Runner.PYTEST,
     ),
