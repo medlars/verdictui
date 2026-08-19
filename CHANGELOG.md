@@ -4,6 +4,33 @@
 
 **Added**
 
+- **`actions` — which probes accept an act, and which verbs.** New CLI verb
+  (`verdictui actions <scenario>`) and MCP tool, both routed through one engine
+  method so the surfaces cannot drift. It exists because `role` cannot answer the
+  question: a role is a claim about what a node IS, actionability a claim about
+  what the harness can DRIVE, and a probe may carry `.toggle` with no binding
+  behind it. Callers previously discovered actionability only by acting and being
+  refused — and on the shipped catalog that failed far more often than it
+  succeeded, since exactly 1 of 9 scenarios bound an action. Returns
+  `{probe: [verbs]}`; **a probe absent from the map is not actionable**, with no
+  `false` entry, because on a real screen most probes are not drivable and paying
+  to say so per node is the distribution error `no.md` #41 records. The verbs are
+  the ones that will be ACCEPTED rather than the storage's name: a bool reports
+  `["tap", "toggle"]` because a tap on a bool with no separate handler falls
+  through to a toggle. The act delta wire form is unchanged, so both byte budgets
+  are untouched. `act`'s refusal of an unbound probe is deliberately unchanged.
+
+- **Two more demo scenarios bind an action**, so the shipped catalog demonstrates
+  the verb on three rather than one. Both handlers are deliberately inert: each
+  scenario ships a planted geometric MEASUREMENT (a 6x6 pt hit area, an
+  off-viewport origin) that a layout-moving handler would erase, and a test now
+  pins that the defects survived the bindings.
+
+- **`judge_appkit` documented in `contracts/mcp-tools.md`.** It had shipped
+  SERVED AND UNDOCUMENTED since 2026-08-17 — invisible to any client author
+  reading the contract. Found by the new both-directions test below, on its first
+  run.
+
 - **`docs/adoption.md` Tier 2b — verifying a view you cannot edit.** Tiers 1–3 all
   assume the adopter can change the view's source; a consumer verifying a
   dependency, a design-system package, or another team's module can only wrap it
@@ -20,6 +47,15 @@
   changed, because the escape hatch already existed and was undocumented.
 
 **Fixed**
+
+- **Nothing compared the published MCP contract to the served tool catalog.** A
+  tool could ship served-but-undocumented (invisible to every consumer) or
+  documented-but-unserved (a client following the contract gets "unknown
+  method"), and both were silent — the `no.md` #34 shape, a published claim with
+  no test behind it. `testEveryServedToolIsDocumentedAndEveryDocumentedToolIsServed`
+  now asserts set equality in BOTH directions, with a parser-sanity control so an
+  unparseable contract cannot pass vacuously. It found a real gap immediately,
+  which is also the evidence it is not decorative.
 
 - **The PM ran the whole Swift suite with a correctness invariant switched off.**
   `stage_test` wrapped the entire run in `VERDICTUI_RECORD_TIMING_ONLY`, which is
