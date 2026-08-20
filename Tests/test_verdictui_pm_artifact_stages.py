@@ -384,6 +384,126 @@ class TestStageTransportSmoke:
         assert result["passed"], result["detail"]
 
 
+class _FakeCompleted:
+    """Minimal CompletedProcess stand-in for the contention probe.
+
+    Defined locally rather than imported from the sibling test module: a
+    fixture shared across test files is a cross-file coupling that `no.md` #19
+    already ruled against here, and this one is four lines.
+    """
+
+    def __init__(self, stdout: str = "", returncode: int = 0) -> None:
+        self.stdout = stdout
+        self.returncode = returncode
+
+
+class TestTreeIsContended:
+    """`tree_is_contended` — the guard that separates a busy tree from a broken one.
+
+    Added 2026-08-20 after TEN false P1s in a single day. A
+    `check.py --all --quick` fleet sweep builds 127 projects through the same
+    SwiftPM build directory this repo uses, so a PM sampling the tree during one
+    measures contention and reports it as a defect with a precise-looking
+    file:line citation. Measured that day: `stage_runtime_bench` read 102.52ms
+    against a 70ms budget while an exclusive run of the same commit read
+    49.80ms, and `stage_mcp_latency` read 43.82ms against 8.32ms — a 5x swing on
+    unchanged code.
+
+    `mutation_sweep_in_progress` already covered a tree being REWRITTEN. This
+    covers a tree being CONTENDED, which the marker cannot see because the
+    sweep writes nothing here.
+
+    The direction that matters is the same one: reading FALSE during a sweep
+    files fabricated defects that the next session inherits as fact; reading
+    TRUE forever would silence real ones. So this fails toward NOISE — anything
+    it cannot establish is reported as uncontended.
+    """
+
+    def test_no_sweep_process_means_an_uncontended_tree(self, monkeypatch):
+        monkeypatch.setattr(_mod.subprocess, "run", lambda *_a, **_k: _FakeCompleted("", 1))
+        assert _mod.tree_is_contended() is False
+
+    def test_a_running_fleet_sweep_is_contention(self, monkeypatch):
+        monkeypatch.setattr(
+            _mod.subprocess,
+            "run",
+            lambda *_a, **_k: _FakeCompleted("46571\n", 0),
+        )
+        assert _mod.tree_is_contended() is True
+
+    def test_an_unavailable_probe_reports_uncontended_never_contended(self, monkeypatch):
+        """Fail toward NOISE. A guard that cannot run must not suppress reporting.
+
+        If pgrep is missing or errors, 'I could not tell' must read as
+        'uncontended' — the alternative silences every real finding on any host
+        where the probe is unavailable, and silence is what nobody alerts on
+        (lesson 202: a check may only claim clean for work it performed).
+        """
+
+        def boom(*_a, **_k):
+            raise OSError("pgrep not found")
+
+        monkeypatch.setattr(_mod.subprocess, "run", boom)
+        assert _mod.tree_is_contended() is False
+
+    def test_a_timed_out_probe_reports_uncontended(self, monkeypatch):
+        def slow(*_a, **_k):
+            raise _mod.subprocess.TimeoutExpired(cmd="pgrep", timeout=1)
+
+        monkeypatch.setattr(_mod.subprocess, "run", slow)
+        assert _mod.tree_is_contended() is False
+
+
+class TestMainWarnsWhenTheTreeIsContended:
+    """A failure measured on a contended tree must SAY it may be contention.
+
+    The guard is only worth the call site that invokes it (`no.md`: a ported API
+    with no caller is not an integration). Ten P1s were filed against this
+    project on 2026-08-19/20 by sweeps racing this worktree, each reading as a
+    code defect. The exit code is deliberately NOT changed — a red stays red,
+    because suppressing a failure on a contention guess is how a real
+    regression gets waved through. Only the REPORT gains a line.
+    """
+
+    def _run(self, monkeypatch, *, contended: bool, all_passed: bool):
+        # Patch the CLASS method and let main() build its own instance: an
+        # object.__new__ stand-in skips __init__, so the real run_pipeline's
+        # bookkeeping attributes are missing and the failure is the fixture's,
+        # not the code's (measured while writing this — no.md #18).
+        monkeypatch.setattr(
+            _mod.VerdictUIPM,
+            "run_pipeline",
+            lambda _self, **_k: {"all_passed": all_passed},
+            raising=False,
+        )
+        monkeypatch.setattr(_mod, "tree_is_contended", lambda: contended)
+        printed: list[str] = []
+        monkeypatch.setattr(
+            "builtins.print", lambda *a, **_k: printed.append(" ".join(map(str, a)))
+        )
+        code = _mod.main(["--quick"])
+        return code, "\n".join(printed)
+
+    def test_a_failure_on_a_contended_tree_is_flagged_as_possibly_contention(self, monkeypatch):
+        code, out = self._run(monkeypatch, contended=True, all_passed=False)
+        assert code == 1, "a red must stay red — the warning never suppresses a failure"
+        assert "contention" in out.lower(), out
+        assert "exclusive" in out.lower(), "must tell the reader how to get a trustworthy result"
+
+    def test_a_failure_on_an_exclusive_tree_carries_no_contention_excuse(self, monkeypatch):
+        """The negative control. Without it, 'warns on contention' is satisfied
+        by an implementation that prints the excuse on EVERY failure — which
+        would teach the reader to discount every real red."""
+        code, out = self._run(monkeypatch, contended=False, all_passed=False)
+        assert code == 1
+        assert "contention" not in out.lower(), out
+
+    def test_a_pass_is_never_annotated(self, monkeypatch):
+        code, out = self._run(monkeypatch, contended=True, all_passed=True)
+        assert code == 0
+        assert "contention" not in out.lower(), out
+
+
 class TestMutationSweepInProgress:
     """`mutation_sweep_in_progress` — the READER-side half of the sweep guard.
 

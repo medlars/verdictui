@@ -190,6 +190,21 @@ MUTATIONS = [
         runner=Runner.PYTEST,
     ),
     Mutation(
+        # The guard's whole value is telling a CONTENDED red apart from a real
+        # one. Reporting False unconditionally keeps every binding live and
+        # still type-checks; it simply reinstates the state that produced ten
+        # false P1s in a day. no.md #31: break behaviour, never a binding.
+        name="the contention guard stops distinguishing a busy tree from a broken one",
+        path="scripts/verdictui-pm.py",
+        old="        if probe.returncode == 0 and probe.stdout.strip():",
+        new="        if False and probe.stdout.strip():",
+        test=(
+            "Tests/test_verdictui_pm_artifact_stages.py::TestTreeIsContended::"
+            "test_a_running_fleet_sweep_is_contention"
+        ),
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
         # no.md #31: keep every binding live. Returning only the resolver's
         # first hit still compiles and still type-checks; it simply reinstates
         # the blind spot -- the gate sees the developer's own build (in parity
