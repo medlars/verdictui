@@ -205,6 +205,21 @@ MUTATIONS = [
         runner=Runner.PYTEST,
     ),
     Mutation(
+        # Without the guard the PM tells the reader to `install -m 755` over a
+        # tap symlink to a read-only Cellar file, clobbering the tap and
+        # desyncing its INSTALL_RECEIPT.json. A destructive SUGGESTION is a
+        # defect even though the PM never runs it. Keeps every binding live.
+        name="the reinstall hint stops refusing package-managed copies",
+        path="scripts/verdictui-pm.py",
+        old='if "/Cellar/" in str(Path(copy).resolve()) or copy.startswith("/opt/homebrew/"):',
+        new='if copy.startswith("/nonexistent-prefix/"):',
+        test=(
+            "Tests/test_verdictui_pm_artifact_stages.py::TestReinstallHint::"
+            "test_a_homebrew_symlink_is_refused_and_says_why"
+        ),
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
         # The mtime-vs-commit ordering IS the detector: without it an ordinary
         # dirty file and a stale overwrite are indistinguishable, which is the
         # exact confusion the script exists to resolve. Comparing against a

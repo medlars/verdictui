@@ -541,6 +541,48 @@ class TestPublishToDashboard:
             self._pm().publish_to_dashboard({"grade": "A"})
 
 
+class TestReinstallHint:
+    """The hint must never propose clobbering a package-managed binary.
+
+    Untested until the Step-12 cold read of 2026-08-20 caught it — a function
+    written the same session whose whole job is REFUSING a destructive
+    suggestion, shipped with no witness. An unexercised path is an untested
+    claim, and this one's failure mode is telling the reader to run a command
+    that desyncs a Homebrew tap from its own receipt.
+
+    Both branches are asserted, because either alone is satisfiable by a broken
+    implementation: only-refuses would be met by never offering the copy at
+    all (useless for a plain install), and only-offers by proposing it
+    everywhere (the destructive case).
+    """
+
+    _BUILT = Path("/repo/.build/release/verdictui")
+
+    def test_a_homebrew_symlink_is_refused_and_says_why(self):
+        hint = _mod._reinstall_hint("/opt/homebrew/bin/verdictui", self._BUILT)
+        assert "install -m 755" not in hint, (
+            "the Homebrew copy is -r-xr-xr-x behind an INSTALL_RECEIPT.json; copying over it "
+            f"clobbers the tap. got: {hint}"
+        )
+        assert "brew upgrade" in hint, "must name the SAFE path, not merely refuse the unsafe one"
+
+    def test_a_cellar_path_is_refused_even_without_the_bin_prefix(self):
+        """Resolution matters: a symlink elsewhere on PATH can still land in
+        the Cellar, so the check reads the RESOLVED path, not the spelling."""
+        hint = _mod._reinstall_hint(
+            "/opt/homebrew/Cellar/verdictui/1.0.1/bin/verdictui", self._BUILT
+        )
+        assert "install -m 755" not in hint, hint
+
+    def test_a_plain_user_install_still_gets_the_copy_command(self):
+        """The paired control. Without it, 'refuses the unsafe path' is met by
+        an implementation that never offers a usable fix at all — which would
+        leave a genuinely stale ~/.local/bin copy with no stated remedy."""
+        hint = _mod._reinstall_hint("/Users/dev/.local/bin/verdictui", self._BUILT)
+        assert "install -m 755" in hint, hint
+        assert str(self._BUILT) in hint, "must name the source binary to copy FROM"
+
+
 class TestTreeIsContended:
     """`tree_is_contended` — the guard that separates a busy tree from a broken one.
 
