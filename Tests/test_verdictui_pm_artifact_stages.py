@@ -484,6 +484,63 @@ class TestMainSurfacesSkippedStages:
         assert "unverified" not in out.lower(), out
 
 
+class TestPublishToDashboard:
+    """The dashboard publish must not let an unwritable file fail the PM.
+
+    Untested until 2026-08-20 (TODO.md testwatch P1). The override exists for
+    one reason: `~/Projects/ceo-dashboard.json` is shared by ~127 projects and
+    can be momentarily unwritable, and a PM that reports a grade of F because a
+    REPORTING side-effect failed is describing the wrong subject entirely.
+
+    Both directions are load-bearing and they fail differently. Not delegating
+    means the dashboard silently stops updating while every stage stays green —
+    the shape lesson 329 names, where a display slot goes stale without anyone
+    touching its subject. Swallowing too much means a real bug in the base
+    publisher disappears, and nothing anywhere reports it.
+    """
+
+    def _pm(self):
+        return object.__new__(_mod.VerdictUIPM)
+
+    def test_a_successful_publish_delegates_to_the_base(self, monkeypatch):
+        seen: list[dict] = []
+        monkeypatch.setattr(
+            _mod.PmBase, "publish_to_dashboard", lambda _s, st: seen.append(st), raising=False
+        )
+        payload = {"grade": "A"}
+        self._pm().publish_to_dashboard(payload)
+        assert seen == [payload], "the override must forward, not reimplement"
+
+    def test_a_permission_error_is_logged_and_swallowed(self, monkeypatch):
+        """A read-only dashboard is an environment state, not a product defect."""
+
+        def deny(_self, _status):
+            raise PermissionError("read-only file system")
+
+        logged: list[tuple[str, str]] = []
+        monkeypatch.setattr(_mod.PmBase, "publish_to_dashboard", deny, raising=False)
+        monkeypatch.setattr(_mod, "_pm_log", lambda msg, lvl="INFO": logged.append((msg, lvl)))
+
+        self._pm().publish_to_dashboard({"grade": "A"})
+
+        assert logged, "swallowing silently would make the dashboard stop updating unnoticed"
+        message, level = logged[0]
+        assert level == "WARN"
+        assert "skipped" in message.lower()
+
+    def test_any_other_error_still_propagates(self, monkeypatch):
+        """The negative control. Without it, 'handles PermissionError' is
+        satisfied by a bare `except Exception`, which would bury a real defect
+        in the shared publisher and report success."""
+
+        def boom(_self, _status):
+            raise ValueError("malformed status payload")
+
+        monkeypatch.setattr(_mod.PmBase, "publish_to_dashboard", boom, raising=False)
+        with pytest.raises(ValueError, match="malformed status payload"):
+            self._pm().publish_to_dashboard({"grade": "A"})
+
+
 class TestTreeIsContended:
     """`tree_is_contended` — the guard that separates a busy tree from a broken one.
 

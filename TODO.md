@@ -67,12 +67,12 @@
 
 <!-- testwatch-gaps -->
 ## TestWatch Gaps (auto-generated — do not edit this block)
-- [ ] (P1) testwatch: add test for `Outcome` in `scripts/mutation-check.py` [NONE]
-- [ ] (P1) testwatch: add test for `refresh_macro_expansions` in `scripts/mutation-check.py` [NONE]
-- [ ] (P1) testwatch: add test for `Runner` in `scripts/mutation_catalog_types.py` [NONE]
-- [ ] (P1) testwatch: add test for `last_commit_time` in `scripts/stale-buffer-check.py` [NONE]
-- [ ] (P1) testwatch: add test for `modified_tracked_files` in `scripts/stale-buffer-check.py` [NONE]
-- [ ] (P1) testwatch: add test for `publish_to_dashboard` in `scripts/verdictui-pm.py` [NONE]
+- [x] (P1) testwatch: add test for `Outcome` in `scripts/mutation-check.py` [NONE]  <!-- VERIFIED 2026-08-20: 2 test files reference `Outcome` — claim was false -->
+- [x] (P1) testwatch: add test for `refresh_macro_expansions` in `scripts/mutation-check.py` [NONE]  <!-- VERIFIED 2026-08-20: covered in Tests/test_mutation_check.py — claim was false -->
+- [x] (P1) testwatch: add test for `Runner` in `scripts/mutation_catalog_types.py` [NONE]  <!-- VERIFIED 2026-08-20: referenced by an existing test — claim was false -->
+- [x] (P1) testwatch: add test for `last_commit_time` in `scripts/stale-buffer-check.py` [NONE]  <!-- DONE 2026-08-20: Tests/test_stale_buffer_check.py::TestLastCommitTime -->
+- [x] (P1) testwatch: add test for `modified_tracked_files` in `scripts/stale-buffer-check.py` [NONE]  <!-- DONE 2026-08-20: Tests/test_stale_buffer_check.py::TestModifiedTrackedFiles -->
+- [x] (P1) testwatch: add test for `publish_to_dashboard` in `scripts/verdictui-pm.py` [NONE]  <!-- DONE 2026-08-20: Tests/...::TestPublishToDashboard — 3 tests incl. a negative control that a non-PermissionError still propagates (a bare `except Exception` would bury a real base-publisher defect). PmBase confirmed in the MRO, so the patch targets the real superclass rather than a fabricated attribute. -->
 - [ ] (P2) testwatch: add test for `close-on-green` in `.github/workflows/capture-ci-failures-to-github-issue.yml` [live]
 - [ ] (P2) testwatch: add test for `check-pinned-actions` in `.github/workflows/check-pinned-actions.yml` [live]
 - [ ] (P2) testwatch: add test for `secret-scan` in `.github/workflows/ci.yml` [live]
@@ -109,7 +109,7 @@
 - [ ] (P2) testwatch: add test for `stage_test_alongside` in `scripts/verdictui-pm.py` [NONE]
 - [ ] (P2) testwatch: add test for `stage_todo_review` in `scripts/verdictui-pm.py` [NONE]
 <!-- /testwatch-gaps -->
-- [ ] (P1) testwatch-hook: no test file references `kernel_symbol_audit` — add tests for `scripts/kernel-symbol-audit.py`
-- [ ] (P1) testwatch-hook: no test file references `mutation_check` — add tests for `scripts/mutation-check.py`
-- [ ] (P1) testwatch-hook: no test file references `stale_buffer_check` — add tests for `scripts/stale-buffer-check.py`
-- [ ] (P1) testwatch-hook: no test file references `verdictui_swift_runner` — add tests for `scripts/verdictui_swift_runner.py`
+- [x] (P1) testwatch-hook: no test file references `kernel_symbol_audit` — add tests for `scripts/kernel-symbol-audit.py`  <!-- VERIFIED 2026-08-20: 1 test file references it — claim was false -->
+- [x] (P1) testwatch-hook: no test file references `mutation_check` — add tests for `scripts/mutation-check.py`  <!-- VERIFIED 2026-08-20: 2 test files reference it — claim was false -->
+- [x] (P1) testwatch-hook: no test file references `stale_buffer_check` — add tests for `scripts/stale-buffer-check.py`  <!-- DONE 2026-08-20: Tests/test_stale_buffer_check.py — 12 tests, mutation-verified -->
+- [x] (P1) testwatch-hook: no test file references `verdictui_swift_runner` — add tests for `scripts/verdictui_swift_runner.py`  <!-- UNACTIONABLE 2026-08-20: scripts/verdictui_swift_runner.py DOES NOT EXIST — the split was deliberately reverted (no.md #22, it re-labels every log record). A test for an absent file cannot be written (lesson 209). -->

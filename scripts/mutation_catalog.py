@@ -190,6 +190,22 @@ MUTATIONS = [
         runner=Runner.PYTEST,
     ),
     Mutation(
+        # The mtime-vs-commit ordering IS the detector: without it an ordinary
+        # dirty file and a stale overwrite are indistinguishable, which is the
+        # exact confusion the script exists to resolve. Comparing against a
+        # value no real timestamp can beat keeps every binding live (no.md #31)
+        # while removing the discrimination.
+        name="the stale-buffer detector stops comparing mtime against the commit time",
+        path="scripts/stale-buffer-check.py",
+        old="        if mtime < committed:",
+        new="        if mtime < 0:",
+        test=(
+            "Tests/test_stale_buffer_check.py::TestStaleOverwrites::"
+            "test_a_stale_buffer_is_caught_with_both_timestamps"
+        ),
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
         # The guard's whole value is telling a CONTENDED red apart from a real
         # one. Reporting False unconditionally keeps every binding live and
         # still type-checks; it simply reinstates the state that produced ten
@@ -1281,8 +1297,8 @@ MUTATIONS = [
         old="        if mtime < committed:",
         new="        if True:",
         test=(
-            "Tests/test_stale_buffer_check.py::TestStaleBufferDetection"
-            "::test_an_ordinary_fresh_edit_is_not_reported"
+            "Tests/test_stale_buffer_check.py::TestStaleOverwrites"
+            "::test_ordinary_work_in_progress_is_NOT_reported"
         ),
         runner=Runner.PYTEST,
     ),
