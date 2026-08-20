@@ -264,8 +264,16 @@ def stage_result_is_skip(detail: str) -> bool:
     A skip is not a failure; it is an absence of evidence, and the fix for that
     is to make the absence legible (lesson 202, lesson 206).
     """
-    lowered = detail.lower()
-    return any(marker in lowered for marker in STAGE_SKIP_MARKERS)
+    lowered = detail.lower().strip()
+    # ANCHOR TO THE START, never a substring anywhere in the line. A stage that
+    # observed NOTHING leads with that fact; a stage that RAN and skipped a
+    # SUB-check names its measurements first and mentions the skip mid-sentence
+    # ("1 tests passed | ... | output anomaly skipped: no samples"). A substring
+    # rule marks that partial run as unverified, hiding executing work while
+    # claiming to reveal hidden work — the inverse false reading, reported by a
+    # peer session 2026-08-20 and then measured live against this classifier.
+    head = lowered.split("|", 1)[0].strip()
+    return any(head.startswith(marker) or marker in head for marker in STAGE_SKIP_MARKERS)
 
 
 def tree_is_contended() -> bool:
