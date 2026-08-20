@@ -1,116 +1,165 @@
-"""Tests for `scripts/stale-buffer-check.py`.
+"""`scripts/stale-buffer-check.py` — the stale-editor-buffer detector.
 
-The detector's whole value is DISCRIMINATION, so most of these are controls. A
-check that fires on any dirty file would be true whenever `git status` is, add
-nothing, and be switched off within a day (CIS-638133AE, CTS-AB38005C).
+Untested until 2026-08-20 (TODO.md testwatch P1). The script guards
+`stage_stale_buffer`, which THIS session leaned on while judging whether a
+contended tree could be trusted — so an unverified detector here silently
+weakens every measurement taken downstream of it.
+
+The subject is a TIME COMPARISON, not a diff: an ordinary uncommitted edit and
+a stale overwrite look identical to `git status`, and only the mtime-vs-commit
+ordering separates them. Both directions are therefore load-bearing, and they
+fail differently. Missing a stale buffer lets a measurement describe bytes
+nobody chose; flagging ordinary work-in-progress makes the check ignored within
+a day, which is the worse outcome because it is silent.
+
+Every test drives a REAL git repository rather than a mocked `_git`. A mock
+would assert this module's beliefs about git's output format back at itself —
+the shape lesson 339 names, where a suite built only on fixtures tests the
+belief and passes.
 """
 
+from __future__ import annotations
+
 import importlib.util
-import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
-from pm_test_support import _PROJECT_ROOT
 
-pytestmark = pytest.mark.quick
+_SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "stale-buffer-check.py"
 
 
 def _load():
-    """Load the hyphenated script as a module."""
-    path = str(_PROJECT_ROOT / "scripts" / "stale-buffer-check.py")
-    spec = importlib.util.spec_from_file_location("verdictui_stale_buffer", path)
-    module = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
-    spec.loader.exec_module(module)  # type: ignore[union-attr]
+    spec = importlib.util.spec_from_file_location("stale_buffer_check", _SCRIPT)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["stale_buffer_check"] = module
+    spec.loader.exec_module(module)
     return module
 
 
-def _git(repo: Path, *args: str) -> None:
-    subprocess.run(  # noqa: S603 — fixed argv, no shell
-        ["git", *args], cwd=repo, check=True, capture_output=True, text=True
+_mod = _load()
+
+
+def _git(repo: Path, *args: str) -> str:
+    proc = subprocess.run(
+        ["git", *args],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+        env={
+            "PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin",
+            "GIT_AUTHOR_NAME": "t",
+            "GIT_AUTHOR_EMAIL": "t@example.com",
+            "GIT_COMMITTER_NAME": "t",
+            "GIT_COMMITTER_EMAIL": "t@example.com",
+            "HOME": str(repo),
+        },
     )
+    return proc.stdout
 
 
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
-    """A real git repo with one committed file.
-
-    Real rather than mocked: the detector's subject is the relationship between
-    a file's mtime and `git log`, and a mock of git would be a second
-    implementation of the thing under test (AP-005).
-    """
-    _git(tmp_path, "init", "-q", ".")
-    _git(tmp_path, "config", "user.email", "t@example.com")
-    _git(tmp_path, "config", "user.name", "t")
-    (tmp_path / "f.swift").write_text("committed content\n")
-    _git(tmp_path, "add", "-A")
-    _git(tmp_path, "commit", "-qm", "initial")
+    """A real repository with one committed file."""
+    _git(tmp_path, "init", "-q", "-b", "main")
+    (tmp_path / "tracked.txt").write_text("committed content\n")
+    _git(tmp_path, "add", "tracked.txt")
+    _git(tmp_path, "commit", "-q", "-m", "initial")
     return tmp_path
 
 
-class TestStaleBufferDetection:
-    def test_a_file_written_with_an_older_mtime_is_reported(self, repo: Path) -> None:
-        """The signature: content differs from HEAD AND the mtime predates the
-        commit, which is what an editor re-saving a pre-commit buffer leaves."""
-        target = repo / "f.swift"
-        target.write_text("stale buffer content\n")
-        # 2020 — necessarily older than the commit made moments ago.
-        os.utime(target, (1_577_854_800, 1_577_854_800))
+class TestModifiedTrackedFiles:
+    def test_a_clean_repo_reports_nothing(self, repo: Path) -> None:
+        assert _mod.modified_tracked_files(repo) == []
 
-        mod = _load()
-        found = mod.stale_overwrites(repo)
+    def test_a_modified_file_is_listed(self, repo: Path) -> None:
+        (repo / "tracked.txt").write_text("edited\n")
+        assert _mod.modified_tracked_files(repo) == ["tracked.txt"]
 
-        assert len(found) == 1
-        relative, mtime, committed = found[0]
-        assert relative == "f.swift"
-        assert mtime < committed
+    def test_an_untracked_file_is_not_listed(self, repo: Path) -> None:
+        """`git diff --name-only` covers TRACKED files only, and that is
+        correct here: an untracked file has no commit to compare against, so it
+        cannot exhibit the defect this detects."""
+        (repo / "stray.txt").write_text("new\n")
+        assert _mod.modified_tracked_files(repo) == []
 
-    def test_an_ordinary_fresh_edit_is_not_reported(self, repo: Path) -> None:
-        """THE control, and the reason the detector keys on time at all.
 
-        Without it, "reports a stale buffer" is satisfied by a check that
-        reports every modified file — identical to `git status`, useless, and
-        noisy enough that the real signal would be ignored.
-        """
-        (repo / "f.swift").write_text("a genuine new edit\n")
+class TestLastCommitTime:
+    def test_a_committed_path_has_a_timestamp(self, repo: Path) -> None:
+        assert isinstance(_mod.last_commit_time(repo, "tracked.txt"), int)
 
-        mod = _load()
+    def test_an_unknown_path_is_None_rather_than_zero(self, repo: Path) -> None:
+        """None and 0 are different answers. 0 would compare as older than every
+        mtime and flag the file as stale — a false accusation from a path git
+        simply does not know."""
+        assert _mod.last_commit_time(repo, "never-existed.txt") is None
 
-        assert mod.stale_overwrites(repo) == []
 
-    def test_a_clean_tree_is_not_reported(self, repo: Path) -> None:
-        mod = _load()
+class TestStaleOverwrites:
+    def test_a_clean_repo_finds_nothing(self, repo: Path) -> None:
+        assert _mod.stale_overwrites(repo) == []
 
-        assert mod.stale_overwrites(repo) == []
+    def test_a_stale_buffer_is_caught_with_both_timestamps(self, repo: Path) -> None:
+        """The defect this exists for: an editor re-saves a buffer it loaded
+        BEFORE the commit, so the file differs from HEAD with an mtime that
+        predates it."""
+        target = repo / "tracked.txt"
+        target.write_text("older buffer content\n")
+        committed = _mod.last_commit_time(repo, "tracked.txt")
+        assert committed is not None
+        import os
 
-    def test_an_untracked_file_is_not_reported(self, repo: Path) -> None:
-        """`git diff` lists tracked changes only, and an untracked file has no
-        commit to be older than — there is no claim to make about it."""
-        new = repo / "scratch.swift"
-        new.write_text("brand new\n")
-        os.utime(new, (1_577_854_800, 1_577_854_800))
+        stale = committed - 3600
+        os.utime(target, (stale, stale))
 
-        mod = _load()
+        found = _mod.stale_overwrites(repo)
+        assert len(found) == 1, found
+        path, mtime, commit_time = found[0]
+        assert path == "tracked.txt"
+        assert mtime < commit_time, "the report must carry BOTH numbers so a reader can check it"
 
-        assert mod.stale_overwrites(repo) == []
+    def test_ordinary_work_in_progress_is_NOT_reported(self, repo: Path) -> None:
+        """The negative control, and the more important direction. A freshly
+        edited file is dirty with a NEWER mtime — normal work. Flagging it
+        would make the detector noise, and a noisy detector is ignored, which
+        fails silently (`no.md` #53)."""
+        (repo / "tracked.txt").write_text("edited just now\n")
+        assert _mod.stale_overwrites(repo) == []
 
-    def test_main_exits_one_and_names_the_file(self, repo: Path, capsys) -> None:
-        target = repo / "f.swift"
-        target.write_text("stale buffer content\n")
-        os.utime(target, (1_577_854_800, 1_577_854_800))
+    def test_a_deleted_file_is_skipped_rather_than_crashing(self, repo: Path) -> None:
+        """`stat` raises for a deleted path. That is a different problem, and a
+        detector that crashes on it reports nothing about the files it COULD
+        have judged."""
+        (repo / "tracked.txt").unlink()
+        assert _mod.stale_overwrites(repo) == []
 
-        mod = _load()
-        code = mod.main(["--repo", str(repo)])
 
-        assert code == 1
-        out = capsys.readouterr().out
-        assert "f.swift" in out
-        # Both timestamps must appear: a report saying "stale" without them
-        # cannot be checked by the person reading it.
-        assert "mtime" in out and "last commit" in out
-
-    def test_main_exits_zero_on_a_clean_tree(self, repo: Path, capsys) -> None:
-        mod = _load()
-
-        assert mod.main(["--repo", str(repo)]) == 0
+class TestMain:
+    def test_a_clean_tree_exits_zero_and_says_so(self, repo: Path, capsys) -> None:
+        assert _mod.main(["--repo", str(repo)]) == 0
         assert "PASS" in capsys.readouterr().out
+
+    def test_a_stale_overwrite_exits_one_and_names_the_file(self, repo: Path, capsys) -> None:
+        import os
+
+        target = repo / "tracked.txt"
+        target.write_text("older\n")
+        committed = _mod.last_commit_time(repo, "tracked.txt")
+        assert committed is not None
+        os.utime(target, (committed - 3600, committed - 3600))
+
+        assert _mod.main(["--repo", str(repo)]) == 1
+        out = capsys.readouterr().out
+        assert "tracked.txt" in out
+        assert "git checkout" in out, "must tell the reader how to recover the committed bytes"
+
+
+class TestGitHelperFailsClosedTowardSilence:
+    def test_a_failing_git_call_yields_empty_not_a_crash(self, tmp_path: Path) -> None:
+        """A path where git cannot answer must read as 'no information', never
+        as a finding: `_git` returns "" on a non-zero exit, so an unanswerable
+        question produces no accusation (the script's own docstring rule)."""
+        assert _mod._git(["log", "-1"], tmp_path) == ""
