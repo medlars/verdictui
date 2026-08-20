@@ -220,7 +220,15 @@ def mutation_sweep_in_progress() -> bool:
 # to this tree, so `mutation_sweep_in_progress` cannot see it — yet a PM
 # sampling the tree during one measures a queue rather than the code.
 CONTENTION_PROBE_TIMEOUT_SECONDS = 5
-CONTENTION_PROCESS_PATTERNS = ("check.py --all",)
+CONTENTION_PROCESS_PATTERNS = (
+    # A fleet sweep: ~127 projects through this tree's SwiftPM build dir.
+    "check.py --all",
+    # A SECOND PM on this same tree. `ceo.py --watch` calls every PM with
+    # `--fix` as its "Obligate" step, so this is the commonest contender and
+    # the first version of this list was blind to it — measured 2026-08-20
+    # with one live for 15+ minutes while the guard read False.
+    "verdictui-pm.py",
+)
 
 
 # Phrases a stage uses when it PASSED WITHOUT OBSERVING ITS SUBJECT. Anchored
@@ -295,7 +303,15 @@ def tree_is_contended() -> bool:
             )
         except (OSError, subprocess.SubprocessError):
             continue
-        if probe.returncode == 0 and probe.stdout.strip():
+        if probe.returncode != 0:
+            continue
+        # EXCLUDE OURSELVES. `verdictui-pm.py` matches the very process running
+        # this check, so without this the PM reports its own existence as
+        # contention — permanently True, which is worse than the blind spot it
+        # replaced: a guard that always fires teaches its reader to ignore it
+        # (no.md #72 — a detector must not fire on its own subject).
+        others = [pid for pid in probe.stdout.split() if pid.strip() != str(os.getpid())]
+        if others:
             return True
     return False
 

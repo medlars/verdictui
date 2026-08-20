@@ -575,6 +575,75 @@ class TestTreeIsContended:
         )
         assert _mod.tree_is_contended() is True
 
+    def test_a_concurrent_pm_run_is_contention_too(self, monkeypatch):
+        """A second PM on this tree contends for the SAME build directory.
+
+        Measured 2026-08-20: `ceo.py --watch` calls every PM with `--fix` as
+        its "Obligate" step, so a `verdictui-pm.py --fix` was live on this tree
+        for 15+ minutes while this session measured. The first version of this
+        guard matched only `check.py --all` and returned False throughout —
+        blind to the contender directly in front of it.
+
+        The pattern list is a CLAIM ABOUT THE WORLD, and every spelling it
+        omits is not merely unmatched but invisible (lesson 219/240). This is
+        the second entry, added because the first was demonstrably incomplete.
+        """
+        calls: list[str] = []
+
+        def probe(argv, **_k):
+            calls.append(argv[-1])
+            hit = argv[-1] == "verdictui-pm.py"
+            return _FakeCompleted("51039\n" if hit else "", 0 if hit else 1)
+
+        monkeypatch.setattr(_mod.subprocess, "run", probe)
+        assert _mod.tree_is_contended() is True
+        assert "verdictui-pm.py" in calls, calls
+
+    def test_the_pm_does_not_report_ITSELF_as_contention(self, monkeypatch):
+        """The false-positive direction, and the one that would destroy the guard.
+
+        `verdictui-pm.py` matches the very process running this check, so
+        without a self-exclusion `pgrep` returns our own pid and the PM reports
+        contention on every single run — permanently True. That is strictly
+        worse than the blind spot it replaced: a guard that always fires
+        teaches its reader to discount it, and it pays that cost on every
+        future finding rather than only the wrong one (`no.md` #72).
+        """
+        import os as _os
+
+        monkeypatch.setattr(
+            _mod.subprocess, "run", lambda *_a, **_k: _FakeCompleted(f"{_os.getpid()}\n", 0)
+        )
+        assert _mod.tree_is_contended() is False, "the PM must not see its own pid as a contender"
+
+    def test_a_real_contender_beside_our_own_pid_still_registers(self, monkeypatch):
+        """The paired control: excluding self must not exclude everyone.
+
+        Without this, 'ignores its own pid' is satisfied by an implementation
+        that ignores every pid — which silently restores the original defect
+        while this class stays green.
+        """
+        import os as _os
+
+        monkeypatch.setattr(
+            _mod.subprocess,
+            "run",
+            lambda *_a, **_k: _FakeCompleted(f"{_os.getpid()}\n51039\n", 0),
+        )
+        assert _mod.tree_is_contended() is True
+
+    def test_the_probe_stops_at_the_first_match_rather_than_asking_twice(self, monkeypatch):
+        """Cheapness is part of the contract — this runs on every PM invocation."""
+        calls: list[str] = []
+
+        def probe(argv, **_k):
+            calls.append(argv[-1])
+            return _FakeCompleted("999\n", 0)
+
+        monkeypatch.setattr(_mod.subprocess, "run", probe)
+        assert _mod.tree_is_contended() is True
+        assert len(calls) == 1, f"must short-circuit on the first hit, probed {calls}"
+
     def test_an_unavailable_probe_reports_uncontended_never_contended(self, monkeypatch):
         """Fail toward NOISE. A guard that cannot run must not suppress reporting.
 
