@@ -220,6 +220,21 @@ MUTATIONS = [
         runner=Runner.PYTEST,
     ),
     Mutation(
+        # Scanning the WHOLE detail instead of its leading clause reinstates the
+        # inverse false reading: a stage that RAN and named a skipped SUB-check
+        # mid-sentence gets marked unverified, hiding executing work while
+        # claiming to reveal hidden work. Keeps every binding live (no.md #31).
+        name="the skip classifier scans the whole detail instead of its leading clause",
+        path="scripts/verdictui-pm.py",
+        old='head = lowered.split("|", 1)[0].strip()',
+        new="head = lowered",
+        test=(
+            "Tests/test_verdictui_pm_artifact_stages.py::TestSkippedStagesAreVisibleAsSkips::"
+            "test_a_stage_that_RAN_but_skipped_a_SUB_check_is_not_a_skip"
+        ),
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
         # The mtime-vs-commit ordering IS the detector: without it an ordinary
         # dirty file and a stale overwrite are indistinguishable, which is the
         # exact confusion the script exists to resolve. Comparing against a

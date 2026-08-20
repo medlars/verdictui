@@ -422,6 +422,29 @@ class TestSkippedStagesAreVisibleAsSkips:
         ):
             assert _mod.stage_result_is_skip(detail), detail
 
+    def test_a_stage_that_RAN_but_skipped_a_SUB_check_is_not_a_skip(self):
+        """A partial run that honestly names a skipped sub-check still RAN.
+
+        Reported by a peer session (PanoMac, 2026-08-20) that hit this in its
+        own recogniser, then MEASURED here rather than assumed: both strings
+        below classified as skips against this project's classifier, because
+        `"skipped:"` appears MID-SENTENCE in a detail whose stage executed.
+
+        VerdictUI's own stage details happen not to contain that shape today,
+        so nothing but luck separated this project from the defect — which is
+        exactly why it is pinned rather than left to surface later. A stage
+        that ran and reported a sub-check skip is the OPPOSITE of a stage that
+        observed nothing, and rendering it as UNVERIFIED hides executing work
+        while claiming to reveal hidden work.
+        """
+        for detail in (
+            "1 tests passed | 1 tests passed | output anomaly skipped: no trust score samples",
+            "1 keys within freshness budget | background lifecycle skipped: app or log not present",
+        ):
+            assert not _mod.stage_result_is_skip(detail), (
+                f"a stage that RAN and named a skipped sub-check is not a skipped stage: {detail}"
+            )
+
     def test_a_real_pass_is_never_classified_as_a_skip(self):
         """The negative control. Without it, 'detects skips' is satisfied by an
         implementation that calls EVERY passing stage a skip — which would make
