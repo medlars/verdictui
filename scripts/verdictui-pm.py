@@ -700,6 +700,52 @@ def _terminate_process_group(proc) -> None:  # noqa: ANN001 — subprocess-like 
             pass
 
 
+def _verdictui_copies_on_path() -> list[str]:
+    """Every verdictui on PATH, not merely the first.
+
+    `shutil.which` returns the FIRST hit, which on a developer machine is the
+    developer's own build — in parity by construction, since the session that
+    builds also installs it. The copy that SHIPS (a Homebrew tap, a packaged
+    install) sits later on PATH and is exactly the one that goes stale
+    unnoticed. Measured 2026-08-19: ~/.local/bin matched the repo while the
+    tap symlink was four subcommands behind, and the gate reported parity.
+    """
+    first = shutil.which("verdictui")
+    if first is None:
+        # The resolver is the authority on whether ANY copy is reachable.
+        # Asking it first keeps one seam for both questions and means an
+        # absent install stays the advisory state the stage documents.
+        return []
+    seen: list[str] = [first]
+    resolved = {str(Path(first).resolve())}
+    for directory in os.environ.get("PATH", "").split(os.pathsep):
+        if not directory:
+            continue
+        candidate = Path(directory) / "verdictui"
+        if not candidate.is_file() or not os.access(candidate, os.X_OK):
+            continue
+        real = str(candidate.resolve())
+        if real not in resolved:
+            resolved.add(real)
+            seen.append(str(candidate))
+    return seen
+
+
+def _reinstall_hint(copy: str, built: Path) -> str:
+    """A package-managed copy must never be overwritten in place.
+
+    The Homebrew copy is read-only (-r-xr-xr-x) behind an INSTALL_RECEIPT.json
+    and an SBOM; `install -m 755` over its symlink would clobber the tap and
+    desync the receipt from what is on disk. That path needs a release, not a
+    file copy.
+    """
+    if "/Cellar/" in str(Path(copy).resolve()) or copy.startswith("/opt/homebrew/"):
+        return (
+            "Fix: cut a release and `brew upgrade verdictui` — do NOT copy over a tap-managed file."
+        )
+    return f"Fix: install -m 755 {built} {copy}"
+
+
 class VerdictUIPM(PmBase):
     """Project Manager for VerdictUI — owns build, test, architecture, and governance stages."""
 
@@ -1256,8 +1302,8 @@ class VerdictUIPM(PmBase):
         ADVISORY: an absent install is a legitimate state (a fresh clone, CI),
         so it reports rather than fails. A STALE install is the defect.
         """
-        installed = shutil.which("verdictui")
-        if installed is None:
+        copies = _verdictui_copies_on_path()
+        if not copies:
             return {"passed": True, "detail": "no installed verdictui on PATH — nothing to compare"}
         built = PROJECT_ROOT / ".build" / "release" / "verdictui"
         if not built.exists():
@@ -1277,7 +1323,16 @@ class VerdictUIPM(PmBase):
                     seen = True
                     continue
                 if seen:
-                    if line and not line.startswith(" "):
+                    # A BLANK line closes the block. The original predicate was
+                    # `if line and not line.startswith(" ")` — that leading
+                    # `line and` SKIPS blanks, so the walk ran straight into the
+                    # trailing "See 'verdictui help ...'" footer, which is
+                    # indented and whose first token is a valid identifier,
+                    # collecting a phantom subcommand named "See" (measured
+                    # 2026-08-19 against the live binary). Dropping `line and`
+                    # is the whole fix, so it is written as ONE condition: two
+                    # cooperating checks would each mask the other's removal.
+                    if not line.startswith(" ") or not line.strip():
                         break
                     tok = line.strip().split(" ", 1)[0]
                     if tok and tok.isidentifier():
@@ -1287,16 +1342,20 @@ class VerdictUIPM(PmBase):
         built_names = subcommands(str(built))
         if not built_names:
             return {"passed": False, "detail": "could not parse subcommands from the built binary"}
-        missing = sorted(built_names - subcommands(installed))
-        if missing:
-            return {
-                "passed": False,
-                "detail": (
-                    f"installed verdictui STALE — missing {missing}. "
-                    f"Fix: install -m 755 {built} {installed}"
-                ),
-            }
-        return {"passed": True, "detail": f"installed parity ok ({len(built_names)} subcommands)"}
+        for copy in copies:
+            missing = sorted(built_names - subcommands(copy))
+            if missing:
+                return {
+                    "passed": False,
+                    "detail": (
+                        f"installed verdictui STALE at {copy} — missing {missing}. "
+                        f"{_reinstall_hint(copy, built)}"
+                    ),
+                }
+        return {
+            "passed": True,
+            "detail": f"installed parity ok ({len(built_names)} subcommands, {len(copies)} copies)",
+        }
 
     def stage_stale_buffer(self) -> dict:
         """No tracked file was overwritten by a stale editor buffer.
