@@ -215,6 +215,54 @@ def mutation_sweep_in_progress() -> bool:
     return (time.time() - started) < MUTATION_SWEEP_TTL_SECONDS
 
 
+# A fleet sweep runs `check.py --all --quick`, which builds ~127 projects
+# through the SAME SwiftPM build directory this repo uses. Nothing is written
+# to this tree, so `mutation_sweep_in_progress` cannot see it — yet a PM
+# sampling the tree during one measures a queue rather than the code.
+CONTENTION_PROBE_TIMEOUT_SECONDS = 5
+CONTENTION_PROCESS_PATTERNS = ("check.py --all",)
+
+
+def tree_is_contended() -> bool:
+    """True while a fleet-wide sweep is competing for this tree's build dir.
+
+    Measured 2026-08-19/20: ten P1s were filed against this project in one day,
+    every one of them a `check.py --all --quick` sweep racing this worktree.
+    `stage_runtime_bench` read 102.52ms against a 70ms budget while an exclusive
+    run of the same commit read 49.80ms; `stage_mcp_latency` read 43.82ms
+    against 8.32ms — a 5x swing on unchanged code. Each ticket carried a precise
+    file:line citation, and two were RESURRECTED re-files of rows already
+    settled for the same cause.
+
+    That is the expensive direction: a fabricated defect is indistinguishable
+    from a real one at the point of use, so the next session inherits it as
+    fact and re-derives the falsification from scratch. `no.md` #15/#38/#40
+    record the same signature three times over.
+
+    This is the CONTENTION half of the sweep guard. `mutation_sweep_in_progress`
+    covers a tree being REWRITTEN; this covers a tree being COMPETED FOR, which
+    that marker cannot observe because the sweep writes nothing here.
+
+    Fails toward NOISE, never toward silence: if the probe cannot run, the
+    answer is "uncontended" so real findings still surface. A guard that
+    suppressed reporting whenever it could not measure would be a check that
+    cannot fail for its own reason (lesson 202).
+    """
+    for pattern in CONTENTION_PROCESS_PATTERNS:
+        try:
+            probe = subprocess.run(  # noqa: S603 — argv is a module constant
+                ["pgrep", "-f", pattern],
+                capture_output=True,
+                text=True,
+                timeout=CONTENTION_PROBE_TIMEOUT_SECONDS,
+            )
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if probe.returncode == 0 and probe.stdout.strip():
+            return True
+    return False
+
+
 def _documented_mcp_tools() -> set[str]:
     """Tool names the published MCP contract documents as SERVED.
 
@@ -1803,6 +1851,21 @@ def main(argv: list[str] | None = None) -> int:
     status = pm.run_pipeline(mode=mode, fix=args.fix)
     if status is None:
         return 1
+    if not status["all_passed"] and tree_is_contended():
+        # The exit code is NOT softened: a red stays red. Suppressing a failure
+        # on a contention guess is how a real regression gets waved through.
+        # What changes is that the reader is told the measurement is suspect,
+        # because the alternative is a precise-looking file:line citation that
+        # reads as a code defect and gets filed as one (ten such P1s on
+        # 2026-08-19/20, every one falsified on an exclusive tree).
+        print(
+            "\n  ⚠ A fleet sweep (check.py --all) is competing for this tree.\n"
+            "    Timing and build stages measure a QUEUE under contention: this\n"
+            "    project read p50 102.52ms vs 49.80ms exclusive on one commit.\n"
+            "    Re-run on an exclusive tree before filing any of this as a defect:\n"
+            "      git worktree add -q --detach /tmp/wt-verify HEAD\n"
+            "      cd /tmp/wt-verify && python3.14 scripts/verdictui-pm.py --quick\n"
+        )
     return 0 if status["all_passed"] else 1
 
 
