@@ -190,6 +190,21 @@ MUTATIONS = [
         runner=Runner.PYTEST,
     ),
     Mutation(
+        # Dropping the self-exclusion makes the PM report its OWN pid as a
+        # contender, so the guard is permanently True — worse than the blind
+        # spot it replaced, because a guard that always fires gets discounted
+        # on every future finding (no.md #72). Keeps every binding live.
+        name="the contention probe stops excluding the PM's own pid",
+        path="scripts/verdictui-pm.py",
+        old="if pid.strip() != str(os.getpid())",
+        new="if pid.strip() or True",
+        test=(
+            "Tests/test_verdictui_pm_artifact_stages.py::TestTreeIsContended::"
+            "test_the_pm_does_not_report_ITSELF_as_contention"
+        ),
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
         # The mtime-vs-commit ordering IS the detector: without it an ordinary
         # dirty file and a stale overwrite are indistinguishable, which is the
         # exact confusion the script exists to resolve. Comparing against a
@@ -212,8 +227,8 @@ MUTATIONS = [
         # false P1s in a day. no.md #31: break behaviour, never a binding.
         name="the contention guard stops distinguishing a busy tree from a broken one",
         path="scripts/verdictui-pm.py",
-        old="        if probe.returncode == 0 and probe.stdout.strip():",
-        new="        if False and probe.stdout.strip():",
+        old="        if others:\n            return True",
+        new="        if others and False:\n            return True",
         test=(
             "Tests/test_verdictui_pm_artifact_stages.py::TestTreeIsContended::"
             "test_a_running_fleet_sweep_is_contention"
