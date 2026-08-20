@@ -1120,7 +1120,9 @@ def test_installed_binary_exposes_every_built_subcommand() -> None:
                 seen = True
                 continue
             if seen:
-                if line and not line.startswith(" "):
+                # A blank line closes the block; walking past it collects the
+                # trailing "See 'verdictui help ...'" footer as a subcommand.
+                if not line.startswith(" ") or not line.strip():
                     break
                 token = line.strip().split(" ", 1)[0]
                 if token and token.isidentifier():
@@ -1248,6 +1250,124 @@ class TestStageInstalledParity:
         result = pm.stage_installed_parity()
         assert not result["passed"], result
         assert "could not parse" in result["detail"]
+
+    def test_every_copy_on_path_is_checked_not_merely_the_first(self, monkeypatch):
+        """shutil.which returns the FIRST hit; the copy that SHIPS may be later.
+
+        Measured 2026-08-19: two verdictui copies were on PATH —
+        ~/.local/bin (the developer's own build, in parity by construction,
+        since the session that builds also installs it) and the Homebrew tap
+        symlink, four subcommands behind. `shutil.which` returns only the
+        former, so the gate reported parity while the artifact every other
+        project and every MCP client reaches was stale — the stage
+        instantiating the exact defect its docstring says it exists to catch.
+
+        The prior tests all patch `which` to a single path, so the fixture
+        population could not express this shape at all (no.md #52).
+        """
+        pm = VerdictUIPM()
+        built_help = self._HELP
+        stale_help = "USAGE: verdictui <subcommand>\n\nSUBCOMMANDS:\n  list\n  render\n"
+        fresh = "/Users/dev/.local/bin/verdictui"
+        stale = "/opt/homebrew/bin/verdictui"
+
+        monkeypatch.setattr(_mod.shutil, "which", lambda _n: fresh)
+        monkeypatch.setattr(_mod, "_verdictui_copies_on_path", lambda: [fresh, stale])
+        monkeypatch.setattr(_mod.Path, "exists", lambda _self: True)
+
+        def fake_run(argv, **_kw):
+            path = str(argv[0])
+            if ".build" in path:
+                return _FakeCompleted(stdout=built_help)
+            return _FakeCompleted(stdout=built_help if path == fresh else stale_help)
+
+        monkeypatch.setattr(_mod.subprocess, "run", fake_run)
+        result = pm.stage_installed_parity()
+
+        assert not result["passed"], (
+            "a stale SECOND copy on PATH must fail the gate — it is the artifact "
+            f"that ships. got: {result}"
+        )
+        assert "appkit" in result["detail"], result
+        assert stale in result["detail"], "must name WHICH copy is stale"
+
+    def test_the_resolver_helper_returns_every_path_copy_not_just_the_first(
+        self, monkeypatch, tmp_path
+    ):
+        """Drive `_verdictui_copies_on_path` itself, over a real PATH.
+
+        The stage-level test stubs this helper, so it exercises the loop that
+        CONSUMES the list and never the code that BUILDS it — a mutation
+        breaking the builder passes there (measured 2026-08-19: UNNOTICED).
+        This is the negative control for the builder half.
+        """
+        first_dir = tmp_path / "local"
+        second_dir = tmp_path / "brew"
+        for d in (first_dir, second_dir):
+            d.mkdir()
+            binary = d / "verdictui"
+            binary.write_text("#!/bin/sh\nexit 0\n")
+            binary.chmod(0o755)
+
+        monkeypatch.setenv("PATH", f"{first_dir}{os.pathsep}{second_dir}")
+        monkeypatch.setattr(_mod.shutil, "which", lambda _n: str(first_dir / "verdictui"))
+
+        copies = _mod._verdictui_copies_on_path()
+        assert len(copies) == 2, (
+            "both copies on PATH must be returned; returning only the resolver's "
+            f"first hit is the blind spot this exists to close. got: {copies}"
+        )
+        assert str(second_dir / "verdictui") in copies
+
+    def test_the_resolver_helper_reports_absence_when_nothing_is_reachable(self, monkeypatch):
+        """An absent install stays the advisory state the stage documents."""
+        monkeypatch.setattr(_mod.shutil, "which", lambda _n: None)
+        assert _mod._verdictui_copies_on_path() == []
+
+    def test_the_trailing_help_footer_is_not_parsed_as_a_subcommand(self, monkeypatch):
+        """ArgumentParser closes SUBCOMMANDS with a blank line then a footer.
+
+        The real `verdictui --help` ends the block with:
+
+            (blank)
+              See 'verdictui help <subcommand>' for detailed help.
+
+        A blank line is FALSY, so `if line and not line.startswith(" ")` does
+        not terminate the walk; the footer is indented and "See" satisfies
+        `isidentifier()`, so it is collected as a subcommand. Measured
+        2026-08-19 against the live binary: the parsed set contained "See".
+
+        It cancels out today because BOTH binaries emit the footer, which is
+        exactly what makes it dangerous — a shipped copy without that line
+        would be reported as missing a subcommand named "See", sending the
+        reader after a command that has never existed.
+        """
+        with_footer = (
+            "USAGE: verdictui <subcommand>\n\nSUBCOMMANDS:\n"
+            "  list                    List scenarios.\n"
+            "  render                  Print a tree.\n"
+            "\n"
+            "  See 'verdictui help <subcommand>' for detailed help.\n"
+        )
+        pm = VerdictUIPM()
+        monkeypatch.setattr(_mod.shutil, "which", lambda _n: "/usr/local/bin/verdictui")
+        monkeypatch.setattr(_mod, "_verdictui_copies_on_path", lambda: ["/usr/local/bin/verdictui"])
+        monkeypatch.setattr(_mod.Path, "exists", lambda _self: True)
+
+        # The installed copy omits the footer; only the built one has it.
+        no_footer = "USAGE: verdictui <subcommand>\n\nSUBCOMMANDS:\n  list\n  render\n"
+
+        def fake_run(argv, **_kw):
+            is_built = ".build" in str(argv[0])
+            return _FakeCompleted(stdout=with_footer if is_built else no_footer)
+
+        monkeypatch.setattr(_mod.subprocess, "run", fake_run)
+        result = pm.stage_installed_parity()
+        assert result["passed"], (
+            "the two copies expose the same real subcommands; only the help "
+            f"footer differs, which must not read as drift. got: {result}"
+        )
+        assert "See" not in result["detail"]
 
     def test_the_help_probe_timeout_is_a_named_constant_not_a_literal(self):
         """CIS-91403A32: a bare `timeout=60` states a number without stating why.

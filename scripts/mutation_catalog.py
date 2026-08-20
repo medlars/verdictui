@@ -190,6 +190,35 @@ MUTATIONS = [
         runner=Runner.PYTEST,
     ),
     Mutation(
+        # no.md #31: keep every binding live. Returning only the resolver's
+        # first hit still compiles and still type-checks; it simply reinstates
+        # the blind spot -- the gate sees the developer's own build (in parity
+        # by construction) and never the packaged copy that actually ships.
+        name="the parity gate goes back to checking only the first copy on PATH",
+        path="scripts/verdictui-pm.py",
+        old="    seen: list[str] = [first]",
+        new="    return [first]\n    seen: list[str] = [first]",
+        test=(
+            "Tests/test_verdictui_pm.py::TestStageInstalledParity::"
+            "test_the_resolver_helper_returns_every_path_copy_not_just_the_first"
+        ),
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
+        # The blank line is FALSY, so the original predicate walked past it into
+        # the "See 'verdictui help ...'" footer and collected "See" as a
+        # subcommand. Restoring that reinstates the phantom.
+        name="the help-footer terminator stops closing the SUBCOMMANDS block",
+        path="scripts/verdictui-pm.py",
+        old='if not line.startswith(" ") or not line.strip():',
+        new='if line and not line.startswith(" "):',
+        test=(
+            "Tests/test_verdictui_pm.py::TestStageInstalledParity::"
+            "test_the_trailing_help_footer_is_not_parsed_as_a_subcommand"
+        ),
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
         name="the demo stage accepts an empty verdict array",
         path="scripts/verdictui-pm.py",
         old="if not isinstance(verdicts, list) or not verdicts:",
