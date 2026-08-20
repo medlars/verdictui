@@ -1268,7 +1268,10 @@ class TestStageInstalledParity:
         pm = VerdictUIPM()
         built_help = self._HELP
         stale_help = "USAGE: verdictui <subcommand>\n\nSUBCOMMANDS:\n  list\n  render\n"
-        fresh = "/Users/dev/.local/bin/verdictui"
+        # Path.home() rather than a literal /Users/... — B-005 forbids the shape
+        # fleet-wide, and a hardcoded home makes the fixture a claim about ONE
+        # machine's layout. These are stubs, never opened.
+        fresh = str(Path.home() / ".local" / "bin" / "verdictui")
         stale = "/opt/homebrew/bin/verdictui"
 
         monkeypatch.setattr(_mod.shutil, "which", lambda _n: fresh)
