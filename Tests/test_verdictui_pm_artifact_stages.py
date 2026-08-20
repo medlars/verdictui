@@ -397,6 +397,93 @@ class _FakeCompleted:
         self.returncode = returncode
 
 
+class TestSkippedStagesAreVisibleAsSkips:
+    """A stage that could not observe its subject must not read as PASS.
+
+    Found 2026-08-20 from a peer report (PanoMac, 24 of 52 stages) and then
+    MEASURED here rather than assumed: the live PM report carried
+    `[PASS] watch_testwatch  testwatch: not installed — skipped`. The detail
+    text was honest; the MARKER was not, and the marker is what a reader scans.
+
+    "Could not measure" and "measured and clean" are opposite states that must
+    never render identically (lesson 202, lesson 206). VerdictUI returns dicts
+    rather than the 3-tuple contract the peer describes, so the fix is a
+    reporting-layer classification, not a contract change: recognise the skip
+    where the row is RECORDED rather than trusting 47 call sites to volunteer
+    a flag.
+    """
+
+    def test_a_skipped_detail_is_classified_as_a_skip_not_a_pass(self):
+        for detail in (
+            "testwatch: not installed — skipped (0.1s)",
+            "skipped: shared-libs unavailable: ImportError",
+            "no installed verdictui on PATH — nothing to compare",
+            "no release build — run swift build -c release",
+        ):
+            assert _mod.stage_result_is_skip(detail), detail
+
+    def test_a_real_pass_is_never_classified_as_a_skip(self):
+        """The negative control. Without it, 'detects skips' is satisfied by an
+        implementation that calls EVERY passing stage a skip — which would make
+        the marker meaningless in the opposite direction."""
+        for detail in (
+            "871 tests PASS",
+            "ruff check + format clean",
+            "installed parity ok (13 subcommands, 2 copies)",
+            "SLO 1 p50 49.80ms < 70.0ms, p95 92.30ms recorded (3 tests)",
+            "VerdictUIKernel platform-pure (no UI imports)",
+        ):
+            assert not _mod.stage_result_is_skip(detail), detail
+
+    def test_the_word_skip_inside_a_test_name_is_not_a_skip(self):
+        """`no.md` #58/#62: 12 suite hits for "skipped" were test NAMES, every
+        one passing. A classifier keyed on the bare substring would call a
+        fully-executed suite a skip — the same false reading in reverse."""
+        assert not _mod.stage_result_is_skip(
+            "871 tests PASS (testNodesWithoutMetricsAreSkipped ok)"
+        )
+
+
+class TestMainSurfacesSkippedStages:
+    """The classifier must reach the reader, or it is not an integration."""
+
+    def _run(self, monkeypatch, stages):
+        monkeypatch.setattr(
+            _mod.VerdictUIPM,
+            "run_pipeline",
+            lambda _self, **_k: {"all_passed": True, "stages": stages},
+            raising=False,
+        )
+        monkeypatch.setattr(_mod, "tree_is_contended", lambda: False)
+        printed: list[str] = []
+        monkeypatch.setattr(
+            "builtins.print", lambda *a, **_k: printed.append(" ".join(map(str, a)))
+        )
+        return _mod.main(["--quick"]), "\n".join(printed)
+
+    def test_a_green_run_with_a_skipped_stage_says_so(self, monkeypatch):
+        code, out = self._run(
+            monkeypatch,
+            {
+                "stage_test": {"passed": True, "detail": "871 tests PASS"},
+                "watch_testwatch": {"passed": True, "detail": "testwatch: not installed — skipped"},
+            },
+        )
+        assert code == 0, "a skip is an absence of evidence, never a failure"
+        assert "watch_testwatch" in out, out
+        assert "unverified" in out.lower() or "skip" in out.lower(), out
+
+    def test_a_fully_measured_green_run_claims_nothing_extra(self, monkeypatch):
+        """Negative control: without it, 'reports skips' is satisfied by an
+        implementation that appends the caveat to every green run."""
+        code, out = self._run(
+            monkeypatch,
+            {"stage_test": {"passed": True, "detail": "871 tests PASS"}},
+        )
+        assert code == 0
+        assert "unverified" not in out.lower(), out
+
+
 class TestTreeIsContended:
     """`tree_is_contended` — the guard that separates a busy tree from a broken one.
 

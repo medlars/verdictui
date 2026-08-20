@@ -223,6 +223,43 @@ CONTENTION_PROBE_TIMEOUT_SECONDS = 5
 CONTENTION_PROCESS_PATTERNS = ("check.py --all",)
 
 
+# Phrases a stage uses when it PASSED WITHOUT OBSERVING ITS SUBJECT. Anchored
+# to how the detail OPENS or to a whole phrase, never to a bare "skip"
+# substring: `no.md` #58/#62 record 12 suite hits for "skipped" that were test
+# NAMES, every one passing, so a substring rule would call a fully-executed
+# suite a skip — the same false reading in the opposite direction.
+STAGE_SKIP_MARKERS = (
+    "not installed — skipped",
+    "not installed - skipped",
+    "skipped:",
+    "nothing to compare",
+    "no release build",
+    "unavailable:",
+)
+
+
+def stage_result_is_skip(detail: str) -> bool:
+    """True when a passing stage says, in its own words, that it measured nothing.
+
+    "Could not measure" and "measured and clean" are opposite states, and a
+    reader scans the MARKER, not the detail text. Measured 2026-08-20 on this
+    project's own report: `[PASS] watch_testwatch  testwatch: not installed —
+    skipped`. The sentence was honest; the [PASS] beside it was not.
+
+    Surfaced by a peer session that found 24 of 52 stages in another project
+    reporting PASS while never observing their subject. VerdictUI returns dicts
+    rather than that project's 3-tuple contract, so this classifies at the
+    RECORDING layer — trusting 47 individual call sites to volunteer a flag is
+    what let the divergence exist in the first place.
+
+    Advisory by design: it changes what the reader SEES, never the exit code.
+    A skip is not a failure; it is an absence of evidence, and the fix for that
+    is to make the absence legible (lesson 202, lesson 206).
+    """
+    lowered = detail.lower()
+    return any(marker in lowered for marker in STAGE_SKIP_MARKERS)
+
+
 def tree_is_contended() -> bool:
     """True while a fleet-wide sweep is competing for this tree's build dir.
 
@@ -1851,6 +1888,29 @@ def main(argv: list[str] | None = None) -> int:
     status = pm.run_pipeline(mode=mode, fix=args.fix)
     if status is None:
         return 1
+    # `status` is re-bound through an explicit annotation because pyright
+    # resolves run_pipeline across two base classes with different return
+    # types: it treats the value as Optional at the call (so the guard above is
+    # REQUIRED — removing it produces three Optional errors) and then narrows
+    # to Never afterwards, at which point nothing can be read from it. Deleting
+    # either half is wrong; naming the post-guard type is what satisfies both.
+    stages: dict[str, object] = dict(status.get("stages") or {})
+    skipped = sorted(
+        name
+        for name, row in stages.items()
+        if isinstance(row, dict)
+        and row.get("passed")
+        and stage_result_is_skip(str(row.get("detail", "")))
+    )
+    if skipped:
+        # A skip renders as [PASS], and the marker is what a reader scans. Say
+        # plainly which stages measured nothing, so "could not observe" is never
+        # read as "observed and clean" (lesson 202/206). Advisory: the exit code
+        # is untouched, because an absence of evidence is not a failure.
+        print(
+            f"\n  ⓘ {len(skipped)} stage(s) passed WITHOUT observing their subject "
+            f"— UNVERIFIED, not clean:\n    " + "\n    ".join(skipped) + "\n"
+        )
     if not status["all_passed"] and tree_is_contended():
         # The exit code is NOT softened: a red stays red. Suppressing a failure
         # on a contention guess is how a real regression gets waved through.
