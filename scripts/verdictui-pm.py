@@ -228,6 +228,22 @@ CONTENTION_PROCESS_PATTERNS = (
     # the first version of this list was blind to it — measured 2026-08-20
     # with one live for 15+ minutes while the guard read False.
     "verdictui-pm.py",
+    # The WATCHER ITSELF, not merely the PM it happens to be driving. Both
+    # entries above name THIS project's own processes, so a sweep parked inside
+    # a SIBLING project was invisible — measured 2026-08-21, when `ceo.py
+    # --watch 30` drove a full SagaMail `swift test --parallel` suite to load
+    # average 241.37 while this tree's timing stages ran. One commit (fda4c1d)
+    # read 120.23ms contended and 9.63ms exclusive: a 12x swing that filed
+    # three P1s naming code that was never slow.
+    #
+    # What saturates this machine is that the watcher is sweeping AT ALL, never
+    # which project it is inside. Keying on the watcher's VICTIM rather than on
+    # the watcher is `no.md` #76 recurring one pattern along — a guard built
+    # from one observed cause, blind to the commonest one. The comment above
+    # already NAMED `ceo.py --watch` as the commonest contender while the code
+    # matched something else: a claim in prose that the pattern list did not
+    # encode.
+    "ceo.py --watch",
 )
 
 
