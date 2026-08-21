@@ -1144,6 +1144,121 @@ class TestMacroExpansionFreshness:
     followed the touch discipline and the harness did not.
     """
 
+    def test_every_declared_macro_dir_is_restamped_not_just_the_first(self, tmp_path: Any) -> None:
+        """The helper's own contract, which its caller's test cannot observe.
+
+        `test_the_swift_runner_restamps_macro_consuming_sources` asserts that the
+        RUNNER calls this, and it is right to go through `run_named_test` — the
+        defect it guards was the runner not calling it at all. But that test
+        creates ONE directory, so it holds identically whether the loop covers
+        every entry in `MACRO_CONSUMING_TEST_DIRS` or stops after the first.
+
+        That distinction is not cosmetic. A stale expansion in ANY consuming
+        target makes a runtime witness execute the previous plugin build, and
+        the harness then prints UNNOTICED for a guard that works (`no.md`
+        #23/#26/#28) — the expensive direction, because it reads as a coverage
+        gap and invites rewriting correct code. A loop that silently covered
+        only `VerdictUIMacroTests` would leave `VerdictUIMacroRuntimeTests`
+        stale forever with every signal green.
+
+        Asserted over the DECLARED tuple rather than a hard-coded list of two,
+        so adding a third directory extends this test instead of leaving it
+        quietly behind (lesson 219/240 — a rule keyed on a hand-copied subset is
+        blind to everything the subset omits).
+        """
+        mod = _load()
+        assert len(mod.MACRO_CONSUMING_TEST_DIRS) >= 2, (
+            "this test discriminates 'covers all dirs' from 'covers the first'; "
+            "with fewer than two declared dirs it cannot fail for its own reason"
+        )
+
+        stale = 1_700_000_000
+        sources = []
+        for directory in mod.MACRO_CONSUMING_TEST_DIRS:
+            root = tmp_path / directory
+            root.mkdir(parents=True)
+            source = root / "SomeMacroTests.swift"
+            source.write_text("// consuming test\n")
+            os.utime(source, (stale, stale))
+            sources.append(source)
+
+        mod.REPO = tmp_path
+        mod.refresh_macro_expansions()
+
+        unstamped = [str(s) for s in sources if s.stat().st_mtime == stale]
+        assert not unstamped, f"left stale (SwiftPM will reuse the old expansion): {unstamped}"
+
+    def test_a_missing_macro_dir_is_skipped_rather_than_raising(self, tmp_path: Any) -> None:
+        """A worktree need not contain every declared directory.
+
+        The harness runs in detached verification worktrees and in trees where a
+        target has not been created yet. If an absent directory raised, the
+        Swift path would die before the runner ever started — turning a missing
+        *optional* input into a hard failure of the whole sweep.
+
+        The paired positive control is the point: without it, "does not raise"
+        is satisfied by a helper that returns immediately and stamps NOTHING,
+        which is the silent-no-op this guard exists to forbid (`no.md` #17 — a
+        predicate whose tests only exercise one branch cannot tell a working
+        rule from one that is always true).
+        """
+        mod = _load()
+        present = tmp_path / mod.MACRO_CONSUMING_TEST_DIRS[0]
+        present.mkdir(parents=True)
+        source = present / "SomeMacroTests.swift"
+        source.write_text("// consuming test\n")
+        stale = 1_700_000_000
+        os.utime(source, (stale, stale))
+
+        # Every OTHER declared directory is deliberately absent.
+        mod.REPO = tmp_path
+        mod.refresh_macro_expansions()  # must not raise
+
+        assert source.stat().st_mtime != stale, (
+            "skipping absent directories must not stop the present one being "
+            "stamped — a helper that no-ops entirely would also 'not raise'"
+        )
+
+    def test_the_stamp_resolves_against_repo_not_the_process_cwd(
+        self, tmp_path: Any, monkeypatch: Any
+    ) -> None:
+        """The failure this closes is invisible: it touches nothing, silently.
+
+        Every other path in this harness resolves against `REPO`. A helper that
+        read the process cwd instead would find no directories in a detached
+        worktree or under a different working directory, skip its loop, and
+        return normally — reporting success while doing nothing at all, which is
+        precisely the stale-expansion condition it exists to prevent.
+
+        The cwd is pointed at a decoy tree holding an identically-named source,
+        so a cwd-resolving implementation would stamp the WRONG file and leave
+        the real one stale. Asserting both halves is what separates the two.
+        """
+        mod = _load()
+        stale = 1_700_000_000
+
+        real_root = tmp_path / "real"
+        real = real_root / mod.MACRO_CONSUMING_TEST_DIRS[0] / "SomeMacroTests.swift"
+        real.parent.mkdir(parents=True)
+        real.write_text("// the real consuming test\n")
+        os.utime(real, (stale, stale))
+
+        decoy_root = tmp_path / "decoy"
+        decoy = decoy_root / mod.MACRO_CONSUMING_TEST_DIRS[0] / "SomeMacroTests.swift"
+        decoy.parent.mkdir(parents=True)
+        decoy.write_text("// a same-named file under the cwd\n")
+        os.utime(decoy, (stale, stale))
+
+        mod.REPO = real_root
+        monkeypatch.chdir(decoy_root)
+        mod.refresh_macro_expansions()
+
+        assert real.stat().st_mtime != stale, "the REPO-rooted source was not stamped"
+        assert decoy.stat().st_mtime == stale, (
+            "a file under the process cwd was stamped — the helper is resolving "
+            "against the cwd, so in any worktree it would touch nothing"
+        )
+
     def test_the_swift_runner_restamps_macro_consuming_sources(
         self, tmp_path: Any, monkeypatch: Any
     ) -> None:

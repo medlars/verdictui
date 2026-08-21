@@ -190,6 +190,39 @@ MUTATIONS = [
         runner=Runner.PYTEST,
     ),
     Mutation(
+        # A stale expansion in ANY consuming target makes a runtime witness
+        # execute the previous plugin build, so the harness prints UNNOTICED for
+        # a guard that works (`no.md` #23/#26/#28) — the expensive direction,
+        # because it reads as a coverage gap and invites rewriting correct code.
+        # Truncating the loop keeps every binding live (`no.md` #31) and leaves
+        # VerdictUIMacroRuntimeTests stale forever with every signal green.
+        name="the macro re-stamp covers only the first declared directory",
+        path="scripts/mutation-check.py",
+        old="    for directory in MACRO_CONSUMING_TEST_DIRS:",
+        new="    for directory in MACRO_CONSUMING_TEST_DIRS[:1]:",
+        test=(
+            "Tests/test_mutation_check.py::TestMacroExpansionFreshness::"
+            "test_every_declared_macro_dir_is_restamped_not_just_the_first"
+        ),
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
+        # Resolving against the process cwd instead of REPO makes the helper
+        # touch NOTHING in a detached worktree while returning normally — a
+        # silent no-op that reports success and reinstates the exact stale
+        # expansion it exists to prevent. `Path(directory)` still compiles and
+        # still iterates, so the mutation breaks behaviour rather than the build.
+        name="the macro re-stamp resolves against the cwd instead of REPO",
+        path="scripts/mutation-check.py",
+        old="        root = resolve_in_repo(directory)",
+        new="        root = Path(directory)",
+        test=(
+            "Tests/test_mutation_check.py::TestMacroExpansionFreshness::"
+            "test_the_stamp_resolves_against_repo_not_the_process_cwd"
+        ),
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
         # The blind spot measured 2026-08-21: `ceo.py --watch 30` drove a full
         # SagaMail suite to load average 241.37 while this tree's timing stages
         # ran, and the pattern list saw nothing because both other entries name
