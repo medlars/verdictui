@@ -325,7 +325,7 @@ def tree_is_contended() -> bool:
                 text=True,
                 timeout=CONTENTION_PROBE_TIMEOUT_SECONDS,
             )
-        except (OSError, subprocess.SubprocessError):
+        except OSError, subprocess.SubprocessError:
             continue
         if probe.returncode != 0:
             continue
@@ -815,7 +815,7 @@ def _terminate_process_group(proc) -> None:  # noqa: ANN001 — subprocess-like 
     try:
         os.killpg(proc.pid, signal.SIGTERM)
         proc.wait(timeout=TIMEOUT_PROC_TERM_GRACE)
-    except (ProcessLookupError, subprocess.TimeoutExpired):
+    except ProcessLookupError, subprocess.TimeoutExpired:
         try:
             os.killpg(proc.pid, signal.SIGKILL)
             proc.wait(timeout=TIMEOUT_PROC_TERM_GRACE)

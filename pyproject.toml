@@ -5,6 +5,24 @@
 
 [tool.ruff]
 line-length = 100
+# Pinned, never inferred. Without it ruff derives the target from an installed
+# environment it finds NEAR the project, so the same commit lints differently
+# depending on where the checkout sits. Measured 2026-08-21: the main tree
+# resolved `unresolved_target_version = none` and reported "83 files already
+# formatted", while a detached worktree under /tmp resolved `3.14` and reported
+# "2 files would be reformatted" — on identical bytes, identical config, with
+# both caches cleared.
+#
+# The divergence is not cosmetic. At 3.14 ruff knows PEP 758 permits a parenless
+# `except OSError, ValueError:` and PREFERS it, so it wants to strip parens the
+# 3.13-and-earlier grammar requires. A CI runner or a verification worktree
+# therefore fails `stage_lint` on source the developer's tree calls clean, and
+# the failure names a file nobody touched — which reads as a regression rather
+# than as an environment difference (`no.md` #14: suspect the apparatus).
+#
+# The fleet already runs Python 3.14 everywhere (shared/rules.md), so this
+# states what was already true instead of changing behaviour.
+target-version = "py314"
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
