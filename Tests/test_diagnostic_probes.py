@@ -48,7 +48,7 @@ def _appkit_is_available() -> bool:
             text=True,
             timeout=120,
         )
-    except (OSError, subprocess.SubprocessError):
+    except OSError, subprocess.SubprocessError:
         return False
     return probe.returncode == 0
 
