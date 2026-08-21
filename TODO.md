@@ -67,12 +67,8 @@
 
 <!-- testwatch-gaps -->
 ## TestWatch Gaps (auto-generated — do not edit this block)
-- [x] (P1) testwatch: add test for `Outcome` in `scripts/mutation-check.py` [NONE]  <!-- VERIFIED 2026-08-20: 2 test files reference `Outcome` — claim was false -->
-- [x] (P1) testwatch: add test for `refresh_macro_expansions` in `scripts/mutation-check.py` [NONE]  <!-- VERIFIED 2026-08-20: covered in Tests/test_mutation_check.py — claim was false -->
-- [x] (P1) testwatch: add test for `Runner` in `scripts/mutation_catalog_types.py` [NONE]  <!-- VERIFIED 2026-08-20: referenced by an existing test — claim was false -->
-- [x] (P1) testwatch: add test for `last_commit_time` in `scripts/stale-buffer-check.py` [NONE]  <!-- DONE 2026-08-20: Tests/test_stale_buffer_check.py::TestLastCommitTime -->
-- [x] (P1) testwatch: add test for `modified_tracked_files` in `scripts/stale-buffer-check.py` [NONE]  <!-- DONE 2026-08-20: Tests/test_stale_buffer_check.py::TestModifiedTrackedFiles -->
-- [x] (P1) testwatch: add test for `publish_to_dashboard` in `scripts/verdictui-pm.py` [NONE]  <!-- DONE 2026-08-20: Tests/...::TestPublishToDashboard — 3 tests incl. a negative control that a non-PermissionError still propagates (a bare `except Exception` would bury a real base-publisher defect). PmBase confirmed in the MRO, so the patch targets the real superclass rather than a fabricated attribute. -->
+- [x] (P1) testwatch: add test for `refresh_macro_expansions` in `scripts/mutation-check.py` [DONE 2026-08-21 — c79836a: 3 tests pinning all-dirs coverage, missing-dir skip, and REPO-vs-cwd resolution; each verified by mutation, 2 catalog rows added (136 -> 138)]
+- [ ] (P2) testwatch: add test for `capture` in `.github/workflows/capture-ci-failures-to-github-issue.yml` [live]
 - [ ] (P2) testwatch: add test for `close-on-green` in `.github/workflows/capture-ci-failures-to-github-issue.yml` [live]
 - [ ] (P2) testwatch: add test for `check-pinned-actions` in `.github/workflows/check-pinned-actions.yml` [live]
 - [ ] (P2) testwatch: add test for `secret-scan` in `.github/workflows/ci.yml` [live]
