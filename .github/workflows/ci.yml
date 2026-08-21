@@ -185,7 +185,7 @@ jobs:
       # pm-base main; pinning and containment are separate assertions and only
       # the first fails loudly (pm-base docs/CI-DEPLOY-KEYS.md).
       - name: Install pm_base
-        run: pip install "git+ssh://git@github.com/medlars/pm-base.git@81fc7c2820445edd67513da35b11d29f2ab38e99"
+        run: pip install "git+ssh://git@github.com/medlars/pm-base.git@0b5b8943badd38ca5eba86cbe45d6ca44bfd8904"
 
       - name: Python test suite (PM + kernel symbol audit)
         run: |
