@@ -190,6 +190,26 @@ MUTATIONS = [
         runner=Runner.PYTEST,
     ),
     Mutation(
+        # The blind spot measured 2026-08-21: `ceo.py --watch 30` drove a full
+        # SagaMail suite to load average 241.37 while this tree's timing stages
+        # ran, and the pattern list saw nothing because both other entries name
+        # THIS project's processes. One commit read 120.23ms contended and
+        # 9.63ms exclusive — a 12x swing that filed three P1s naming code that
+        # was never slow. Mutated to a pattern that cannot match any real
+        # process, so the tuple stays well-formed and every binding stays live
+        # (no.md #31) while the guard loses exactly the contender it was added
+        # for.
+        name="the contention probe stops seeing a sibling project's sweep",
+        path="scripts/verdictui-pm.py",
+        old='    "ceo.py --watch",',
+        new='    "ceo.py --a-pattern-no-process-can-match",',
+        test=(
+            "Tests/test_verdictui_pm_artifact_stages.py::TestTreeIsContended::"
+            "test_a_sibling_projects_pm_saturating_the_machine_is_contention"
+        ),
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
         # Dropping the self-exclusion makes the PM report its OWN pid as a
         # contender, so the guard is permanently True — worse than the blind
         # spot it replaced, because a guard that always fires gets discounted

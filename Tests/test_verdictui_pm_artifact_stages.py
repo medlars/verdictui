@@ -664,6 +664,47 @@ class TestTreeIsContended:
         assert _mod.tree_is_contended() is True
         assert "verdictui-pm.py" in calls, calls
 
+    def test_a_sibling_projects_pm_saturating_the_machine_is_contention(self, monkeypatch):
+        """The contender that matched NEITHER pattern, measured 2026-08-21.
+
+        `ceo.py --watch 30` was driving a full **SagaMail** `swift test
+        --parallel` suite on this machine while this project's timing stages
+        ran. Load average was 241.37. Measured on one commit (fda4c1d):
+
+            testWarmVerifyRoundTripMeetsTheLatencyBudget  120.23 ms contended
+                                                            9.63 ms exclusive
+            testPerformCycleMeetsTheSLO1Gate              249.57 ms contended
+                                                           50.03 ms exclusive
+
+        A 12x swing on unchanged code. Three P1s were filed for it.
+
+        The pattern list read `check.py --all` and `verdictui-pm.py`, so a
+        sibling project's PM was INVISIBLE — even though the guard's own
+        docstring already named `ceo.py --watch` as "the commonest contender".
+        The list encoded the WATCHER'S VICTIM rather than the watcher, which is
+        `no.md` #76 recurring one pattern along: a guard built from one observed
+        cause is blind to the commonest one.
+
+        Keyed on the watcher itself, because what saturates this machine is that
+        it is sweeping AT ALL, never which project it happens to be inside.
+        """
+        calls: list[str] = []
+
+        # Keyed on the EXACT pattern, never a substring of it. A `"ceo.py" in`
+        # test matches a mutated `"ceo.py --a-pattern-no-process-can-match"`
+        # just as readily, so the row scored UNNOTICED on its first run — the
+        # assertion was satisfied identically by the working and the broken
+        # list (`no.md` #12/#17). This fake stands in for a real `pgrep -f`,
+        # which answers about the pattern it was actually given.
+        def probe(argv, **_k):
+            calls.append(argv[-1])
+            hit = argv[-1] == "ceo.py --watch"
+            return _FakeCompleted("863\n" if hit else "", 0 if hit else 1)
+
+        monkeypatch.setattr(_mod.subprocess, "run", probe)
+        assert _mod.tree_is_contended() is True
+        assert "ceo.py --watch" in calls, calls
+
     def test_the_pm_does_not_report_ITSELF_as_contention(self, monkeypatch):
         """The false-positive direction, and the one that would destroy the guard.
 
