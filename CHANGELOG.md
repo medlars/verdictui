@@ -4,6 +4,20 @@
 
 **Added**
 
+- **Three tests pinning `refresh_macro_expansions`, whose failures are silent.**
+  The helper had exactly one test, deliberately aimed at its CALLER — the defect
+  that test guards was the runner not invoking it at all. But that test creates
+  ONE directory, so it held identically whether the loop covers every declared
+  macro directory or stops after the first. Now pinned: it covers every entry in
+  the DECLARED tuple (a stale expansion in any consuming target makes a runtime
+  witness execute the previous plugin build, and the harness then prints
+  UNNOTICED for a guard that works); it skips a missing directory without
+  raising, with a paired positive control so "does not raise" cannot be met by a
+  helper that stamps nothing; and it resolves against `REPO` rather than the
+  process cwd — the sharpest case, since a cwd-resolving helper finds no
+  directories in a worktree, returns normally, and reports success while doing
+  nothing at all. Each was verified by its own mutation before being trusted.
+
 - **`actions` — which probes accept an act, and which verbs.** New CLI verb
   (`verdictui actions <scenario>`) and MCP tool, both routed through one engine
   method so the surfaces cannot drift. It exists because `role` cannot answer the
@@ -47,6 +61,42 @@
   changed, because the escape hatch already existed and was undocumented.
 
 **Fixed**
+
+- **The same commit linted two different ways depending on where it sat.**
+  `ruff` INFERS `target-version` from an installed environment it finds near the
+  project, so an identical tree resolved `unresolved_target_version = none` in
+  the main checkout and `3.14` in a detached worktree — measured on identical
+  bytes, identical config, both caches cleared. At 3.14 ruff knows PEP 758
+  permits a parenless `except OSError, ValueError:` and PREFERS it, so it wants
+  to strip parens the earlier grammar requires. CI and every verification
+  worktree therefore failed `stage_lint` on source the developer's tree called
+  clean, naming a file nobody had touched — which reads as a regression rather
+  than an environment difference. `target-version = "py314"` is now PINNED
+  rather than inferred, stating what the fleet already mandates; both trees
+  resolve identically and agree.
+
+- **The contention guard named the watcher's victim, not the watcher.**
+  `tree_is_contended()` matched `check.py --all` and `verdictui-pm.py` — both of
+  which name THIS project's own processes — so a fleet sweep parked inside a
+  SIBLING project was invisible by construction. Measured: `ceo.py --watch`
+  drove a full SagaMail suite to load average 241.37 while this tree's timing
+  stages ran, and one commit read 120.23 ms contended against 9.63 ms on an
+  exclusive worktree. That 12x swing filed THREE P1 tickets naming code that was
+  never slow. The comment directly above the list already called `ceo.py
+  --watch` "the commonest contender" while the code matched something else — a
+  claim in prose the pattern list never encoded. What saturates this machine is
+  that the watcher is sweeping AT ALL, never which project it is inside.
+
+- **A detector re-filed a false positive its prescribed fix would have made
+  worse.** The shared `audit_engine` hardcoded-path rule matched the SHAPE
+  `/Users/<anything>/` without asking whether the path names a real home, so it
+  flagged a fictional `/Users/dev/...` fixture handed to a pure string function
+  — twice, twenty minutes apart, the second flagged RESURRECTED. Its remedy
+  (`Path.home()`) would have made a deliberate plain-user CONTROL
+  environment-dependent, deleting the guard that proves the reinstall hint
+  refuses package-managed paths. Fixed at the source with a narrow four-name
+  placeholder exemption: `/Users/someone/` still fires, so the pre-existing
+  positive control is untouched.
 
 - **A wire gate required six MCP verbs while the product served nine.**
   `stage_transport_smoke` drives the shipped binary over the real stdio
