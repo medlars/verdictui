@@ -67,7 +67,6 @@
 
 <!-- testwatch-gaps -->
 ## TestWatch Gaps (auto-generated — do not edit this block)
-- [x] (P1) testwatch: add test for `refresh_macro_expansions` in `scripts/mutation-check.py` [DONE 2026-08-21 — c79836a: 3 tests pinning all-dirs coverage, missing-dir skip, and REPO-vs-cwd resolution; each verified by mutation, 2 catalog rows added (136 -> 138)]
 - [ ] (P2) testwatch: add test for `capture` in `.github/workflows/capture-ci-failures-to-github-issue.yml` [live]
 - [ ] (P2) testwatch: add test for `close-on-green` in `.github/workflows/capture-ci-failures-to-github-issue.yml` [live]
 - [ ] (P2) testwatch: add test for `check-pinned-actions` in `.github/workflows/check-pinned-actions.yml` [live]
