@@ -773,6 +773,83 @@ class TestTreeIsContended:
         assert _mod.tree_is_contended() is False
 
 
+class TestCurrentLoad:
+    """`_current_load` — the reading that decides whether SEVERE is reportable.
+
+    Untested until 2026-08-24 (CIS-C7AA57A5), and the untested half is the
+    expensive one. `os.getloadavg()` is not available on every platform, so the
+    function has a failure branch — and that branch feeds
+    `ContentionEvidence.is_severe`, which reads False on an unknown ratio. A
+    `_current_load` that wrongly reported `(None, None)` would therefore delete
+    every SEVERE warning the guard exists to raise, while the guard still
+    returned True and every test stayed green: a check that cannot fail for the
+    reason it exists (`no.md` #58).
+
+    Both branches are asserted, because either one alone is satisfiable by a
+    broken implementation — "returns None on failure" is met by a function that
+    always returns None, and "returns a reading" is met by one that never
+    handles the error at all.
+    """
+
+    def test_a_readable_host_reports_both_the_load_and_the_core_count(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The happy path must return a MEASURED pair, not a placeholder."""
+        monkeypatch.setattr(_mod.os, "getloadavg", lambda: (151.98, 60.15, 35.29))
+        monkeypatch.setattr(_mod.os, "cpu_count", lambda: 16)
+
+        load1, cpus = _mod._current_load()
+
+        assert load1 == 151.98, "the 1-minute average is the first element, not the 5- or 15-"
+        assert cpus == 16
+
+    def test_a_host_without_load_averages_reports_unknown_rather_than_zero(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An unreadable load is None, never 0.0.
+
+        0.0 is a LEGAL load average meaning a perfectly idle machine, so
+        returning it on failure would report the opposite of contention — and
+        `is_severe` would read False for a reason that has nothing to do with
+        the machine.
+        """
+
+        def _unsupported() -> tuple[float, float, float]:
+            raise OSError("load average unsupported on this platform")
+
+        monkeypatch.setattr(_mod.os, "getloadavg", _unsupported)
+
+        assert _mod._current_load() == (None, None)
+
+    def test_an_unknown_load_never_escalates_to_severe(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The consequence, asserted where a reader can see it.
+
+        This is the property the two branches above exist to protect: a guard
+        that escalated on absent evidence would be asserting something it did
+        not observe. Asserted on `ContentionEvidence` rather than on
+        `_current_load` because that is where the value is consumed — a test of
+        the producer alone cannot see a consumer that misreads None.
+        """
+
+        def _unsupported() -> tuple[float, float, float]:
+            raise OSError("load average unsupported on this platform")
+
+        monkeypatch.setattr(_mod.os, "getloadavg", _unsupported)
+        load1, cpus = _mod._current_load()
+        evidence = _mod.ContentionEvidence(
+            culprit="ceo.py --watch", pids=("882",), load1=load1, cpus=cpus
+        )
+
+        assert evidence.oversubscription is None
+        assert evidence.is_severe is False
+        assert "load average unavailable" in evidence.render()
+        assert "ceo.py --watch" in evidence.render(), (
+            "a lost load reading must not delete the contender pgrep positively found"
+        )
+
+
 class TestContentionEvidenceNamesItsSubject:
     """The guard must report WHICH contender and HOW HARD the machine is loaded.
 
