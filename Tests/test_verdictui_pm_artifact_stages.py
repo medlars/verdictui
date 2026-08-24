@@ -773,6 +773,119 @@ class TestTreeIsContended:
         assert _mod.tree_is_contended() is False
 
 
+class TestContentionEvidenceNamesItsSubject:
+    """The guard must report WHICH contender and HOW HARD the machine is loaded.
+
+    Measured 2026-08-22, live: `tree_is_contended()` returned a bare ``True``
+    while `ceo.py --watch 30` (pid 884) swept the fleet at load average
+    **346.99 on 16 CPUs — 21.7x oversubscribed**. Two things were wrong with
+    what the reader was told, and they are independent defects:
+
+    1. **The verdict is load-blind.** ``True`` at load 347 and ``True`` for one
+       idle sibling process are the same value, yet only the first explains an
+       inflated p95. A reader deciding whether to believe a red needs the
+       magnitude, and a boolean cannot carry it.
+
+    2. **The report named the wrong process.** ``main()`` hardcoded
+       *"A fleet sweep (check.py --all) is competing for this tree"* — but the
+       pattern list has FOUR entries and today's contender was the watcher, not
+       that sweep. A message that confidently names a process which is not
+       running sends its reader to `pgrep` for something absent, and finding
+       nothing reads as *the warning is spurious* — which discredits the guard
+       exactly when it is right (`no.md` #60: a claim in prose that the code
+       does not check is the most-inherited artifact there is).
+
+    Both halves are asserted here because fixing either alone leaves the other
+    silent, and a caller cannot tell them apart from the outside.
+    """
+
+    def test_the_contention_report_names_the_matched_pattern(self, monkeypatch):
+        """Not a hardcoded process — the one actually found."""
+
+        def probe(argv, **_k):
+            hit = argv[-1] == "ceo.py --watch"
+            return _FakeCompleted("884\n" if hit else "", 0 if hit else 1)
+
+        monkeypatch.setattr(_mod.subprocess, "run", probe)
+        report = _mod.contention_evidence()
+        assert report is not None, "a live contender must produce evidence"
+        assert "ceo.py --watch" in report.culprit, report.culprit
+        # The CONTROL: it must not name a pattern that did not match, which is
+        # what the hardcoded string did. Without this, "names the matched
+        # pattern" is satisfied by a report that names every pattern.
+        assert "check.py --all" not in report.culprit, report.culprit
+
+    def test_the_report_carries_the_load_average_and_its_severity(self, monkeypatch):
+        """A boolean cannot distinguish load 347 from load 3."""
+
+        monkeypatch.setattr(_mod.subprocess, "run", lambda *_a, **_k: _FakeCompleted("884\n", 0))
+        monkeypatch.setattr(_mod.os, "getloadavg", lambda: (346.99, 407.24, 420.42))
+        monkeypatch.setattr(_mod.os, "cpu_count", lambda: 16)
+        report = _mod.contention_evidence()
+        assert report is not None
+        assert report.load1 == pytest.approx(346.99)
+        # 346.99 / 16 == 21.7x oversubscribed. The RATIO is the reportable
+        # number, not the raw load: load 8 means opposite things on a 4-core
+        # and a 64-core host, so a raw threshold is a claim about one machine.
+        assert report.oversubscription == pytest.approx(346.99 / 16, rel=1e-3)
+        assert report.is_severe is True, "21.7x must read as severe"
+
+    def test_a_lightly_loaded_tree_is_contended_but_NOT_severe(self, monkeypatch):
+        """The negative control that makes `is_severe` mean anything.
+
+        Without it, "reports severe under load" is satisfied by a field that is
+        always True — the always-true predicate `no.md` #17 and #58 both record,
+        where a suite exercising only the firing branch cannot tell a working
+        rule from one that never says no.
+        """
+        monkeypatch.setattr(_mod.subprocess, "run", lambda *_a, **_k: _FakeCompleted("884\n", 0))
+        monkeypatch.setattr(_mod.os, "getloadavg", lambda: (2.0, 2.0, 2.0))
+        monkeypatch.setattr(_mod.os, "cpu_count", lambda: 16)
+        report = _mod.contention_evidence()
+        assert report is not None, "a contender is still a contender when the box is idle"
+        assert report.is_severe is False, "0.125x must not read as severe"
+
+    def test_no_contender_yields_no_evidence(self, monkeypatch):
+        """Fails toward NOISE: absence of a contender must never manufacture one."""
+        monkeypatch.setattr(_mod.subprocess, "run", lambda *_a, **_k: _FakeCompleted("", 1))
+        assert _mod.contention_evidence() is None
+
+    def test_an_unreadable_load_average_still_reports_the_contender(self, monkeypatch):
+        """A degraded probe must lose only the number it could not read.
+
+        `os.getloadavg()` raises OSError where it is unsupported. Dropping the
+        WHOLE report there would let a platform quirk silence a contender that
+        `pgrep` positively found — trading a real signal for a missing decimal
+        (lesson 202: a check may only claim clean for work it performed).
+        """
+        monkeypatch.setattr(_mod.subprocess, "run", lambda *_a, **_k: _FakeCompleted("884\n", 0))
+
+        def unsupported():
+            raise OSError("getloadavg unsupported")
+
+        monkeypatch.setattr(_mod.os, "getloadavg", unsupported)
+        report = _mod.contention_evidence()
+        assert report is not None, "a lost load reading must not lose the contender"
+        assert "ceo.py --watch" in report.culprit or "check.py --all" in report.culprit
+        assert report.load1 is None
+        assert report.is_severe is False, "unknown load must not be reported as severe"
+
+    def test_tree_is_contended_agrees_with_the_evidence(self, monkeypatch):
+        """The boolean and the report must never disagree about one tree.
+
+        Two signals answering one question is how a producer and a store drift
+        apart while each stays green (lesson 990). `tree_is_contended()` is kept
+        as the predicate every existing call site uses, so it must be DERIVED
+        from the evidence rather than re-deriving the answer itself.
+        """
+        for stdout, code, expected in (("884\n", 0, True), ("", 1, False)):
+            monkeypatch.setattr(
+                _mod.subprocess, "run", lambda *_a, _s=stdout, _c=code, **_k: _FakeCompleted(_s, _c)
+            )
+            assert _mod.tree_is_contended() is expected
+            assert (_mod.contention_evidence() is not None) is expected
+
+
 class TestMainWarnsWhenTheTreeIsContended:
     """A failure measured on a contended tree must SAY it may be contention.
 
@@ -795,7 +908,20 @@ class TestMainWarnsWhenTheTreeIsContended:
             lambda _self, **_k: {"all_passed": all_passed},
             raising=False,
         )
-        monkeypatch.setattr(_mod, "tree_is_contended", lambda: contended)
+        # Patch the PRODUCER, not the predicate. `main()` reads
+        # `contention_evidence()` because it needs the contender's NAME and the
+        # measured load, and `tree_is_contended()` is now derived from that same
+        # producer. Patching the derived predicate would leave `main()` reading
+        # the REAL machine — which is exactly what happened while writing this:
+        # the exclusive-tree control failed against live pid 884 at load 255.30,
+        # correctly reporting that the fixture had stopped controlling the code
+        # under test (`no.md` #18 — a fixture that does not reach the subject).
+        evidence = (
+            _mod.ContentionEvidence(culprit="ceo.py --watch", pids=("884",), load1=255.30, cpus=16)
+            if contended
+            else None
+        )
+        monkeypatch.setattr(_mod, "contention_evidence", lambda: evidence)
         printed: list[str] = []
         monkeypatch.setattr(
             "builtins.print", lambda *a, **_k: printed.append(" ".join(map(str, a)))

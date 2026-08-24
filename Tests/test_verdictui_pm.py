@@ -6,7 +6,6 @@ SCRIPTS the PM shells out to rather than stages of it, and their tests live in
 both files need is `pm_test_support.py`.
 """
 
-import importlib.util
 import json
 import os
 import shutil
@@ -16,6 +15,7 @@ import types
 from pathlib import Path
 
 import pytest
+from pm_test_support import load_pm
 
 # Quick gate: pure-python, sub-second — belongs in the pre-merge gate.
 # Without a marker the quick gate selects ZERO tests and reports success (lesson 183).
@@ -34,10 +34,13 @@ _needs_dev_machine = pytest.mark.skipif(
     reason="floor-check asserts dev-machine surfaces absent on CI runners",
 )
 
-# Load verdictui-pm.py (hyphenated filename) without package machinery.
-_spec = importlib.util.spec_from_file_location("verdictui_pm", _PM_PATH)
-_mod = importlib.util.module_from_spec(_spec)  # type: ignore[arg-type]
-_spec.loader.exec_module(_mod)  # type: ignore[union-attr]
+# Load verdictui-pm.py (hyphenated filename) through the SHARED loader.
+# This was a second copy of `pm_test_support.load_pm()`, and the two drifted in
+# the way duplicate implementations always do: only one gained the
+# `sys.modules` registration that `@dataclass(slots=True)` needs, so adding a
+# slotted dataclass to the PM broke THIS file's collection while the other
+# file's tests passed. One rule, one implementation (`no.md` #284).
+_mod = load_pm()
 VerdictUIPM = _mod.VerdictUIPM
 
 
@@ -62,6 +65,11 @@ class TestLoadsWithoutSharedLibs:
             "sys.meta_path.insert(0, _Block())\n"
             f"spec = importlib.util.spec_from_file_location('vupm', {_PM_PATH!r})\n"
             "mod = importlib.util.module_from_spec(spec)\n"
+            # Register before exec: @dataclass(slots=True) resolves its owning
+            # module via sys.modules[cls.__module__], which a path-loaded module
+            # is absent from. Without this the probe dies inside dataclasses.py
+            # with an error naming neither the PM nor this test.
+            "sys.modules[spec.name] = mod\n"
             "spec.loader.exec_module(mod)\n"
             "print('LOADED_OK', mod.VerdictUIPM.__name__)\n"
         )
@@ -81,6 +89,11 @@ class TestLoadsWithoutSharedLibs:
             "sys.meta_path.insert(0, _Block())\n"
             f"spec = importlib.util.spec_from_file_location('vupm', {_PM_PATH!r})\n"
             "mod = importlib.util.module_from_spec(spec)\n"
+            # Register before exec: @dataclass(slots=True) resolves its owning
+            # module via sys.modules[cls.__module__], which a path-loaded module
+            # is absent from. Without this the probe dies inside dataclasses.py
+            # with an error naming neither the PM nor this test.
+            "sys.modules[spec.name] = mod\n"
             "spec.loader.exec_module(mod)\n"
             "mod.VerdictUIPM.__init__ = lambda self: None\n"
             "mod.VerdictUIPM().run_pipeline(mode='quick')\n"
@@ -98,7 +111,9 @@ class TestLoadsWithoutSharedLibs:
         import-time CEO paths into VerdictUI-local writable directories.
         """
         probe = (
-            "import importlib.util, json, os\n"
+            # `sys` is load-bearing, not decorative: the sys.modules registration
+            # below is what lets @dataclass(slots=True) resolve its owning module.
+            "import importlib.util, json, os, sys\n"
             "from pathlib import Path\n"
             "original_home = os.environ.get('HOME')\n"
             "default_lock = str(Path.home() / '.cache' / 'vohux-ceo' / 'locks')\n"
@@ -110,6 +125,11 @@ class TestLoadsWithoutSharedLibs:
             "os.chmod = _blocked_default_ceo_chmod\n"
             f"spec = importlib.util.spec_from_file_location('vupm', {_PM_PATH!r})\n"
             "mod = importlib.util.module_from_spec(spec)\n"
+            # Register before exec: @dataclass(slots=True) resolves its owning
+            # module via sys.modules[cls.__module__], which a path-loaded module
+            # is absent from. Without this the probe dies inside dataclasses.py
+            # with an error naming neither the PM nor this test.
+            "sys.modules[spec.name] = mod\n"
             "spec.loader.exec_module(mod)\n"
             "assert os.environ.get('HOME') == original_home, 'PM import leaked HOME override'\n"
             "import pm_constants\n"

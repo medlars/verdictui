@@ -36,5 +36,26 @@ def load_pm():
     """
     spec = importlib.util.spec_from_file_location("verdictui_pm", _PM_PATH)
     module = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
-    spec.loader.exec_module(module)  # type: ignore[union-attr]
+    # REGISTER BEFORE EXEC. `@dataclass(slots=True)` rebuilds the class and, to
+    # resolve string annotations, looks the owning module up in `sys.modules`
+    # by `cls.__module__`. A module loaded by path alone is absent from there,
+    # so that lookup returns None and the decorator dies with a bare
+    # `AttributeError: 'NoneType' object has no attribute '__dict__'` — an
+    # error that names neither the dataclass nor this loader, and so reads as
+    # a defect in whatever file happened to declare it.
+    #
+    # Measured 2026-08-22: adding the first slotted dataclass to the PM broke
+    # COLLECTION of this entire suite, with a traceback pointing into CPython's
+    # dataclasses.py. Registering the module is what a real import does; doing
+    # it here makes a path-loaded module behave like an imported one instead of
+    # subtly differently (`no.md` #14 — the apparatus, not the subject).
+    sys.modules[spec.name] = module  # type: ignore[union-attr]
+    try:
+        spec.loader.exec_module(module)  # type: ignore[union-attr]
+    except BaseException:
+        # Never leave a half-executed module registered: the next importer
+        # would receive it and see partially-defined names rather than a
+        # clean failure.
+        sys.modules.pop(spec.name, None)  # type: ignore[union-attr]
+        raise
     return module
