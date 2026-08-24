@@ -310,8 +310,8 @@ MUTATIONS = [
         # false P1s in a day. no.md #31: break behaviour, never a binding.
         name="the contention guard stops distinguishing a busy tree from a broken one",
         path="scripts/verdictui-pm.py",
-        old="        if others:\n            return True",
-        new="        if others and False:\n            return True",
+        old="        if others:\n            load1, cpus = _current_load()",
+        new="        if others and False:\n            load1, cpus = _current_load()",
         test=(
             "Tests/test_verdictui_pm_artifact_stages.py::TestTreeIsContended::"
             "test_a_running_fleet_sweep_is_contention"

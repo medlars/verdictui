@@ -16,6 +16,7 @@ import sys
 import tempfile
 import time
 from collections.abc import Iterator
+from dataclasses import dataclass
 from pathlib import Path
 
 _USER_HOME = Path.home()
@@ -292,6 +293,117 @@ def stage_result_is_skip(detail: str) -> bool:
     return any(head.startswith(marker) or marker in head for marker in STAGE_SKIP_MARKERS)
 
 
+# A load average is only meaningful against the core count that serves it:
+# load 8 is idle on a 64-core host and a 2x queue on a 4-core one. So the
+# reportable number is the RATIO, and the threshold is stated once here rather
+# than inline at a call site where a second copy could drift (lesson 990).
+SEVERE_OVERSUBSCRIPTION = 2.0
+
+
+@dataclass(frozen=True, slots=True)
+class ContentionEvidence:
+    """What is competing for this tree, and how hard the machine is working.
+
+    A bare ``True`` cannot separate "one idle sibling process" from "21.7x
+    oversubscribed", yet only the second explains an inflated p95 — and that
+    distinction is the whole reason a reader consults this guard. Measured
+    2026-08-22: `ceo.py --watch 30` (pid 884) swept the fleet at load average
+    346.99 on 16 cores while this project's PM ran, and the guard reported the
+    same value it would have reported for a single quiet process.
+
+    ``load1`` is Optional because `os.getloadavg()` raises where unsupported.
+    A lost reading costs only the number: the contender `pgrep` positively
+    found is still reported, because dropping the whole finding would trade a
+    real signal for a missing decimal (lesson 202).
+    """
+
+    culprit: str
+    pids: tuple[str, ...]
+    load1: float | None
+    cpus: int | None
+
+    @property
+    def oversubscription(self) -> float | None:
+        """Runnable work per core. None when either input is unknown."""
+        if self.load1 is None or not self.cpus:
+            return None
+        return self.load1 / self.cpus
+
+    @property
+    def is_severe(self) -> bool:
+        """True only for a MEASURED ratio at or past the threshold.
+
+        Unknown load reads False, never True: a guard that escalates on absent
+        evidence is asserting something it did not observe.
+        """
+        ratio = self.oversubscription
+        return ratio is not None and ratio >= SEVERE_OVERSUBSCRIPTION
+
+    def render(self) -> str:
+        """A report a reader can act on without re-deriving the measurement."""
+        if self.load1 is None or self.cpus is None:
+            load = "load average unavailable on this host"
+        else:
+            ratio = self.oversubscription or 0.0
+            verdict = "SEVERE" if self.is_severe else "mild"
+            load = (
+                f"load average {self.load1:.2f} on {self.cpus} cores "
+                f"= {ratio:.1f}x oversubscribed ({verdict})"
+            )
+        pids = ", ".join(self.pids[:4]) + ("…" if len(self.pids) > 4 else "")
+        return (
+            f"\n  ⚠ CONTENTION — a red here may be a QUEUE, not a defect.\n"
+            f"      contender : {self.culprit}  (pid {pids})\n"
+            f"      machine   : {load}\n"
+            f"    Timing and build stages measure the queue under contention: this\n"
+            f"    project read p50 102.52ms vs 49.80ms exclusive on one commit, and\n"
+            f"    120.23ms vs 9.63ms on another — a 12x swing on unchanged code.\n"
+            f"    Re-measure on an exclusive tree before filing any of this as a defect:\n"
+            f"      git worktree add -q --detach /tmp/wt-verify HEAD\n"
+            f"      cd /tmp/wt-verify && python3.14 scripts/verdictui-pm.py --quick\n"
+        )
+
+
+def _current_load() -> tuple[float | None, int | None]:
+    """(1-minute load average, core count), each None when unreadable."""
+    try:
+        load1 = os.getloadavg()[0]
+    except OSError, AttributeError:
+        return None, None
+    return load1, os.cpu_count()
+
+
+def contention_evidence() -> ContentionEvidence | None:
+    """The contender competing for this tree, or None when the tree is ours.
+
+    This is the SINGLE producer of the contention verdict. `tree_is_contended`
+    is derived from it rather than re-deriving the answer, because two signals
+    answering one question drift apart while each stays green (lesson 990).
+    """
+    for pattern in CONTENTION_PROCESS_PATTERNS:
+        try:
+            probe = subprocess.run(  # noqa: S603 — argv is a module constant
+                ["pgrep", "-f", pattern],
+                capture_output=True,
+                text=True,
+                timeout=CONTENTION_PROBE_TIMEOUT_SECONDS,
+            )
+        except OSError, subprocess.SubprocessError:
+            continue
+        if probe.returncode != 0:
+            continue
+        # EXCLUDE OURSELVES. `verdictui-pm.py` matches the very process running
+        # this check, so without this the PM reports its own existence as
+        # contention — permanently True, which is worse than the blind spot it
+        # replaced: a guard that always fires teaches its reader to ignore it
+        # (no.md #72 — a detector must not fire on its own subject).
+        others = tuple(pid for pid in probe.stdout.split() if pid.strip() != str(os.getpid()))
+        if others:
+            load1, cpus = _current_load()
+            return ContentionEvidence(culprit=pattern, pids=others, load1=load1, cpus=cpus)
+    return None
+
+
 def tree_is_contended() -> bool:
     """True while a fleet-wide sweep is competing for this tree's build dir.
 
@@ -316,28 +428,13 @@ def tree_is_contended() -> bool:
     answer is "uncontended" so real findings still surface. A guard that
     suppressed reporting whenever it could not measure would be a check that
     cannot fail for its own reason (lesson 202).
+
+    DERIVED, never re-derived: this is a thin read of `contention_evidence()`
+    so the predicate and the report can never disagree about one tree. Two
+    signals answering the same question is how a producer and a store drift
+    apart while both stay green (lesson 990).
     """
-    for pattern in CONTENTION_PROCESS_PATTERNS:
-        try:
-            probe = subprocess.run(  # noqa: S603 — argv is a module constant
-                ["pgrep", "-f", pattern],
-                capture_output=True,
-                text=True,
-                timeout=CONTENTION_PROBE_TIMEOUT_SECONDS,
-            )
-        except OSError, subprocess.SubprocessError:
-            continue
-        if probe.returncode != 0:
-            continue
-        # EXCLUDE OURSELVES. `verdictui-pm.py` matches the very process running
-        # this check, so without this the PM reports its own existence as
-        # contention — permanently True, which is worse than the blind spot it
-        # replaced: a guard that always fires teaches its reader to ignore it
-        # (no.md #72 — a detector must not fire on its own subject).
-        others = [pid for pid in probe.stdout.split() if pid.strip() != str(os.getpid())]
-        if others:
-            return True
-    return False
+    return contention_evidence() is not None
 
 
 def _documented_mcp_tools() -> set[str]:
@@ -1951,21 +2048,23 @@ def main(argv: list[str] | None = None) -> int:
             f"\n  ⓘ {len(skipped)} stage(s) passed WITHOUT observing their subject "
             f"— UNVERIFIED, not clean:\n    " + "\n    ".join(skipped) + "\n"
         )
-    if not status["all_passed"] and tree_is_contended():
+    if not status["all_passed"]:
         # The exit code is NOT softened: a red stays red. Suppressing a failure
         # on a contention guess is how a real regression gets waved through.
         # What changes is that the reader is told the measurement is suspect,
         # because the alternative is a precise-looking file:line citation that
         # reads as a code defect and gets filed as one (ten such P1s on
         # 2026-08-19/20, every one falsified on an exclusive tree).
-        print(
-            "\n  ⚠ A fleet sweep (check.py --all) is competing for this tree.\n"
-            "    Timing and build stages measure a QUEUE under contention: this\n"
-            "    project read p50 102.52ms vs 49.80ms exclusive on one commit.\n"
-            "    Re-run on an exclusive tree before filing any of this as a defect:\n"
-            "      git worktree add -q --detach /tmp/wt-verify HEAD\n"
-            "      cd /tmp/wt-verify && python3.14 scripts/verdictui-pm.py --quick\n"
-        )
+        #
+        # The report NAMES the matched contender and the measured load rather
+        # than asserting a fixed one. The previous version hardcoded "a fleet
+        # sweep (check.py --all)" while the pattern list had four entries, so
+        # on 2026-08-22 — when the live contender was `ceo.py --watch` at load
+        # 346.99 — it would have sent its reader to pgrep for a process that
+        # was not running, and finding nothing reads as "the warning is
+        # spurious" (`no.md` #60: prose asserting what the code does not check).
+        if (evidence := contention_evidence()) is not None:
+            print(evidence.render())
     return 0 if status["all_passed"] else 1
 
 
