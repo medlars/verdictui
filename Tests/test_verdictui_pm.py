@@ -932,11 +932,17 @@ class TestKilledRunnerIsInconclusive:
         cleaned = []
         monkeypatch.setattr(_mod.subprocess, "Popen", _popen)
         monkeypatch.setattr(_mod.os, "killpg", lambda pid, sig: kills.append((pid, sig)))
-        monkeypatch.setattr(
-            _mod,
-            "_clear_project_swiftpm_lock_files",
-            lambda root: cleaned.append(root) or 0,
-        )
+
+        # A def, not a lambda: the real function is annotated -> int and line 621
+        # consumes that value, so the stub must state the same contract. The
+        # lambda expressed it as `append(...) or 0`, which relies on append
+        # returning None and reads to mypy as using a None-valued expression
+        # (func-returns-value).
+        def _record_cleared(root: Path) -> int:
+            cleaned.append(root)
+            return 0
+
+        monkeypatch.setattr(_mod, "_clear_project_swiftpm_lock_files", _record_cleared)
         monkeypatch.setitem(sys.modules, "swift_runner", fake_swift_runner)
 
         with pytest.raises(KeyboardInterrupt):
