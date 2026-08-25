@@ -67,7 +67,7 @@
 
 <!-- testwatch-gaps -->
 ## TestWatch Gaps (auto-generated — do not edit this block)
-- [ ] (P1) testwatch: add test for `render` in `scripts/verdictui-pm.py` [NONE]
+- [x] (P1) testwatch: add test for `render` in `scripts/verdictui-pm.py` — DONE 2026-08-24 (7050325). All three branches covered in `TestCurrentLoad` / `TestContentionEvidenceNamesItsSubject`: load-unavailable (`'load average unavailable' in render()`), SEVERE (21.7x), and mild. The row was filed before those tests existed.
 - [ ] (P2) testwatch: add test for `capture` in `.github/workflows/capture-ci-failures-to-github-issue.yml` [live]
 - [ ] (P2) testwatch: add test for `close-on-green` in `.github/workflows/capture-ci-failures-to-github-issue.yml` [live]
 - [ ] (P2) testwatch: add test for `check-pinned-actions` in `.github/workflows/check-pinned-actions.yml` [live]
