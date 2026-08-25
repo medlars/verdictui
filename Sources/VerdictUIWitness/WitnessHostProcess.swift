@@ -135,7 +135,13 @@ public struct WitnessHostProcess {
             throw AXReader.Failure.hostUnavailable("no host executable at \(executable.path)")
         }
         let bundle = try makeBundle()
-        defer { try? FileManager.default.removeItem(at: bundle) }
+        // Remove the ROOT, not the `.app` inside it. `makeBundle` creates a
+        // UUID-named parent directory and nests the bundle within it, so
+        // removing only the bundle leaks that parent on every launch — about 23
+        // per suite run. Measured 2026-08-25: 88 of them had accumulated, and
+        // `launchservicesd` was burning 208 % CPU keeping track of app-bundle
+        // paths that no longer existed.
+        defer { try? FileManager.default.removeItem(at: bundle.deletingLastPathComponent()) }
 
         let launch = Process()
         launch.executableURL = URL(fileURLWithPath: "/usr/bin/open")

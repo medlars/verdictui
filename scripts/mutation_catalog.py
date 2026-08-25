@@ -2146,4 +2146,19 @@ MUTATIONS = [
         ),
         runner=Runner.PYTEST,
     ),
+    Mutation(
+        # Reverts the cleanup to the pre-fix target. This is the ACTUAL
+        # regression rather than a synthetic break: `bundle` is the `.app`
+        # nested inside the UUID-named root, so removing it leaves the root
+        # behind on every launch. Every binding stays live and it compiles
+        # (no.md #31).
+        name="the host bundle cleanup leaks its parent directory again",
+        path="Sources/VerdictUIWitness/WitnessHostProcess.swift",
+        old="defer { try? FileManager.default.removeItem(at: bundle.deletingLastPathComponent()) }",
+        new="defer { try? FileManager.default.removeItem(at: bundle) }",
+        test=(
+            "VerdictUIWitnessTests.WitnessIntegrationTests"
+            "/testAHostLaunchLeavesNoTemporaryDirectoryBehind"
+        ),
+    ),
 ]
