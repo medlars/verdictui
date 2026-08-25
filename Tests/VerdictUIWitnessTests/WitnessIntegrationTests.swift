@@ -218,4 +218,47 @@ final class WitnessIntegrationTests: XCTestCase {
             }
         }
     }
+
+    /// A host launch must leave NOTHING behind in the temporary directory.
+    ///
+    /// `makeBundle` creates a UUID-named ROOT directory and puts the `.app`
+    /// inside it; the cleanup removed only the `.app`, so the root survived
+    /// every launch. That is one leaked directory per scenario — about 23 per
+    /// suite run — and it is not merely untidy: every one of them is an app
+    /// bundle path `launchservicesd` has seen, and it was measured at 208 % CPU
+    /// with 88 of these present, on a machine whose load average had climbed to
+    /// 113 with no heavy job running at all.
+    ///
+    /// The test drives the REAL launch path rather than asserting on
+    /// `makeBundle` directly: the leak is in the relationship between what
+    /// `makeBundle` creates and what the cleanup removes, and a test that called
+    /// `makeBundle` alone could not see the cleanup at all. `/bin/echo` is a
+    /// deliberate choice — it is a genuine executable, so it passes the
+    /// `isExecutableFile` guard and a bundle IS created, and it is not an app,
+    /// so `open` fails afterwards. That reaches the cleanup on the error path,
+    /// which is the path a crashed or rejected launch takes in production.
+    func testAHostLaunchLeavesNoTemporaryDirectoryBehind() throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+        func witnessDirectoryCount() throws -> Int {
+            try FileManager.default
+                .contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
+                .filter { $0.lastPathComponent.hasPrefix("verdictui-witness-") }
+                .count
+        }
+
+        let before = try witnessDirectoryCount()
+        let host = WitnessHostProcess(
+            executable: URL(fileURLWithPath: "/bin/echo"), lifetime: 1)
+        // The read is EXPECTED to fail; the subject under test is what survives
+        // it, not whether it succeeded.
+        _ = try? host.readTree(scenario: "demo-clean-settings", readyTimeout: 1)
+        let after = try witnessDirectoryCount()
+
+        XCTAssertEqual(
+            after, before,
+            "a host launch leaked \(after - before) directory(ies) into \(root.path). "
+                + "makeBundle creates a UUID-named root and the cleanup removes only the .app "
+                + "inside it, so the root survives every launch — roughly 23 per suite run, each "
+                + "one an app bundle path launchservicesd keeps track of")
+    }
 }
