@@ -67,7 +67,7 @@
 
 <!-- testwatch-gaps -->
 ## TestWatch Gaps (auto-generated — do not edit this block)
-- [x] (P1) testwatch: add test for `render` in `scripts/verdictui-pm.py` — DONE 2026-08-24 (7050325). All three branches covered in `TestCurrentLoad` / `TestContentionEvidenceNamesItsSubject`: load-unavailable (`'load average unavailable' in render()`), SEVERE (21.7x), and mild. The row was filed before those tests existed.
+- [ ] (P1) testwatch: add test for `render` in `scripts/verdictui-pm.py` [NONE]
 - [ ] (P2) testwatch: add test for `capture` in `.github/workflows/capture-ci-failures-to-github-issue.yml` [live]
 - [ ] (P2) testwatch: add test for `close-on-green` in `.github/workflows/capture-ci-failures-to-github-issue.yml` [live]
 - [ ] (P2) testwatch: add test for `check-pinned-actions` in `.github/workflows/check-pinned-actions.yml` [live]
@@ -94,7 +94,6 @@
 - [ ] (P2) testwatch: add test for `_report` in `scripts/kernel-symbol-audit.py` [NONE]
 - [ ] (P2) testwatch: add test for `_scan_file` in `scripts/kernel-symbol-audit.py` [NONE]
 - [ ] (P2) testwatch: add test for `_type_symbol` in `scripts/kernel-symbol-audit.py` [NONE]
-- [ ] (P2) testwatch: add test for `_current_load` in `scripts/verdictui-pm.py` [NONE]
 - [ ] (P2) testwatch: add test for `_swift_timing_environment` in `scripts/verdictui-pm.py` [NONE]
 - [ ] (P2) testwatch: add test for `main` in `scripts/verdictui-pm.py` [NONE]
 - [ ] (P2) testwatch: add test for `stage_ai_artifacts` in `scripts/verdictui-pm.py` [NONE]
