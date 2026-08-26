@@ -224,6 +224,7 @@
 | `docs/dogfood/sagamail/Package.swift`                                | Wave 10 fleet dogfood — a consumer package depending on VerdictUI through its published products                                                       | Active | 2026-08-14 |
 | `docs/dogfood/sagamail/Sources/SagaMailDogfood/NotificationsSettingsScreen.swift` | A SagaMail settings screen adopted via `@Verifiable`; reproduces the real view's Form/conditional/ForEach/Toggle shapes                    | Active | 2026-08-14 |
 | `docs/dogfood/sagamail/Tests/SagaMailDogfoodTests/NotificationsSettingsVerdictTests.swift` | The dogfood verdicts, expectations owned by the CONSUMER's test target, with a cramped-viewport control                       | Active | 2026-08-14 |
+| `docs/audit-2026-08-26.md`                                           | Wave 10 Task 3 hardening audit — 10 phases + SD1–SD6, the fuzz negative control, and the fresh-clone PII scan that cleared the public repo               | Active | 2026-08-26 |
 
 ## Archived / Removed
 
