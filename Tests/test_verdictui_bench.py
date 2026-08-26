@@ -281,6 +281,64 @@ class TestStageRuntimeBench:
             "VERDICTUI_RECORD_TIMING_ONLY"
         )
 
+    def test_the_swift_and_python_oversubscription_thresholds_agree(self) -> None:
+        """The run-queue ratio is a second number spelled in two languages.
+
+        Sibling of ``test_the_swift_and_python_timing_lanes_agree``, which pins
+        the marker SET; this pins the load THRESHOLD. They are separate tests
+        because they answer separate questions and a host can be in one class
+        and not the other -- which is the whole reason the load lane exists.
+        Measured 2026-08-25: `ThirdPartyAuditTests` blew a 30s budget at 47.66s
+        on a host with ZERO markers set, so the marker parity above was green
+        and irrelevant.
+
+        Drift here is silent in the expensive direction, as always: the side
+        with the higher number keeps asserting an absolute wall clock on a host
+        the other side has already judged unable to hold one.
+        """
+        source = (
+            _PROJECT_ROOT / "Sources" / "VerdictUIProbe" / "ConstrainedTimingEnvironment.swift"
+        ).read_text()
+        declared = re.search(r"static let severeOversubscription = ([0-9.]+)", source)
+        assert declared is not None, (
+            "ConstrainedTimingEnvironment.severeOversubscription is no longer a numeric "
+            "literal — the parity check cannot resolve it, and an unresolvable threshold "
+            "reads as agreement rather than as an error"
+        )
+        assert float(declared.group(1)) == _mod.SEVERE_OVERSUBSCRIPTION, (
+            f"Swift treats {declared.group(1)}x oversubscription as severe but the PM treats "
+            f"{_mod.SEVERE_OVERSUBSCRIPTION}x — between the two figures one lane asserts an "
+            "absolute wall-clock budget that the other has already ruled unholdable"
+        )
+
+    def test_an_unreadable_load_still_asserts_its_budget(self) -> None:
+        """The load lane must fail toward NOISE, never toward silence.
+
+        `isSeverelyOversubscribed` guards on a MEASURED ratio, so a host that
+        will not report its load answers False and keeps asserting. The opposite
+        default is the convenient one and is a check that cannot fail for the
+        reason it exists (lesson 202) -- here it would disable a SAFETY bound
+        (`no.md` #44) on every host that declines to report a load average.
+
+        Asserted against the SOURCE because the branch needs a host whose
+        `getloadavg` fails, which cannot be staged in-process.
+        """
+        source = (
+            _PROJECT_ROOT / "Sources" / "VerdictUIProbe" / "ConstrainedTimingEnvironment.swift"
+        ).read_text()
+        # Split on the NEXT declaration, not on the next `}` — the guard clause
+        # this test exists to pin contains a brace, so a `}` split truncates the
+        # body immediately before the very text being asserted and reports a
+        # parity break that does not exist. Measured: the naive split yielded
+        # `guard let ratio = oversubscription else { return false ` (unclosed).
+        body = source.split("public static var isSeverelyOversubscribed")[1].split(
+            "public static var"
+        )[0]
+        assert "else { return false }" in body, (
+            "isSeverelyOversubscribed no longer defaults an unreadable load to False — a host "
+            "that cannot measure itself would drop to record-only and stop asserting the bound"
+        )
+
     def test_the_elapsed_invariant_lane_is_not_the_clock_lane(self) -> None:
         """An ordering claim must not be gated on a WALL-CLOCK marker.
 
