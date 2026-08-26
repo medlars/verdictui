@@ -2051,6 +2051,72 @@ MUTATIONS = [
         runner=Runner.PYTEST,
     ),
     Mutation(
+        # Restores the state where a VACUOUS AX read scores as a passing one.
+        # Both bound assertions in that test are `<=`, so they hold for a
+        # ONE-NODE tree, and XCTest emits no skip marker (no.md #62) -- so a
+        # read that observed nothing posts the best numbers the suite has ever
+        # seen. Substituting `<=` keeps every binding live and compiles
+        # (no.md #31) while making the floor satisfiable by any tree at all.
+        #
+        # The floor is a NODE COUNT rather than a duration, and that was the
+        # correction this row exists to protect: the first version asserted
+        # elapsed > 0.1s against a documented "~2s healthy read", and FAILED A
+        # WORKING READER -- five consecutive genuine Finder reads measured
+        # 0.043-0.090s, and one run of the same code measured 3.376s under
+        # load, a ~78x spread. Duration measures the target app's window state
+        # and the machine; only the node count measures whether the walk
+        # observed anything.
+        name="a vacuous AX read passes the tree-was-actually-read floor",
+        path="Tests/VerdictUIWitnessTests/ThirdPartyAuditTests.swift",
+        old="        XCTAssertGreaterThan(\n            tree.flattened().count, 1,",
+        new="        XCTAssertLessThanOrEqual(\n            tree.flattened().count, Int.max,",
+        test="ThirdPartyAuditTests/testTheReaderIsBoundedAgainstAHostileTree",
+        skips_when=(
+            "the host has no window server, lacks Accessibility permission, or no candidate "
+            "third-party application publishes a readable window at that moment"
+        ),
+    ),
+    Mutation(
+        # The load threshold is spelled in TWO languages that cannot read each
+        # other -- 2.0 here and SEVERE_OVERSUBSCRIPTION in verdictui-pm.py --
+        # so the agreement is only real while something compares them. Drift is
+        # silent in the expensive direction: the side holding the HIGHER number
+        # keeps asserting an absolute wall clock on a host the other side has
+        # already ruled unable to hold one, which is the no.md #17 shape one
+        # constant along. Same joint as the marker-set parity row above: that
+        # pins WHICH hosts are constrained, this pins the ratio at which a host
+        # joins them.
+        name="the Swift and Python oversubscription thresholds drift apart",
+        path="Sources/VerdictUIProbe/ConstrainedTimingEnvironment.swift",
+        old="    public static let severeOversubscription = 2.0",
+        new="    public static let severeOversubscription = 3.0",
+        test=(
+            "Tests/test_verdictui_bench.py::TestStageRuntimeBench"
+            "::test_the_swift_and_python_oversubscription_thresholds_agree"
+        ),
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
+        # Flips the load lane from fail-toward-NOISE to fail-toward-SILENCE. An
+        # unreadable load average would then read as "severely oversubscribed",
+        # so every host that declines to report one drops to record-only and
+        # stops asserting the AX read budget -- a SAFETY bound whose absence
+        # SIGSEGV'd the entire runner (no.md #44). "Could not measure" and
+        # "measured and constrained" are opposite states, and collapsing them
+        # to the permissive one is a check that cannot fail for the reason it
+        # exists (lesson 202). Keeps every binding live and compiles (no.md
+        # #31): `ratio` is still bound and still read on the line below.
+        name="an unreadable load average silently disables the AX read budget",
+        path="Sources/VerdictUIProbe/ConstrainedTimingEnvironment.swift",
+        old="        guard let ratio = oversubscription else { return false }",
+        new="        guard let ratio = oversubscription else { return true }",
+        test=(
+            "Tests/test_verdictui_bench.py::TestStageRuntimeBench"
+            "::test_an_unreadable_load_still_asserts_its_budget"
+        ),
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
         # Restores the state where a SKIPPED witness is scored as a passing
         # one. A skipped XCTest prints `passed`, exits 0, and emits no skip
         # marker at any verbosity, so `classify` reads ran=1 + exit 0 and

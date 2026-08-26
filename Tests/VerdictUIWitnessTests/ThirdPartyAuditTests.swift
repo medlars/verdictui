@@ -2,6 +2,7 @@ import AppKit
 import XCTest
 
 @testable import VerdictUIKernel
+@testable import VerdictUIProbe
 @testable import VerdictUIWitness
 
 /// Wave 8 exit gate: are AX-gap findings USEFUL on software VerdictUI did not
@@ -127,10 +128,76 @@ final class ThirdPartyAuditTests: XCTestCase {
             throw XCTSkip("\(target.name) published no readable window at this moment")
         }
         let elapsed = ContinuousClock.now - started
-        XCTAssertLessThan(
-            elapsed, .seconds(30),
-            "reading \(target.name) took \(elapsed) — the walk is not effectively bounded, and "
-                + "each node costs ~5 cross-process AX calls, so this grows without limit")
+
+        // THE BUDGET IS ASSERTED ONLY WHERE IT CAN MEAN SOMETHING.
+        //
+        // 30 s stands: it was measured, and a healthy read has been seen at
+        // ~2 s (2026-08-12, Finder with windows open) and at 0.043–0.090 s
+        // (2026-08-25, Finder idle) while an unbounded one did not finish in
+        // 120 s — so the budget clears every observed healthy read by more than
+        // two orders of magnitude and still sits far below the pathological
+        // case. Raising it to stop a failure would be the silencer this project
+        // forbids (SE Principle 11) — the number was never wrong, the LANE was
+        // missing. Note the healthy figure SPANS 50x depending on the target
+        // app's window state, which is exactly why no floor can be keyed on it.
+        //
+        // The cost of this read is set by ANOTHER process's view hierarchy and
+        // by the window server, neither of which this project controls, so a
+        // single absolute sample on any machine at any load cannot separate a
+        // regression from a neighbour. Measured 2026-08-25: 47.66 s at load
+        // 97+, and ~2 s quiet on the same code. That failure named a cause it
+        // had not established ("the walk is not effectively bounded"), and a
+        // gate that misdescribes its own failure teaches its reader to discount
+        // it — which is fatal here, because this is the SAFETY bound whose
+        // absence SIGSEGV'd the whole runner (`no.md` #44).
+        //
+        // Note the lane is `cannotHoldAbsoluteWallClockBudget`, not `isActive`:
+        // the failing host exported ZERO markers, so the marker lane the sibling
+        // gates use would not have caught this one.
+        if ConstrainedTimingEnvironment.cannotHoldAbsoluteWallClockBudget {
+            let ratio = ConstrainedTimingEnvironment.oversubscription
+            let load = ratio.map { String(format: "%.2fx oversubscribed", $0) } ?? "load unreadable"
+            print(
+                "AXREAD-BOUND: recorded \(elapsed) reading \(target.name) "
+                    + "(budget 30s NOT asserted — \(load))")
+        } else {
+            XCTAssertLessThan(
+                elapsed, .seconds(30),
+                "reading \(target.name) took \(elapsed) on an UNCONTENDED host — the walk is not "
+                    + "effectively bounded, and each node costs ~5 cross-process AX calls, so this "
+                    + "grows without limit")
+        }
+
+        // AND A FLOOR, SO A VACUOUS READ CANNOT RENDER AS A PASS.
+        //
+        // XCTest emits no skip marker (`no.md` #62): `passed (0.078 seconds)` is
+        // byte-identical whether the body ran or an earlier XCTSkip fired, and
+        // both bound assertions below are `<=`, so they hold for a ONE-NODE
+        // tree. A read that returned almost nothing therefore posts the best
+        // numbers the suite has ever seen while observing nothing.
+        //
+        // THE FLOOR IS A NODE COUNT, NOT A DURATION, and the first attempt at
+        // this got it wrong in a way worth recording. A 0.1 s floor looked
+        // right against the "~2 s healthy read" this file documents from
+        // 2026-08-12 — and it FAILS A WORKING READER: measured 2026-08-25,
+        // five consecutive genuine reads of Finder took 0.043–0.090 s, each
+        // returning a real tree that satisfied every bound. The read cost is
+        // set by the target app's CURRENT WINDOW STATE (a Finder with no open
+        // windows publishes a small tree), so duration measures the subject's
+        // circumstances, not whether the reader ran. Keying the floor on
+        // elapsed time would blame the code for the app being idle — the same
+        // environment-blaming shape this test was just fixed for, inverted.
+        //
+        // The node count answers the actual question. It matches the sibling
+        // test's `nodes.count > 1` bar, and it is asserted in BOTH lanes:
+        // contention changes how LONG a read takes, never how many nodes the
+        // window publishes, so this figure is load-independent in a way no
+        // duration is.
+        XCTAssertGreaterThan(
+            tree.flattened().count, 1,
+            "reading \(target.name) produced a \(tree.flattened().count)-node tree in "
+                + "\(elapsed) — a real window publishes more, so the walk observed nothing "
+                + "and both bound assertions below are vacuous")
 
         // `maximumDepth` bounds the DEPTH INDEX, and the root sits at index 0,
         // so a fully-descended tree has `maximumDepth + 1` LEVELS. Measured

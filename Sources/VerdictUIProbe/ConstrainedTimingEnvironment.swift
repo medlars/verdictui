@@ -173,4 +173,76 @@ public enum ConstrainedTimingEnvironment {
     public static var canEvaluateElapsedInvariants: Bool {
         ProcessInfo.processInfo.environment[recordTimingOnlyOverride] == nil
     }
+
+    /// The run-queue depth per core at which this host stops being able to hold
+    /// an absolute wall-clock budget.
+    ///
+    /// A load average is only meaningful against the core count that serves it:
+    /// load 8 is idle on a 64-core host and a 2x queue on a 4-core one, so the
+    /// comparable number is the RATIO. The figure mirrors
+    /// `SEVERE_OVERSUBSCRIPTION` in `scripts/verdictui-pm.py`, which already
+    /// reports this class on the Python side;
+    /// `test_the_swift_and_python_oversubscription_thresholds_agree` pins the
+    /// two together, because neither language can read the other's constant.
+    public static let severeOversubscription = 2.0
+
+    /// One-minute load average and active core count, each `nil` when the host
+    /// will not report it.
+    ///
+    /// Returns a tuple rather than a ratio so a caller can tell "the host is
+    /// quiet" from "the host would not say" — collapsing those to one number
+    /// makes an unreadable load indistinguishable from an idle one, and they
+    /// demand opposite responses (lesson 202).
+    public static var currentLoad: (load1: Double, cores: Int)? {
+        var samples = [Double](repeating: 0, count: 1)
+        guard getloadavg(&samples, 1) == 1 else { return nil }
+        let cores = ProcessInfo.processInfo.activeProcessorCount
+        guard cores > 0, samples[0].isFinite, samples[0] >= 0 else { return nil }
+        return (samples[0], cores)
+    }
+
+    /// Run-queue depth per core, or `nil` when the host will not report it.
+    public static var oversubscription: Double? {
+        guard let load = currentLoad else { return nil }
+        return load.load1 / Double(load.cores)
+    }
+
+    /// True only for a MEASURED ratio at or past ``severeOversubscription``.
+    ///
+    /// An unreadable load answers `false` — the tree is presumed ours — so a
+    /// host that cannot measure itself keeps ASSERTING its budgets rather than
+    /// silently dropping to record-only. That direction is deliberate and is
+    /// the opposite of the convenient one: a guard that suppressed its own
+    /// assertion whenever it could not measure would be a check that cannot
+    /// fail for the reason it exists (lesson 202), and the budget this serves
+    /// is a SAFETY bound.
+    public static var isSeverelyOversubscribed: Bool {
+        guard let ratio = oversubscription else { return false }
+        return ratio >= severeOversubscription
+    }
+
+    /// True when an ABSOLUTE wall-clock budget measured on this host would be a
+    /// statement about the machine rather than about the code.
+    ///
+    /// ### Why this is a THIRD question rather than a wider ``isActive``
+    ///
+    /// ``isActive`` is a membership test for a class of HOSTS, decided by
+    /// markers a runner exports. That is the right instrument for a shared CI
+    /// runner, and it is blind to the case this predicate exists for: a
+    /// developer machine under fleet contention exports no marker at all.
+    /// Measured 2026-08-25 — `ThirdPartyAuditTests` read Notes in 47.66 s
+    /// against a 30 s budget at load 97+ on a host with ZERO markers set, so
+    /// `isActive` was `false` and the marker lane could not have caught it. The
+    /// same read costs ~2 s on a quiet machine.
+    ///
+    /// Widening ``isActive`` to cover load would have been the tempting fix and
+    /// is wrong for the same reason folding ``canEvaluateElapsedInvariants``
+    /// into it would be: the six budget lanes that read ``isActive`` ask "is my
+    /// clock comparable to a developer's?", a durable property of the host,
+    /// while this asks "is my clock comparable RIGHT NOW?", a property of the
+    /// moment. A momentary answer written into a host-class predicate makes six
+    /// unrelated gates flip between runs.
+    public static var cannotHoldAbsoluteWallClockBudget: Bool {
+        isActive || isSeverelyOversubscribed
+    }
 }
