@@ -58,12 +58,20 @@
 ## P2 — Normal
 - [x] (2026-08-12) SLO 3 — warm MCP round-trip latency through the real stdio transport. Gated at p50 < 40 ms by `MCPLatencyTests` + PM `stage_mcp_latency`; tail recorded, not gated (measured: median 8.3 → 11.3 ms under load, tail 8.4 → 45.8 ms on unchanged code)
 - [x] (2026-08-18) Add a further SLO (cross-validation loop latency) once Wave 8 lands. STALE, not open — **SLO 4 IS that SLO**: "the honest middle loop", budgeted at 5 s precisely because cross-validation launches a real windowed subprocess through LaunchServices and reads an accessibility tree, which is OS work VerdictUI does not control. Evidence: `grep '### SLO' docs/slo.md` -> 4 SLOs, SLO 4 named.
-- [ ] Homebrew tap + stage_auto_release wiring at first public release (registered False in CEO PROPAGATION_PATTERNS until then). **BLOCKED, and the blocker is named rather than implied (DIR-036):** `Formula/verdictui.rb` was WITHDRAWN during the PII incident because the `v1.0.0` tag had to be deleted (a tag is a live ref that pins the leaked objects alive), so the formula's sha256 refers to a burned commit. Unblocks with CTS-77D76C19: after its probe returns 404, tag `v1.0.1` (never `v1.0.0`), cut a release, and restore the formula with a **re-measured** sha256.  measured: 2026-08-18  falsify: `gh api "repos/medlars/verdictui/contents/docs/wave-status.md?ref=89198bc40beea1d78bd3436e545e5f03cf398049"` (PASS = 404; returned 200/153746 today)
+- [x] Homebrew tap at first public release — **DONE 2026-08-26.** `brew install medlars/tap/verdictui` works. The blocker recorded here (the withdrawn formula, burned `v1.0.0` sha) is RESOLVED: GitHub Support ran the GC and all three leak commits return 404 with a positive control, `v1.0.1` was already tagged 2026-08-20, and the formula is published at `medlars/homebrew-tap` (`5bd826d` + `88d338b`, both verified on origin/main). sha256 `2ce0f4d4` measured from the served tarball. Verified by RUNNING the brew-installed binary: lists all 6 scenarios, three-valued exits 0/1/2. `stage_auto_release` wiring remains open and is tracked separately.  measured: 2026-08-26  falsify: `gh api repos/medlars/homebrew-tap/contents/Formula/verdictui.rb --jq .name`
 
 ## Done
 - [x] Deep research: 5-agent survey of UI-verification methods (CTS-5BABC171, 2026-08-03)
 - [x] Scaffold project with /project-forge (CTS-6F57DDE6, 2026-08-04)
 - [x] (P1) testwatch-hook: no test file references `verdictui_pm` — added Tests/test_verdictui_pm.py (19 tests, 2026-08-04)
+
+> **Note on the auto-generated block below (CTS-37F50C7D).** Regenerating it DISCARDS manual
+> annotations, so a row closed with evidence silently reopens and the reason is deleted. Do not
+> annotate inside it — the next regeneration destroys the edit. The `render` row is one such case:
+> it was closed 2026-08-24 by commit `7050325` (verified on origin/main), covering all three
+> branches in `TestCurrentLoad` / `TestContentionEvidenceNamesItsSubject`. That evidence survives in
+> `docs/wave-status.md`, which the generator never rewrites. Treat a `[NONE]` row here as
+> *unverified*, not *undone*, until checked against that file.
 
 <!-- testwatch-gaps -->
 ## TestWatch Gaps (auto-generated — do not edit this block)
