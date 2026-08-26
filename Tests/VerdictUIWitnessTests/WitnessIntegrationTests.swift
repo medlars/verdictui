@@ -239,26 +239,34 @@ final class WitnessIntegrationTests: XCTestCase {
     /// which is the path a crashed or rejected launch takes in production.
     func testAHostLaunchLeavesNoTemporaryDirectoryBehind() throws {
         let root = URL(fileURLWithPath: NSTemporaryDirectory())
-        func witnessDirectoryCount() throws -> Int {
-            try FileManager.default
-                .contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
-                .filter { $0.lastPathComponent.hasPrefix("verdictui-witness-") }
-                .count
+        func witnessDirectories() throws -> Set<String> {
+            Set(
+                try FileManager.default
+                    .contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
+                    .map(\.lastPathComponent)
+                    .filter { $0.hasPrefix("verdictui-witness-") })
         }
 
-        let before = try witnessDirectoryCount()
+        // SET DIFFERENCE, not a count. The temp directory is shared, so a count
+        // makes this test's verdict depend on what every OTHER test is doing at
+        // the same instant — it would fail for a sibling's bundle and accuse
+        // this launch. Today the runner is serial (nothing passes a parallel
+        // flag), so a count happens to work; asserting on the set means the
+        // test stays correct if that ever changes, rather than becoming a flake
+        // that reads as a real leak.
+        let before = try witnessDirectories()
         let host = WitnessHostProcess(
             executable: URL(fileURLWithPath: "/bin/echo"), lifetime: 1)
         // The read is EXPECTED to fail; the subject under test is what survives
         // it, not whether it succeeded.
         _ = try? host.readTree(scenario: "demo-clean-settings", readyTimeout: 1)
-        let after = try witnessDirectoryCount()
+        let leaked = try witnessDirectories().subtracting(before)
 
-        XCTAssertEqual(
-            after, before,
-            "a host launch leaked \(after - before) directory(ies) into \(root.path). "
-                + "makeBundle creates a UUID-named root and the cleanup removes only the .app "
-                + "inside it, so the root survives every launch — roughly 23 per suite run, each "
-                + "one an app bundle path launchservicesd keeps track of")
+        XCTAssertTrue(
+            leaked.isEmpty,
+            "a host launch leaked \(leaked.count) directory(ies) into \(root.path): "
+                + "\(leaked.sorted()). makeBundle creates a UUID-named root and the cleanup "
+                + "removes only the .app inside it, so the root survives every launch — roughly "
+                + "23 per suite run, each one an app bundle path launchservicesd keeps track of")
     }
 }
