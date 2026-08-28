@@ -134,14 +134,24 @@ public struct WitnessHostProcess {
         guard FileManager.default.isExecutableFile(atPath: executable.path) else {
             throw AXReader.Failure.hostUnavailable("no host executable at \(executable.path)")
         }
-        let bundle = try makeBundle()
-        // Remove the ROOT, not the `.app` inside it. `makeBundle` creates a
-        // UUID-named parent directory and nests the bundle within it, so
-        // removing only the bundle leaks that parent on every launch — about 23
-        // per suite run. Measured 2026-08-25: 88 of them had accumulated, and
-        // `launchservicesd` was burning 208 % CPU keeping track of app-bundle
-        // paths that no longer existed.
-        defer { try? FileManager.default.removeItem(at: bundle.deletingLastPathComponent()) }
+        // ONE bundle per PROCESS, not per launch. `open -n -a <path>` asks
+        // LaunchServices to REGISTER that path, and deleting the bundle
+        // afterwards does not unregister it — removal and unregistration are
+        // different operations. A per-launch UUID path therefore left one dead
+        // registration behind every time: measured 2026-08-25, a 30-test
+        // witness run left 14 registered `.app` paths of which 0 existed on
+        // disk, and 240 had accumulated by 2026-08-28.
+        //
+        // A stable path collapses that to one registration for the whole
+        // process, with no private-framework `lsregister -u` shell-out on the
+        // core verification path. It is also SAFER than the per-launch bundle
+        // it replaces: the bundle's contents do not depend on the scenario (the
+        // scenario is an argv), so the only reason for uniqueness was a race
+        // between one verification WRITING the bundle and another LAUNCHING it
+        // — and writing exactly once, before any launch, removes that race
+        // rather than working around it. Concurrent PROCESSES still get
+        // separate paths because the path carries the pid.
+        let bundle = try Self.processBundle(hostExecutable: executable)
 
         let launch = Process()
         launch.executableURL = URL(fileURLWithPath: "/usr/bin/open")
@@ -219,15 +229,69 @@ public struct WitnessHostProcess {
 
     static let bundleIdentifier = "com.vohux.verdictui.witnesshost"
 
+    /// Guards the one-time bundle write. The runner is serial today; the lock
+    /// is what keeps this correct if it ever is not.
+    private static let bundleLock = NSLock()
+    /// One bundle per DISTINCT host executable, keyed on its path.
+    ///
+    /// Keyed rather than a single slot because caching one bundle per process
+    /// would hand back a wrapper around the FIRST executable to every later
+    /// caller — measured while building this: three integration tests then
+    /// launched an `.app` wrapping `/bin/echo` and failed with
+    /// "Launchd job spawn failed", a failure that reads exactly like a broken
+    /// window server.
+    nonisolated(unsafe) private static var cachedBundles: [String: URL] = [:]
+    /// Read by the `atexit` handler, which cannot capture context.
+    nonisolated(unsafe) private static var rootToRemoveAtExit: String?
+
+    /// The pid-scoped directory holding every bundle this process writes.
+    private static var processRoot: URL {
+        URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(
+                "verdictui-witness-\(ProcessInfo.processInfo.processIdentifier)")
+    }
+
+    /// The `.app` wrapper this process launches `executable` from, written once.
+    ///
+    /// Registered with LaunchServices exactly once per executable no matter how
+    /// many scenarios run, and the whole tree is removed when the process exits.
+    /// A crashed process leaves one directory behind rather than one per
+    /// launch, which is bounded.
+    static func processBundle(hostExecutable executable: URL) throws -> URL {
+        bundleLock.lock()
+        defer { bundleLock.unlock() }
+        let key = executable.resolvingSymlinksInPath().path
+        if let cached = cachedBundles[key], FileManager.default.fileExists(atPath: cached.path) {
+            return cached
+        }
+        if rootToRemoveAtExit == nil {
+            // A recycled pid could leave a stale tree from a dead process,
+            // wrapping a possibly-different binary. Start clean rather than
+            // trusting it — but only ONCE per process, or the second executable
+            // would delete the first one's bundle out from under a live host.
+            try? FileManager.default.removeItem(at: processRoot)
+            rootToRemoveAtExit = processRoot.path
+            atexit {
+                if let root = WitnessHostProcess.rootToRemoveAtExit {
+                    try? FileManager.default.removeItem(atPath: root)
+                }
+            }
+        }
+        let bundle = try makeBundle(hostExecutable: executable, slot: cachedBundles.count)
+        cachedBundles[key] = bundle
+        return bundle
+    }
+
     /// Write a minimal `.app` wrapper around the host executable.
     ///
     /// Generated rather than shipped so it cannot drift from the binary, and
-    /// placed in a unique directory so two concurrent verifications do not
-    /// overwrite each other's bundle mid-launch.
-    private func makeBundle() throws -> URL {
-        let root = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent("verdictui-witness-\(UUID().uuidString)")
-        let bundle = root.appendingPathComponent("VerdictUIWitnessHost.app")
+    /// placed under a pid-scoped directory so two concurrent verification
+    /// PROCESSES do not overwrite each other's bundle mid-launch. Within a
+    /// process each distinct executable is written once — see `processBundle`.
+    private static func makeBundle(hostExecutable executable: URL, slot: Int) throws -> URL {
+        let bundle = processRoot
+            .appendingPathComponent("slot-\(slot)")
+            .appendingPathComponent("VerdictUIWitnessHost.app")
         let macOS = bundle.appendingPathComponent("Contents/MacOS")
         try FileManager.default.createDirectory(at: macOS, withIntermediateDirectories: true)
         try FileManager.default.copyItem(

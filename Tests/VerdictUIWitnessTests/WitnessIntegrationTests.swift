@@ -237,36 +237,116 @@ final class WitnessIntegrationTests: XCTestCase {
     /// `isExecutableFile` guard and a bundle IS created, and it is not an app,
     /// so `open` fails afterwards. That reaches the cleanup on the error path,
     /// which is the path a crashed or rejected launch takes in production.
-    func testAHostLaunchLeavesNoTemporaryDirectoryBehind() throws {
+    func testRepeatedLaunchesReuseOneTemporaryDirectory() throws {
         let root = URL(fileURLWithPath: NSTemporaryDirectory())
-        func witnessDirectories() throws -> Set<String> {
-            Set(
-                try FileManager.default
-                    .contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
-                    .map(\.lastPathComponent)
-                    .filter { $0.hasPrefix("verdictui-witness-") })
+        // Count the BUNDLE directories, not the top-level witness roots. The
+        // bundles now live in per-executable slots under one pid-scoped root,
+        // so counting roots would read 1 whether the bundle is reused or
+        // rewritten per launch — a check that cannot fail for the reason it
+        // exists. Verified by mutation: restoring the per-launch path makes
+        // THIS assertion red, which the root count did not.
+        func witnessBundleDirectories() throws -> Set<String> {
+            var found: Set<String> = []
+            let roots = try FileManager.default
+                .contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
+                .filter { $0.lastPathComponent.hasPrefix("verdictui-witness-") }
+            for witnessRoot in roots {
+                let slots =
+                    (try? FileManager.default
+                        .contentsOfDirectory(at: witnessRoot, includingPropertiesForKeys: nil))
+                    ?? []
+                for slot in slots {
+                    found.insert("\(witnessRoot.lastPathComponent)/\(slot.lastPathComponent)")
+                }
+            }
+            return found
         }
+        let witnessDirectories = witnessBundleDirectories
 
         // SET DIFFERENCE, not a count. The temp directory is shared, so a count
         // makes this test's verdict depend on what every OTHER test is doing at
         // the same instant — it would fail for a sibling's bundle and accuse
-        // this launch. Today the runner is serial (nothing passes a parallel
-        // flag), so a count happens to work; asserting on the set means the
-        // test stays correct if that ever changes, rather than becoming a flake
-        // that reads as a real leak.
+        // this launch.
+        //
+        // The invariant CHANGED on 2026-08-28 and this test changed with it.
+        // It used to demand ZERO new directories, which was right while each
+        // launch made and destroyed its own. The bundle is now written ONCE per
+        // process at a pid-scoped path, because `open -a` REGISTERS the path
+        // with LaunchServices and deleting the bundle does not unregister it —
+        // so a per-launch path leaked one dead registration per scenario. What
+        // must hold now is that the directory count is bounded by the PROCESS,
+        // not by the number of launches: the second launch must add nothing.
         let before = try witnessDirectories()
         let host = WitnessHostProcess(
             executable: URL(fileURLWithPath: "/bin/echo"), lifetime: 1)
-        // The read is EXPECTED to fail; the subject under test is what survives
-        // it, not whether it succeeded.
+        // The reads are EXPECTED to fail; the subject under test is what
+        // survives them, not whether they succeeded.
         _ = try? host.readTree(scenario: "demo-clean-settings", readyTimeout: 1)
-        let leaked = try witnessDirectories().subtracting(before)
+        let afterFirst = try witnessDirectories().subtracting(before)
+
+        _ = try? host.readTree(scenario: "demo-clean-settings", readyTimeout: 1)
+        _ = try? host.readTree(scenario: "demo-clean-settings", readyTimeout: 1)
+        let afterFourth = try witnessDirectories().subtracting(before)
+
+        XCTAssertLessThanOrEqual(
+            afterFirst.count, 1,
+            "one launch created \(afterFirst.count) bundle directories under \(root.path): "
+                + "\(afterFirst.sorted()). The bundle must be written once per process.")
+        XCTAssertEqual(
+            afterFourth, afterFirst,
+            "launches 2 and 3 added \(afterFourth.subtracting(afterFirst).sorted()) — the "
+                + "per-process bundle is not being reused, so every launch registers a new "
+                + "app-bundle path with LaunchServices and leaks it")
+    }
+
+    /// The registration leak itself, counted as REGISTRATIONS rather than
+    /// directories — the mistake the previous version of this suite made.
+    ///
+    /// Deleting a generated bundle does NOT unregister it: measured 2026-08-25,
+    /// a 30-test witness run left 14 registered witness `.app` paths of which 0
+    /// existed on disk, while the directory count was correctly zero. A check
+    /// that reads the wrong subject cannot fail for the reason it exists.
+    func testRepeatedLaunchesDoNotRegisterANewBundlePathEachTime() throws {
+        try XCTSkipIf(isHeadless, "no window server on this host")
+        let lsregister =
+            "/System/Library/Frameworks/CoreServices.framework/Frameworks/"
+            + "LaunchServices.framework/Support/lsregister"
+        try XCTSkipUnless(
+            FileManager.default.isExecutableFile(atPath: lsregister),
+            "lsregister is not available at \(lsregister); registrations cannot be observed")
+
+        func registeredWitnessPaths() throws -> Set<String> {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/bin/sh")
+            process.arguments = [
+                "-c",
+                "\(lsregister) -dump | grep -oE '/[^ ]*verdictui-witness-[^ ]*\\.app' | sort -u",
+            ]
+            let pipe = Pipe()
+            process.standardOutput = pipe
+            process.standardError = FileHandle.nullDevice
+            try process.run()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            let text = String(decoding: data, as: UTF8.self)
+            return Set(text.split(separator: "\n").map(String.init))
+        }
+
+        let host = WitnessHostProcess(
+            executable: URL(fileURLWithPath: "/bin/echo"), lifetime: 1)
+        _ = try? host.readTree(scenario: "demo-clean-settings", readyTimeout: 1)
+        let afterFirst = try registeredWitnessPaths()
+
+        _ = try? host.readTree(scenario: "demo-clean-settings", readyTimeout: 1)
+        _ = try? host.readTree(scenario: "demo-clean-settings", readyTimeout: 1)
+        _ = try? host.readTree(scenario: "demo-clean-settings", readyTimeout: 1)
+        let afterFourth = try registeredWitnessPaths()
 
         XCTAssertTrue(
-            leaked.isEmpty,
-            "a host launch leaked \(leaked.count) directory(ies) into \(root.path): "
-                + "\(leaked.sorted()). makeBundle creates a UUID-named root and the cleanup "
-                + "removes only the .app inside it, so the root survives every launch — roughly "
-                + "23 per suite run, each one an app bundle path launchservicesd keeps track of")
+            afterFourth.subtracting(afterFirst).isEmpty,
+            "three further launches registered \(afterFourth.subtracting(afterFirst).count) new "
+                + "bundle path(s): \(afterFourth.subtracting(afterFirst).sorted()). Every one is "
+                + "an entry LaunchServices re-validates forever, because removing a bundle does "
+                + "not unregister it")
     }
 }
