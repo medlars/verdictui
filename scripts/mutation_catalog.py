@@ -2213,18 +2213,19 @@ MUTATIONS = [
         runner=Runner.PYTEST,
     ),
     Mutation(
-        # Reverts the cleanup to the pre-fix target. This is the ACTUAL
-        # regression rather than a synthetic break: `bundle` is the `.app`
-        # nested inside the UUID-named root, so removing it leaves the root
-        # behind on every launch. Every binding stays live and it compiles
-        # (no.md #31).
-        name="the host bundle cleanup leaks its parent directory again",
+        # Reverts the per-process bundle to the pre-fix per-launch path. This
+        # is the ACTUAL regression rather than a synthetic break: never reusing
+        # the cached bundle means every launch writes a new path and asks
+        # LaunchServices to register it, which is the leak. Every binding stays
+        # live and it compiles (no.md #31).
+        name="the host bundle is written per launch again, leaking a registration each time",
         path="Sources/VerdictUIWitness/WitnessHostProcess.swift",
-        old="defer { try? FileManager.default.removeItem(at: bundle.deletingLastPathComponent()) }",
-        new="defer { try? FileManager.default.removeItem(at: bundle) }",
+        old="if let cached = cachedBundles[key], "
+        "FileManager.default.fileExists(atPath: cached.path) {",
+        new="if false, let cached = cachedBundles[key] {",
         test=(
             "VerdictUIWitnessTests.WitnessIntegrationTests"
-            "/testAHostLaunchLeavesNoTemporaryDirectoryBehind"
+            "/testRepeatedLaunchesReuseOneTemporaryDirectory"
         ),
     ),
 ]
