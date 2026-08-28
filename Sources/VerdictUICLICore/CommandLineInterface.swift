@@ -33,7 +33,7 @@ public struct VerdictUITool: AsyncParsableCommand {
             scenario forces callers to treat infrastructure faults as product
             defects.
             """,
-        version: SchemaVersion.current,
+        version: ReleaseVersion.display,
         subcommands: [
             List.self, Render.self, Actions.self, Verify.self, Judge.self, Baseline.self,
             SweepRun.self,
