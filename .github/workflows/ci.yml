@@ -59,7 +59,7 @@ jobs:
         with:
           repository: medlars/projects-shared
           path: .gov-v2
-          ref: main
+          ref: "69b2c65651e983ccd42f45d39564c6ff7397f772"  # projects-shared main @ 2026-08-28; pinned so this repo's CI verdict cannot change without a commit here (GOV-AUD-010)
           ssh-key: ${{ secrets.SHARED_LIBS_DEPLOY_KEY }}
         continue-on-error: true
         id: govv2
