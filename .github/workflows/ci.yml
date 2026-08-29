@@ -147,16 +147,27 @@ jobs:
       #     UNKNOWN, never PASS), but committing a failing record would refresh
       #     the freshness clock on the strength of a broken run — freshness would
       #     then certify nothing, which is worse than an honest stale FAIL.
-      #   - `push` to the DEFAULT BRANCH only. A pull_request run's evidence
-      #     describes a merge ref that may never land, and publishing a record
-      #     whose commit_sha no consumer can resolve is worse than none.
+      #   - the DEFAULT BRANCH only. A pull_request run's `github.ref` is
+      #     `refs/pull/<n>/merge`, so the ref comparison excludes PR runs on its
+      #     own — publishing a record whose commit_sha no consumer can resolve is
+      #     worse than none. There is deliberately NO `github.event_name` clause:
+      #     an earlier draft carried `event_name == 'push'`, which excluded every
+      #     SCHEDULED run, so a repo with a daily suite and a quiet default branch
+      #     — precisely where evidence goes stale — would have kept expiring by
+      #     clock alone while its schedule stayed green (Constitution PR #67).
       #
-      # NO RE-TRIGGER LOOP. Two independent reasons, either sufficient: GitHub
-      # does not create workflow runs from events caused by the default
-      # GITHUB_TOKEN (documented, not assumed), and this workflow triggers on
-      # `push` to the default branch which is where the evidence commit lands —
-      # so the loop is closed by the token, and would be closed again by
-      # `paths-ignore` if a repo ever swaps in a PAT.
+      # NO RE-TRIGGER LOOP, and the guard is the DEFAULT TOKEN — one reason, not
+      # two. GitHub creates no workflow run from an event caused by the default
+      # GITHUB_TOKEN (documented, not assumed), and this step references no
+      # secret, so the push is made with it.
+      #
+      # An earlier draft of this comment also claimed `paths-ignore` as a second
+      # guard. It does not exist: these workflows do not list the evidence path,
+      # and a comment describing a guard nobody built is worse than no comment
+      # (Constitution PR #67). A PAT re-triggers normally and every record
+      # carries a fresh run id, so a PAT would loop forever — add
+      # `evidence/run-v2.json` to `paths-ignore` BEFORE swapping one in. Pinned
+      # by test_the_push_carries_no_secret_so_it_cannot_retrigger_itself.
       #
       # THREE STATES, and they are the point. An absent record and a record that
       # cannot be pushed demand opposite responses (lessons 202/382):
@@ -169,7 +180,7 @@ jobs:
       #
       # Executed, not grepped, by scripts/test_evidence_persist_step_is_three_state.py.
       - name: Persist run-v2 evidence to the tree
-        if: ${{ success() && github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+        if: ${{ success() && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
         env:
           # Discriminators arrive through `env:`, never as `${{ }}` inside the
           # shell, so the body a test executes is the body the runner executes.
