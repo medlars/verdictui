@@ -15,6 +15,11 @@ jobs:
   swift:
     name: Build & Test (macOS)
     runs-on: macos-15
+    # `contents: write` for the evidence-persist step below, scoped to this
+    # job only. Declaring permissions is absolute -- every scope not listed
+    # becomes `none` -- so this job is checked to need nothing else.
+    permissions:
+      contents: write
     timeout-minutes: 30
     steps:
       - name: Checkout
@@ -126,6 +131,139 @@ jobs:
           path: evidence/run-v2.json
           if-no-files-found: error
 
+
+      # THE ARTIFACT IS NOT THE TREE, and the step above only made an artifact.
+      #
+      # WHY THIS EXISTS: measured 2026-08-29 (CIS-2E3F801C). Thirty-four fleet
+      # repositories carried every step above — emit, verify, upload — and had
+      # persisted nothing, ever. None of them had drifted: the canonical template
+      # ended at `upload-artifact`, so each repo copied the gap faithfully. The
+      # evidence then aged past its 24h TTL by clock alone while the check marks
+      # stayed green, which is exactly the false green the program removes
+      # (CIS-9AE31F75, lesson 303).
+      #
+      # SCOPE, deliberately narrow:
+      #   - `success()` only. A RED run still EMITS (absence of evidence is
+      #     UNKNOWN, never PASS), but committing a failing record would refresh
+      #     the freshness clock on the strength of a broken run — freshness would
+      #     then certify nothing, which is worse than an honest stale FAIL.
+      #   - `push` to the DEFAULT BRANCH only. A pull_request run's evidence
+      #     describes a merge ref that may never land, and publishing a record
+      #     whose commit_sha no consumer can resolve is worse than none.
+      #
+      # NO RE-TRIGGER LOOP. Two independent reasons, either sufficient: GitHub
+      # does not create workflow runs from events caused by the default
+      # GITHUB_TOKEN (documented, not assumed), and this workflow triggers on
+      # `push` to the default branch which is where the evidence commit lands —
+      # so the loop is closed by the token, and would be closed again by
+      # `paths-ignore` if a repo ever swaps in a PAT.
+      #
+      # THREE STATES, and they are the point. An absent record and a record that
+      # cannot be pushed demand opposite responses (lessons 202/382):
+      #   no record             -> exit 0, say so (the verify step owns that verdict)
+      #   pushed                -> exit 0, PERSISTED
+      #   refused by protection -> exit 0, VISIBLE SKIP naming the owner action
+      #   refused otherwise     -> exit 1  (emitted, committed, and lost)
+      # Every branch writes to $GITHUB_STEP_SUMMARY: a repo that silently stops
+      # persisting looks identical to one with nothing to persist.
+      #
+      # Executed, not grepped, by scripts/test_evidence_persist_step_is_three_state.py.
+      - name: Persist run-v2 evidence to the tree
+        if: ${{ success() && github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+        env:
+          # Discriminators arrive through `env:`, never as `${{ }}` inside the
+          # shell, so the body a test executes is the body the runner executes.
+          EVIDENCE_PATH: evidence/run-v2.json
+          TARGET_BRANCH: ${{ github.event.repository.default_branch }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -eu
+
+          # Every verdict reaches BOTH the log and the job summary. A skip that
+          # only reaches the log is a skip nobody reads.
+          say() {
+            printf '%s\n' "$1"
+            if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+              printf '%s\n' "$1" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          }
+
+          # An ABSENT record is not this step's verdict to make. The verify step
+          # above already decided whether the absence is a missing deploy key
+          # (skip) or a broken pipeline (fail); re-deciding it here would give one
+          # condition two answers that can disagree.
+          if [ ! -s "$EVIDENCE_PATH" ]; then
+            say "### run-v2 evidence: NOT PERSISTED — no record was emitted"
+            say ""
+            say "\`$EVIDENCE_PATH\` is absent or empty, so there is nothing to commit."
+            say "The verify step above owns that verdict; this step adds nothing."
+            exit 0
+          fi
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # -f because some repos gitignore build output under evidence/; the
+          # record is the one file there that must be tracked.
+          git add -f -- "$EVIDENCE_PATH"
+
+          if git diff --cached --quiet; then
+            say "### run-v2 evidence: ALREADY CURRENT — committed record is byte-identical"
+            exit 0
+          fi
+
+          git commit -q \
+            -m "evidence: run-v2 record for CI run ${RUN_ID}" \
+            -m "Committed so the record outlives its run. An artifact expires with the run, so without this the committed evidence ages past its own TTL while CI stays green (CIS-9AE31F75, CIS-2E3F801C)."
+
+          attempt=0
+          while : ; do
+            attempt=$((attempt + 1))
+            if push_err=$(git push origin "HEAD:refs/heads/${TARGET_BRANCH}" 2>&1); then
+              say "### run-v2 evidence: PERSISTED to \`${TARGET_BRANCH}\`"
+              exit 0
+            fi
+            printf '%s\n' "$push_err"
+
+            case "$push_err" in
+              *GH013*|*"protected branch"*|*"Changes must be made through a pull request"*)
+                # A POLICY blocker, not a broken pipeline. Failing here would
+                # paint a protected repo permanently red for a condition no code
+                # change can fix; passing silently would lose the record while
+                # looking green. So: exit 0, loudly, naming who can open the route.
+                echo "::warning::run-v2 evidence not persisted — the default branch is protected."
+                say "### run-v2 evidence: NOT PERSISTED — the default branch is protected"
+                say ""
+                say "The remote refused the push (\`GH013\`). **This build is green and its"
+                say "run-v2 record was not committed**, so anything reading this repository's"
+                say "evidence is reading an older record or none."
+                say ""
+                say "Do NOT relax the ruleset to fix this: \`pull_request\` and"
+                say "\`required_status_checks\` are the same protections"
+                say "\`no_self_certification\` depends on. Opening the route is an OWNER"
+                say "action — allow Actions to open pull requests"
+                say "(\`actions/permissions/workflow\`) and register a token those PRs can"
+                say "be created with, as \`medlars/projects-shared\` does (ADR-014, ADR-015)."
+                exit 0
+                ;;
+            esac
+
+            # A busy default branch is normal, not a failure: another commit
+            # landed between checkout and push. Rebase onto what the remote
+            # actually has and retry. FETCH_HEAD rather than a remote-tracking
+            # ref, because a shallow CI checkout may not have one.
+            if [ "$attempt" -ge 3 ]; then
+              break
+            fi
+            git fetch -q origin "${TARGET_BRANCH}" && git rebase -q FETCH_HEAD || break
+          done
+
+          echo "::error::run-v2 evidence was emitted but could not be persisted."
+          say "### run-v2 evidence: PERSIST FAILED"
+          say ""
+          say "The record was emitted and committed, but the push was refused for a"
+          say "reason that is not branch protection, so the record is lost. A green"
+          say "build that ships no evidence is the false green this program removes."
+          exit 1
   secret-scan:
     name: Secret scan (gitleaks)
     runs-on: ubuntu-latest
