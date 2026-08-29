@@ -122,12 +122,49 @@ final class LieCatchTests: XCTestCase {
         // half-fix that reads exactly like a whole one in a pass/fail count.
         for fixture in LieScenarios.all {
             let findings = try await self.findings(for: fixture)
-            let matching = findings.filter { $0.rule == fixture.expectedRule }
-            XCTAssertTrue(
-                matching.contains { $0.nodeID.contains(fixture.probeID) },
-                "\(fixture.name): the lie was caught but cited "
-                    + "\(matching.map(\.nodeID)) rather than '\(fixture.probeID)'")
+            let outcome = Self.classifyCitation(findings: findings, fixture: fixture)
+            XCTAssertEqual(
+                outcome, .cited, outcome.message(for: fixture, findings: findings))
         }
+    }
+
+    /// Which of the two DIFFERENT failures happened — because they need
+    /// opposite investigations and this gate used to report them identically.
+    ///
+    /// The old assertion filtered to findings carrying `expectedRule` and then
+    /// asserted one of them cited the probe, with the message "the lie was
+    /// caught but cited \(matching) rather than \(probeID)". When that filter
+    /// came back EMPTY the message rendered as "caught but cited []" — asserting
+    /// the lie WAS caught while reporting the evidence that it was NOT. An empty
+    /// match means zero findings carried the rule at all, which is a MISS; a
+    /// non-empty match citing the wrong node is a MIS-CITATION. Reporting a miss
+    /// in the vocabulary of a mis-citation sends the reader at the citation
+    /// logic when the question is why nothing fired — measured on
+    /// CIS-2C757660, where "caught but cited []" cost four investigation rounds
+    /// aimed at matching and paths before anyone questioned the wording.
+    ///
+    /// Same family as no.md #55 and lesson 260: two opposite findings must never
+    /// share a value, or a report, and "I could not see it" is not "I saw it and
+    /// it was wrong".
+    nonisolated enum CitationOutcome: Equatable {
+        /// A finding under the expected rule cites the lying probe.
+        case cited
+        /// No finding carried the expected rule — the lie was not caught here.
+        case missed
+        /// The rule fired, but every finding named some other node.
+        case misCited
+    }
+
+    /// Pure so it is provable without a window server: the three states are
+    /// unit-tested from Finding arrays, and therefore stay verified on a machine
+    /// too loaded to host the witness at all.
+    nonisolated static func classifyCitation(
+        findings: [Finding], fixture: LieFixture
+    ) -> CitationOutcome {
+        let matching = findings.filter { $0.rule == fixture.expectedRule }
+        if matching.isEmpty { return .missed }
+        if matching.contains(where: { $0.nodeID.contains(fixture.probeID) }) { return .cited }
+        return .misCited
     }
 
     /// Why a role lie surfaces as a visibility gap rather than a role
@@ -193,5 +230,99 @@ final class LieCatchTests: XCTestCase {
             findings.isEmpty,
             "the honest control produced \(findings.count) finding(s), so the reconciler "
                 + "reports disagreements that are not there: \(findings.map(\.message))")
+    }
+}
+
+
+extension LieCatchTests.CitationOutcome {
+    /// Each state gets the vocabulary of what actually happened.
+    func message(for fixture: LieFixture, findings: [Finding]) -> String {
+        let matching = findings.filter { $0.rule == fixture.expectedRule }
+        switch self {
+        case .cited:
+            return "\(fixture.name): cited correctly"
+        case .missed:
+            return
+                "\(fixture.name): the lie was NOT CAUGHT — no finding carried "
+                + "'\(fixture.expectedRule ?? "?")'. This is a MISS, not a mis-citation: "
+                + "ask why the rule did not fire, not which node it named. "
+                + "rules present: \(findings.map(\.rule)); lie: \(fixture.lie)"
+        case .misCited:
+            return
+                "\(fixture.name): the lie was CAUGHT but cited \(matching.map(\.nodeID)) "
+                + "rather than '\(fixture.probeID)' — the rule fired against the wrong "
+                + "node, which sends the reader at innocent code"
+        }
+    }
+}
+
+/// Headless proof that the honesty gate can TELL ITS TWO FAILURES APART.
+///
+/// Deliberately separate from `LieCatchTests`: it needs no window server, no
+/// Accessibility grant and no host process, so it stays green on a contended or
+/// headless machine — the exact conditions under which CIS-2C757660 could not be
+/// reproduced. A gate whose own reporting is only checkable when the machine is
+/// quiet is not checkable when it matters.
+final class LieCatchCitationReportingTests: XCTestCase {
+
+    private func fixture() -> LieFixture {
+        guard let f = LieScenarios.all.first(where: { $0.expectedRule != nil }) else {
+            preconditionFailure("no lie fixture carries an expected rule")
+        }
+        return f
+    }
+
+    private func finding(rule: String, nodeID: String) -> Finding {
+        Finding(rule: rule, severity: .error, nodeID: nodeID, message: "synthetic")
+    }
+
+    func testAnEmptyRuleMatchIsReportedAsAMissNotAMisCitation() {
+        let f = fixture()
+        // The rule never fired: only an unrelated rule is present.
+        let findings = [finding(rule: "some-other-rule", nodeID: f.probeID)]
+
+        let outcome = LieCatchTests.classifyCitation(findings: findings, fixture: f)
+        XCTAssertEqual(
+            outcome, .missed,
+            "zero findings under the expected rule is a MISS; classifying it as a "
+                + "mis-citation is the defect CIS-2C757660 recorded")
+
+        let text = outcome.message(for: f, findings: findings)
+        XCTAssertTrue(
+            text.contains("NOT CAUGHT"),
+            "a miss must say the lie was not caught; got: \(text)")
+        XCTAssertFalse(
+            text.contains("was CAUGHT but cited"),
+            "a miss must NOT be reported in the vocabulary of a mis-citation — that is "
+                + "the wrong-subject report this test exists to prevent; got: \(text)")
+    }
+
+    func testAWrongNodeUnderTheRightRuleIsReportedAsAMisCitation() {
+        let f = fixture()
+        let findings = [finding(rule: f.expectedRule ?? "", nodeID: "some-innocent-sibling")]
+
+        let outcome = LieCatchTests.classifyCitation(findings: findings, fixture: f)
+        XCTAssertEqual(outcome, .misCited)
+
+        let text = outcome.message(for: f, findings: findings)
+        XCTAssertTrue(text.contains("was CAUGHT but cited"), "got: \(text)")
+        XCTAssertTrue(text.contains("some-innocent-sibling"), "got: \(text)")
+    }
+
+    func testTheCorrectCitationPasses() {
+        let f = fixture()
+        let findings = [finding(rule: f.expectedRule ?? "", nodeID: f.probeID)]
+        XCTAssertEqual(LieCatchTests.classifyCitation(findings: findings, fixture: f), .cited)
+    }
+
+    func testTheTwoFailureMessagesAreNotInterchangeable() {
+        let f = fixture()
+        let miss = LieCatchTests.CitationOutcome.missed.message(for: f, findings: [])
+        let mis = LieCatchTests.CitationOutcome.misCited.message(
+            for: f, findings: [finding(rule: f.expectedRule ?? "", nodeID: "elsewhere")])
+        XCTAssertNotEqual(
+            miss, mis,
+            "the two failures must not render identically — sharing a message is what made "
+                + "a miss read as a mis-citation for four investigation rounds")
     }
 }
