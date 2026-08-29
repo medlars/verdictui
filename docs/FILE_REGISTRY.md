@@ -233,6 +233,7 @@
 | `docs/dogfood/sagamail/Sources/SagaMailDogfood/NotificationsSettingsScreen.swift` | A SagaMail settings screen adopted via `@Verifiable`; reproduces the real view's Form/conditional/ForEach/Toggle shapes                    | Active | 2026-08-14 |
 | `docs/dogfood/sagamail/Tests/SagaMailDogfoodTests/NotificationsSettingsVerdictTests.swift` | The dogfood verdicts, expectations owned by the CONSUMER's test target, with a cramped-viewport control                       | Active | 2026-08-14 |
 | `docs/audit-2026-08-26.md`                                           | Wave 10 Task 3 hardening audit — 10 phases + SD1–SD6, the fuzz negative control, and the fresh-clone PII scan that cleared the public repo               | Active | 2026-08-26 |
+| `evidence/run-v2.json`                                               | Governance-V2 S20 typed run-v2 record, committed by CI so the evidence outlives the run that produced it (an uploaded artifact expires; the committed record does not) | Active | 2026-08-29 |
 
 ## Archived / Removed
 
