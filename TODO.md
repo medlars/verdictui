@@ -74,7 +74,7 @@
 > *unverified*, not *undone*, until checked against that file.
 
 <!-- testwatch-gaps -->
-## TestWatch Gaps (auto-generated — do not edit this block)
+## TestWatch Gaps (auto-generated — rows are regenerated, but a `- [x]` line is preserved verbatim)
 - [ ] (P1) testwatch: add test for `render` in `scripts/verdictui-pm.py` [NONE]
 - [ ] (P2) testwatch: add test for `capture` in `.github/workflows/capture-ci-failures-to-github-issue.yml` [live]
 - [ ] (P2) testwatch: add test for `close-on-green` in `.github/workflows/capture-ci-failures-to-github-issue.yml` [live]
