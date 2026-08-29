@@ -201,7 +201,13 @@
 | `scripts/floor-check.py`                                             | Floor compliance audit                                                                                                                                 | Active | 2026-08-04 |
 | `scripts/kernel-symbol-audit.py`                                     | Exit-gate checker: every public kernel symbol documented and mentioned by a test                                                                       | Active | 2026-08-04 |
 | `scripts/mutation-check.py`                                          | Mutation harness — breaks a guard on purpose and fails if no test notices                                                                              | Active | 2026-08-04 |
-| `scripts/mutation_catalog.py`                                        | The mutation rows themselves; separate from the harness so a row may quote harness code without self-matching (`no.md` #16)                             | Active | 2026-08-09 |
+| `scripts/mutation_catalog/__init__.py` | Reassembles `MUTATIONS` from the parts below in a fixed order; separate from the harness so a row may quote harness code without self-matching (`no.md` #16) | Active | 2026-08-28 |
+| `scripts/mutation_catalog/_probe.py` | Mutation rows targeting `Sources/VerdictUIProbe` | Active | 2026-08-28 |
+| `scripts/mutation_catalog/_kernel.py` | Mutation rows targeting `Sources/VerdictUIKernel` | Active | 2026-08-28 |
+| `scripts/mutation_catalog/_macros.py` | Mutation rows targeting `Sources/VerdictUIMacros` | Active | 2026-08-28 |
+| `scripts/mutation_catalog/_cli.py` | Mutation rows targeting the CLI, witness and demo scenarios | Active | 2026-08-28 |
+| `scripts/mutation_catalog/_scripts.py` | Mutation rows targeting the Python harness under `scripts/` | Active | 2026-08-28 |
+| `scripts/mutation_catalog/_misc.py` | Mutation rows targeting `Tests/`, `Package.swift`, docs and CLAUDE.md | Active | 2026-08-28 |
 | `scripts/stale-buffer-check.py`                                      | Detects a tracked file overwritten by a stale editor buffer — mtime older than the commit that touched it (CIS-638133AE)                                | Active | 2026-08-09 |
 | `Tests/test_stale_buffer_check.py`                                   | Guards the stale-buffer detector, mostly controls: an ordinary fresh edit must NOT fire                                                                 | Active | 2026-08-09 |
 | `scripts/mutation_catalog_types.py`                                  | `Mutation` + `Runner`, shared by harness and catalog — a third module so the import is not a cycle                                                      | Active | 2026-08-09 |
