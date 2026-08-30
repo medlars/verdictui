@@ -40,6 +40,40 @@ public struct WitnessHostProcess {
         self.lifetime = lifetime
     }
 
+    /// Seconds the host is guaranteed to outlive the reader's wait by.
+    ///
+    /// Sized to complete a read, not as a token epsilon: the surplus over
+    /// `readyTimeout` is the entire window in which `AXReader.readTree` runs.
+    public static let readCompletionMargin: TimeInterval = 10
+
+    /// The lifetime the host is actually launched with.
+    ///
+    /// `lifetime` and `readyTimeout` are two deadlines measured from DIFFERENT
+    /// instants, and callers were setting both by hand to the same number
+    /// (`LieCatchTests` used 20 and 20), which leaves zero margin by
+    /// construction:
+    ///
+    ///   - the host's death clock starts when `run(lifetime:)` schedules its
+    ///     timer, which is BEFORE `app.run()` — and `app.run()` is what
+    ///     registers the process with the accessibility server;
+    ///   - `awaitHost` then spends up to `readyTimeout` waiting for exactly
+    ///     that registration, and the read happens only afterwards.
+    ///
+    /// So the later the window is published, the less host remains to read, and
+    /// past a point the read lands on a host that is already terminating. That
+    /// is a robustness defect independently of any one assertion: the failing
+    /// run in CIS-2C757660 took 25.8s, longer than either deadline.
+    ///
+    /// The configured value is a FLOOR, never a ceiling — a caller asking for a
+    /// long-lived host still gets one — and the result stays finite, because the
+    /// bound also exists so a host can never leave a window on the user's
+    /// screen.
+    public static func effectiveLifetime(
+        configured: TimeInterval, readyTimeout: TimeInterval
+    ) -> TimeInterval {
+        max(configured, readyTimeout + readCompletionMargin)
+    }
+
     /// Render `scenario` in a real window and return its normalized AX tree.
     ///
     /// - Parameters:
@@ -158,8 +192,13 @@ public struct WitnessHostProcess {
         // `-n` forces a NEW instance: without it a still-terminating host from a
         // previous scenario is reused, and the reader then verifies the previous
         // scenario's window while reporting the current scenario's name.
+        // NOT `lifetime`: the host must outlive the reader's wait for it, and
+        // the two deadlines start from different instants. See
+        // `effectiveLifetime`.
+        let hostLifetime = Self.effectiveLifetime(
+            configured: lifetime, readyTimeout: readyTimeout)
         launch.arguments = [
-            "-n", "-a", bundle.path, "--args", scenario, String(lifetime),
+            "-n", "-a", bundle.path, "--args", scenario, String(hostLifetime),
         ]
         do {
             try launch.run()
