@@ -305,21 +305,37 @@ jobs:
             # So validate the SHAPE, not mere non-emptiness: 40 hex chars is a SHA;
             # anything else is "could not observe", which must fail OPEN and SAY so.
             # Never render a value that is not SHA-shaped as though it were a SHA.
-            # Capture with 2>&1 so the WARNING can name the real cause. Discarding the
-            # body makes a 403, a 404 and a 500 render identically, which is precisely
-            # why this defect stayed unreadable for weeks.
-            TIP_RAW=$(gh api "repos/${{ github.repository }}/commits/${HEAD_BRANCH}" --jq '.sha' 2>&1) || true
-            if printf '%s' "$TIP_RAW" | grep -qE '^[0-9a-f]{40}$'; then
-              TIP_SHA="$TIP_RAW"
-            else
-              TIP_SNIPPET=$(printf '%s' "$TIP_RAW" | tr -s '[:space:]' ' ' | cut -c1-120)
-              echo "::warning::Could not read the tip of ${HEAD_BRANCH} (got: ${TIP_SNIPPET:-<empty>}). Proceeding with the close -- could-not-check must not become definitely-stale."
-              TIP_SHA=""
-            fi
-            if [ -n "$TIP_SHA" ] && [ "$TIP_SHA" != "$HEAD_SHA" ]; then
-              echo "::notice::Not closing #$ISSUE — this green run is for ${HEAD_SHA:0:8}, but ${HEAD_BRANCH} is now at ${TIP_SHA:0:8}. A newer commit may be the one that failed."
-              exit 0
-            fi
+            # The question this guard must answer is "is this branch's CI green NOW?",
+            # not "is this run's commit still the branch tip". Those come apart the
+            # moment anything commits without running CI -- and the fleet's own
+            # `evidence: run-v2` bot does exactly that after every run, pushing with
+            # GITHUB_TOKEN, which by design does not trigger workflows. Measured
+            # 2026-08-30: those evidence commits carry ZERO CI runs, so on every repo
+            # running that bot the tip is ALWAYS ahead of any run, and a tip-equality
+            # test declines forever -- silently, on every green run.
+            #
+            # Ask the branch's run history instead. If the newest COMPLETED run of this
+            # workflow on this branch succeeded, the branch is green and this issue is
+            # resolved. If it failed, a newer commit is genuinely broken and the issue
+            # must stay open -- which is the case the tip check was added for
+            # (CTS-5CAB17DD), and which this still covers, more directly.
+            #
+            # Fail OPEN when the state cannot be read: "could not check" must not become
+            # "definitely stale". Validate the SHAPE of the answer -- gh writes error
+            # bodies to stdout, so a bare non-empty test reads an error as a verdict.
+            BRANCH_STATE=$(gh run list --repo "${{ github.repository }}" \
+              --workflow "$WORKFLOW_NAME" --branch "$HEAD_BRANCH" \
+              --status completed --limit 1 --json conclusion --jq '.[0].conclusion // ""' 2>&1) || true
+            case "$BRANCH_STATE" in
+              success)
+                : ;;
+              failure|cancelled|timed_out|startup_failure|action_required|neutral|stale|skipped)
+                echo "::notice::Not closing #$ISSUE -- the newest completed ${WORKFLOW_NAME} run on ${HEAD_BRANCH} concluded '${BRANCH_STATE}', so the branch is not green."
+                exit 0 ;;
+              *)
+                STATE_SNIPPET=$(printf '%s' "$BRANCH_STATE" | tr -s '[:space:]' ' ' | cut -c1-120)
+                echo "::warning::Could not read the CI state of ${HEAD_BRANCH} (got: ${STATE_SNIPPET:-<empty>}). Proceeding with the close -- could-not-check must not become definitely-stale." ;;
+            esac
             gh issue comment "$ISSUE" --repo "${{ github.repository }}" \
               --body "CI recovered — latest \`${WORKFLOW_NAME}\` run on \`${HEAD_BRANCH}\` (\`${HEAD_SHA:0:8}\`) is **success**. ${RUN_URL}. Auto-closing." || true
             gh issue close "$ISSUE" --repo "${{ github.repository }}" --reason completed || true
