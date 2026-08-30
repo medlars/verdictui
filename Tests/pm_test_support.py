@@ -18,6 +18,25 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 _PM_PATH = str(_PROJECT_ROOT / "scripts" / "verdictui-pm.py")
 _PYTHON = sys.executable
 
+# The PM is FIVE files: the entrypoint plus the four siblings it composes (see
+# the entrypoint's docstring). A test that asserts on "the PM's source" must
+# read all of them or its subject silently leaves its window — and the failure
+# is in the PASSING direction, because an absence assertion over a file the
+# code left reads exactly like a clean result (lesson 1368).
+PM_MODULE_PATHS = (
+    _PROJECT_ROOT / "scripts" / "verdictui-pm.py",
+    _PROJECT_ROOT / "scripts" / "verdictui_pm_support.py",
+    _PROJECT_ROOT / "scripts" / "verdictui_pm_swift.py",
+    _PROJECT_ROOT / "scripts" / "verdictui_pm_stages.py",
+    _PROJECT_ROOT / "scripts" / "verdictui_pm_smoke.py",
+)
+
+
+def pm_source() -> str:
+    """Concatenated source of every module the PM is made of."""
+    return "\n".join(path.read_text() for path in PM_MODULE_PATHS)
+
+
 # floor-check asserts dev-machine surfaces (~/.claude skills, iTerm2 profile)
 # that do not exist on a CI runner. Tests whose SUBJECT is the full floor must
 # skip there rather than fail for "the environment lacks the thing" (lesson 221).

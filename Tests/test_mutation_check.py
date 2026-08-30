@@ -262,7 +262,11 @@ class TestPytestRunner:
         adding a threshold to the stage fails this until it is mutated —
         a count would merely need to be bumped."""
         mod = _load()
-        pm_source = (_PROJECT_ROOT / "scripts" / "verdictui-pm.py").read_text()
+        # The bench stages moved into `verdictui_pm_smoke` when the PM was split
+        # (CTS-6DBFF8C6); the `split` below raises rather than matching nothing,
+        # so this names its subject's file instead of silently missing it.
+        stage_module = "scripts/verdictui_pm_smoke.py"
+        pm_source = (_PROJECT_ROOT / stage_module).read_text()
         stage = pm_source.split("def stage_runtime_bench")[1].split("\n    def ")[0]
 
         conditions = [
@@ -272,7 +276,7 @@ class TestPytestRunner:
         ]
         assert conditions, "stage_runtime_bench compares against no budget at all"
 
-        mutated = {m.old for m in mod.MUTATIONS if m.path == "scripts/verdictui-pm.py"}
+        mutated = {m.old for m in mod.MUTATIONS if m.path == stage_module}
         for condition in conditions:
             assert condition in mutated, (
                 f"stage_runtime_bench gates on `{condition}` and no mutation breaks it — "
@@ -314,15 +318,18 @@ class TestPytestRunner:
             "that re-coupling it to the clock lane would be noticed"
         )
 
+        # `stage_test` lives in the stages mixin and reaches the runner through
+        # the module that owns it, so the quoted call carries the `SW.` prefix.
+        stage_module = "scripts/verdictui_pm_stages.py"
         full_suite_call = (
-            "        return _run_streamed_swift_test(\n            timeout=TIMEOUT_SWIFT_TEST,"
+            "        return SW._run_streamed_swift_test(\n            timeout=TIMEOUT_SWIFT_TEST,"
         )
-        pm_source = (_PROJECT_ROOT / "scripts" / "verdictui-pm.py").read_text()
+        pm_source = (_PROJECT_ROOT / stage_module).read_text()
         assert full_suite_call in pm_source, (
             "stage_test no longer calls the streamed runner unwrapped — either "
             "the override came back or the call was reshaped"
         )
-        assert ("scripts/verdictui-pm.py", full_suite_call) in rowed, (
+        assert (stage_module, full_suite_call) in rowed, (
             "stage_test's unwrapped full-suite call has no mutation row — "
             "nothing shows that re-wrapping it in the record-only override "
             "would be noticed"
