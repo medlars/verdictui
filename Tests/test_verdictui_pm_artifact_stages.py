@@ -34,6 +34,10 @@ from pm_test_support import _needs_dev_machine, load_pm
 pytestmark = pytest.mark.quick
 
 _mod = load_pm()
+# The PM's module-level state lives in the sibling modules that OWN it, so a
+# patch must be applied THERE: `_mod` holds no copy to shadow (CTS-6DBFF8C6).
+_S = _mod.S
+_SW = _mod.SW
 VerdictUIPM = _mod.VerdictUIPM
 
 # Resolved from this file rather than from the PM module, whose PROJECT_ROOT the
@@ -67,7 +71,7 @@ class TestStageCLISmoke:
         deterministically. What CAN be asserted is that the lock is taken.
         """
         stage_source = inspect.getsource(VerdictUIPM.stage_cli_smoke)
-        helper_source = inspect.getsource(_mod._run_locked_swift_build_product)
+        helper_source = inspect.getsource(_SW._run_locked_swift_build_product)
         assert "_run_locked_swift_build_product" in stage_source
         assert "swiftpm_command_lock" in helper_source, (
             "stage_cli_smoke builds without the shared SwiftPM lock, so it "
@@ -82,8 +86,8 @@ class TestStageCLISmoke:
     ) -> None:
         """Ctrl-C during CLI build must not leave SwiftPM holding `.build`."""
         _link_contract_into(tmp_path)
-        monkeypatch.setattr(_mod, "PROJECT_ROOT", tmp_path)
-        monkeypatch.setattr(_mod, "_LOCK_DIR", tmp_path / ".lock")
+        monkeypatch.setattr(_S, "PROJECT_ROOT", tmp_path)
+        monkeypatch.setattr(_S, "_LOCK_DIR", tmp_path / ".lock")
 
         class _FakeProc:
             pid = 4242
@@ -114,11 +118,11 @@ class TestStageCLISmoke:
             cleaned.append(root)
             return 0
 
-        monkeypatch.setattr(_mod, "_clear_project_swiftpm_lock_files", _record_cleanup)
+        monkeypatch.setattr(_SW, "_clear_project_swiftpm_lock_files", _record_cleanup)
         monkeypatch.setitem(sys.modules, "swift_runner", fake_swift_runner)
 
         with pytest.raises(KeyboardInterrupt):
-            _mod._run_locked_swift_build_product(timeout=60)
+            _SW._run_locked_swift_build_product(timeout=60)
 
         assert kills == [(4242, signal.SIGTERM)]
         assert cleaned == [tmp_path]
@@ -173,7 +177,7 @@ def _served_tools() -> list[dict]:
     healthy-catalog fixture missing a real verb makes the control fail for a
     reason the test never intended, which reads as the stage being broken.
     """
-    return [{"name": name} for name in sorted(_mod._documented_mcp_tools())]
+    return [{"name": name} for name in sorted(_S._documented_mcp_tools())]
 
 
 class TestStageTransportSmoke:
@@ -193,7 +197,7 @@ class TestStageTransportSmoke:
         broken.
         """
         _link_contract_into(tmp_path)
-        monkeypatch.setattr(_mod, "PROJECT_ROOT", tmp_path)
+        monkeypatch.setattr(_S, "PROJECT_ROOT", tmp_path)
         pm = VerdictUIPM.__new__(VerdictUIPM)
         result = pm.stage_transport_smoke()
         assert not result["passed"]
@@ -279,7 +283,7 @@ class TestStageTransportSmoke:
         binary.write_text(f"#!/bin/sh\ncat >/dev/null\nprintf '%s' {shlex.quote(stdout)}\n")
         binary.chmod(0o755)
         _link_contract_into(tmp_path)
-        monkeypatch.setattr(_mod, "PROJECT_ROOT", tmp_path)
+        monkeypatch.setattr(_S, "PROJECT_ROOT", tmp_path)
 
         pm = VerdictUIPM.__new__(VerdictUIPM)
         result = pm.stage_transport_smoke()
@@ -341,7 +345,7 @@ class TestStageTransportSmoke:
         binary.write_text(f"#!/bin/sh\ncat >/dev/null\nprintf '%s' {shlex.quote(stdout)}\n")
         binary.chmod(0o755)
         _link_contract_into(tmp_path)
-        monkeypatch.setattr(_mod, "PROJECT_ROOT", tmp_path)
+        monkeypatch.setattr(_S, "PROJECT_ROOT", tmp_path)
 
         pm = VerdictUIPM.__new__(VerdictUIPM)
         return pm.stage_transport_smoke()
@@ -376,7 +380,7 @@ class TestStageTransportSmoke:
         binary.write_text(f"#!/bin/sh\ncat >/dev/null\nprintf '%s' {shlex.quote(stdout)}\n")
         binary.chmod(0o755)
         _link_contract_into(tmp_path)
-        monkeypatch.setattr(_mod, "PROJECT_ROOT", tmp_path)
+        monkeypatch.setattr(_S, "PROJECT_ROOT", tmp_path)
 
         pm = VerdictUIPM.__new__(VerdictUIPM)
         result = pm.stage_transport_smoke()
@@ -477,7 +481,7 @@ class TestMainSurfacesSkippedStages:
             lambda _self, **_k: {"all_passed": True, "stages": stages},
             raising=False,
         )
-        monkeypatch.setattr(_mod, "tree_is_contended", lambda: False)
+        monkeypatch.setattr(_S, "tree_is_contended", lambda: False)
         printed: list[str] = []
         monkeypatch.setattr(
             "builtins.print", lambda *a, **_k: printed.append(" ".join(map(str, a)))
@@ -542,7 +546,7 @@ class TestPublishToDashboard:
 
         logged: list[tuple[str, str]] = []
         monkeypatch.setattr(_mod.PmBase, "publish_to_dashboard", deny, raising=False)
-        monkeypatch.setattr(_mod, "_pm_log", lambda msg, lvl="INFO": logged.append((msg, lvl)))
+        monkeypatch.setattr(_S, "_pm_log", lambda msg, lvl="INFO": logged.append((msg, lvl)))
 
         self._pm().publish_to_dashboard({"grade": "A"})
 
@@ -582,7 +586,7 @@ class TestReinstallHint:
     _BUILT = Path("/repo/.build/release/verdictui")
 
     def test_a_homebrew_symlink_is_refused_and_says_why(self):
-        hint = _mod._reinstall_hint("/opt/homebrew/bin/verdictui", self._BUILT)
+        hint = _S._reinstall_hint("/opt/homebrew/bin/verdictui", self._BUILT)
         assert "install -m 755" not in hint, (
             "the Homebrew copy is -r-xr-xr-x behind an INSTALL_RECEIPT.json; copying over it "
             f"clobbers the tap. got: {hint}"
@@ -592,16 +596,14 @@ class TestReinstallHint:
     def test_a_cellar_path_is_refused_even_without_the_bin_prefix(self):
         """Resolution matters: a symlink elsewhere on PATH can still land in
         the Cellar, so the check reads the RESOLVED path, not the spelling."""
-        hint = _mod._reinstall_hint(
-            "/opt/homebrew/Cellar/verdictui/1.0.1/bin/verdictui", self._BUILT
-        )
+        hint = _S._reinstall_hint("/opt/homebrew/Cellar/verdictui/1.0.1/bin/verdictui", self._BUILT)
         assert "install -m 755" not in hint, hint
 
     def test_a_plain_user_install_still_gets_the_copy_command(self):
         """The paired control. Without it, 'refuses the unsafe path' is met by
         an implementation that never offers a usable fix at all — which would
         leave a genuinely stale ~/.local/bin copy with no stated remedy."""
-        hint = _mod._reinstall_hint("/Users/dev/.local/bin/verdictui", self._BUILT)
+        hint = _S._reinstall_hint("/Users/dev/.local/bin/verdictui", self._BUILT)
         assert "install -m 755" in hint, hint
         assert str(self._BUILT) in hint, "must name the source binary to copy FROM"
 
@@ -630,7 +632,7 @@ class TestTreeIsContended:
 
     def test_no_sweep_process_means_an_uncontended_tree(self, monkeypatch):
         monkeypatch.setattr(_mod.subprocess, "run", lambda *_a, **_k: _FakeCompleted("", 1))
-        assert _mod.tree_is_contended() is False
+        assert _S.tree_is_contended() is False
 
     def test_a_running_fleet_sweep_is_contention(self, monkeypatch):
         monkeypatch.setattr(
@@ -638,7 +640,7 @@ class TestTreeIsContended:
             "run",
             lambda *_a, **_k: _FakeCompleted("46571\n", 0),
         )
-        assert _mod.tree_is_contended() is True
+        assert _S.tree_is_contended() is True
 
     def test_a_concurrent_pm_run_is_contention_too(self, monkeypatch):
         """A second PM on this tree contends for the SAME build directory.
@@ -661,7 +663,7 @@ class TestTreeIsContended:
             return _FakeCompleted("51039\n" if hit else "", 0 if hit else 1)
 
         monkeypatch.setattr(_mod.subprocess, "run", probe)
-        assert _mod.tree_is_contended() is True
+        assert _S.tree_is_contended() is True
         assert "verdictui-pm.py" in calls, calls
 
     def test_a_sibling_projects_pm_saturating_the_machine_is_contention(self, monkeypatch):
@@ -702,7 +704,7 @@ class TestTreeIsContended:
             return _FakeCompleted("863\n" if hit else "", 0 if hit else 1)
 
         monkeypatch.setattr(_mod.subprocess, "run", probe)
-        assert _mod.tree_is_contended() is True
+        assert _S.tree_is_contended() is True
         assert "ceo.py --watch" in calls, calls
 
     def test_the_pm_does_not_report_ITSELF_as_contention(self, monkeypatch):
@@ -720,7 +722,7 @@ class TestTreeIsContended:
         monkeypatch.setattr(
             _mod.subprocess, "run", lambda *_a, **_k: _FakeCompleted(f"{_os.getpid()}\n", 0)
         )
-        assert _mod.tree_is_contended() is False, "the PM must not see its own pid as a contender"
+        assert _S.tree_is_contended() is False, "the PM must not see its own pid as a contender"
 
     def test_a_real_contender_beside_our_own_pid_still_registers(self, monkeypatch):
         """The paired control: excluding self must not exclude everyone.
@@ -736,7 +738,7 @@ class TestTreeIsContended:
             "run",
             lambda *_a, **_k: _FakeCompleted(f"{_os.getpid()}\n51039\n", 0),
         )
-        assert _mod.tree_is_contended() is True
+        assert _S.tree_is_contended() is True
 
     def test_the_probe_stops_at_the_first_match_rather_than_asking_twice(self, monkeypatch):
         """Cheapness is part of the contract — this runs on every PM invocation."""
@@ -747,7 +749,7 @@ class TestTreeIsContended:
             return _FakeCompleted("999\n", 0)
 
         monkeypatch.setattr(_mod.subprocess, "run", probe)
-        assert _mod.tree_is_contended() is True
+        assert _S.tree_is_contended() is True
         assert len(calls) == 1, f"must short-circuit on the first hit, probed {calls}"
 
     def test_an_unavailable_probe_reports_uncontended_never_contended(self, monkeypatch):
@@ -763,14 +765,14 @@ class TestTreeIsContended:
             raise OSError("pgrep not found")
 
         monkeypatch.setattr(_mod.subprocess, "run", boom)
-        assert _mod.tree_is_contended() is False
+        assert _S.tree_is_contended() is False
 
     def test_a_timed_out_probe_reports_uncontended(self, monkeypatch):
         def slow(*_a, **_k):
             raise _mod.subprocess.TimeoutExpired(cmd="pgrep", timeout=1)
 
         monkeypatch.setattr(_mod.subprocess, "run", slow)
-        assert _mod.tree_is_contended() is False
+        assert _S.tree_is_contended() is False
 
 
 class TestCurrentLoad:
@@ -798,7 +800,7 @@ class TestCurrentLoad:
         monkeypatch.setattr(_mod.os, "getloadavg", lambda: (151.98, 60.15, 35.29))
         monkeypatch.setattr(_mod.os, "cpu_count", lambda: 16)
 
-        load1, cpus = _mod._current_load()
+        load1, cpus = _S._current_load()
 
         assert load1 == 151.98, "the 1-minute average is the first element, not the 5- or 15-"
         assert cpus == 16
@@ -819,7 +821,7 @@ class TestCurrentLoad:
 
         monkeypatch.setattr(_mod.os, "getloadavg", _unsupported)
 
-        assert _mod._current_load() == (None, None)
+        assert _S._current_load() == (None, None)
 
     def test_an_unknown_load_never_escalates_to_severe(
         self, monkeypatch: pytest.MonkeyPatch
@@ -837,8 +839,8 @@ class TestCurrentLoad:
             raise OSError("load average unsupported on this platform")
 
         monkeypatch.setattr(_mod.os, "getloadavg", _unsupported)
-        load1, cpus = _mod._current_load()
-        evidence = _mod.ContentionEvidence(
+        load1, cpus = _S._current_load()
+        evidence = _S.ContentionEvidence(
             culprit="ceo.py --watch", pids=("882",), load1=load1, cpus=cpus
         )
 
@@ -884,7 +886,7 @@ class TestContentionEvidenceNamesItsSubject:
             return _FakeCompleted("884\n" if hit else "", 0 if hit else 1)
 
         monkeypatch.setattr(_mod.subprocess, "run", probe)
-        report = _mod.contention_evidence()
+        report = _S.contention_evidence()
         assert report is not None, "a live contender must produce evidence"
         assert "ceo.py --watch" in report.culprit, report.culprit
         # The CONTROL: it must not name a pattern that did not match, which is
@@ -898,7 +900,7 @@ class TestContentionEvidenceNamesItsSubject:
         monkeypatch.setattr(_mod.subprocess, "run", lambda *_a, **_k: _FakeCompleted("884\n", 0))
         monkeypatch.setattr(_mod.os, "getloadavg", lambda: (346.99, 407.24, 420.42))
         monkeypatch.setattr(_mod.os, "cpu_count", lambda: 16)
-        report = _mod.contention_evidence()
+        report = _S.contention_evidence()
         assert report is not None
         assert report.load1 == pytest.approx(346.99)
         # 346.99 / 16 == 21.7x oversubscribed. The RATIO is the reportable
@@ -918,14 +920,14 @@ class TestContentionEvidenceNamesItsSubject:
         monkeypatch.setattr(_mod.subprocess, "run", lambda *_a, **_k: _FakeCompleted("884\n", 0))
         monkeypatch.setattr(_mod.os, "getloadavg", lambda: (2.0, 2.0, 2.0))
         monkeypatch.setattr(_mod.os, "cpu_count", lambda: 16)
-        report = _mod.contention_evidence()
+        report = _S.contention_evidence()
         assert report is not None, "a contender is still a contender when the box is idle"
         assert report.is_severe is False, "0.125x must not read as severe"
 
     def test_no_contender_yields_no_evidence(self, monkeypatch):
         """Fails toward NOISE: absence of a contender must never manufacture one."""
         monkeypatch.setattr(_mod.subprocess, "run", lambda *_a, **_k: _FakeCompleted("", 1))
-        assert _mod.contention_evidence() is None
+        assert _S.contention_evidence() is None
 
     def test_an_unreadable_load_average_still_reports_the_contender(self, monkeypatch):
         """A degraded probe must lose only the number it could not read.
@@ -941,7 +943,7 @@ class TestContentionEvidenceNamesItsSubject:
             raise OSError("getloadavg unsupported")
 
         monkeypatch.setattr(_mod.os, "getloadavg", unsupported)
-        report = _mod.contention_evidence()
+        report = _S.contention_evidence()
         assert report is not None, "a lost load reading must not lose the contender"
         assert "ceo.py --watch" in report.culprit or "check.py --all" in report.culprit
         assert report.load1 is None
@@ -959,8 +961,8 @@ class TestContentionEvidenceNamesItsSubject:
             monkeypatch.setattr(
                 _mod.subprocess, "run", lambda *_a, _s=stdout, _c=code, **_k: _FakeCompleted(_s, _c)
             )
-            assert _mod.tree_is_contended() is expected
-            assert (_mod.contention_evidence() is not None) is expected
+            assert _S.tree_is_contended() is expected
+            assert (_S.contention_evidence() is not None) is expected
 
 
 class TestMainWarnsWhenTheTreeIsContended:
@@ -994,11 +996,11 @@ class TestMainWarnsWhenTheTreeIsContended:
         # correctly reporting that the fixture had stopped controlling the code
         # under test (`no.md` #18 — a fixture that does not reach the subject).
         evidence = (
-            _mod.ContentionEvidence(culprit="ceo.py --watch", pids=("884",), load1=255.30, cpus=16)
+            _S.ContentionEvidence(culprit="ceo.py --watch", pids=("884",), load1=255.30, cpus=16)
             if contended
             else None
         )
-        monkeypatch.setattr(_mod, "contention_evidence", lambda: evidence)
+        monkeypatch.setattr(_S, "contention_evidence", lambda: evidence)
         printed: list[str] = []
         monkeypatch.setattr(
             "builtins.print", lambda *a, **_k: printed.append(" ".join(map(str, a)))
@@ -1134,7 +1136,7 @@ class TestMCPInputSurfaceSurvivesHostileInput:
 
     @_needs_dev_machine
     def test_every_malformed_frame_is_answered_and_the_server_survives(self) -> None:
-        binary = _mod.PROJECT_ROOT / ".build" / "release" / "verdictui"
+        binary = _S.PROJECT_ROOT / ".build" / "release" / "verdictui"
         if not binary.exists():
             pytest.skip(f"{binary} absent — build with swift build -c release")
 
@@ -1194,7 +1196,7 @@ class TestDocumentedMCPTools:
     """
 
     def test_it_parses_the_tools_the_contract_documents(self) -> None:
-        tools = _mod._documented_mcp_tools()
+        tools = _S._documented_mcp_tools()
 
         # The verbs a client can actually call. Named individually rather than
         # compared to a count: a count is the same hand-copied claim one step
@@ -1225,7 +1227,7 @@ class TestDocumentedMCPTools:
         ANSWER over the wire — inverting the SD4 guarantee the very next
         assertion in that stage checks.
         """
-        tools = _mod._documented_mcp_tools()
+        tools = _S._documented_mcp_tools()
 
         assert "baseline_accept" not in tools, (
             "baseline_accept is documented as DELIBERATELY NOT SERVED, so requiring it "
@@ -1253,9 +1255,9 @@ class TestDocumentedMCPTools:
             "###   `spaced_out(a)`\n###\t`tabbed()`\n  ### `indented()`\n### `plain()`\n",
             encoding="utf-8",
         )
-        monkeypatch.setattr(_mod, "PROJECT_ROOT", tmp_path)
+        monkeypatch.setattr(_S, "PROJECT_ROOT", tmp_path)
 
-        assert _mod._documented_mcp_tools() == {
+        assert _S._documented_mcp_tools() == {
             "spaced_out",
             "tabbed",
             "indented",
@@ -1290,9 +1292,9 @@ class TestDocumentedMCPTools:
             "### `real_tool()`\n#### `not_a_tool()`\n##### `also_not()`\n",
             encoding="utf-8",
         )
-        monkeypatch.setattr(_mod, "PROJECT_ROOT", tmp_path)
+        monkeypatch.setattr(_S, "PROJECT_ROOT", tmp_path)
 
-        assert _mod._documented_mcp_tools() == {"real_tool"}, (
+        assert _S._documented_mcp_tools() == {"real_tool"}, (
             "a #### sub-heading documents an ARGUMENT, not a served tool — "
             "requiring it over the wire would fail the gate on a correct catalog"
         )
@@ -1309,9 +1311,9 @@ class TestDocumentedMCPTools:
         """
         # Deliberately NOT linked: tmp_path holds no contract, which is the
         # whole subject of this test.
-        monkeypatch.setattr(_mod, "PROJECT_ROOT", tmp_path)
+        monkeypatch.setattr(_S, "PROJECT_ROOT", tmp_path)
 
-        assert _mod._documented_mcp_tools() == set(), (
+        assert _S._documented_mcp_tools() == set(), (
             "an absent contract must yield the empty set so the caller can fail loudly, "
             "never a partial guess that looks like a real requirement"
         )

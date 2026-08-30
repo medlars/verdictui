@@ -9,7 +9,7 @@ from mutation_catalog_types import Mutation, Runner  # noqa: F401
 MUTATIONS: list[Mutation] = [
     Mutation(
         name="the demo stage re-enters SwiftPM instead of running the built executable",
-        path="scripts/verdictui-pm.py",
+        path="scripts/verdictui_pm_stages.py",
         old="[str(demo)]",
         new='["swift", "run", str(demo)]',
         test=(
@@ -25,7 +25,7 @@ MUTATIONS: list[Mutation] = [
         # honestly satisfy the test's claim. Dropping the suppression entirely is
         # what the guard exists to catch, so that is what this row mutates to.
         name="the runtime attribute stash stops being type-checkable",
-        path="scripts/verdictui-pm.py",
+        path="scripts/verdictui_pm_swift.py",
         old="    setattr(swift_runner, _RAW_KILL_ATTR, raw_kill)",
         new="    swift_runner._verdictui_raw_kill_zombie_swift_processes = raw_kill",
         test=("Tests/test_verdictui_pm.py::TestStageBuild::test_the_pm_script_is_pyright_clean"),
@@ -75,7 +75,7 @@ MUTATIONS: list[Mutation] = [
         # (no.md #31) while the guard loses exactly the contender it was added
         # for.
         name="the contention probe stops seeing a sibling project's sweep",
-        path="scripts/verdictui-pm.py",
+        path="scripts/verdictui_pm_support.py",
         old='    "ceo.py --watch",',
         new='    "ceo.py --a-pattern-no-process-can-match",',
         test=(
@@ -90,7 +90,7 @@ MUTATIONS: list[Mutation] = [
         # spot it replaced, because a guard that always fires gets discounted
         # on every future finding (no.md #72). Keeps every binding live.
         name="the contention probe stops excluding the PM's own pid",
-        path="scripts/verdictui-pm.py",
+        path="scripts/verdictui_pm_support.py",
         old="if pid.strip() != str(os.getpid())",
         new="if pid.strip() or True",
         test=(
@@ -105,7 +105,7 @@ MUTATIONS: list[Mutation] = [
         # desyncing its INSTALL_RECEIPT.json. A destructive SUGGESTION is a
         # defect even though the PM never runs it. Keeps every binding live.
         name="the reinstall hint stops refusing package-managed copies",
-        path="scripts/verdictui-pm.py",
+        path="scripts/verdictui_pm_support.py",
         old='if "/Cellar/" in str(Path(copy).resolve()) or copy.startswith("/opt/homebrew/"):',
         new='if copy.startswith("/nonexistent-prefix/"):',
         test=(
@@ -120,7 +120,7 @@ MUTATIONS: list[Mutation] = [
         # mid-sentence gets marked unverified, hiding executing work while
         # claiming to reveal hidden work. Keeps every binding live (no.md #31).
         name="the skip classifier scans the whole detail instead of its leading clause",
-        path="scripts/verdictui-pm.py",
+        path="scripts/verdictui_pm_support.py",
         old='head = lowered.split("|", 1)[0].strip()',
         new="head = lowered",
         test=(
@@ -151,7 +151,7 @@ MUTATIONS: list[Mutation] = [
         # still type-checks; it simply reinstates the state that produced ten
         # false P1s in a day. no.md #31: break behaviour, never a binding.
         name="the contention guard stops distinguishing a busy tree from a broken one",
-        path="scripts/verdictui-pm.py",
+        path="scripts/verdictui_pm_support.py",
         old="        if others:\n            load1, cpus = _current_load()",
         new="        if others and False:\n            load1, cpus = _current_load()",
         test=(
@@ -166,7 +166,7 @@ MUTATIONS: list[Mutation] = [
         # the blind spot -- the gate sees the developer's own build (in parity
         # by construction) and never the packaged copy that actually ships.
         name="the parity gate goes back to checking only the first copy on PATH",
-        path="scripts/verdictui-pm.py",
+        path="scripts/verdictui_pm_support.py",
         old="    seen: list[str] = [first]",
         new="    return [first]\n    seen: list[str] = [first]",
         test=(
@@ -180,7 +180,7 @@ MUTATIONS: list[Mutation] = [
         # the "See 'verdictui help ...'" footer and collected "See" as a
         # subcommand. Restoring that reinstates the phantom.
         name="the help-footer terminator stops closing the SUBCOMMANDS block",
-        path="scripts/verdictui-pm.py",
+        path="scripts/verdictui_pm_smoke.py",
         old='if not line.startswith(" ") or not line.strip():',
         new='if line and not line.startswith(" "):',
         test=(
@@ -191,7 +191,7 @@ MUTATIONS: list[Mutation] = [
     ),
     Mutation(
         name="the demo stage accepts an empty verdict array",
-        path="scripts/verdictui-pm.py",
+        path="scripts/verdictui_pm_stages.py",
         old="if not isinstance(verdicts, list) or not verdicts:",
         new="if not isinstance(verdicts, list):",
         test=(
@@ -208,7 +208,7 @@ MUTATIONS: list[Mutation] = [
         # altogether and the "does not fail on a contended tail" row below
         # would still pass — a gate that never fails satisfies it perfectly.
         name="the bench stage stops failing on a regressed median",
-        path="scripts/verdictui-pm.py",
+        path="scripts/verdictui_pm_smoke.py",
         old="if p50 >= SLO1_P50_BUDGET_MS:",
         new="if False:",
         test=(
@@ -223,7 +223,7 @@ MUTATIONS: list[Mutation] = [
         # a statistic that moves with machine load, so it failed at p95 105.51 ms
         # on a healthy p50 of 49.09 ms.
         name="the bench stage goes back to gating the contended tail",
-        path="scripts/verdictui-pm.py",
+        path="scripts/verdictui_pm_smoke.py",
         old="if p50 >= SLO1_P50_BUDGET_MS:",
         new="if tail is not None and float(tail.group(1)) >= SLO1_P95_BUDGET_MS:",
         test=(
@@ -237,7 +237,7 @@ MUTATIONS: list[Mutation] = [
         # see the other, so their agreement is only real while something
         # compares them. Moving one here must fail.
         name="the PM's p50 budget drifts from the Swift test's",
-        path="scripts/verdictui-pm.py",
+        path="scripts/verdictui_pm_support.py",
         old="SLO1_P50_BUDGET_MS = 70.0",
         new="SLO1_P50_BUDGET_MS = 85.0",
         test=(
@@ -280,7 +280,7 @@ MUTATIONS: list[Mutation] = [
         # the predicate returns a value rather than guarding an assertion, so
         # a healthy tree can witness it through the negative control.
         name="every host is treated as timing-constrained, so p50 gates nothing",
-        path="scripts/verdictui-pm.py",
+        path="scripts/verdictui_pm_support.py",
         old="    if any(name in os.environ for name in CONSTRAINED_TIMING_ENV_MARKERS):",
         new="    if True:",
         test=(
@@ -306,7 +306,7 @@ MUTATIONS: list[Mutation] = [
         # PM's own source for the argv it builds — none ran the stage against
         # BROKEN code, so this mutation passed the whole suite.
         name="stage_lint stops reporting lint and format failures",
-        path="scripts/verdictui-pm.py",
+        path="scripts/verdictui_pm_stages.py",
         old="            if r.returncode != 0:\n                detail = (r.stdout.strip() or r.stderr.strip() or NO_OUTPUT)[:400]",
         new="            if False:\n                detail = (r.stdout.strip() or r.stderr.strip() or NO_OUTPUT)[:400]",
         test="Tests/test_verdictui_pm.py::TestStageWrappers::test_stage_lint_reports_a_format_failure_distinctly",
@@ -404,7 +404,7 @@ MUTATIONS: list[Mutation] = [
         # the silencer shape SE Principle 11 forbids, and it is invisible in a
         # log -- every line still reads "SLO 3 p50 ... < ...".
         name="the MCP latency gate compares against the product target, not its budget",
-        path="scripts/verdictui-pm.py",
+        path="scripts/verdictui_pm_smoke.py",
         old="        if p50 >= SLO3_MCP_P50_BUDGET_MS:",
         new="        if p50 >= SLO3_MCP_P95_BUDGET_MS:",
         test="Tests/test_verdictui_bench.py::TestStageMCPLatency"
@@ -418,7 +418,7 @@ MUTATIONS: list[Mutation] = [
         # green forever -- and green is exactly what a silently-unmeasured
         # benchmark looks like.
         name="the shared SLO parse accepts a run that executed no tests",
-        path="scripts/verdictui-pm.py",
+        path="scripts/verdictui_pm_support.py",
         old='        return {"detail": f"{marker}: no executed tests reported -- the filter is stale"}',
         new='        _ = f"{marker}: no executed tests reported -- the filter is stale"',
         test="Tests/test_verdictui_bench.py::TestSharedSLOParse"
@@ -433,7 +433,7 @@ MUTATIONS: list[Mutation] = [
         # direction: the gate still passes on a catalog that serves the
         # destructive verb, and fails on the correct catalog that does not.
         name="the wire gate stops excluding the deliberately unserved verb",
-        path="scripts/verdictui-pm.py",
+        path="scripts/verdictui_pm_support.py",
         old='        if not line.startswith("###") or "NOT SERVED" in line:',
         new='        if not line.startswith("###"):',
         test=(
@@ -452,7 +452,7 @@ MUTATIONS: list[Mutation] = [
         # THAT is the line this row breaks. Measured: loosening the heading
         # test alone left the witness PASSING (no.md #12).
         name="the contract parser stops rejecting deeper heading levels",
-        path="scripts/verdictui-pm.py",
+        path="scripts/verdictui_pm_support.py",
         old="        marker = line[3:].lstrip()",
         new='        marker = line.lstrip("#").lstrip()',
         test=(
@@ -491,11 +491,15 @@ MUTATIONS: list[Mutation] = [
         # stage measures absolute budgets, which is what the override is for.
         # Hand-verified 2026-08-15 -- exit 1, byte-identical restore.
         name="the full suite runs under the record-only override again",
-        path="scripts/verdictui-pm.py",
-        old="        return _run_streamed_swift_test(\n            timeout=TIMEOUT_SWIFT_TEST,",
+        # The runner and the timing wrapper both live in `verdictui_pm_swift`
+        # now, so both are spelled through that module here. Quoting the call as
+        # the stage ACTUALLY writes it is what keeps the row from going stale
+        # into a silent no-match (CTS-6DBFF8C6).
+        path="scripts/verdictui_pm_stages.py",
+        old="        return SW._run_streamed_swift_test(\n            timeout=TIMEOUT_SWIFT_TEST,",
         new=(
-            "        with _swift_timing_environment():\n"
-            "            return _run_streamed_swift_test(\n"
+            "        with SW._swift_timing_environment():\n"
+            "            return SW._run_streamed_swift_test(\n"
             "            timeout=TIMEOUT_SWIFT_TEST,"
         ),
         test=(
@@ -516,12 +520,32 @@ MUTATIONS: list[Mutation] = [
         # AUDIBILITY of the silence, not a new failure mode. Assigning "" keeps
         # the binding live and compiles (no.md #31).
         name="a skipped test is silently counted as verified again",
-        path="scripts/verdictui-pm.py",
+        path="scripts/verdictui_pm_swift.py",
         old='skipped_note = f" ({exec_skipped} SKIPPED — unverified)" if exec_skipped else ""',
         new='skipped_note = ""',
         test=(
             "Tests/test_verdictui_pm.py::TestKilledRunnerIsInconclusive"
             "::test_a_skipped_test_is_reported_rather_than_silently_counted_as_verified"
+        ),
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
+        # The split's whole risk is a SHADOW COPY on the entrypoint: a name the
+        # suite patches, re-bound here at import time, so `setattr(_mod, name)`
+        # rebinds the copy while the code keeps reading the owner's. Every
+        # affected test then passes without exercising its subject, and no green
+        # run can show it — the `no.md` #58 shape (CTS-6DBFF8C6). The mutation
+        # re-adds exactly that copy; the guard must notice.
+        name="the PM entrypoint shadows a patched name its sibling owns",
+        path="scripts/verdictui-pm.py",
+        old='__all__ = ["PROJECT_NAME", "S", "SW", "VerdictUIPM", "main"]',
+        new=(
+            "PROJECT_ROOT = S.PROJECT_ROOT\n"
+            '__all__ = ["PROJECT_NAME", "S", "SW", "VerdictUIPM", "main"]'
+        ),
+        test=(
+            "Tests/test_verdictui_pm.py::TestTheModuleSplitKeepsOnePatchTarget"
+            "::test_the_entrypoint_holds_no_shadow_copy_of_a_patched_name"
         ),
         runner=Runner.PYTEST,
     ),

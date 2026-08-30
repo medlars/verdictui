@@ -13,13 +13,16 @@ is why the gap survived review.
 """
 
 import pytest
-from pm_test_support import _PROJECT_ROOT, load_pm
+from pm_test_support import _PROJECT_ROOT, load_pm, pm_source
 
 # Quick gate: pure-python, sub-second — belongs in the pre-merge gate.
 # Without a marker the quick gate selects ZERO tests and reports success (lesson 183).
 pytestmark = pytest.mark.quick
 
 _mod = load_pm()
+# The PM's module-level state lives in the sibling modules that OWN it, so a
+# patch must be applied THERE: `_mod` holds no copy to shadow (CTS-6DBFF8C6).
+_S = _mod.S
 VerdictUIPM = _mod.VerdictUIPM
 
 
@@ -88,8 +91,8 @@ class TestStagePytest:
 
         assert result["passed"], result["detail"]
         assert calls
-        assert calls[0][1]["timeout"] == _mod.TIMEOUT_PYTEST
-        assert _mod.TIMEOUT_PYTEST > _mod.TIMEOUT_STANDARD
+        assert calls[0][1]["timeout"] == _S.TIMEOUT_PYTEST
+        assert _S.TIMEOUT_PYTEST > _S.TIMEOUT_STANDARD
 
     def test_zero_collected_fails_even_though_pytest_exits_zero(self, monkeypatch) -> None:
         """`pytest` exits 0 when it collects nothing, so a broken marker or a
@@ -173,7 +176,7 @@ class TestStagesFailClosedWithoutTheirTool:
         """CI runs `ruff format --check .`; a stage running only `check` lets
         format drift through to a red CI on a locally-green tree. Measured
         2026-08-06 -- that is exactly what happened."""
-        source = (_PROJECT_ROOT / "scripts" / "verdictui-pm.py").read_text()
+        source = pm_source()
         assert '[ruff, "check", "."]' in source
         assert '[ruff, "format", "--check", "."]' in source
 

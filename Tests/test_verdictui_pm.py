@@ -15,7 +15,7 @@ import types
 from pathlib import Path
 
 import pytest
-from pm_test_support import load_pm
+from pm_test_support import PM_MODULE_PATHS, load_pm, pm_source
 
 # Quick gate: pure-python, sub-second — belongs in the pre-merge gate.
 # Without a marker the quick gate selects ZERO tests and reports success (lesson 183).
@@ -41,6 +41,10 @@ _needs_dev_machine = pytest.mark.skipif(
 # slotted dataclass to the PM broke THIS file's collection while the other
 # file's tests passed. One rule, one implementation (`no.md` #284).
 _mod = load_pm()
+# The PM's module-level state lives in the sibling modules that OWN it, so a
+# patch must be applied THERE: `_mod` holds no copy to shadow (CTS-6DBFF8C6).
+_S = _mod.S
+_SW = _mod.SW
 VerdictUIPM = _mod.VerdictUIPM
 
 
@@ -303,14 +307,14 @@ class TestStageArchitecture:
         kernel = tmp_path / "Sources" / "VerdictUIKernel"
         kernel.mkdir(parents=True)
         (kernel / "Bad.swift").write_text("import SwiftUI\nstruct X {}\n")
-        monkeypatch.setattr(_mod, "PROJECT_ROOT", tmp_path)
+        monkeypatch.setattr(_S, "PROJECT_ROOT", tmp_path)
         result = self._pm().stage_architecture()
         assert not result["passed"]
         assert "kernel purity violated" in result["detail"]
         assert "Bad.swift" in result["detail"]
 
     def test_missing_kernel_dir_fails(self, tmp_path, monkeypatch) -> None:
-        monkeypatch.setattr(_mod, "PROJECT_ROOT", tmp_path)
+        monkeypatch.setattr(_S, "PROJECT_ROOT", tmp_path)
         result = self._pm().stage_architecture()
         assert not result["passed"]
 
@@ -319,7 +323,7 @@ class TestStageArchitecture:
             kernel = tmp_path / "Sources" / "VerdictUIKernel"
             kernel.mkdir(parents=True, exist_ok=True)
             (kernel / "Bad.swift").write_text(f"{token}\n")
-            monkeypatch.setattr(_mod, "PROJECT_ROOT", tmp_path)
+            monkeypatch.setattr(_S, "PROJECT_ROOT", tmp_path)
             result = self._pm().stage_architecture()
             assert not result["passed"], f"{token} must be rejected"
 
@@ -340,7 +344,7 @@ class TestStageContracts:
         assert f"({2 + fixtures} checks)" in result["detail"], result["detail"]
 
     def test_missing_validator_fails(self, tmp_path, monkeypatch) -> None:
-        monkeypatch.setattr(_mod, "PROJECT_ROOT", tmp_path)
+        monkeypatch.setattr(_S, "PROJECT_ROOT", tmp_path)
         result = self._pm().stage_contracts()
         assert not result["passed"]
         assert "validate-contracts.py not found" in result["detail"]
@@ -352,7 +356,7 @@ class TestStageContracts:
         (contracts / "validate-contracts.py").write_text(
             "import sys\nprint('FAIL: staged contract breakage')\nsys.exit(1)\n"
         )
-        monkeypatch.setattr(_mod, "PROJECT_ROOT", tmp_path)
+        monkeypatch.setattr(_S, "PROJECT_ROOT", tmp_path)
         result = self._pm().stage_contracts()
         assert not result["passed"]
         assert "staged contract breakage" in result["detail"]
@@ -371,9 +375,7 @@ class TestStageBuild:
             return {"passed": True, "detail": "swift build PASS", "output": ""}
 
         monkeypatch.setattr(_mod.shutil, "which", lambda _: "/usr/bin/swift")
-        monkeypatch.setattr(
-            _mod, "_swift_runner", lambda: (lambda _root: [], run_swift_build, None)
-        )
+        monkeypatch.setattr(_SW, "_swift_runner", lambda: (lambda _root: [], run_swift_build, None))
 
         result = VerdictUIPM.__new__(VerdictUIPM).stage_build()
 
@@ -387,7 +389,7 @@ class TestStageBuild:
         assert "local" in flags
 
     def test_missing_package_swift_fails(self, tmp_path, monkeypatch) -> None:
-        monkeypatch.setattr(_mod, "PROJECT_ROOT", tmp_path)
+        monkeypatch.setattr(_S, "PROJECT_ROOT", tmp_path)
         pm = VerdictUIPM.__new__(VerdictUIPM)
         result = pm.stage_build()
         assert not result["passed"]
@@ -420,7 +422,7 @@ class TestStageBuild:
         )
         monkeypatch.setitem(sys.modules, "swift_runner", fake)
 
-        safe_kill, build, test = _mod._swift_runner()
+        safe_kill, build, test = _SW._swift_runner()
 
         assert safe_kill(_PROJECT_ROOT) == []
         assert build.__globals__["kill_zombie_swift_processes"] is safe_kill
@@ -429,9 +431,9 @@ class TestStageBuild:
             ["swift", "build"], cache_dir=tmp_path, log=lambda *_a: None
         ):
             pass
-        assert lock_calls[0]["max_wait_seconds"] == _mod.SWIFTPM_COMMAND_LOCK_WAIT_SECONDS
-        assert getattr(fake, _mod._RAW_KILL_ATTR) is raw_kill
-        assert getattr(fake, _mod._RAW_SWIFTPM_LOCK_ATTR) is raw_lock
+        assert lock_calls[0]["max_wait_seconds"] == _SW.SWIFTPM_COMMAND_LOCK_WAIT_SECONDS
+        assert getattr(fake, _SW._RAW_KILL_ATTR) is raw_kill
+        assert getattr(fake, _SW._RAW_SWIFTPM_LOCK_ATTR) is raw_lock
 
     def test_the_pm_script_is_pyright_clean(self) -> None:
         # The runtime tests above monkeypatch `swift_runner`, so they pass
@@ -439,10 +441,15 @@ class TestStageBuild:
         # to it. Only a type check can see that, and CI runs one -- so without
         # this the PM script can go red on CI from a green local suite
         # (CIS-9EC205DF).
+        #
+        # EVERY module the PM is made of, not just the entrypoint: the assigning
+        # code moved into `verdictui_pm_swift` when the PM was split, and a check
+        # scoped to one file would have kept passing while its subject sat
+        # outside the window (CTS-6DBFF8C6).
         if shutil.which("pyright") is None:
             pytest.skip("pyright not installed")
         proc = subprocess.run(
-            ["pyright", "--outputjson", str(_PROJECT_ROOT / "scripts/verdictui-pm.py")],
+            ["pyright", "--outputjson", *(str(path) for path in PM_MODULE_PATHS)],
             capture_output=True,
             text=True,
             cwd=_PROJECT_ROOT,
@@ -485,7 +492,7 @@ class TestStageBuild:
         unrelated.write_text("keep\n")
         monkeypatch.setattr(_mod.tempfile, "gettempdir", lambda: str(tmp_path))
 
-        removed = _mod._clear_project_swiftpm_lock_files(project)
+        removed = _SW._clear_project_swiftpm_lock_files(project)
 
         assert removed == 1
         assert not stale.exists()
@@ -507,28 +514,28 @@ class TestSkipSentinel:
         assert "external store unavailable" in result["detail"]
 
     def test_timing_record_only_honors_explicit_marker_environment(self, monkeypatch) -> None:
-        for name in _mod.CONSTRAINED_TIMING_ENV_MARKERS:
+        for name in _S.CONSTRAINED_TIMING_ENV_MARKERS:
             monkeypatch.delenv(name, raising=False)
 
-        monkeypatch.setenv(_mod.TIMING_RECORD_ONLY_ENV, "1")
+        monkeypatch.setenv(_S.TIMING_RECORD_ONLY_ENV, "1")
 
-        assert _mod._timing_record_only_environment()
+        assert _S._timing_record_only_environment()
 
     def test_timing_record_only_detects_codex_repair_sandbox(self, monkeypatch) -> None:
-        for name in _mod.CONSTRAINED_TIMING_ENV_MARKERS:
+        for name in _S.CONSTRAINED_TIMING_ENV_MARKERS:
             monkeypatch.delenv(name, raising=False)
 
         monkeypatch.setenv("CODEX_CI", "1")
 
-        assert _mod._timing_record_only_environment()
+        assert _S._timing_record_only_environment()
 
     def test_timing_record_only_treats_marker_presence_as_active(self, monkeypatch) -> None:
-        for name in _mod.CONSTRAINED_TIMING_ENV_MARKERS:
+        for name in _S.CONSTRAINED_TIMING_ENV_MARKERS:
             monkeypatch.delenv(name, raising=False)
 
         monkeypatch.setenv("CI", "")
 
-        assert _mod._timing_record_only_environment()
+        assert _S._timing_record_only_environment()
 
     def test_unmarked_writable_host_still_asserts_its_timings(self, monkeypatch, tmp_path) -> None:
         """The negative control, and the only direction that can fail usefully.
@@ -539,29 +546,29 @@ class TestSkipSentinel:
         direction, because record-only means the p50 budget is enforced
         NOWHERE while every suite stays green (no.md #12, #15).
         """
-        for name in _mod.CONSTRAINED_TIMING_ENV_MARKERS:
+        for name in _S.CONSTRAINED_TIMING_ENV_MARKERS:
             monkeypatch.delenv(name, raising=False)
         # The other input the predicate reads: an unwritable SwiftPM cache also
         # means record-only, so a developer-hardware claim must pin both.
         monkeypatch.setattr(_mod.Path, "home", classmethod(lambda _cls: tmp_path))
 
-        assert not _mod._timing_record_only_environment()
+        assert not _S._timing_record_only_environment()
 
     def test_timing_record_only_probes_actual_cache_writes(self, tmp_path) -> None:
         """Mode bits are not enough in a sandbox; the PM probes the operation."""
-        assert _mod._can_write_existing_directory(tmp_path)
+        assert _S._can_write_existing_directory(tmp_path)
         assert not list(tmp_path.glob(".verdictui-write-probe-*"))
 
         regular_file = tmp_path / "not-a-directory"
         regular_file.write_text("", encoding="utf-8")
 
-        assert not _mod._can_write_existing_directory(regular_file)
+        assert not _S._can_write_existing_directory(regular_file)
 
     def test_timing_record_only_uses_the_configured_swiftpm_cache_write_probe(
         self, monkeypatch, tmp_path
     ) -> None:
         """The fallback must classify by the operation SwiftPM will attempt."""
-        for name in _mod.CONSTRAINED_TIMING_ENV_MARKERS:
+        for name in _S.CONSTRAINED_TIMING_ENV_MARKERS:
             monkeypatch.delenv(name, raising=False)
         monkeypatch.setattr(_mod.Path, "home", classmethod(lambda _cls: tmp_path))
 
@@ -574,9 +581,9 @@ class TestSkipSentinel:
             observed.append(path)
             return path != denied
 
-        monkeypatch.setattr(_mod, "_can_write_existing_directory", can_write)
+        monkeypatch.setattr(_S, "_can_write_existing_directory", can_write)
 
-        assert _mod._timing_record_only_environment()
+        assert _S._timing_record_only_environment()
         assert observed == [
             tmp_path / "Library" / "org.swift.swiftpm",
             denied,
@@ -595,7 +602,7 @@ class TestSkipSentinel:
         observed = []
 
         def run_swift_test(**_kwargs):
-            observed.append(os.environ.get(_mod.TIMING_RECORD_ONLY_ENV))
+            observed.append(os.environ.get(_S.TIMING_RECORD_ONLY_ENV))
             return {
                 "passed": True,
                 "detail": "swift test passed",
@@ -603,16 +610,16 @@ class TestSkipSentinel:
                 "test_count": 1,
             }
 
-        monkeypatch.delenv(_mod.TIMING_RECORD_ONLY_ENV, raising=False)
+        monkeypatch.delenv(_S.TIMING_RECORD_ONLY_ENV, raising=False)
         monkeypatch.setattr(_mod.shutil, "which", lambda _: "/usr/bin/swift")
-        monkeypatch.setattr(_mod, "_timing_record_only_environment", lambda: True)
-        monkeypatch.setattr(_mod, "_run_streamed_swift_test", run_swift_test)
+        monkeypatch.setattr(_S, "_timing_record_only_environment", lambda: True)
+        monkeypatch.setattr(_SW, "_run_streamed_swift_test", run_swift_test)
 
         result = VerdictUIPM.__new__(VerdictUIPM).stage_test()
 
         assert result["passed"], result["detail"]
         assert observed == [None]
-        assert os.environ.get(_mod.TIMING_RECORD_ONLY_ENV) is None
+        assert os.environ.get(_S.TIMING_RECORD_ONLY_ENV) is None
 
 
 class TestDefineStages:
@@ -671,7 +678,7 @@ class TestStageWrappers:
         stage's `returncode != 0` branch and watching the whole suite pass.
         """
         (tmp_path / "bad.py").write_text("import os\nx = = 1\n")
-        monkeypatch.setattr(_mod, "PROJECT_ROOT", tmp_path)
+        monkeypatch.setattr(_S, "PROJECT_ROOT", tmp_path)
         result = VerdictUIPM.__new__(VerdictUIPM).stage_lint()
         assert not result["passed"], "ruff rejects this file; the stage must say so"
         assert "ruff check" in result["detail"], result["detail"]
@@ -686,7 +693,7 @@ class TestStageWrappers:
         """
         # Valid Python that ruff-check accepts and ruff-format would rewrite.
         (tmp_path / "ugly.py").write_text("x = {  'a':1,   'b':2 }\n")
-        monkeypatch.setattr(_mod, "PROJECT_ROOT", tmp_path)
+        monkeypatch.setattr(_S, "PROJECT_ROOT", tmp_path)
         result = VerdictUIPM.__new__(VerdictUIPM).stage_lint()
         assert not result["passed"], "unformatted code must fail the stage"
         assert "ruff format" in result["detail"], (
@@ -715,7 +722,7 @@ class TestStageWrappers:
         demo = tmp_path / ".build" / "debug" / "VerdictUIDemo"
         demo.parent.mkdir(parents=True)
         demo.write_text("#!/bin/sh\n")
-        monkeypatch.setattr(_mod, "PROJECT_ROOT", tmp_path)
+        monkeypatch.setattr(_S, "PROJECT_ROOT", tmp_path)
 
         def _fake_run(argv, **_kwargs):
             seen.append(argv)
@@ -730,7 +737,7 @@ class TestStageWrappers:
     def test_stage_demo_fails_when_the_built_executable_is_missing(
         self, tmp_path, monkeypatch
     ) -> None:
-        monkeypatch.setattr(_mod, "PROJECT_ROOT", tmp_path)
+        monkeypatch.setattr(_S, "PROJECT_ROOT", tmp_path)
         result = VerdictUIPM.__new__(VerdictUIPM).stage_demo()
         assert not result["passed"]
         assert "stage_build" in result["detail"]
@@ -746,7 +753,7 @@ class TestStageWrappers:
         had left the binary there: green locally, red on CI, which is the worst
         shape a real gap can take because it reads as an environment fault.
         """
-        monkeypatch.setattr(_mod, "PROJECT_ROOT", tmp_path)
+        monkeypatch.setattr(_S, "PROJECT_ROOT", tmp_path)
         demo = tmp_path / ".build" / "debug" / "VerdictUIDemo"
         demo.parent.mkdir(parents=True, exist_ok=True)
         demo.touch()
@@ -810,7 +817,7 @@ class TestStageWrappers:
         assert "resolve to exactly one site" in result["detail"]
 
     def test_stage_mutations_fails_when_the_script_is_gone(self, monkeypatch) -> None:
-        monkeypatch.setattr(_mod, "PROJECT_ROOT", Path("/nonexistent-verdictui-root"))
+        monkeypatch.setattr(_S, "PROJECT_ROOT", Path("/nonexistent-verdictui-root"))
         pm = VerdictUIPM.__new__(VerdictUIPM)
         result = pm.stage_mutations()
         assert not result["passed"]
@@ -820,7 +827,7 @@ class TestStageWrappers:
         import logging
 
         with caplog.at_level(logging.INFO, logger="verdictui_pm"):
-            _mod._pm_log("probe message", level="INFO")
+            _S._pm_log("probe message", level="INFO")
         assert "probe message" in caplog.text
 
 
@@ -841,9 +848,9 @@ class TestKilledRunnerIsInconclusive:
         The runner itself is under test, so it is not stubbed — only the
         subprocess and the lock it takes are.
         """
-        monkeypatch.setattr(_mod, "PROJECT_ROOT", tmp_path)
-        monkeypatch.setattr(_mod, "_LOCK_DIR", tmp_path / ".lock")
-        monkeypatch.setattr(_mod, "_swift_runner", lambda: (lambda _root: [], None, None))
+        monkeypatch.setattr(_S, "PROJECT_ROOT", tmp_path)
+        monkeypatch.setattr(_S, "_LOCK_DIR", tmp_path / ".lock")
+        monkeypatch.setattr(_SW, "_swift_runner", lambda: (lambda _root: [], None, None))
 
         class _FakeProc:
             pid = 4242
@@ -865,7 +872,7 @@ class TestKilledRunnerIsInconclusive:
         )
         monkeypatch.setitem(sys.modules, "swift_runner", fake_swift_runner)
 
-        return _mod._run_streamed_swift_test(
+        return _SW._run_streamed_swift_test(
             extra_flags=[], timeout=60, min_test_count=1, log_name="probe.log"
         )
 
@@ -904,9 +911,9 @@ class TestKilledRunnerIsInconclusive:
         self, monkeypatch, tmp_path
     ) -> None:
         """Ctrl-C during `proc.wait()` must not leave SwiftPM holding `.build`."""
-        monkeypatch.setattr(_mod, "PROJECT_ROOT", tmp_path)
-        monkeypatch.setattr(_mod, "_LOCK_DIR", tmp_path / ".lock")
-        monkeypatch.setattr(_mod, "_swift_runner", lambda: (lambda _root: [], None, None))
+        monkeypatch.setattr(_S, "PROJECT_ROOT", tmp_path)
+        monkeypatch.setattr(_S, "_LOCK_DIR", tmp_path / ".lock")
+        monkeypatch.setattr(_SW, "_swift_runner", lambda: (lambda _root: [], None, None))
 
         class _FakeProc:
             pid = 4242
@@ -942,11 +949,11 @@ class TestKilledRunnerIsInconclusive:
             cleaned.append(root)
             return 0
 
-        monkeypatch.setattr(_mod, "_clear_project_swiftpm_lock_files", _record_cleared)
+        monkeypatch.setattr(_SW, "_clear_project_swiftpm_lock_files", _record_cleared)
         monkeypatch.setitem(sys.modules, "swift_runner", fake_swift_runner)
 
         with pytest.raises(KeyboardInterrupt):
-            _mod._run_streamed_swift_test(
+            _SW._run_streamed_swift_test(
                 extra_flags=[], timeout=60, min_test_count=1, log_name="probe.log"
             )
 
@@ -1066,8 +1073,8 @@ class TestPmBaseImportEnvironment:
         applied here would silently persist past the import it was for.
         """
         monkeypatch.setattr(_mod.Path, "home", staticmethod(lambda: tmp_path))
-        assert _mod._ceo_paths_are_available() is True
-        assert _mod._prepare_pm_base_import_environment() == {}
+        assert _S._ceo_paths_are_available() is True
+        assert _S._prepare_pm_base_import_environment() == {}
 
     def test_an_unwritable_lock_dir_is_reported_unavailable(self, monkeypatch) -> None:
         """The detector must key on the ACTUAL failure, not on a guess.
@@ -1081,7 +1088,7 @@ class TestPmBaseImportEnvironment:
             raise OSError(1, "Operation not permitted")
 
         monkeypatch.setattr(_mod.Path, "mkdir", _refuse)
-        assert _mod._ceo_paths_are_available() is False
+        assert _S._ceo_paths_are_available() is False
 
     def test_unavailable_paths_redirect_into_the_repo_and_restore(self, monkeypatch) -> None:
         """The whole round trip: override, then put every key back as found.
@@ -1091,19 +1098,19 @@ class TestPmBaseImportEnvironment:
         not set to empty string). Leaving `HOME` pointing into `.build/` would
         redirect every later subprocess in the session.
         """
-        monkeypatch.setattr(_mod, "_ceo_paths_are_available", lambda: False)
+        monkeypatch.setattr(_S, "_ceo_paths_are_available", lambda: False)
         monkeypatch.setenv("HOME", "/original/home")
         monkeypatch.delenv("PROJECTS_HUB", raising=False)
 
-        previous = _mod._prepare_pm_base_import_environment()
+        previous = _S._prepare_pm_base_import_environment()
 
         assert previous, "an unavailable sandbox must produce overrides"
         assert previous["HOME"] == "/original/home"
         assert previous["PROJECTS_HUB"] is None, "an absent key records None, not ''"
         assert os.environ["HOME"] != "/original/home", "HOME was not redirected"
-        assert str(_mod.PROJECT_ROOT) in os.environ["PROJECTS_HUB"]
+        assert str(_S.PROJECT_ROOT) in os.environ["PROJECTS_HUB"]
 
-        _mod._restore_pm_base_import_environment(previous)
+        _S._restore_pm_base_import_environment(previous)
 
         assert os.environ["HOME"] == "/original/home"
         assert "PROJECTS_HUB" not in os.environ, (
@@ -1301,7 +1308,7 @@ class TestStageInstalledParity:
         stale = "/opt/homebrew/bin/verdictui"
 
         monkeypatch.setattr(_mod.shutil, "which", lambda _n: fresh)
-        monkeypatch.setattr(_mod, "_verdictui_copies_on_path", lambda: [fresh, stale])
+        monkeypatch.setattr(_S, "_verdictui_copies_on_path", lambda: [fresh, stale])
         monkeypatch.setattr(_mod.Path, "exists", lambda _self: True)
 
         def fake_run(argv, **_kw):
@@ -1341,7 +1348,7 @@ class TestStageInstalledParity:
         monkeypatch.setenv("PATH", f"{first_dir}{os.pathsep}{second_dir}")
         monkeypatch.setattr(_mod.shutil, "which", lambda _n: str(first_dir / "verdictui"))
 
-        copies = _mod._verdictui_copies_on_path()
+        copies = _S._verdictui_copies_on_path()
         assert len(copies) == 2, (
             "both copies on PATH must be returned; returning only the resolver's "
             f"first hit is the blind spot this exists to close. got: {copies}"
@@ -1351,7 +1358,7 @@ class TestStageInstalledParity:
     def test_the_resolver_helper_reports_absence_when_nothing_is_reachable(self, monkeypatch):
         """An absent install stays the advisory state the stage documents."""
         monkeypatch.setattr(_mod.shutil, "which", lambda _n: None)
-        assert _mod._verdictui_copies_on_path() == []
+        assert _S._verdictui_copies_on_path() == []
 
     def test_the_trailing_help_footer_is_not_parsed_as_a_subcommand(self, monkeypatch):
         """ArgumentParser closes SUBCOMMANDS with a blank line then a footer.
@@ -1380,7 +1387,7 @@ class TestStageInstalledParity:
         )
         pm = VerdictUIPM()
         monkeypatch.setattr(_mod.shutil, "which", lambda _n: "/usr/local/bin/verdictui")
-        monkeypatch.setattr(_mod, "_verdictui_copies_on_path", lambda: ["/usr/local/bin/verdictui"])
+        monkeypatch.setattr(_S, "_verdictui_copies_on_path", lambda: ["/usr/local/bin/verdictui"])
         monkeypatch.setattr(_mod.Path, "exists", lambda _self: True)
 
         # The installed copy omits the footer; only the built one has it.
@@ -1412,7 +1419,7 @@ class TestStageInstalledParity:
         """
         import re
 
-        source = Path(_PM_PATH).read_text()
+        source = pm_source()
         parity = source.split("def subcommands(")[1].split("\n\n")[0]
         assert "timeout=60" not in parity, (
             "the --help probe still hardcodes timeout=60; name it as a constant"
@@ -1423,3 +1430,71 @@ class TestStageInstalledParity:
         assert re.search(r"^HELP_PROBE_TIMEOUT_SECONDS\s*=\s*\d+", source, re.MULTILINE), (
             "HELP_PROBE_TIMEOUT_SECONDS must be defined at module scope"
         )
+
+
+class TestTheModuleSplitKeepsOnePatchTarget:
+    """One owner per monkeypatched name — the invariant that makes the split safe.
+
+    The PM was one 2072-line file until CTS-6DBFF8C6 split it into an entrypoint
+    plus four siblings. The hazard a split like this has to avoid is a SHADOW
+    COPY: if the entrypoint held its own binding of a name the suite patches,
+    `setattr(_mod, name, ...)` would rebind that copy while the code under test
+    kept reading the owner module's — and every affected test would pass without
+    exercising its subject. That is a failure in the PASSING direction, which no
+    green run can reveal, and it is strictly worse than the long file was.
+
+    So the invariant is asserted from both sides: the owner HAS the name, and the
+    entrypoint does NOT. The second half is what converts a stale patch site from
+    a silent no-op into an `AttributeError` at the point of use.
+    """
+
+    # Every name any PM test file monkeypatches, mapped to the module that owns
+    # it. Census taken with `ast` over the suite, not by grep: three of the patch
+    # sites span lines and a line-oriented search misses them.
+    _OWNERS = {
+        "PROJECT_ROOT": "support",
+        "_LOCK_DIR": "support",
+        "TIMEOUT_PROC_TERM_GRACE": "support",
+        "_pm_log": "support",
+        "_timing_record_only_environment": "support",
+        "_verdictui_copies_on_path": "support",
+        "contention_evidence": "support",
+        "tree_is_contended": "support",
+        "_can_write_existing_directory": "support",
+        "_ceo_paths_are_available": "support",
+        "_swift_runner": "swift",
+        "_run_streamed_swift_test": "swift",
+        "_clear_project_swiftpm_lock_files": "swift",
+    }
+
+    def _module(self, owner: str):
+        return _S if owner == "support" else _SW
+
+    def test_every_patched_name_lives_on_its_owner_module(self) -> None:
+        missing = [
+            name for name, owner in self._OWNERS.items() if not hasattr(self._module(owner), name)
+        ]
+        assert not missing, (
+            f"{missing} are patched by the suite but absent from their owner module — "
+            "the patch would raise, or worse, be redirected to a copy"
+        )
+
+    def test_the_entrypoint_holds_no_shadow_copy_of_a_patched_name(self) -> None:
+        shadows = sorted(name for name in self._OWNERS if hasattr(_mod, name))
+        assert not shadows, (
+            f"the PM entrypoint re-exports {shadows}, which the suite patches on "
+            "their owner module. A copy here binds at import time, so a patch "
+            "would stop reaching the code and the affected tests would pass "
+            "while testing nothing. Read them as `S.<name>` / `SW.<name>` instead."
+        )
+
+    def test_the_owner_modules_are_the_ones_the_pm_itself_uses(self) -> None:
+        """`_S`/`_SW` must be the PM's own modules, not a second import of them.
+
+        A test that patched a different instance would be patching a module
+        nothing reads — the same silent no-op, arrived at from the other side.
+        """
+        import sys as _sys
+
+        assert _S is _sys.modules["verdictui_pm_support"]
+        assert _SW is _sys.modules["verdictui_pm_swift"]
