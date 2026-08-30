@@ -118,3 +118,7 @@
 - [x] (P1) testwatch-hook: no test file references `mutation_check` — add tests for `scripts/mutation-check.py`  <!-- VERIFIED 2026-08-20: 2 test files reference it — claim was false -->
 - [x] (P1) testwatch-hook: no test file references `stale_buffer_check` — add tests for `scripts/stale-buffer-check.py`  <!-- DONE 2026-08-20: Tests/test_stale_buffer_check.py — 12 tests, mutation-verified -->
 - [x] (P1) testwatch-hook: no test file references `verdictui_swift_runner` — add tests for `scripts/verdictui_swift_runner.py`  <!-- UNACTIONABLE 2026-08-20: scripts/verdictui_swift_runner.py DOES NOT EXIST — the split was deliberately reverted (no.md #22, it re-labels every log record). A test for an absent file cannot be written (lesson 209). -->
+
+## CEO Audit (2026-08-30)
+
+- [ ] (P2) [CEO-AUDIT 2026-08-30] scripts/verdictui-pm.py is 2073 lines (limit 800). Split into smaller modules. | code_hygiene | scripts/verdictui-pm.py

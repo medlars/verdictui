@@ -11,13 +11,17 @@ The lane that decides whether the budget is ASSERTED or merely RECORDED is
 import re
 
 import pytest
-from pm_test_support import _PROJECT_ROOT, load_pm
+from pm_test_support import _PROJECT_ROOT, load_pm, pm_source
 
 # Quick gate: pure-python, sub-second — belongs in the pre-merge gate.
 # Without a marker the quick gate selects ZERO tests and reports success (lesson 183).
 pytestmark = pytest.mark.quick
 
 _mod = load_pm()
+# The PM's module-level state lives in the sibling modules that OWN it, so a
+# patch must be applied THERE: `_mod` holds no copy to shadow (CTS-6DBFF8C6).
+_S = _mod.S
+_SW = _mod.SW
 VerdictUIPM = _mod.VerdictUIPM
 
 
@@ -45,8 +49,8 @@ class TestStageRuntimeBench:
             }
 
         monkeypatch.setattr(_mod.shutil, "which", lambda _: "/usr/bin/swift")
-        monkeypatch.setattr(_mod, "_timing_record_only_environment", lambda: False)
-        monkeypatch.setattr(_mod, "_run_streamed_swift_test", run_swift_test)
+        monkeypatch.setattr(_S, "_timing_record_only_environment", lambda: False)
+        monkeypatch.setattr(_SW, "_run_streamed_swift_test", run_swift_test)
 
     def test_uses_the_streaming_serial_runner_with_the_benchmark_filter(self, monkeypatch) -> None:
         calls = []
@@ -62,15 +66,15 @@ class TestStageRuntimeBench:
             }
 
         monkeypatch.setattr(_mod.shutil, "which", lambda _: "/usr/bin/swift")
-        monkeypatch.setattr(_mod, "_timing_record_only_environment", lambda: False)
-        monkeypatch.setattr(_mod, "_run_streamed_swift_test", run_swift_test)
+        monkeypatch.setattr(_S, "_timing_record_only_environment", lambda: False)
+        monkeypatch.setattr(_SW, "_run_streamed_swift_test", run_swift_test)
 
         result = self._pm().stage_runtime_bench()
 
         assert result["passed"], result["detail"]
         assert len(calls) == 1
         kwargs = calls[0]
-        assert kwargs["timeout"] == _mod.TIMEOUT_SWIFT_TEST
+        assert kwargs["timeout"] == _S.TIMEOUT_SWIFT_TEST
         assert kwargs["min_test_count"] == 1
         assert kwargs["log_name"] == "swift-runtime-bench-latest.log"
         assert "--parallel" not in kwargs["extra_flags"]
@@ -83,7 +87,7 @@ class TestStageRuntimeBench:
             stdout="SLO1-PERFORM p50=118.00ms p95=160.50ms mean=120.00ms max=200.0ms n=150\n"
             "Executed 2 tests, with 0 failures\n",
         )
-        monkeypatch.setattr(_mod, "_timing_record_only_environment", lambda: True)
+        monkeypatch.setattr(_S, "_timing_record_only_environment", lambda: True)
 
         result = self._pm().stage_runtime_bench()
 
@@ -199,7 +203,7 @@ class TestStageRuntimeBench:
         reason it exists."""
         self._fake_swift(
             monkeypatch,
-            stdout=f"SLO1-PERFORM p50={_mod.SLO1_P50_BUDGET_MS:.2f}ms p95=80.0ms n=150\n"
+            stdout=f"SLO1-PERFORM p50={_S.SLO1_P50_BUDGET_MS:.2f}ms p95=80.0ms n=150\n"
             "Executed 2 tests, with 0 failures\n",
         )
         result = self._pm().stage_runtime_bench()
@@ -221,9 +225,9 @@ class TestStageRuntimeBench:
         match = re.search(r"performP50BudgetMs:\s*Double\s*=\s*([0-9.]+)\s*\*\s*([0-9.]+)", source)
         assert match is not None, "performP50BudgetMs is no longer spelled as a product"
         swift_budget = float(match.group(1)) * float(match.group(2))
-        assert swift_budget == _mod.SLO1_P50_BUDGET_MS, (
+        assert swift_budget == _S.SLO1_P50_BUDGET_MS, (
             f"the Swift test asserts p50 < {swift_budget} ms but the PM gates at "
-            f"{_mod.SLO1_P50_BUDGET_MS} ms — one moved without the other"
+            f"{_S.SLO1_P50_BUDGET_MS} ms — one moved without the other"
         )
 
     def test_the_swift_and_python_timing_lanes_agree(self) -> None:
@@ -267,9 +271,9 @@ class TestStageRuntimeBench:
             )
             swift_markers.add(resolved.group(1))
 
-        assert swift_markers == set(_mod.CONSTRAINED_TIMING_ENV_MARKERS), (
+        assert swift_markers == set(_S.CONSTRAINED_TIMING_ENV_MARKERS), (
             f"Swift marks {sorted(swift_markers)} as timing-constrained but the PM marks "
-            f"{sorted(_mod.CONSTRAINED_TIMING_ENV_MARKERS)} — a host in one set and not the "
+            f"{sorted(_S.CONSTRAINED_TIMING_ENV_MARKERS)} — a host in one set and not the "
             "other asserts a budget it cannot hold, or exempts one it can"
         )
         assert "hasUnwritableSwiftPMCache" in source
@@ -305,9 +309,9 @@ class TestStageRuntimeBench:
             "literal — the parity check cannot resolve it, and an unresolvable threshold "
             "reads as agreement rather than as an error"
         )
-        assert float(declared.group(1)) == _mod.SEVERE_OVERSUBSCRIPTION, (
+        assert float(declared.group(1)) == _S.SEVERE_OVERSUBSCRIPTION, (
             f"Swift treats {declared.group(1)}x oversubscription as severe but the PM treats "
-            f"{_mod.SEVERE_OVERSUBSCRIPTION}x — between the two figures one lane asserts an "
+            f"{_S.SEVERE_OVERSUBSCRIPTION}x — between the two figures one lane asserts an "
             "absolute wall-clock budget that the other has already ruled unholdable"
         )
 
@@ -428,7 +432,7 @@ class TestStageRuntimeBench:
         into the PM deliberately (parsing a threshold out of prose fails open
         when the prose is reworded), so the two must be asserted equal."""
         slo = (_PROJECT_ROOT / "docs" / "slo.md").read_text()
-        assert f"< {int(_mod.SLO1_P95_BUDGET_MS)} ms p95" in slo
+        assert f"< {int(_S.SLO1_P95_BUDGET_MS)} ms p95" in slo
 
 
 class TestSharedSLOParse:
@@ -447,7 +451,7 @@ class TestSharedSLOParse:
     _GOOD = "Executed 3 tests, with 0 failures\nSLO3-MCP p50=9.61ms p95=10.25ms n=60\n"
 
     def test_it_reads_the_gated_median_and_records_the_tail(self) -> None:
-        parsed = _mod._parse_slo_line({"test_count": 3}, self._GOOD, marker="SLO3-MCP")
+        parsed = _S._parse_slo_line({"test_count": 3}, self._GOOD, marker="SLO3-MCP")
         assert parsed["p50"] == 9.61
         assert "10.25ms recorded" in parsed["p95_note"]
         assert parsed["executed"] == 3
@@ -458,13 +462,13 @@ class TestSharedSLOParse:
         `swift test --filter` exits 0 when the filter matches nothing, so
         without this a renamed test class turns both SLO gates green forever.
         """
-        parsed = _mod._parse_slo_line({"test_count": 0}, "Executed 0 tests\n", marker="SLO3-MCP")
+        parsed = _S._parse_slo_line({"test_count": 0}, "Executed 0 tests\n", marker="SLO3-MCP")
         assert "p50" not in parsed
         assert "stale" in parsed["detail"]
 
     def test_a_missing_marker_line_is_a_failure_not_a_skip(self) -> None:
         """A run that executed tests but reported no figure measured nothing."""
-        parsed = _mod._parse_slo_line(
+        parsed = _S._parse_slo_line(
             {"test_count": 3}, "Executed 3 tests, with 0 failures\n", marker="SLO3-MCP"
         )
         assert "p50" not in parsed
@@ -476,7 +480,7 @@ class TestSharedSLOParse:
         The asymmetry is deliberate: failing here would let a formatting change
         to a NON-decisive figure fail a stage whose gated number parsed fine.
         """
-        parsed = _mod._parse_slo_line(
+        parsed = _S._parse_slo_line(
             {"test_count": 1}, "Executed 1 test\nSLO3-MCP p50=9.00ms n=60\n", marker="SLO3-MCP"
         )
         assert parsed["p50"] == 9.0
@@ -494,8 +498,8 @@ class TestSharedSLOParse:
             "SLO1-PERFORM p50=49.97ms p95=68.90ms n=150\n"
             "SLO3-MCP p50=9.61ms p95=10.25ms n=60\n"
         )
-        assert _mod._parse_slo_line({"test_count": 4}, both, marker="SLO1-PERFORM")["p50"] == 49.97
-        assert _mod._parse_slo_line({"test_count": 4}, both, marker="SLO3-MCP")["p50"] == 9.61
+        assert _S._parse_slo_line({"test_count": 4}, both, marker="SLO1-PERFORM")["p50"] == 49.97
+        assert _S._parse_slo_line({"test_count": 4}, both, marker="SLO3-MCP")["p50"] == 9.61
 
 
 class TestStageMCPLatency:
@@ -522,7 +526,7 @@ class TestStageMCPLatency:
 
     def test_it_reports_a_missing_binary_rather_than_passing(self, tmp_path, monkeypatch) -> None:
         """An absent artifact is 'could not observe', never 'observed and fast'."""
-        monkeypatch.setattr(_mod, "PROJECT_ROOT", tmp_path)
+        monkeypatch.setattr(_S, "PROJECT_ROOT", tmp_path)
         pm = VerdictUIPM.__new__(VerdictUIPM)
         result = pm.stage_mcp_latency()
         assert not result["passed"]
@@ -540,12 +544,12 @@ class TestStageMCPLatency:
         ).read_text()
         match = re.search(r"warmP50BudgetMs: Double = ([0-9.]+)", swift)
         assert match is not None, "the Swift budget is no longer a literal — update this test"
-        assert float(match.group(1)) == _mod.SLO3_MCP_P50_BUDGET_MS
+        assert float(match.group(1)) == _S.SLO3_MCP_P50_BUDGET_MS
 
     def test_the_budget_matches_the_published_slo(self) -> None:
         """docs/slo.md is the SSoT for the published number."""
         slo = (_PROJECT_ROOT / "docs" / "slo.md").read_text()
-        assert f"< {int(_mod.SLO3_MCP_P95_BUDGET_MS)} ms p95" in slo
+        assert f"< {int(_S.SLO3_MCP_P95_BUDGET_MS)} ms p95" in slo
 
     def test_the_gated_figure_is_the_median_not_the_tail(self) -> None:
         """The tail must not decide a verdict, on this metric by measurement.
@@ -554,7 +558,7 @@ class TestStageMCPLatency:
         moved 8.4 → 45.8 ms on unchanged code. A gate on p95 would fail for a
         busy neighbour and teach its reader to discount it.
         """
-        source = (_PROJECT_ROOT / "scripts" / "verdictui-pm.py").read_text()
+        source = pm_source()
         stage = source.split("def stage_mcp_latency")[1].split("\n    def ")[0]
         assert "p50 >= SLO3_MCP_P50_BUDGET_MS" in stage
         assert "p95 >=" not in stage, "the tail must be recorded, never gated"
@@ -594,7 +598,7 @@ class TestNoSleepsInHarnessSource:
         fake = tmp_path / "Sources" / "VerdictUIProbe"
         fake.mkdir(parents=True)
         (fake / "Bad.swift").write_text("func wait() {\n    Thread.sleep(forTimeInterval: 1)\n}\n")
-        monkeypatch.setattr(_mod, "PROJECT_ROOT", tmp_path)
+        monkeypatch.setattr(_S, "PROJECT_ROOT", tmp_path)
         # Re-run the same scan against the planted tree.
         offenders = [
             line
