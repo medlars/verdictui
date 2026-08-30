@@ -212,7 +212,23 @@ jobs:
       actions: read
       issues: write
     steps:
+      # FORK GUARD, the same one the capture job carries. Without it a
+      # successful run from a FORK whose branch name COLLIDES with a real branch
+      # (a fork PR from a branch literally named `main`, while "CI (main)" is
+      # open here) closes THIS repo's genuine failure issue -- a fail-open that
+      # silences a live failure and leaves no trace. The capture half was
+      # guarded from the start; the close half never was (CTS-5CAB17DD).
+      - name: Only act on same-repo runs (not forks)
+        env:
+          HEAD_REPO_FULL_NAME: ${{ github.event.workflow_run.head_repository.full_name }}
+        run: |
+          if [ -n "$HEAD_REPO_FULL_NAME" ] && [ "$HEAD_REPO_FULL_NAME" != "${{ github.repository }}" ]; then
+            echo "Skipping: fork PR run ($HEAD_REPO_FULL_NAME)"
+            echo "SKIP=true" >> "$GITHUB_ENV"
+          fi
+
       - name: Close matching open ci-failure issue for this workflow
+        if: env.SKIP != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
@@ -256,6 +272,27 @@ jobs:
           if [ -n "$ISSUE" ]; then
             RUN_URL="${{ github.event.workflow_run.html_url }}"
             HEAD_SHA="${{ github.event.workflow_run.head_sha }}"
+
+            # COMMIT ORDER, not completion order (CTS-5CAB17DD). The lookup above
+            # is keyed only on workflow name + branch, so ANY green run closes the
+            # issue -- including an older run that was merely re-run, or one that
+            # finishes after a NEWER commit has already failed and opened this
+            # issue. Completion order is not commit order, and treating it as such
+            # closes a ticket describing a failure that is still live.
+            #
+            # The cheap correct test: this run's head_sha must still be the TIP of
+            # its branch. A green for a superseded commit says nothing about the
+            # branch's current state.
+            #
+            # Fail OPEN on a lookup error, deliberately: "could not check" must not
+            # become "definitely stale", or a GitHub blip stops every legitimate
+            # auto-close and the issue list fills with resolved failures.
+            TIP_SHA=$(gh api "repos/${{ github.repository }}/commits/${HEAD_BRANCH}" \
+              --jq '.sha' 2>/dev/null || echo "")
+            if [ -n "$TIP_SHA" ] && [ "$TIP_SHA" != "$HEAD_SHA" ]; then
+              echo "::notice::Not closing #$ISSUE — this green run is for ${HEAD_SHA:0:8}, but ${HEAD_BRANCH} is now at ${TIP_SHA:0:8}. A newer commit may be the one that failed."
+              exit 0
+            fi
             gh issue comment "$ISSUE" --repo "${{ github.repository }}" \
               --body "CI recovered — latest \`${WORKFLOW_NAME}\` run on \`${HEAD_BRANCH}\` (\`${HEAD_SHA:0:8}\`) is **success**. ${RUN_URL}. Auto-closing." || true
             gh issue close "$ISSUE" --repo "${{ github.repository }}" --reason completed || true
