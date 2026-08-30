@@ -18,6 +18,10 @@ import pytest
 from pm_test_support import load_pm
 
 _mod = load_pm()
+# The PM's module-level state lives in the sibling modules that OWN it, so a
+# patch must be applied THERE: `_mod` holds no copy to shadow (CTS-6DBFF8C6).
+_S = _mod.S
+_SW = _mod.SW
 
 
 class TestTerminateProcessGroup:
@@ -44,7 +48,7 @@ class TestTerminateProcessGroup:
             assert proc.poll() is None, "the fixture died before the terminator ran"
 
             started = time.monotonic()
-            _mod._terminate_process_group(proc)
+            _SW._terminate_process_group(proc)
             elapsed = time.monotonic() - started
 
             # `wait` here is the assertion: the process must already be reaped.
@@ -59,7 +63,7 @@ class TestTerminateProcessGroup:
             assert proc.returncode == -signal.SIGTERM, (
                 f"expected a graceful SIGTERM death, got returncode {proc.returncode}"
             )
-            assert elapsed < _mod.TIMEOUT_PROC_TERM_GRACE, (
+            assert elapsed < _S.TIMEOUT_PROC_TERM_GRACE, (
                 f"took {elapsed:.2f}s -- it waited out the grace period, so the "
                 "SIGKILL fallback did the work the SIGTERM path should have"
             )
@@ -104,8 +108,8 @@ class TestTerminateProcessGroup:
             # (CIS-014FAE5E / CIS-32D281B3). setattr also restores on teardown, so
             # a failure between the two assignments cannot leak the shortened
             # grace period into the next test.
-            monkeypatch.setattr(_mod, "TIMEOUT_PROC_TERM_GRACE", 1)
-            _mod._terminate_process_group(proc)
+            monkeypatch.setattr(_S, "TIMEOUT_PROC_TERM_GRACE", 1)
+            _SW._terminate_process_group(proc)
 
             assert proc.wait(timeout=5) is not None
             assert proc.returncode is not None, (
@@ -131,7 +135,7 @@ class TestTerminateProcessGroup:
         assert proc.returncode is not None, "the fixture did not exit"
 
         # No assertion beyond "this returns": the contract is that it is safe.
-        _mod._terminate_process_group(proc)
+        _SW._terminate_process_group(proc)
 
     def test_a_reaped_process_group_is_tolerated(self) -> None:
         """`killpg` on a fully-reaped group raises ProcessLookupError, which the
@@ -146,4 +150,4 @@ class TestTerminateProcessGroup:
         with pytest.raises(ProcessLookupError):
             os.killpg(proc.pid, 0)
 
-        _mod._terminate_process_group(proc)
+        _SW._terminate_process_group(proc)
