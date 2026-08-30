@@ -209,6 +209,11 @@ jobs:
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.name != 'Capture CI Failures to GitHub Issue'
     permissions:
+      # `permissions:` on a JOB REPLACES the workflow-level block, it does
+      # not merge with it -- so omitting contents:read here dropped the
+      # workflow-level grant and every `gh api .../commits/...` returned a
+      # 403 error body instead of a SHA.
+      contents: read
       actions: read
       issues: write
     steps:
@@ -287,8 +292,30 @@ jobs:
             # Fail OPEN on a lookup error, deliberately: "could not check" must not
             # become "definitely stale", or a GitHub blip stops every legitimate
             # auto-close and the issue list fills with resolved failures.
-            TIP_SHA=$(gh api "repos/${{ github.repository }}/commits/${HEAD_BRANCH}" \
-              --jq '.sha' 2>/dev/null || echo "")
+            #
+            # `$(cmd || echo "")` DOES NOT yield an empty string when cmd fails. gh
+            # writes its ERROR BODY to stdout, command substitution captures stdout
+            # regardless of exit status, and `|| echo ""` merely appends a newline to
+            # a body that is already there. TIP_SHA then held `{"message":"..."}` --
+            # non-empty and unequal to HEAD_SHA -- so this guard took the never-close
+            # branch on EVERY green run and rendered the error body as if it were a
+            # SHA: `main is now at {"messag`. The code did the exact opposite of the
+            # comment above it, on every repo in the fleet, until 2026-08-30.
+            #
+            # So validate the SHAPE, not mere non-emptiness: 40 hex chars is a SHA;
+            # anything else is "could not observe", which must fail OPEN and SAY so.
+            # Never render a value that is not SHA-shaped as though it were a SHA.
+            # Capture with 2>&1 so the WARNING can name the real cause. Discarding the
+            # body makes a 403, a 404 and a 500 render identically, which is precisely
+            # why this defect stayed unreadable for weeks.
+            TIP_RAW=$(gh api "repos/${{ github.repository }}/commits/${HEAD_BRANCH}" --jq '.sha' 2>&1) || true
+            if printf '%s' "$TIP_RAW" | grep -qE '^[0-9a-f]{40}$'; then
+              TIP_SHA="$TIP_RAW"
+            else
+              TIP_SNIPPET=$(printf '%s' "$TIP_RAW" | tr -s '[:space:]' ' ' | cut -c1-120)
+              echo "::warning::Could not read the tip of ${HEAD_BRANCH} (got: ${TIP_SNIPPET:-<empty>}). Proceeding with the close -- could-not-check must not become definitely-stale."
+              TIP_SHA=""
+            fi
             if [ -n "$TIP_SHA" ] && [ "$TIP_SHA" != "$HEAD_SHA" ]; then
               echo "::notice::Not closing #$ISSUE — this green run is for ${HEAD_SHA:0:8}, but ${HEAD_BRANCH} is now at ${TIP_SHA:0:8}. A newer commit may be the one that failed."
               exit 0
