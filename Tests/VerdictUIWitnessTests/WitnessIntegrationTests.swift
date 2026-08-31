@@ -34,6 +34,40 @@ final class WitnessIntegrationTests: XCTestCase {
             || environment["VERDICTUI_SKIP_WITNESS"] != nil
     }
 
+
+    /// The window server in this login session is not publishing windows for
+    /// newly-launched GUI apps, in EITHER of the two spellings that state takes.
+    ///
+    /// Keyed on the STATE, not on one error case, because the same environment
+    /// reaches the reader two ways and this suite recognised only the first:
+    ///   * `.anchorUnreadable` — a window came back and its hosting group had
+    ///     no geometry;
+    ///   * `.noWindow` — measured 2026-08-31, the more common shape here: the
+    ///     accessibility server answers `kAXWindowsAttribute` with `.success`
+    ///     and a list whose only member is the APPLICATION element, so there is
+    ///     no window at all. `AXPosition`, `AXSize` and `AXFrame` are each
+    ///     `kAXErrorAttributeUnsupported` on it. Positive control taken in the
+    ///     same minute: Finder's app element answers all three with err=0 and
+    ///     its first window is an `AXScrollArea` at (0,0,1728,1117), so the
+    ///     reader works where a window exists.
+    ///
+    /// `.noWindow` is only reached here after `waitForReady` has exhausted its
+    /// whole deadline retrying, so it means "the host ran and never published a
+    /// window" — the environment state — rather than a transient first read.
+    static func isUnpublishedWindowEnvironment(_ error: Error) -> Bool {
+        switch error {
+        case AXReader.Failure.anchorUnreadable, AXReader.Failure.noWindow:
+            true
+        default:
+            false
+        }
+    }
+
+    static let environmentSkipReason =
+        "the window server is not publishing windows for new GUI apps in this login "
+        + "session, so the witness cannot observe anything. This is an ENVIRONMENT "
+        + "state, not a product defect — re-run in a fresh login session."
+
     func testTheHostPublishesATreeThroughTheAccessibilityServer() throws {
         try XCTSkipIf(isHeadless, "no window server on this host")
         let executable = try XCTUnwrap(
@@ -46,27 +80,22 @@ final class WitnessIntegrationTests: XCTestCase {
         let tree: SemanticNode
         do {
             tree = try host.readTree(scenario: "demo-clean-settings")
-        } catch AXReader.Failure.anchorUnreadable {
-            // A THIRD environment state, beyond "headless" and "no grant", and
-            // the one this suite could not previously distinguish: a login
-            // session where the window server has stopped publishing windows
-            // for newly-launched GUI apps. Every host then reports zero windows
-            // and the anchor read fails.
+        } catch where Self.isUnpublishedWindowEnvironment(error) {
+            // A THIRD environment state, beyond "headless" and "no grant": a login
+            // session where the window server has stopped publishing windows for
+            // newly-launched GUI apps.
             //
             // Measured 2026-08-12: this test passed at 17:22:55 and failed at
-            // 18:04 with `Sources/VerdictUIWitness/` byte-identical at HEAD,
-            // after a session's worth of launching and killing an unsigned
-            // `.app`. Nothing about the product changed between the two runs.
+            // 18:04 with `Sources/VerdictUIWitness/` byte-identical at HEAD, after
+            // a session's worth of launching and killing an unsigned `.app`.
+            // Nothing about the product changed between the two runs.
             //
-            // A red here means "this machine cannot host a window", which reads
-            // as a product defect and teaches its reader to discount the suite
-            // (`no.md` #15). `AXIsProcessTrusted()` cannot separate the two —
-            // it stays `true` throughout (`no.md` #42) — so the discrimination
-            // has to come from the read itself, which is what this catch does.
-            throw XCTSkip(
-                "the window server is not publishing windows for new GUI apps in this login "
-                    + "session, so the witness cannot observe anything. This is an ENVIRONMENT "
-                    + "state, not a product defect — re-run in a fresh login session.")
+            // A red here means "this machine cannot host a window", which reads as
+            // a product defect and teaches its reader to discount the suite
+            // (`no.md` #15). `AXIsProcessTrusted()` cannot separate the two — it
+            // stays `true` throughout (`no.md` #42) — so the discrimination has to
+            // come from the read itself, which is what this catch does.
+            throw XCTSkip(Self.environmentSkipReason)
         }
 
         // The tree must be POPULATED. An empty tree is what a witness reports
@@ -146,8 +175,8 @@ final class WitnessIntegrationTests: XCTestCase {
         let composited: [Double]
         do {
             composited = try host.compositedAlphas(scenario: "demo-clean-settings")
-        } catch AXReader.Failure.anchorUnreadable {
-            throw XCTSkip("this login session's window server is not publishing new windows")
+        } catch where Self.isUnpublishedWindowEnvironment(error) {
+            throw XCTSkip(Self.environmentSkipReason)
         }
 
         // The window must EXIST. A host publishing no window at all would satisfy
@@ -197,8 +226,8 @@ final class WitnessIntegrationTests: XCTestCase {
         let isForeground: Bool
         do {
             isForeground = try host.runsAsForegroundApp(scenario: "demo-clean-settings")
-        } catch AXReader.Failure.anchorUnreadable {
-            throw XCTSkip("this login session's window server is not publishing new windows")
+        } catch where Self.isUnpublishedWindowEnvironment(error) {
+            throw XCTSkip(Self.environmentSkipReason)
         }
 
         XCTAssertFalse(

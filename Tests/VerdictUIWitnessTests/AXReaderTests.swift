@@ -136,3 +136,117 @@ final class AXReaderTests: XCTestCase {
         XCTAssertEqual(converted.height, 16.0, accuracy: 0.001)
     }
 }
+
+// MARK: - A windows list that holds the application element (CTS-9E32C9AB)
+
+extension AXReaderTests {
+
+    /// THE DEFECT. `kAXWindowsAttribute` can answer `.success` with a list whose
+    /// only element is the APPLICATION element itself — not a window. Every read
+    /// site took `windows.first` on the strength of the status code alone, so the
+    /// application element flowed on as if it were a window, its geometry read
+    /// failed (AXPosition, AXSize and AXFrame are all `kAXErrorAttributeUnsupported`
+    /// on an application element), and the caller was told
+    /// "the host window published no geometry for its hosting group".
+    ///
+    /// That message names the HOSTING GROUP, so it sends every reader at layout
+    /// and at the window server. The fact is simpler and different: this process
+    /// publishes no readable window at all. FOUR sessions inherited the geometry
+    /// framing from that string and recorded the work blocked on machine load,
+    /// then on a fresh login session.
+    ///
+    /// MEASURED 2026-08-31 on a live witness host launched exactly as the suite
+    /// launches it (LSUIElement `.app` via `/usr/bin/open`):
+    ///     APP        role=AXApplication  posErr=-25205 sizeErr=-25205 AXFrame err=-25205
+    ///     windows count=1
+    ///     WINDOW[0]  role=AXApplication  posErr=-25205 sizeErr=-25205 AXFrame err=-25205
+    /// POSITIVE CONTROL, same probe, same minute — Finder:
+    ///     APP        role=AXApplication  AXFrame err=0
+    ///     WINDOW[0]  role=AXScrollArea   AXFrame err=0 = (0,0,1728,1117)
+    /// so the probe reads geometry where geometry exists; the zero is absence.
+    ///
+    /// The classification also decides RETRY. `WitnessHostProcess.waitForReady`
+    /// retries on `.noWindow` ("still registering") and gives up on anything
+    /// else, so a host mid-registration was being abandoned on the first read
+    /// rather than waited for.
+    func testTheApplicationElementIsNotAcceptedAsAWindow() {
+        XCTAssertFalse(
+            AXReader.isWindowElement(role: kAXApplicationRole as String),
+            "the application element was accepted as a window; its geometry read then "
+                + "fails and the caller is told the HOSTING GROUP has no geometry, which "
+                + "sends them at layout instead of at an absent window"
+        )
+    }
+
+    /// NEGATIVE CONTROL, and it is the half that matters. A predicate that
+    /// rejected everything would satisfy the test above perfectly while making
+    /// every window unreadable — including Finder's desktop, which publishes as
+    /// `AXScrollArea` rather than `AXWindow`, so a strict `role == AXWindow`
+    /// rule is also wrong (measured above).
+    func testOrdinaryWindowRolesAreStillAccepted() {
+        for role in [kAXWindowRole as String, "AXScrollArea", "AXGroup", "AXSheet"] {
+            XCTAssertTrue(
+                AXReader.isWindowElement(role: role),
+                "\(role) was rejected as a window; the predicate is over-broad and would "
+                    + "make real windows unreadable"
+            )
+        }
+    }
+
+    /// An element that publishes no role at all has not been shown to be a
+    /// window, and "could not observe" must not read as "observed a window".
+    func testAnElementWithNoRoleIsNotAWindow() {
+        XCTAssertFalse(AXReader.isWindowElement(role: nil))
+    }
+
+    /// EVERY read site must apply it. The guard is duplicated verbatim at three
+    /// places (`anchoredWindow`, `press(pid:named:)`, `readTree`), and a defect
+    /// with N call sites cannot be closed at one of them (lesson 400).
+    func testEveryWindowsAttributeReadGoesThroughOneGuard() throws {
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("Sources/VerdictUIWitness/AXReader.swift"),
+            encoding: .utf8
+        )
+        let reads = source.components(separatedBy: "kAXWindowsAttribute as CFString").count - 1
+        let callers = source.components(separatedBy: "try firstWindow(of: pid)").count - 1
+        XCTAssertEqual(
+            reads, 1,
+            "the windows attribute must be read in exactly ONE place — firstWindow(of:) — "
+                + "so the degenerate-list guard cannot be skipped at one site; found "
+                + "\(reads) raw read(s)"
+        )
+        XCTAssertEqual(
+            callers, 3,
+            "all three read sites (anchoredWindow, press(pid:named:), readTree) must go "
+                + "through the helper; found \(callers)"
+        )
+    }
+}
+
+extension AXReaderTests {
+
+    /// `.noWindow(axError: 0)` means the call SUCCEEDED and returned nothing
+    /// window-shaped. Rendering that as "AXError 0" sends the reader to look up
+    /// an error code that does not exist, which is the same defect as naming the
+    /// hosting group for an absent window: a true statement about the wrong
+    /// subject.
+    func testASuccessfulReadHoldingNoWindowDoesNotRenderAsAnErrorCode() {
+        let text = AXReader.Failure.noWindow(axError: 0).description
+        XCTAssertFalse(
+            text.contains("AXError 0"),
+            "a successful read that held no window is being reported as error code 0: \(text)"
+        )
+        XCTAssertTrue(text.contains("application element"), "the real cause is not named: \(text)")
+    }
+
+    /// NEGATIVE CONTROL. A real AXError must still carry its code, or the fix
+    /// above would have traded a misleading message for a useless one.
+    func testARealAXErrorStillCarriesItsCode() {
+        let text = AXReader.Failure.noWindow(axError: -25202).description
+        XCTAssertTrue(text.contains("-25202"), "the AXError code was dropped: \(text)")
+    }
+}

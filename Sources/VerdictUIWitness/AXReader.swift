@@ -60,7 +60,15 @@ public enum AXReader {
             case .notTrusted:
                 "no Accessibility permission (grant it to the process running verdictui)"
             case .noWindow(let code):
-                "the host published no accessibility-visible window (AXError \(code))"
+                // Code 0 is `.success`: the attribute ANSWERED and its answer held
+                // no window. Printing "AXError 0" for that reads as an error code
+                // and sends the reader looking one up, when the fact is that the
+                // call worked and the process publishes nothing window-shaped.
+                code == 0
+                    ? "the host publishes no accessibility-visible window — the windows "
+                        + "attribute succeeded but held the application element rather "
+                        + "than a window"
+                    : "the host published no accessibility-visible window (AXError \(code))"
             case .hostUnavailable(let detail):
                 "the witness host process is unavailable: \(detail)"
             case .anchorUnreadable:
@@ -148,6 +156,44 @@ public enum AXReader {
     /// resolves them. Extracted so the reader and the presser cannot drift onto
     /// different anchors — which is half of what CIS-3DDA018A was.
     private static func anchoredWindow(pid: pid_t) throws -> (AXUIElement, AXUIElement) {
+        let window = try firstWindow(of: pid)
+        return (window, hostingContent(of: window) ?? window)
+    }
+
+    /// True when an element returned in a windows list can be a window.
+    ///
+    /// NOT `role == kAXWindowRole`. Measured 2026-08-31: Finder's first window
+    /// publishes as `AXScrollArea` (the desktop) with a real frame, so a strict
+    /// equality would make real windows unreadable — which is the failure a
+    /// negative control exists to catch. The only role that is never a window is
+    /// the APPLICATION element itself, and a nil role has not been shown to be
+    /// anything at all.
+    static func isWindowElement(role: String?) -> Bool {
+        guard let role else { return false }
+        return role != (kAXApplicationRole as String)
+    }
+
+    /// The first genuine window of `pid`.
+    ///
+    /// THE ONE PLACE the windows attribute is read, because the guard below was
+    /// duplicated verbatim at three call sites and a defect with N call sites
+    /// cannot be closed at one of them (lesson 400).
+    ///
+    /// `kAXWindowsAttribute` can answer `.success` with a list whose only member
+    /// is the APPLICATION element rather than a window. Taking `windows.first`
+    /// on the strength of the status alone then carries that element onward, its
+    /// geometry read fails — `AXPosition`, `AXSize` and `AXFrame` are all
+    /// `kAXErrorAttributeUnsupported` on an application element — and the caller
+    /// is told the HOSTING GROUP published no geometry. That names the wrong
+    /// subject: the fact is that this process publishes no readable window, and
+    /// four sessions inherited the geometry framing from that message.
+    ///
+    /// Reported as ``Failure/noWindow(axError:)`` deliberately, because the
+    /// classification also decides RETRY: `WitnessHostProcess.waitForReady`
+    /// treats `.noWindow` as "still registering" and keeps waiting, while any
+    /// other failure ends the wait. A host mid-AX-registration was being
+    /// abandoned on its first read.
+    private static func firstWindow(of pid: pid_t) throws -> AXUIElement {
         let app = AXUIElementCreateApplication(pid)
         var raw: CFTypeRef?
         let status = AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &raw)
@@ -155,7 +201,12 @@ public enum AXReader {
         else {
             throw Failure.noWindow(axError: status.rawValue)
         }
-        return (window, hostingContent(of: window) ?? window)
+        guard isWindowElement(role: string(window, kAXSubroleAttribute) == nil
+            ? string(window, kAXRoleAttribute) : string(window, kAXRoleAttribute))
+        else {
+            throw Failure.noWindow(axError: status.rawValue)
+        }
+        return window
     }
 
     /// Press the first element named `name` in `pid`'s window.
@@ -185,13 +236,7 @@ public enum AXReader {
     public static func press(pid: pid_t, named name: String) throws {
         guard isTrusted else { throw Failure.notTrusted }
 
-        let app = AXUIElementCreateApplication(pid)
-        var raw: CFTypeRef?
-        let status = AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &raw)
-        guard status == .success, let windows = raw as? [AXUIElement], let window = windows.first
-        else {
-            throw Failure.noWindow(axError: status.rawValue)
-        }
+        let window = try firstWindow(of: pid)
 
         guard let target = firstElement(in: window, named: name) else {
             throw Failure.elementNotFound
@@ -247,13 +292,7 @@ public enum AXReader {
     public static func readTree(pid: pid_t) throws -> SemanticNode {
         guard isTrusted else { throw Failure.notTrusted }
 
-        let app = AXUIElementCreateApplication(pid)
-        var raw: CFTypeRef?
-        let status = AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &raw)
-        guard status == .success, let windows = raw as? [AXUIElement], let window = windows.first
-        else {
-            throw Failure.noWindow(axError: status.rawValue)
-        }
+        let window = try firstWindow(of: pid)
 
         // Anchor on the hosting group rather than the window: the window frame
         // includes a titlebar (measured at 32 pt), so using it as the origin
