@@ -145,24 +145,124 @@ final class FallbackCatalogSignalTests: XCTestCase {
         )
     }
 
-    /// CONTROL: a project that DOES declare a runner is not marked.
+    /// CONTROL: the warning must not be unconditional.
     ///
-    /// Without this, `usesFallbackCatalog` is satisfied by a property that is
-    /// always true, and the warning fires on every project forever — which is
-    /// how a real signal becomes noise nobody reads.
-    func testAProjectDeclaringARunnerIsNotMarkedAsFallback() throws {
-        let root = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent("vu-adopter-\(UUID().uuidString)")
-        let dir = root.appendingPathComponent(".verdictui", isDirectory: true)
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
-        try #"{"runner": ".build/debug/scenarios"}"#
-            .write(to: dir.appendingPathComponent("config.json"), atomically: true, encoding: .utf8)
-
-        XCTAssertFalse(
-            CommandEnvironment.standard(root: root).usesFallbackCatalog,
-            "a project that declares its own scenarios must NOT be warned — a warning that "
-                + "fires unconditionally is noise, not a signal"
+    /// SUPERSEDED PREMISE, 2026-08-31, kept rather than deleted because its
+    /// INTENT is still right and only its subject was wrong. It used to assert
+    /// that a project declaring ANY runner is not warned, on the reading that
+    /// declaring one means the runner is used. Nothing executes a declared
+    /// SwiftUI runner: `declaredRunner` has one production consumer, and the
+    /// engine is built with `DemoScenarios.registry` unconditionally. So the old
+    /// assertion made a consumer able to SILENCE a true warning by adding a file,
+    /// while still receiving verdicts about VerdictUI's fixtures.
+    ///
+    /// The property worth keeping — that the warning is not always-on — cannot be
+    /// asserted through `standard()` in process: under `swift test`,
+    /// `CommandLine.arguments[0]` is Xcode's `xctest` agent, so the running
+    /// binary is never the project's own. It is asserted against the pure rule
+    /// below instead, and against the real binary in the commit's live check.
+    func testTheFallbackWarningIsNotUnconditional() {
+        XCTAssertTrue(
+            ProjectScenarios.runnerBelongsToProject(
+                runningBinary: URL(fileURLWithPath: "/p/VerdictUI/.build/debug/verdictui"),
+                projectRoot: URL(fileURLWithPath: "/p/VerdictUI")),
+            "no input makes the rule report ownership, so the note fires on every "
+                + "project forever — which is how a real signal becomes noise nobody reads"
         )
+    }
+}
+
+// MARK: - A declared runner nobody executes must not silence the borrowed-catalog note
+
+extension ProjectScenariosTests {
+
+    /// THE DEFECT. `usesFallbackCatalog` documents itself as "whether the
+    /// registry this environment carries is VerdictUI's own demo catalog rather
+    /// than the invoking project's" — a claim about the REGISTRY. It is derived
+    /// from the MANIFEST, and those are different facts.
+    ///
+    /// `CommandEnvironment.standard` builds `VerdictEngine(registry:
+    /// DemoScenarios.registry)` unconditionally, and NOTHING in the package
+    /// executes a declared SwiftUI runner: `declaredRunner` has exactly one
+    /// production consumer (Commands.swift), which uses it only as `!= nil`.
+    /// Enumerated over the whole package, the other references are this file's
+    /// own tests.
+    ///
+    /// So a consumer that adds `.verdictui/config.json` — the step
+    /// `docs/adoption.md` prescribes — changes exactly one observable thing: it
+    /// SILENCES the note telling them the scenarios are not theirs. The verdicts
+    /// still describe VerdictUI's demo fixtures. That is worse than not adopting,
+    /// because a config file plus a quiet run reads as coverage that does not
+    /// exist, and this project has shipped that shape before (`no.md` #34: a
+    /// ported API with no caller; a runbook describing a transport that did not
+    /// exist).
+    ///
+    /// The discriminator is whether the declared runner IS the running binary.
+    /// VerdictUI's own manifest points at `.build/release/verdictui` and its
+    /// scenarios genuinely ARE the compiled-in catalog, so `false` is correct
+    /// there. A consumer naming a DIFFERENT executable is naming one we cannot
+    /// run, so the catalog they get is borrowed and the note must stand.
+    @MainActor
+    func testAConsumerRunnerWeCannotExecuteDoesNotSilenceTheNote() throws {
+        try withTempProject { root in
+        try writeManifest(at: root, runner: "build/some-consumer-runner")
+        let env = CommandEnvironment.standard(root: root)
+
+        XCTAssertTrue(
+            env.usesFallbackCatalog,
+            "a project declaring a runner this binary never executes was reported as "
+                + "owning its scenarios. The engine still carries DemoScenarios.registry, "
+                + "so the note that would have told the caller their verdicts describe "
+                + "VerdictUI's fixtures has been silenced by adding a file."
+        )
+        }
+    }
+
+    /// The rule itself, in both directions.
+    ///
+    /// Tested as a PURE FUNCTION because the environment it governs cannot be
+    /// exercised in process: under `swift test`, `CommandLine.arguments[0]` is
+    /// Xcode's `xctest` agent, so the running binary is never the project's own
+    /// (measured — `/Applications/Xcode.app/.../Agents/xctest`). A fixture
+    /// asserting `standard()` for the owning case could only test a weaker rule
+    /// than the one that ships, which is why the OWNING half is verified by
+    /// running the real binary instead (recorded in the commit message).
+    func testRunnerOwnershipIsDecidedByProjectRootNotPathEquality() {
+        let repo = URL(fileURLWithPath: "/Users/x/Projects/VerdictUI")
+
+        // OWNS: a debug binary inside the repo, though the manifest names release.
+        XCTAssertTrue(
+            ProjectScenarios.runnerBelongsToProject(
+                runningBinary: URL(fileURLWithPath: "/Users/x/Projects/VerdictUI/.build/debug/verdictui"),
+                projectRoot: repo),
+            "path equality would reject this and print a borrowed-catalog note on "
+                + "VerdictUI's own debug runs")
+
+        // BORROWS: an installed binary run from a consumer project.
+        XCTAssertFalse(
+            ProjectScenarios.runnerBelongsToProject(
+                runningBinary: URL(fileURLWithPath: "/opt/homebrew/bin/verdictui"),
+                projectRoot: URL(fileURLWithPath: "/Users/x/Projects/KastDrive")),
+            "a consumer running the installed binary must still be told the catalog "
+                + "is not theirs")
+
+        // NEGATIVE CONTROL on the prefix test itself: a SIBLING directory whose
+        // path shares a prefix must not count as inside. Without the trailing
+        // separator, `/Users/x/Projects/VerdictUI-old` matches `VerdictUI`.
+        XCTAssertFalse(
+            ProjectScenarios.runnerBelongsToProject(
+                runningBinary: URL(fileURLWithPath: "/Users/x/Projects/VerdictUI-old/.build/debug/verdictui"),
+                projectRoot: repo),
+            "a sibling directory sharing a name prefix was treated as inside the project")
+    }
+
+    /// Writes a `.verdictui/config.json` naming `runner`.
+    fileprivate func writeManifest(at root: URL, runner: String) throws {
+        let dir = root.appendingPathComponent(ProjectScenarios.configDirectory, isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try #"{"runner": "\#(runner)"}"#
+            .write(
+                to: dir.appendingPathComponent(ProjectScenarios.configFile),
+                atomically: true, encoding: .utf8)
     }
 }
