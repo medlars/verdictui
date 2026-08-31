@@ -7,6 +7,34 @@ catalog is split and for the rule about quoting text from these files.
 from mutation_catalog_types import Mutation, Runner  # noqa: F401
 
 MUTATIONS: list[Mutation] = [
+    # CTS-9E32C9AB -- the degenerate windows list. Four sessions read the
+    # geometry framing this guard's absence produced and recorded the work
+    # blocked on machine load, then on a fresh login session. Both mutations are
+    # SILENT without a witness: the suite still passes, and the only visible
+    # change is which sentence the reader is sent to act on.
+    Mutation(
+        name="the application element is accepted as a window again",
+        path="Sources/VerdictUIWitness/AXReader.swift",
+        old="        return role != (kAXApplicationRole as String)",
+        new="        return true",
+        test=(
+            "VerdictUIWitnessTests.AXReaderTests/"
+            "testTheApplicationElementIsNotAcceptedAsAWindow"
+        ),
+        runner=Runner.SWIFT,
+    ),
+    Mutation(
+        # The opposite failure, and the one a careless fix makes: a predicate
+        # that rejects everything satisfies "the app element is not a window"
+        # perfectly while making every real window unreadable -- including
+        # Finder's desktop, which publishes as AXScrollArea rather than AXWindow.
+        name="the window predicate rejects every role",
+        path="Sources/VerdictUIWitness/AXReader.swift",
+        old="        return role != (kAXApplicationRole as String)",
+        new="        return false",
+        test="VerdictUIWitnessTests.AXReaderTests/testOrdinaryWindowRolesAreStillAccepted",
+        runner=Runner.SWIFT,
+    ),
     Mutation(
         # Mutates the MANIFEST, because the floor is the thing consumers collide
         # with. A .v14 floor makes SwiftPM refuse every consumer pinned lower and
