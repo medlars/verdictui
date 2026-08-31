@@ -9,6 +9,7 @@ on:
     # here too so it stays watched (F-053: KastTune's Relay Uptime Probe failed
     # 11x with no issue filed because it was missing from a stale allow-list).
     workflows:
+      - Persist run-v2 evidence
       - Check Pinned GitHub Actions for Updates
       - CI
     types:
