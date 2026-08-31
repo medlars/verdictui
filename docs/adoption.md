@@ -40,6 +40,40 @@ element, beneath whatever chain the author wrote.
 
 ---
 
+## Platform limit: macOS only, and an iOS product cannot adopt this today
+
+**`VerdictUIProbe` renders through `NSHostingView`. There is no iOS path.**
+Measured 2026-08-31, because three fleet products carry an "adopt VerdictUI" row
+and one of them is iOS-only:
+
+```bash
+grep -n 'platforms' Package.swift                    # [.macOS(.v13)] — no .iOS entry
+grep -rc 'os(iOS)' Sources/VerdictUIProbe/           # 0
+grep -n 'NSHostingView' Sources/VerdictUIProbe/OracleHost.swift   # the render surface
+```
+
+So an iOS target that adds this dependency either fails resolution against the
+macOS-only floor or compiles to an empty target — **an adoption that measures
+nothing while reporting as adopted**, which is worse than not adopting, because
+a `.verdictui/config.json` and a green suite then assert coverage that does not
+exist.
+
+What an iOS consumer can use today, with no adoption step:
+
+- `verdictui inspect --pid <n>` — reads the semantic tree of a **running macOS**
+  app. Not an iOS simulator process.
+- Nothing else. Snapshot testing against pinned baselines remains the instrument
+  for iOS, and it compares PIXELS rather than judging geometry — which is the
+  gap VerdictUI exists to close and cannot close there yet.
+
+Closing it needs an iOS backend: `UIHostingController` in place of
+`NSHostingView`, an iOS layout-settle pump, and `.iOS` added to `platforms`.
+That is a VerdictUI wave, not consumer effort — so an iOS product's adoption row
+is blocked on **this** repo, and should say so rather than reading as work its
+own team has not got to (`KastTune/no.md` #6).
+
+---
+
 ## Wiring the package (do this before the first probe)
 
 Two targets need dependencies, and the second one is not obvious.
