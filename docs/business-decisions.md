@@ -144,3 +144,46 @@ tool), fully free (no revenue), consulting-led (doesn't scale).
 > **Provenance note**: the original chat transcript was not retained on disk;
 > this history was written the same day from the session's summarized record.
 > Treat quoted-sounding phrasing as faithful paraphrase, not verbatim.
+
+## verdictui.com / verdictui.dev — still available, capability present, PAYMENT is the only blocker
+
+Measured 2026-08-31 (CTS-962D387A). The row had been carried as OWNER-ONLY with
+no probe behind it, which is an unverified claim about our own capability.
+
+**Both domains are still unregistered**, confirmed against the authoritative
+registries with a known-registered control on the same endpoint each time:
+
+| Domain | Endpoint | Result | Control on the same endpoint |
+|---|---|---|---|
+| `verdictui.com` | `rdap.verisign.com/com/v1` | **404 — not registered** | `vohux.com` → 200, created 2026-04-10 |
+| `verdictui.dev` | `pubapi.registry.google/rdap` | **404 — not registered** | `launchgate.dev` → 200, created 2026-08-06 |
+
+**We CAN register them; we cannot authorise the spend.** `CF_GLOBAL_API_KEY` has
+registrar scope and lists all 12 fleet domains; `CF_API_TOKEN` does NOT (error
+10000). The fleet is split across two Cloudflare credential standards and the
+first one tried fails in a way that reads exactly like "no access". So the
+blocker is payment — a genuinely human-only gate — and nothing else.
+
+### Two instrument traps found on the way, both of which produced a wrong answer first
+
+**1. Cloudflare's `available` / `can_register` are NOT registrability signals.**
+Both fields read `False` for `verdictui.com` — and read `False` for
+`kastdrive.com`, which this account OWNS. A session acting on them would conclude
+the domains are taken and close this row on false evidence. The control is what
+separates the two readings; without it the fields look authoritative.
+
+**2. `rdap.org` returns an empty body for everything here**, including
+`launchgate.dev`, which is definitely registered — so its silence is the
+instrument failing, not the domain being free. Resolve the registry base from the
+IANA bootstrap (`data.iana.org/rdap/dns.json`) instead; a hand-guessed
+`www.registry.google/rdap/` also 404s on a registered domain.
+
+**Falsify (both halves, controls included):**
+
+```bash
+curl -sSL -o /dev/null -w '%{http_code}\n' https://rdap.verisign.com/com/v1/domain/verdictui.com   # 404 = available
+curl -sSL -o /dev/null -w '%{http_code}\n' https://rdap.verisign.com/com/v1/domain/vohux.com       # 200 = reader works
+```
+
+**Goal (stated without the mechanism):** a public marketing surface for VerdictUI
+is reachable at a name we own.
