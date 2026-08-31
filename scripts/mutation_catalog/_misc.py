@@ -18,8 +18,7 @@ MUTATIONS: list[Mutation] = [
         old="        return role != (kAXApplicationRole as String)",
         new="        return true",
         test=(
-            "VerdictUIWitnessTests.AXReaderTests/"
-            "testTheApplicationElementIsNotAcceptedAsAWindow"
+            "VerdictUIWitnessTests.AXReaderTests/testTheApplicationElementIsNotAcceptedAsAWindow"
         ),
         runner=Runner.SWIFT,
     ),
