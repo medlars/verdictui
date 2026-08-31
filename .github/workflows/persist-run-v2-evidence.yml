@@ -69,7 +69,7 @@ jobs:
       github.event.workflow_run.head_branch == github.event.repository.default_branch
 
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           ref: ${{ github.event.repository.default_branch }}
 
@@ -87,10 +87,48 @@ jobs:
         run: |
           set -uo pipefail
           mkdir -p evidence
+
+          # DELETE THE CHECKED-OUT COPY FIRST. The checkout above is of the
+          # default branch, which ALREADY CONTAINS the previously committed
+          # evidence/run-v2.json -- and `gh run download` refuses to overwrite an
+          # existing file, failing with
+          #   error extracting "run-v2.json": ... file exists
+          # Swallowed by `|| true`, that left the STALE record on disk, the
+          # persist step below compared it against itself, and the job reported
+          # "ALREADY CURRENT" and exited 0 having persisted nothing. Measured on
+          # medlars/Sentinel run 33419841496: a green persist run that shipped
+          # nothing, which is the exact false green this workflow exists to
+          # remove. The "no record was emitted" branch could never fire, because
+          # the checkout always supplied a file.
+          rm -f evidence/run-v2.json
+
           gh run download "$RUN_ID" \
             --repo "${{ github.repository }}" \
             --name "run-evidence" \
             --dir evidence || true
+
+          # PROVE THE RECORD BELONGS TO THE TRIGGERING RUN. Deleting the stale
+          # copy is necessary and not sufficient: any future path that leaves a
+          # foreign record on disk would be committed as if it were this run's.
+          # The record embeds its own runner identity, so this is checkable
+          # rather than assumed -- and a mismatch is treated as ABSENCE, which
+          # the persist step already reports as a visible no-op.
+          if [ -s evidence/run-v2.json ]; then
+            python3 - "$RUN_ID" <<'PYCHECK' || rm -f evidence/run-v2.json
+          import json, sys
+          run_id = sys.argv[1]
+          try:
+              rec = json.load(open("evidence/run-v2.json"))
+          except (OSError, ValueError) as exc:
+              print(f"::warning::run-v2 record is unreadable ({exc}); treating as absent")
+              raise SystemExit(1)
+          identity = str(rec.get("runner", {}).get("identity", ""))
+          if not identity.endswith(f"/{run_id}"):
+              print(f"::warning::run-v2 record is from {identity!r}, not run {run_id}; treating as absent")
+              raise SystemExit(1)
+          print(f"run-v2 record confirmed for run {run_id}")
+          PYCHECK
+          fi
 
       - name: Persist run-v2 evidence to the tree
         env:
