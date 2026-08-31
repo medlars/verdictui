@@ -185,6 +185,7 @@ jobs:
           HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
+          RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
         run: |
           BODY_FILE=$(mktemp)
           {
@@ -192,6 +193,18 @@ jobs:
             echo "**Branch:** ${HEAD_BRANCH}"
             echo "**Commit:** ${HEAD_SHA}"
             echo "**Run:** ${RUN_URL}"
+            # THE ATTEMPT, not just the run. `gh run view <id>` and the run URL
+            # both report the LATEST attempt, so a re-run silently rewrites what a
+            # reader sees: a later look at a captured failure can show `success`
+            # with the failing step marked `skipped`, and the failure this issue
+            # describes becomes unreproducible from its own link. Measured
+            # 2026-08-31 on kastdrive run 33341887987 -- attempt 1 FAILED (the
+            # "fail loudly" step ran and reddened the run, correctly), attempt 3
+            # succeeded, and reading the run without an attempt produced
+            # CIS-BC864D87: a P1 filed against a guard that was working.
+            echo "**Attempt:** ${RUN_ATTEMPT} — ${RUN_URL}/attempts/${RUN_ATTEMPT}"
+            echo "> The **Run** link above shows the LATEST attempt, which a re-run"
+            echo "> changes. Re-measure the attempt named here, not the run."
             echo
             echo '<details><summary>Failure log tail</summary>'
             echo
