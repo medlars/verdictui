@@ -1,20 +1,20 @@
 {
   "authority": "ci_unprotected",
-  "completed_at": "2026-08-31T18:28:52.771516Z",
-  "content_digest": "726ebfb4db7812fee6ee4822c8195655f27097b3a3c96a99194e8ef38afaf9d4",
+  "completed_at": "2026-08-31T18:49:31.486776Z",
+  "content_digest": "0a1fe3190f44bb729c163681f90bbc23fa617a03630ee9f724cf6ad0cfc86c18",
   "evaluator": {
     "name": "governance-v2.ci-emitter",
     "version": "1.0.0"
   },
-  "expires_at": "2026-09-01T18:28:52.771516Z",
+  "expires_at": "2026-09-01T18:49:31.486776Z",
   "project": {
     "aliases": [],
     "canonical_id": "verdictui",
-    "registry_version": "projects-shared@028049df6bb8363fa6c91068d2942418324b1807"
+    "registry_version": "projects-shared@2d128f45eb96feeb3af53948b2b837eefe607829"
   },
-  "run_id": "d8aea2f0-0a2f-4af9-ba77-69566f91f9b4",
+  "run_id": "64c138f4-873c-4aae-a45b-7ba733b72a84",
   "runner": {
-    "identity": "github-actions/run/33424733642",
+    "identity": "github-actions/run/33426877304",
     "kind": "ci",
     "os": "macOS",
     "python_version": "3.14.6"
@@ -22,11 +22,11 @@
   "schema_version": "2.0.0",
   "source": {
     "branch": "main",
-    "commit_sha": "028049df6bb8363fa6c91068d2942418324b1807",
+    "commit_sha": "2d128f45eb96feeb3af53948b2b837eefe607829",
     "dirty": false,
     "repo": "medlars/verdictui",
-    "source_end_fingerprint": "028049df6bb8363fa6c91068d2942418324b1807028049df6bb8363fa6c91068",
-    "source_start_fingerprint": "028049df6bb8363fa6c91068d2942418324b1807028049df6bb8363fa6c91068"
+    "source_end_fingerprint": "2d128f45eb96feeb3af53948b2b837eefe6078292d128f45eb96feeb3af53948",
+    "source_start_fingerprint": "2d128f45eb96feeb3af53948b2b837eefe6078292d128f45eb96feeb3af53948"
   },
   "stages": [
     {
@@ -36,7 +36,7 @@
       "evidence_refs": [
         {
           "kind": "log",
-          "locator": "github://medlars/verdictui/actions/runs/33424733642"
+          "locator": "github://medlars/verdictui/actions/runs/33426877304"
         }
       ],
       "reason_code": "ok",
@@ -46,7 +46,7 @@
       "state": "PASS"
     }
   ],
-  "started_at": "2026-08-31T18:28:52.771516Z",
+  "started_at": "2026-08-31T18:49:31.486776Z",
   "summary": {
     "confidence": 1.0,
     "counts": {
