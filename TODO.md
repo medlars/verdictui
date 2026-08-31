@@ -75,15 +75,15 @@
 
 <!-- testwatch-gaps -->
 ## TestWatch Gaps (auto-generated — one row per module; a `- [x]` line is preserved verbatim)
-- [ ] (P1) testwatch: add tests for `scripts/verdictui_pm_smoke.py` (1 untested: `VerdictUISmokeMixin`) [NONE]
-- [ ] (P1) testwatch: add tests for `scripts/verdictui_pm_stages.py` (1 untested: `VerdictUIStagesMixin`) [NONE]
-- [ ] (P2) testwatch: add tests for `.github/workflows/capture-ci-failures-to-github-issue.yml` (2 untested: `capture`, `close-on-green`) [live]
-- [ ] (P2) testwatch: add tests for `.github/workflows/check-pinned-actions.yml` (1 untested: `check-pinned-actions`) [live]
-- [ ] (P2) testwatch: add tests for `.github/workflows/ci.yml` (1 untested: `secret-scan`) [live]
-- [ ] (P2) testwatch: add tests for `contracts/validate-contracts.py` (9 untested: `_check_array`, `_check_fixtures`, `_check_object`, `_check_scalars`, `_check_type`, `_check_version_agreement`, `_declared_version`, `_kernel_version`, `_load_schema`) [NONE]
-- [ ] (P2) testwatch: add tests for `scripts/floor-check.py` (1 untested: `_check_todo_tracking`) [NONE]
-- [ ] (P2) testwatch: add tests for `scripts/kernel-symbol-audit.py` (12 untested: `_apply_inherited_docs`, `_case_names`, `_case_symbols`, `_conformances`, `_documented`, `_enclosing_type`, `_is_public`, `_member_name`, `_member_symbol`, `_report`, `_scan_file`, `_type_symbol`) [NONE]
-- [ ] (P2) testwatch: add tests for `scripts/verdictui-pm.py` (1 untested: `main`) [NONE]
+- [ ] (P1) testwatch: add tests for `VerdictUISmokeMixin` in `scripts/verdictui_pm_smoke.py` [NONE] (1 untested)
+- [ ] (P1) testwatch: add tests for `VerdictUIStagesMixin` in `scripts/verdictui_pm_stages.py` [NONE] (1 untested)
+- [ ] (P2) testwatch: add tests for `capture`, `close-on-green` in `.github/workflows/capture-ci-failures-to-github-issue.yml` [live] (2 untested)
+- [ ] (P2) testwatch: add tests for `check-pinned-actions` in `.github/workflows/check-pinned-actions.yml` [live] (1 untested)
+- [ ] (P2) testwatch: add tests for `secret-scan` in `.github/workflows/ci.yml` [live] (1 untested)
+- [ ] (P2) testwatch: add tests for `_check_array`, `_check_fixtures`, `_check_object`, `_check_scalars`, `_check_type`, `_check_version_agreement`, `_declared_version`, `_kernel_version`, `_load_schema` in `contracts/validate-contracts.py` [NONE] (9 untested)
+- [ ] (P2) testwatch: add tests for `_check_todo_tracking` in `scripts/floor-check.py` [NONE] (1 untested)
+- [ ] (P2) testwatch: add tests for `_apply_inherited_docs`, `_case_names`, `_case_symbols`, `_conformances`, `_documented`, `_enclosing_type`, `_is_public`, `_member_name`, `_member_symbol`, `_report`, `_scan_file`, `_type_symbol` in `scripts/kernel-symbol-audit.py` [NONE] (12 untested)
+- [ ] (P2) testwatch: add tests for `main` in `scripts/verdictui-pm.py` [NONE] (1 untested)
 <!-- /testwatch-gaps -->
 - [x] (P1) testwatch-hook: no test file references `kernel_symbol_audit` — add tests for `scripts/kernel-symbol-audit.py`  <!-- VERIFIED 2026-08-20: 1 test file references it — claim was false -->
 - [x] (P1) testwatch-hook: no test file references `mutation_check` — add tests for `scripts/mutation-check.py`  <!-- VERIFIED 2026-08-20: 2 test files reference it — claim was false -->
