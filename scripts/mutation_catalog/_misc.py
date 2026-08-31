@@ -34,6 +34,34 @@ MUTATIONS: list[Mutation] = [
         test="VerdictUIWitnessTests.AXReaderTests/testOrdinaryWindowRolesAreStillAccepted",
         runner=Runner.SWIFT,
     ),
+    # CTS-410D6414 -- the borrowed-catalog signal. Both directions matter and
+    # they fail oppositely: always-owns lets a consumer silence a true warning by
+    # adding a config file (a false green by construction), never-owns makes the
+    # note fire on every project forever, which is how a signal becomes noise.
+    Mutation(
+        name="a declared runner is treated as owned without checking the binary",
+        path="Sources/VerdictUICLICore/ProjectScenarios.swift",
+        old='        return binary.path.hasPrefix(root.path + "/")',
+        new="        return true",
+        test=(
+            "VerdictUICLICoreTests.ProjectScenariosTests/"
+            "testRunnerOwnershipIsDecidedByProjectRootNotPathEquality"
+        ),
+        runner=Runner.SWIFT,
+    ),
+    Mutation(
+        # The separator is load-bearing: without it `/p/VerdictUI-old` matches
+        # `/p/VerdictUI`, so a sibling directory reads as inside the project.
+        name="the project-root prefix test drops its path separator",
+        path="Sources/VerdictUICLICore/ProjectScenarios.swift",
+        old='        return binary.path.hasPrefix(root.path + "/")',
+        new="        return binary.path.hasPrefix(root.path)",
+        test=(
+            "VerdictUICLICoreTests.ProjectScenariosTests/"
+            "testRunnerOwnershipIsDecidedByProjectRootNotPathEquality"
+        ),
+        runner=Runner.SWIFT,
+    ),
     Mutation(
         # Mutates the MANIFEST, because the floor is the thing consumers collide
         # with. A .v14 floor makes SwiftPM refuse every consumer pinned lower and

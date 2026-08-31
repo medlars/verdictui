@@ -73,6 +73,30 @@ public enum ProjectScenarios {
         }
     }
 
+    /// Whether `runningBinary` is the declaring project's OWN executable.
+    ///
+    /// The discriminator behind `CommandEnvironment.usesFallbackCatalog`, kept
+    /// as a pure function because the environment it governs cannot be tested
+    /// in process: under `swift test`, `CommandLine.arguments[0]` is Xcode's
+    /// `xctest` agent (measured 2026-08-31 —
+    /// `/Applications/Xcode.app/.../Agents/xctest`), so the running binary is
+    /// NEVER the project's binary inside a test. A fixture there could only ever
+    /// exercise a weaker rule than the one that ships.
+    ///
+    /// Compared by PROJECT ROOT, not by path equality. Equality was tried and
+    /// measured wrong: VerdictUI's manifest names `.build/release/verdictui`, so
+    /// running the DEBUG binary from its own repo printed the borrowed-catalog
+    /// note against its own scenarios — a false warning in the one case the flag
+    /// exists to suppress.
+    public static func runnerBelongsToProject(
+        runningBinary: URL,
+        projectRoot: URL
+    ) -> Bool {
+        let binary = runningBinary.resolvingSymlinksInPath().standardizedFileURL
+        let root = projectRoot.resolvingSymlinksInPath().standardizedFileURL
+        return binary.path.hasPrefix(root.path + "/")
+    }
+
     /// The runner this project declares, or `nil` when it declares none.
     ///
     /// Swallows a malformed manifest into `nil`; use ``declaredRunnerStrict``

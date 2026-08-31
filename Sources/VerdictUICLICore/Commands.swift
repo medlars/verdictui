@@ -67,10 +67,46 @@ public struct CommandEnvironment: Sendable {
 
     @MainActor
     public static func standard(root: URL = URL(fileURLWithPath: ".")) -> CommandEnvironment {
-        // A project that declares a runner owns its scenarios; the demo catalog
-        // is the FALLBACK, and callers are told which they got.
-        let declaresOwnScenarios = ProjectScenarios.findProjectRoot(startingAt: root)
-            .flatMap { ProjectScenarios.declaredRunner(projectRoot: $0) } != nil
+        // A project owns its scenarios only if the runner it declares IS THE
+        // BINARY NOW RUNNING. Declaring one is not enough, and the difference is
+        // the whole point of this flag.
+        //
+        // `ScenarioRegistry` holds `@Sendable @MainActor` closures, so a
+        // consumer's scenarios cannot cross a process boundary — they are
+        // reachable only by running the consumer's own executable. Nothing in
+        // this package does that for the SwiftUI path: `declaredRunner` has
+        // exactly ONE production consumer, this line, and the engine below is
+        // built with `DemoScenarios.registry` unconditionally.
+        //
+        // So treating "a manifest exists" as "the catalog is theirs" let a
+        // consumer SILENCE the borrowed-catalog note by adding a file, while
+        // still receiving verdicts about VerdictUI's own fixtures. That is worse
+        // than not adopting: a config file plus a quiet run reads as coverage
+        // that does not exist.
+        //
+        // VerdictUI's own manifest points at the verdictui binary and its
+        // scenarios genuinely ARE the compiled-in catalog, so comparing against
+        // the running executable keeps that case correct rather than papering
+        // the note over every run of the tool against itself.
+        // Compared by PROJECT, not by exact path. Path equality was measured and
+        // rejected: VerdictUI's own manifest names `.build/release/verdictui`,
+        // so running the DEBUG binary from this repo printed the borrowed-catalog
+        // note against its own scenarios — a false warning in the one case the
+        // flag exists to keep quiet.
+        //
+        // The honest question is whether the compiled-in catalog belongs to the
+        // project that declared the manifest, answered by asking whether the
+        // running binary lives inside that project root.
+        let runningBinary = URL(fileURLWithPath: CommandLine.arguments[0])
+            .resolvingSymlinksInPath().standardizedFileURL
+        let declaringRoot = ProjectScenarios.findProjectRoot(startingAt: root)
+            .flatMap { rt in
+                ProjectScenarios.declaredRunner(projectRoot: rt) == nil
+                    ? nil : rt.resolvingSymlinksInPath().standardizedFileURL
+            }
+        let declaresOwnScenarios = declaringRoot.map { rt in
+            ProjectScenarios.runnerBelongsToProject(runningBinary: runningBinary, projectRoot: rt)
+        } ?? false
 
         return CommandEnvironment(
             usesFallbackCatalog: !declaresOwnScenarios,
@@ -134,7 +170,7 @@ public struct ListCommand: Sendable {
     /// style note.
     public static let fallbackCatalogNote = """
         note: these are VerdictUI's own demo scenarios, not this project's — the catalog is \
-        compiled into the binary. This project declares no .verdictui/config.json, so any \
+        compiled into the binary. This binary is not this project's own runner, so any \
         verdict about them describes VerdictUI's fixtures rather than your code. \
         See docs/adoption.md.
         """
