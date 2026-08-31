@@ -384,6 +384,7 @@ jobs:
             echo "::warning::Could not list branches (${BRANCHES:0:120}). Skipping the deleted-branch sweep -- could-not-observe is not branch-is-gone."
             exit 0
           fi
+          NL=$'\n'
           if [ -z "$BRANCHES" ]; then
             echo "::warning::Branch listing came back EMPTY, which cannot be true of a repo that just ran CI. Skipping the sweep rather than closing every open issue."
             exit 0
@@ -398,7 +399,17 @@ jobs:
             [ -z "$NUM" ] && continue
             BR=$(printf '%s' "$TITLE" | sed -nE 's/^CI failure: .* \((.*)\)$/\1/p')
             [ -z "$BR" ] && continue
-            if printf '%s\n' "$BRANCHES" | grep -Fxq "$BR"; then continue; fi
+            # Exact-line membership WITHOUT a pipe. `printf ... | grep -Fxq` is wrong
+            # under `set -o pipefail`: grep -q exits on the first match and closes the
+            # pipe, the producer dies of SIGPIPE (141), and pipefail makes 141 the
+            # PIPELINE's status -- so a branch that EXISTS reports as absent whenever it
+            # appears early in a listing bigger than the 64KB pipe buffer. On THIS step
+            # that inverted answer CLOSES A LIVE ISSUE. GitHub's default `bash -e {0}`
+            # has pipefail off, so the piped form is correct here today; this does not
+            # rely on that staying true.
+            case "${NL}${BRANCHES}${NL}" in
+              *"${NL}${BR}${NL}"*) continue ;;
+            esac
             gh issue comment "$NUM" --repo "${{ github.repository }}" \
               --body "Closing: branch \`${BR}\` no longer exists, so no CI run can ever fire for it and this report can never be actioned or auto-resolved. Reopen if the branch returns." || true
             gh issue close "$NUM" --repo "${{ github.repository }}" --reason "not planned" || true
