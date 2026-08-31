@@ -359,3 +359,48 @@ jobs:
           else
             echo "No open ci-failure issue for \"$TITLE\" — nothing to close."
           fi
+
+      # SWEEP: an issue whose branch was DELETED can never be closed by the step
+      # above, because that step only runs on a workflow_run completion FOR THAT
+      # BRANCH -- and a deleted branch produces no runs, ever. Measured
+      # 2026-08-30: 10 of 24 open ci-failure issues fleet-wide (42%) named a
+      # branch that no longer existed. They are unactionable by construction --
+      # nothing can fix CI on a ref that is gone -- so they accumulate forever.
+      #
+      # CONSERVATIVE BY DESIGN, because the failure mode here is destructive.
+      # Close ONLY when the branch listing SUCCEEDS and comes back non-empty and
+      # the branch is absent from it. A listing that ERRORS is "could not
+      # observe" and is skipped; an EMPTY listing is treated as unobservable
+      # too, because "this repo has no branches" is never true of a repo that
+      # just ran CI, and acting on it would close every open issue at once.
+      # Treating an unobservable as a verdict is the exact defect this workflow
+      # already shipped once (a 403 body read as a differing SHA).
+      - name: Close ci-failure issues whose branch no longer exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if ! BRANCHES=$(gh api "repos/${{ github.repository }}/branches" \
+              --paginate --jq '.[].name' 2>&1); then
+            echo "::warning::Could not list branches (${BRANCHES:0:120}). Skipping the deleted-branch sweep -- could-not-observe is not branch-is-gone."
+            exit 0
+          fi
+          if [ -z "$BRANCHES" ]; then
+            echo "::warning::Branch listing came back EMPTY, which cannot be true of a repo that just ran CI. Skipping the sweep rather than closing every open issue."
+            exit 0
+          fi
+          if ! OPEN=$(gh issue list --repo "${{ github.repository }}" \
+              --label ci-failure --state open --limit 100 \
+              --json number,title --jq '.[] | "\(.number)\t\(.title)"' 2>&1); then
+            echo "::warning::Could not list open ci-failure issues. Skipping the sweep."
+            exit 0
+          fi
+          printf '%s\n' "$OPEN" | while IFS=$'\t' read -r NUM TITLE; do
+            [ -z "$NUM" ] && continue
+            BR=$(printf '%s' "$TITLE" | sed -nE 's/^CI failure: .* \((.*)\)$/\1/p')
+            [ -z "$BR" ] && continue
+            if printf '%s\n' "$BRANCHES" | grep -Fxq "$BR"; then continue; fi
+            gh issue comment "$NUM" --repo "${{ github.repository }}" \
+              --body "Closing: branch \`${BR}\` no longer exists, so no CI run can ever fire for it and this report can never be actioned or auto-resolved. Reopen if the branch returns." || true
+            gh issue close "$NUM" --repo "${{ github.repository }}" --reason "not planned" || true
+            echo "Closed #${NUM} -- branch ${BR} no longer exists"
+          done
