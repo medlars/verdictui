@@ -1,0 +1,207 @@
+# CANONICAL governance-v2 run-v2 EVIDENCE PERSIST workflow.
+#
+# Copy to `.github/workflows/persist-run-v2-evidence.yml` in a repo whose CI
+# emits run-v2 evidence, and set `workflows:` below to that CI workflow's `name:`.
+#
+# WHY THIS IS A SEPARATE WORKFLOW AND NOT A STEP (CIS-35701F76, 2026-08-31).
+# The persist step used to live inside one of CI's own jobs, guarded by
+# `if: ${{ success() && <default-branch check> }}`. `success()` is JOB-SCOPED:
+# inside a job it reads that job's own steps and CANNOT observe a sibling job.
+# Measured live on medlars/Sentinel run 33385615462 — the `python` job failed at
+# `PM quick`, the `swift` job passed, swift's persist step evaluated TRUE, and a
+# run whose conclusion was FAILURE pushed an all-PASS record to main (commit
+# 0999327b, stages [('tests','PASS')]) with a fresh 24h TTL. The step's own
+# comment already said why that must never happen:
+#
+#     "committing a failing record would refresh the freshness clock on the
+#      strength of a broken run - freshness would then certify nothing, which
+#      is worse than an honest stale FAIL."
+#
+# The intent was right; the guard did not implement it.
+#
+# `github.event.workflow_run.conclusion` IS the run's conclusion — one job or
+# twenty, it observes all of them, and it keeps observing them when a job is
+# added later.
+#
+# WHY NOT `needs: [every other job]`. That works too, and it was rejected: it is
+# a STATIC ENUMERATION of the corpus, so the day a job is added and the list is
+# not updated, the hole reopens silently and nothing reports it (lessons
+# 321/1382 — a matcher that enumerates the members of a set is a claim about
+# that set, and every member it omits reads as absent). It would also serialise
+# CI by making a test job wait on its siblings. A `workflow_run` trigger has no
+# list to forget and no ordering cost.
+#
+# NO RE-TRIGGER LOOP. The push is made with the default GITHUB_TOKEN, and GitHub
+# creates no workflow run from an event caused by that token (documented). A PAT
+# WOULD loop forever, because every record carries a fresh run id — add
+# `evidence/run-v2.json` to a `paths-ignore` BEFORE swapping one in.
+#
+# Enforced by governance-v2/scripts/check_persist_covers_whole_run.py.
+
+name: Persist run-v2 evidence
+
+on:
+  workflow_run:
+    # REPLACE with the `name:` of the CI workflow that emits the evidence.
+    workflows: ["CI"]
+    types: [completed]
+
+# Least privilege: read the emitting run's artifact, write the record back.
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  persist:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    # THE WHOLE-RUN GUARD. `conclusion` here is the RUN's, not a job's.
+    #
+    # The head_branch clause replaces the old `github.ref ==` default-branch
+    # check: in a `workflow_run` workflow `github.ref` is the DEFAULT BRANCH
+    # whatever the triggering run was, so it is always true and gates nothing.
+    # `workflow_run.head_branch` is the branch the run actually happened on.
+    # Publishing a record whose commit_sha no consumer can resolve (a PR merge
+    # ref) is worse than publishing none.
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == github.event.repository.default_branch
+
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      # `gh run download` rather than actions/download-artifact: the runner
+      # already ships `gh`, so this adds no third-party action to pin, review or
+      # keep current. `|| true` because an absent artifact is a legitimate state
+      # (a repo with no deploy key emits nothing) and the next step owns that
+      # verdict — exiting here would turn a documented SKIP into a red build,
+      # which is the defect ab5d9b7d fixed for the verify step.
+      - name: Download the run-v2 record emitted by that run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -uo pipefail
+          mkdir -p evidence
+          gh run download "$RUN_ID" \
+            --repo "${{ github.repository }}" \
+            --name "run-evidence" \
+            --dir evidence || true
+
+      - name: Persist run-v2 evidence to the tree
+        env:
+          EVIDENCE_PATH: ${{ github.workspace }}/evidence/run-v2.json
+          TARGET_BRANCH: ${{ github.event.repository.default_branch }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -eu
+
+          # Every verdict reaches BOTH the log and the job summary. A skip that
+          # only reaches the log is a skip nobody reads, and an unread skip is
+          # indistinguishable from work that happened.
+          say() {
+            printf '%s\n' "$1"
+            if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+              printf '%s\n' "$1" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          }
+
+          # An ABSENT record is not this workflow's verdict to make: CI's own
+          # verify step already decided whether the absence is an unprovisioned
+          # repo (skip) or a broken pipeline (fail). Re-deciding it here would
+          # give one condition two answers that can disagree.
+          if [ ! -s "$EVIDENCE_PATH" ]; then
+            say "### run-v2 evidence: NOT PERSISTED — no record was emitted"
+            say ""
+            say "\`$EVIDENCE_PATH\` is absent or empty, so there is nothing to commit."
+            say "CI's verify step owns that verdict; this workflow adds nothing."
+            exit 0
+          fi
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # -f because some repos gitignore build output under evidence/; the
+          # record is the one file there that must be tracked.
+          git add -f -- "$EVIDENCE_PATH"
+
+          if git diff --cached --quiet; then
+            say "### run-v2 evidence: ALREADY CURRENT — committed record is byte-identical"
+            exit 0
+          fi
+
+          git commit -q \
+            -m "evidence: run-v2 record for CI run ${RUN_ID}" \
+            -m "Committed so the record outlives its run. An artifact expires with the run, so without this the committed evidence ages past its own TTL while CI stays green (CIS-9AE31F75, CIS-2E3F801C)."
+
+          attempt=0
+          while : ; do
+            attempt=$((attempt + 1))
+            if push_err=$(git push origin "HEAD:refs/heads/${TARGET_BRANCH}" 2>&1); then
+              say "### run-v2 evidence: PERSISTED to \`${TARGET_BRANCH}\`"
+              exit 0
+            fi
+            printf '%s\n' "$push_err"
+
+            case "$push_err" in
+              *GH013*|*"protected branch"*|*"Changes must be made through a pull request"*)
+                # A POLICY blocker, not a broken pipeline. Failing here would
+                # paint a protected repo permanently red for a condition no code
+                # change can fix; passing silently would lose the record while
+                # looking green. So: exit 0, loudly, naming who can open the route.
+                echo "::warning::run-v2 evidence not persisted — the default branch is protected."
+                say "### run-v2 evidence: NOT PERSISTED — the default branch is protected"
+                say ""
+                say "The remote refused the push (\`GH013\`). **This build is green and its"
+                say "run-v2 record was not committed**, so anything reading this repository's"
+                say "evidence is reading an older record or none."
+                say ""
+                say "Do NOT relax the ruleset to fix this: \`pull_request\` and"
+                say "\`required_status_checks\` are the same protections"
+                say "\`no_self_certification\` depends on. Opening the route is an OWNER"
+                say "action — allow Actions to open pull requests"
+                say "(\`actions/permissions/workflow\`) and register a token those PRs can"
+                say "be created with, as \`medlars/projects-shared\` does (ADR-014, ADR-015)."
+                exit 0
+                ;;
+            esac
+
+            # A busy default branch is normal, not a failure: another commit
+            # landed between checkout and push. Rebase onto what the remote
+            # actually has and retry.
+            #
+            # `--autostash` and `-X theirs` are NOT decoration. Both were paid
+            # for in SagaMail (tests/test_ci_evidence_persist.py) and, until
+            # this file, existed ONLY there — the canonical template and nine
+            # other repos carried the bare `git rebase` that both flags exist to
+            # fix, because a fix distributed by copy is opt-in and the un-fixed
+            # population is invisible from inside any single copy (lesson 331).
+            #
+            #   --autostash : a step that dirties the tree (SagaMail's
+            #     `swift package resolve` rewrites Package.resolved) makes git
+            #     refuse the rebase outright, so the retry can NEVER succeed and
+            #     the job goes red for a reason unrelated to the code under test
+            #     (run 33335106769).
+            #   -X theirs   : evidence/run-v2.json is a SINGLE per-run record,
+            #     wholly regenerated each run, so two runs finishing close
+            #     together guarantee a content conflict and the NEWEST record
+            #     must win; without it the retry dies on the conflict instead
+            #     (run 33337966040). During a rebase the commit being replayed
+            #     is `theirs` — the opposite of the intuitive reading, which is
+            #     why SagaMail decides it by measurement rather than recall.
+            if [ "$attempt" -ge 3 ]; then
+              break
+            fi
+            git fetch -q origin "${TARGET_BRANCH}" && git rebase -q --autostash -X theirs FETCH_HEAD || break
+          done
+
+          echo "::error::run-v2 evidence was emitted but could not be persisted."
+          say "### run-v2 evidence: PERSIST FAILED"
+          say ""
+          say "The record was emitted and committed, but the push was refused for a"
+          say "reason that is not branch protection, so the record is lost. A green"
+          say "build that ships no evidence is the false green this program removes."
+          exit 1
