@@ -10,6 +10,22 @@ Entrypoint only. The implementation lives in four siblings in this directory:
 | `verdictui_pm_stages`     | Build/test/architecture/lint/demo/governance stage mixin  |
 | `verdictui_pm_smoke`      | Smoke, parity, mutation-catalog and SLO-bench stage mixin |
 
+`print()` HERE IS THE CONTRACT, NOT A DEBUG LEAK — recorded because a quality
+scanner reads it as one (CIS-0D4BCEBB, "PM script uses print() -- should use
+structured logging"). Measured 2026-08-31: all 6 calls in this file are the CLI's
+report surface and there are ZERO in the four implementation siblings, which is
+where a stray debug print would actually be.
+
+Four emit the `query` subcommand's JSON payload on STDOUT, which a caller parses;
+two emit the skip and contention advisories, each already carrying its own
+reasoning below. Routing any of them through a logger would send them to stderr
+with a level prefix and break the machine-readable contract — a "fix" that
+damages a deliberate design, which is the shape `no.md` #78 exists to refuse.
+
+Structured logging IS used for everything that is not the report: `_pm_log` and
+`self.log(...)` in `verdictui_pm_support`. The distinction is the point — a PM's
+stdout is its answer, and its log is its narration.
+
 Two rules keep the split from going quietly hollow (CTS-6DBFF8C6):
 
 1. The stages are inherited as MIXINS, never re-exported. Inheritance leaves
