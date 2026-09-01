@@ -94,6 +94,19 @@ def classify_pins(pins, resolved, pin_dates=None) -> dict:
     }
 
 
+def observed_nothing(pins, rows) -> bool:
+    """True when there were pins to check and NOT ONE could be resolved.
+
+    Partial unresolvability is normal and must not trip this: an action with no
+    releases resolves nothing and is a legitimate `unresolvable` row. Resolving
+    NONE of N pins is different in kind -- an expired token, a rate limit or an
+    API outage -- and reporting it as `updates_found=false` with exit 0 is
+    "could not observe" wearing "observed and clean" at the JOB level, which is
+    the level a human and a dashboard read.
+    """
+    return bool(pins) and not (rows["uptodate"] or rows["stale"] or rows["ahead"])
+
+
 def main() -> int:
     pins = []
     for workflow_file in sorted(Path(".github/workflows").glob("*.yml")):
@@ -134,6 +147,16 @@ def main() -> int:
             handle.write(f"count={len(rows['stale'])}\n")
             handle.write(f"unresolved={len(rows['unresolvable'])}\n")
             handle.write(f"ahead={len(rows['ahead'])}\n")
+
+    # Outputs are written FIRST so a consumer can still read `unresolved`, then
+    # the step fails: a run that resolved nothing must not report success.
+    if observed_nothing(pins, rows):
+        print(
+            f"FAILED: none of the {len(pins)} pinned actions could be resolved. "
+            "This is an instrument failure (expired token, rate limit, API outage), "
+            "not evidence that the pins are current."
+        )
+        return 1
     return 0
 
 
