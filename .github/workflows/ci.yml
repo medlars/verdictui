@@ -23,7 +23,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v7.0.1
 
       - name: Swift version
         run: swift --version
@@ -60,7 +60,7 @@ jobs:
       # financeflow-pro run 31458757494; swept fleet-wide, 24 repos affected.
       - name: Check out governance-v2
         if: ${{ !cancelled() }}
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v7.0.1
         with:
           repository: medlars/projects-shared
           path: .gov-v2
@@ -125,7 +125,7 @@ jobs:
 
       - name: Upload run-v2 evidence
         if: ${{ !cancelled() && hashFiles('.gov-v2/governance-v2/scripts/emit_run_evidence.py') != '' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v7.0.1
         with:
           name: run-evidence
           path: evidence/run-v2.json
@@ -141,7 +141,7 @@ jobs:
       pull-requests: read
     steps:
       - name: Checkout (full history for scan)
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v7.0.1
         with:
           fetch-depth: 0
 
@@ -156,10 +156,10 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v7.0.1
 
       - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v7.0.0
         with:
           # pm-base Requires-Python >=3.14 (fleet mandate). 3.13 fails pip install.
           python-version: "3.14"
@@ -178,7 +178,7 @@ jobs:
       # not fail — they SKIP behind an importorskip guard, so CI stays green
       # while checking nothing (CTS-0E24FFF0).
       - name: Set up pm-base deploy key
-        uses: webfactory/ssh-agent@e83874834305fe9a4a2997156cb26c5de65a8555 # v0.10.0
+        uses: webfactory/ssh-agent@dc588b651fe13675774614f8e6a936a468676387 # v0.10.0
         with:
           ssh-private-key: ${{ secrets.PM_BASE_DEPLOY_KEY }}
 
