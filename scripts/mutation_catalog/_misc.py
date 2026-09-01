@@ -287,4 +287,22 @@ MUTATIONS: list[Mutation] = [
         new="            _ = model\n        }\n        CFRunLoopAddObserver",
         test="SettleTests/testOscillatingLayoutTimesOutWithDeltaEvidence",
     ),
+    # CIS-032856FB / CIS-814FD60D -- the undeclared insert root. A test file
+    # that resolves script modules via a runtime sys.path.insert relies on
+    # pyright's extraPaths naming the same directory, and the two declarations
+    # moving separately is exactly how two reportMissingImports were filed on
+    # source that runs green. Dropping the entry must fail the whole-directory
+    # guard, not merely one file's check.
+    Mutation(
+        name="pyright loses the inserted .github/scripts resolution root",
+        path="pyproject.toml",
+        old='    ".github/scripts",',
+        new="    # .github/scripts entry omitted under mutation",
+        test=(
+            "Tests/test_pyright_test_sources_resolve.py::"
+            "TestPyrightResolvesTestSources::"
+            "test_pyright_resolves_every_import_in_the_test_sources"
+        ),
+        runner=Runner.PYTEST,
+    ),
 ]
