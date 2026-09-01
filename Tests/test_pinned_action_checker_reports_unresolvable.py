@@ -34,7 +34,9 @@ def _pins():
 
 @pytest.mark.quick
 def test_an_unresolvable_action_is_its_own_bucket():
-    rows = classify_pins(_pins(), {"actions/checkout": Unresolvable("actions/checkout", "HTTP 404")})
+    rows = classify_pins(
+        _pins(), {"actions/checkout": Unresolvable("actions/checkout", "HTTP 404")}
+    )
     assert len(rows["unresolvable"]) == 1
     assert rows["unresolvable"][0]["reason"] == "HTTP 404"
     # the whole point: it must NOT be counted as verified-current
