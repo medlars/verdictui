@@ -136,23 +136,36 @@ jobs:
 
           # Check for updates (simplified - just report what we found)
           updates_needed = []
+          unresolvable = []
           token = os.environ.get('GITHUB_TOKEN', '')
 
           for action_info in all_actions:
               latest = get_latest_version(action_info['action'], token)
-              if latest:
-                  # Compare SHA or tag
-                  if latest.get('sha') and latest['sha'] != action_info['current_sha']:
-                      updates_needed.append({
-                          **action_info,
-                          'latest_sha': latest['sha'],
-                          'latest_tag': latest.get('tag', ''),
-                          'published': latest.get('published', '')
-                      })
+              # THREE buckets, never two. An action whose latest release cannot be
+              # resolved is NOT evidence that its pin is current: get_latest_version
+              # returns None on any HTTPError or timeout, and folding that into the
+              # up-to-date branch made a silent API failure indistinguishable from a
+              # verified-current pin (lesson 202/382). CIS-3D2AFCC3.
+              if not latest or not latest.get('sha'):
+                  unresolvable.append(action_info)
+              elif latest['sha'] != action_info['current_sha']:
+                  updates_needed.append({
+                      **action_info,
+                      'latest_sha': latest['sha'],
+                      'latest_tag': latest.get('tag', ''),
+                      'published': latest.get('published', '')
+                  })
 
           # Output results
           # Write outputs to GITHUB_OUTPUT file
           github_output = os.environ.get('GITHUB_OUTPUT', '')
+
+          # An unresolvable pin is reported, never silently folded into either
+          # bucket -- a count nobody prints is indistinguishable from zero.
+          if unresolvable:
+              print(f"Could NOT resolve {len(unresolvable)} of {len(all_actions)} pins (not counted as up to date):")
+              for u in unresolvable:
+                  print(f"  ? {u['action']} in {u['file']}:{u['line']}")
 
           if updates_needed:
               print("Found actions that may need updates:")
@@ -169,12 +182,14 @@ jobs:
                   with open(github_output, 'a') as f:
                       f.write(f"updates_found=true\n")
                       f.write(f"count={len(updates_needed)}\n")
+                      f.write(f"unresolved={len(unresolvable)}\n")
           else:
-              print("All pinned actions are up to date (or could not check)")
+              print(f"All {len(all_actions) - len(unresolvable)} resolvable pins are up to date")
               if github_output:
                   with open(github_output, 'a') as f:
                       f.write("updates_found=false\n")
                       f.write("count=0\n")
+                      f.write(f"unresolved={len(unresolvable)}\n")
           EOF
 
       - name: Create issue for action updates
