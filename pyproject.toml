@@ -56,4 +56,10 @@ extraPaths = [
     # directory — that directory holds hyphenated filenames, so it cannot be a
     # package, and pyright does not replicate the runtime insert.
     "scripts",
+    # `.github/scripts` for the pinned-action checker modules, which
+    # Tests/test_pinned_action_checker_reports_unresolvable.py imports after
+    # its own runtime `sys.path.insert`; pytest resolves it, pyright does not,
+    # and the undeclared directory was reported as two missing imports
+    # (CIS-032856FB / CIS-814FD60D).
+    ".github/scripts",
 ]
