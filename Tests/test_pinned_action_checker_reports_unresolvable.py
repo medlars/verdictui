@@ -21,7 +21,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / ".github" / "scripts"))
 
-from check_pinned_actions import classify_pins  # noqa: E402
+from check_pinned_actions import classify_pins, observed_nothing  # noqa: E402
 from resolve_action_sha import Resolved, Unresolvable  # noqa: E402
 
 PIN = "a" * 40
@@ -78,3 +78,52 @@ def test_an_unknown_pin_date_degrades_to_stale_rather_than_guessing():
     resolved = Resolved("actions/checkout", "v2", TAG_SHA, "2026-06-01", committed="2026-06-01")
     rows = classify_pins(_pins(), {"actions/checkout": resolved}, pin_dates={})
     assert len(rows["stale"]) == 1 and rows["ahead"] == []
+
+
+@pytest.mark.quick
+def test_resolving_nothing_at_all_is_a_failure_not_a_clean_run():
+    """A dead token, a rate limit or an API outage makes EVERY pin unresolvable.
+
+    Reporting that as `updates_found=false` with exit 0 is "could not observe"
+    wearing "observed and clean" at the job level -- the level a human and a
+    dashboard actually read. Partial unresolvability is normal (an action with
+    no releases resolves nothing and is fine); resolving NONE of N pins means
+    the instrument is broken, not that the pins are current.
+    """
+    pins = [
+        ("actions/checkout", PIN, 4, ".github/workflows/w.yml"),
+        ("actions/cache", "d" * 40, 5, ".github/workflows/w.yml"),
+    ]
+    resolved = {
+        "actions/checkout": Unresolvable("actions/checkout", "HTTP 401"),
+        "actions/cache": Unresolvable("actions/cache", "HTTP 401"),
+    }
+    rows = classify_pins(pins, resolved)
+    assert observed_nothing(pins, rows) is True
+
+
+@pytest.mark.quick
+def test_a_partly_unresolvable_run_is_still_a_real_observation():
+    """Positive control: one unresolvable action among several must NOT trip it,
+    or every repo pinning a tag-only action fails forever."""
+    pins = [
+        ("actions/checkout", PIN, 4, ".github/workflows/w.yml"),
+        ("actions/cache", "d" * 40, 5, ".github/workflows/w.yml"),
+    ]
+    resolved = {
+        "actions/checkout": Resolved(
+            "actions/checkout", "v1", PIN, "2026-01-01", committed="2026-01-01"
+        ),
+        "actions/cache": Unresolvable("actions/cache", "no releases"),
+    }
+    rows = classify_pins(pins, resolved)
+    assert observed_nothing(pins, rows) is False
+
+
+@pytest.mark.quick
+def test_a_repo_with_no_pins_is_not_an_instrument_failure():
+    """Second control: zero pins resolves zero actions, which is correct, not blind."""
+    assert (
+        observed_nothing([], {"stale": [], "uptodate": [], "unresolvable": [], "ahead": []})
+        is False
+    )
