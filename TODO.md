@@ -75,6 +75,7 @@
 
 <!-- testwatch-gaps -->
 ## TestWatch Gaps (auto-generated — one row per module; a `- [x]` line is preserved verbatim)
+- [ ] (P1) testwatch: add tests for `GitHubAPI`, `_is_sha`, `commit_date`, `default_api`, `get`, `resolve_tag_to_commit` in `.github/scripts/resolve_action_sha.py` [NONE] (6 untested)
 - [ ] (P1) testwatch: add tests for `VerdictUISmokeMixin` in `scripts/verdictui_pm_smoke.py` [NONE] (1 untested)
 - [ ] (P1) testwatch: add tests for `VerdictUIStagesMixin` in `scripts/verdictui_pm_stages.py` [NONE] (1 untested)
 - [ ] (P2) testwatch: add tests for `capture`, `close-on-green` in `.github/workflows/capture-ci-failures-to-github-issue.yml` [live] (2 untested)
