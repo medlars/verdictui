@@ -1,95 +1,78 @@
-"""The pinned-action checker must report three states, never two.
+"""The pinned-action checker must keep four buckets, never two.
 
-get_latest_version() returns None on any HTTPError or timeout. Folding that
-into the up-to-date branch made a silent API failure indistinguishable from a
-verified-current pin -- the report literally said "up to date (or could not
-check)". CIS-3D2AFCC3, lesson 202/382.
+Two collapses are possible and both are harmful. Folding "could not observe"
+into "up to date" makes a silent API failure indistinguishable from a verified
+pin (lesson 202/382). Folding "the pin is NEWER than the tag" into `stale` is
+worse: it produces an issue telling a reader to move a SHA pin BACKWARDS, which
+is a supply-chain downgrade presented as an update. That happens whenever
+`releases/latest` is a moving major tag lagging its own patch releases.
 
-The subject is the SHIPPED workflow: the script is extracted from the YAML
-rather than duplicated here, so a regression in the real artifact fails this.
+The scripts under .github/scripts/ are shared verbatim with FinanceFlow and
+Archivist; these tests lock the behaviour this repo depends on. CIS-3D2AFCC3,
+CIS-8B2A821F.
 """
 
 from __future__ import annotations
 
-import io
-import json
-import textwrap
-import urllib.error
-import urllib.request
+import sys
 from pathlib import Path
 
 import pytest
 
-WORKFLOW = Path(__file__).resolve().parents[1] / ".github/workflows/check-pinned-actions.yml"
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / ".github" / "scripts"))
 
-STALE_PIN, CURRENT_PIN, UNRESOLVABLE_PIN = "a" * 40, "c" * 40, "b" * 40
-MOVED_TO = "f" * 40
+from check_pinned_actions import classify_pins  # noqa: E402
+from resolve_action_sha import Resolved, Unresolvable  # noqa: E402
 
-
-def _embedded_script() -> str:
-    lines = WORKFLOW.read_text().split("\n")
-    start = next(i for i, line in enumerate(lines) if "python3.14 << 'EOF'" in line)
-    end = next(i for i, line in enumerate(lines) if i > start and line.strip() == "EOF")
-    return textwrap.dedent("\n".join(lines[start + 1 : end]))
+PIN = "a" * 40
+TAG_SHA = "b" * 40
 
 
-class _Response(io.BytesIO):
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *exc):
-        return False
-
-
-def _fake_urlopen(req, timeout=None):
-    url = req.full_url
-    if "actions/cache" in url:
-        # the whole point: this action cannot be resolved
-        raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)
-    if "/releases/latest" in url:
-        body = {"tag_name": "v1", "published_at": "2026-01-01"}
-    elif "/git/ref/tags/" in url:
-        sha = CURRENT_PIN if "setup-python" in url else MOVED_TO
-        body = {"object": {"type": "commit", "sha": sha}}
-    else:
-        raise urllib.error.HTTPError(url, 500, "unexpected url", {}, None)
-    return _Response(json.dumps(body).encode())
-
-
-@pytest.fixture
-def checker_output(tmp_path, monkeypatch, capsys) -> str:
-    workflows = tmp_path / ".github/workflows"
-    workflows.mkdir(parents=True)
-    (workflows / "w.yml").write_text(
-        "jobs:\n  x:\n    steps:\n"
-        f"      - uses: actions/checkout@{STALE_PIN}\n"
-        f"      - uses: actions/setup-python@{CURRENT_PIN}\n"
-        f"      - uses: actions/cache@{UNRESOLVABLE_PIN}\n"
-    )
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("GITHUB_TOKEN", "x")
-    monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
-    monkeypatch.setattr(urllib.request, "urlopen", _fake_urlopen)
-    exec(compile(_embedded_script(), str(WORKFLOW), "exec"), {"__name__": "__main__"})
-    return capsys.readouterr().out
+def _pins():
+    return [("actions/checkout", PIN, 4, ".github/workflows/w.yml")]
 
 
 @pytest.mark.quick
-def test_an_unresolvable_pin_is_reported_not_folded_into_up_to_date(checker_output):
-    assert "Could NOT resolve 1 of 3 pins" in checker_output
-    assert "actions/cache" in checker_output
+def test_an_unresolvable_action_is_its_own_bucket():
+    rows = classify_pins(_pins(), {"actions/checkout": Unresolvable("actions/checkout", "HTTP 404")})
+    assert len(rows["unresolvable"]) == 1
+    assert rows["unresolvable"][0]["reason"] == "HTTP 404"
+    # the whole point: it must NOT be counted as verified-current
+    assert rows["uptodate"] == []
+    assert rows["stale"] == []
 
 
 @pytest.mark.quick
-def test_a_stale_pin_is_still_reported(checker_output):
-    """Positive control: without this the test above passes on a checker that
-    reports nothing at all, which is not the behaviour being guarded."""
-    assert "actions/checkout" in checker_output
-    assert MOVED_TO[:8] in checker_output
+def test_a_matching_pin_is_up_to_date():
+    """Positive control: without this, the test above passes on a classifier
+    that puts everything in `unresolvable`."""
+    resolved = Resolved("actions/checkout", "v1", PIN, "2026-01-01", committed="2026-01-01")
+    rows = classify_pins(_pins(), {"actions/checkout": resolved})
+    assert len(rows["uptodate"]) == 1
+    assert rows["stale"] == [] and rows["unresolvable"] == []
 
 
 @pytest.mark.quick
-def test_a_current_pin_is_not_reported_as_needing_an_update(checker_output):
-    """Second control: the checker must not simply flag everything."""
-    update_section = checker_output.split("may need updates:")[-1]
-    assert "actions/setup-python" not in update_section
+def test_a_genuinely_stale_pin_is_reported():
+    resolved = Resolved("actions/checkout", "v2", TAG_SHA, "2026-06-01", committed="2026-06-01")
+    rows = classify_pins(_pins(), {"actions/checkout": resolved}, pin_dates={PIN: "2026-01-01"})
+    assert len(rows["stale"]) == 1
+    assert rows["stale"][0]["latest_sha"] == TAG_SHA
+
+
+@pytest.mark.quick
+def test_a_pin_newer_than_its_tag_is_ahead_not_stale():
+    """A moving major tag lags its own patches. Reporting that as stale tells
+    the reader to move the pin BACKWARDS -- a downgrade, not an update."""
+    resolved = Resolved("actions/checkout", "v1", TAG_SHA, "2026-01-01", committed="2026-01-01")
+    rows = classify_pins(_pins(), {"actions/checkout": resolved}, pin_dates={PIN: "2026-06-01"})
+    assert len(rows["ahead"]) == 1
+    assert rows["stale"] == [], "a newer pin must never be reported as needing an update"
+
+
+@pytest.mark.quick
+def test_an_unknown_pin_date_degrades_to_stale_rather_than_guessing():
+    """An unknown date must not manufacture an `ahead`."""
+    resolved = Resolved("actions/checkout", "v2", TAG_SHA, "2026-06-01", committed="2026-06-01")
+    rows = classify_pins(_pins(), {"actions/checkout": resolved}, pin_dates={})
+    assert len(rows["stale"]) == 1 and rows["ahead"] == []
