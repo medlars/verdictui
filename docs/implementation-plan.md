@@ -412,3 +412,21 @@ engine on GitHub public, Homebrew tap, docs site, launch collateral.
 4. **Determinism debt is P0** — any nondeterministic test output is fixed before new features.
 5. **Evidence in tickets**: CIS/CTS closures carry runner-sourced output, not narratives.
 6. **Schema changes** bump `schemaVersion` + fixture + migration note in contracts/ — agents parse this wire format; breaking it silently breaks every consumer.
+
+---
+
+## Wave 11 — Acting: OS events, AppKit parity, and the web backend (2026-09-02)
+
+Authorised by owner directive 2026-09-02 (supersedes the deferral in `no.md`
+#3 — recorded as #85). Full design, three-option deliberations, and the
+per-task exit gates live in **`docs/spec-web-and-act.md`**; the task table
+there (T1–T8) is the execution SSoT for this wave.
+
+Shape: **T1–T5** build the web backend (profiles + lock registry; CDP over
+`URLSessionWebSocketTask`; DOMSnapshot → SemanticNode; `verdictui web
+list/render/verify`; trusted-input act with a login smoke on a bundled local
+fixture). **T6–T7** build macOS acting (CGEvent + AX hybrid for live SwiftUI
+and AppKit apps, permission-honest). **T8** integrates: contract rows,
+credentials doc, concurrency matrix, benchmarks. Binding constraints: kernel
+purity, one-handler rule, three-valued exit codes, tests alongside, mutation
+rows for new guards, no network in the suite (bundled `file://` fixtures).
