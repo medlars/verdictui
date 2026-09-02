@@ -205,7 +205,7 @@ class TestGitHubAPI:
 
         with patch("urllib.request.urlopen", _http_error):
             with pytest.raises(ResolutionError):
-                GitHubAPI(token="t").get("repos/org/action/releases/latest")
+                GitHubAPI(token="t").get("repos/org/action/releases/latest")  # nosec B106 -- synthetic one-char test token, not a credential
 
     def test_a_transport_error_raises_resolution_error(self) -> None:
         def _transport_error(req: Any, timeout: float) -> _FakeResponse:
@@ -213,7 +213,7 @@ class TestGitHubAPI:
 
         with patch("urllib.request.urlopen", _transport_error):
             with pytest.raises(ResolutionError):
-                GitHubAPI(token="t").get("repos/org/action/releases/latest")
+                GitHubAPI(token="t").get("repos/org/action/releases/latest")  # nosec B106 -- synthetic one-char test token, not a credential
 
 
 class TestDefaultAPI:
