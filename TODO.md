@@ -75,14 +75,8 @@
 
 <!-- testwatch-gaps -->
 ## TestWatch Gaps (auto-generated — one row per module; a `- [x]` line is preserved verbatim)
-- [ ] (P1) testwatch: add tests for `GitHubAPI`, `_is_sha`, `commit_date`, `default_api`, `get`, `resolve_tag_to_commit` in `.github/scripts/resolve_action_sha.py` [NONE] (6 untested)
 - [ ] (P1) testwatch: add tests for `VerdictUISmokeMixin` in `scripts/verdictui_pm_smoke.py` [NONE] (1 untested)
 - [ ] (P1) testwatch: add tests for `VerdictUIStagesMixin` in `scripts/verdictui_pm_stages.py` [NONE] (1 untested)
-- [ ] (P2) testwatch: add tests for `capture`, `close-on-green` in `.github/workflows/capture-ci-failures-to-github-issue.yml` [live] (2 untested)
-- [ ] (P2) testwatch: add tests for `check-pinned-actions` in `.github/workflows/check-pinned-actions.yml` [live] (1 untested)
-- [ ] (P2) testwatch: add tests for `secret-scan` in `.github/workflows/ci.yml` [live] (1 untested)
-- [ ] (P2) testwatch: add tests for `_check_array`, `_check_fixtures`, `_check_object`, `_check_scalars`, `_check_type`, `_check_version_agreement`, `_declared_version`, `_kernel_version`, `_load_schema` in `contracts/validate-contracts.py` [NONE] (9 untested)
-- [ ] (P2) testwatch: add tests for `_check_todo_tracking` in `scripts/floor-check.py` [NONE] (1 untested)
 - [ ] (P2) testwatch: add tests for `_apply_inherited_docs`, `_case_names`, `_case_symbols`, `_conformances`, `_documented`, `_enclosing_type`, `_is_public`, `_member_name`, `_member_symbol`, `_report`, `_scan_file`, `_type_symbol` in `scripts/kernel-symbol-audit.py` [NONE] (12 untested)
 - [ ] (P2) testwatch: add tests for `main` in `scripts/verdictui-pm.py` [NONE] (1 untested)
 <!-- /testwatch-gaps -->
