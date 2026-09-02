@@ -137,8 +137,9 @@ tool), fully free (no revenue), consulting-led (doesn't scale).
 | 2026-08-04 | Name: VerdictUI; domains .com/.dev available, registration pending | Domains pending (owner) |
 | 2026-08-04 | Open-core monetization: open engine, paid team workflow | Superseded by ADR 2026-021 |
 | 2026-08-14 | Open-core boundary is the MACHINE not the feature; whole tree ships MIT; CI integration explicitly not reserved | Standing (ADR 2026-021) |
+| 2026-09-02 | Docs ship at **vohux.com/verdictui** (child page under the Vohux site; the verdictui.com purchase becomes optional, not a blocker). Free/MIT **reconfirmed**: Wave 11 (in-vivo acting on Swift/AppKit/Web) strengthens the engine-as-wedge strategy — the tool Vohux itself runs fleet-wide is the value, and paid dev CLIs get zero adoption | Standing (ADR 2026-021 + owner 2026-09-02) |
 | 2026-08-04 | XCUITest = thin outer smoke only, never the engine | Standing |
-| 2026-08-04 | Web backend deferred until native engine proves the contract | Standing (`no.md`) |
+| 2026-08-04 | Web backend deferred until native engine proves the contract | **Superseded 2026-09-02** (`no.md` #85; Wave 11, `docs/spec-web-and-act.md`) |
 | 2026-08-04 | Model for build sessions: Opus; 10-wave plan is execution SSoT | Standing |
 
 > **Provenance note**: the original chat transcript was not retained on disk;
