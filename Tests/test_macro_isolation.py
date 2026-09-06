@@ -93,6 +93,12 @@ _SWIFTSYNTAX_FREE_TARGETS = frozenset(
         # under Sources/VerdictUIAppKit or Tests/VerdictUIAppKitTests.
         "VerdictUIAppKit",
         "VerdictUIAppKitTests",
+        # Wave 11's web backend (T1). SwiftSyntax-free and Kernel-free: T1 is
+        # process management (profiles, locks, browser lifecycle) and needs
+        # no SemanticNode vocabulary — the CDP-to-tree mapping is T3, which
+        # is the change that would ADD the kernel dependency.
+        "VerdictUIWeb",
+        "VerdictUIWebTests",
     }
 )
 
