@@ -298,6 +298,33 @@ struct BodyProbeWalk {
                 var copy = item
                 switch item.item {
                 case .expr(let expression):
+                    // ADV-390: a BARE identifier in VIEW-BUILDER STATEMENT
+                    // POSITION — `simpleSection` as a whole line of `body`,
+                    // not `action: save` inside a call's argument list — is a
+                    // reference to an extracted computed property, ordinary
+                    // SwiftUI decomposition. `isOpaqueViewConstruction` (in
+                    // `rewrite`) requires a function call and does not match
+                    // this shape, so it fell through untouched and silently:
+                    // the property's controls were never probed and nothing
+                    // said so. Checked HERE, not inside `rewrite`, because
+                    // `rewrite` is also called on call arguments and modifier
+                    // chain links via `rewriteChildren` — a bare identifier
+                    // there (`Button(action: save)`) is an ordinary function
+                    // reference, not a missed view, and warning about every
+                    // such argument was measured to produce false positives
+                    // on unrelated fixtures (e.g. `testAnInteractiveElement-
+                    // WithNoLabelIsAWarningCarryingAFixIt`). A view-builder
+                    // statement is the position the walk treats as "this line
+                    // IS the view", so it is the only position where a bare
+                    // identifier's absence from the probed tree is a finding.
+                    if let identifier = expression.as(DeclReferenceExprSyntax.self) {
+                        findings.append(
+                            ProbeLintFinding(
+                                node: Syntax(identifier),
+                                kind: .bareIdentifierReference(name: identifier.baseName.text)
+                            )
+                        )
+                    }
                     // The item's own leading trivia is what separates it from
                     // whatever precedes it — a newline and indentation, or the
                     // single space after a closure's `in`. `rewrite` returns a
