@@ -22,6 +22,10 @@ struct ProbeLintFinding {
         case duplicateExplicitID(id: String)
         /// An interactive element the verdict can locate but cannot name.
         case interactiveElementHasNoLabel(id: String)
+        /// A bare reference to an extracted computed property (ADV-390) — the
+        /// walk cannot see through it, so anything it contains goes unprobed
+        /// silently unless this warns.
+        case bareIdentifierReference(name: String)
     }
 }
 
@@ -42,6 +46,14 @@ extension ProbeLintFinding.Kind: DiagnosticMessage {
                 text: "…")' with the label a user would read, or give the button a \
                 string label.
                 """
+        case .bareIdentifierReference(let name):
+            return """
+                '\(name)' is a bare reference to an extracted computed property. The \
+                macro's syntax walk cannot see through it, so any controls it contains \
+                will not be probed. Either add '@Verifiable' to the type that owns \
+                '\(name)' (if it is a separate view type) and reference it as a call, or \
+                inline its content directly in 'body' so the walk can recognise it.
+                """
         }
     }
 
@@ -58,6 +70,7 @@ extension ProbeLintFinding.Kind: DiagnosticMessage {
         switch self {
         case .duplicateExplicitID: return .error
         case .interactiveElementHasNoLabel: return .warning
+        case .bareIdentifierReference: return .warning
         }
     }
 
@@ -67,6 +80,8 @@ extension ProbeLintFinding.Kind: DiagnosticMessage {
             return MessageID(domain: "VerdictUIMacros", id: "duplicateExplicitID")
         case .interactiveElementHasNoLabel:
             return MessageID(domain: "VerdictUIMacros", id: "interactiveElementHasNoLabel")
+        case .bareIdentifierReference:
+            return MessageID(domain: "VerdictUIMacros", id: "bareIdentifierReference")
         }
     }
 }
@@ -100,6 +115,8 @@ extension ProbeLintFinding {
     var diagnostic: Diagnostic {
         switch kind {
         case .duplicateExplicitID:
+            return Diagnostic(node: node, message: kind)
+        case .bareIdentifierReference:
             return Diagnostic(node: node, message: kind)
         case .interactiveElementHasNoLabel(let id):
             let probed: ExprSyntax =
