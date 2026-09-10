@@ -4,6 +4,23 @@
 
 **Added**
 
+- **Judge, drive, capture and sweep an app that never adopted probes** (the
+  LaunchGate verification pass, CIS-29DC2767 / E9FC906F / 009B4F22 / B5DA3C41 /
+  07CB1181 / DD4A93B7 / 1DDD35B2 / 15F8D85E). `inspect --surface window:N|menubar|extras|all`
+  reads every surface, not only the front window, and reports an unreadable one
+  instead of dropping it. Trees carry interaction state (`enabled: false`,
+  `focused: true`, `selected: true`). `inspect --colors`, `judge --pid --colors`
+  and `render --colors` sample `color.background` / `color.foreground` /
+  `color.contrast` per node from pixels, and the new `low-contrast` rule (warning,
+  WCAG AA 4.5:1) judges them. `capture` writes ONE window to PNG and has no
+  full-screen path. `inspect --path P --act VERB` drives focus, set-value,
+  scroll-to, type, increment/decrement, show-menu, pick, cancel and any
+  `ax:<AXAction>`. `judge --pid/--app` gives a verdict with no scenario.
+  `--app X.app --launch-arg … --launch-env K=V` launches a fresh instance (for
+  fixture flags that select empty/error states), and `sweep --app` relaunches per
+  locale x appearance cell. Drag and hover are deliberately absent (they would
+  move the real pointer).
+
 - **Three tests pinning `refresh_macro_expansions`, whose failures are silent.**
   The helper had exactly one test, deliberately aimed at its CALLER — the defect
   that test guards was the runner not invoking it at all. But that test creates

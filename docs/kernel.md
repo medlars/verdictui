@@ -213,6 +213,7 @@ and for `duplicate-probe-id` is the *first* occurrence of the colliding id.
 | `offscreen` | error | a visible, non-empty frame lies entirely outside the viewport |
 | `truncation` | error | text rendered fewer lines than it wanted, or a one-line text was given less width than it needs |
 | `tap-target` | error | a visible interactive node is smaller than `minimumTapTarget` in either dimension |
+| `low-contrast` | warning | a visible text node's pixel-sampled `color.contrast` is below 4.5:1 (WCAG AA) |
 
 ### `duplicate-probe-id`
 
@@ -533,6 +534,29 @@ use the same 12 pt spacing as the surrounding elements, or group this element se
 
 **Suppress**: `verdict.suppress` on the displaced node, `severityOverrides`, or
 `disabledRules`.
+
+### `low-contrast`
+
+Fires when a visible node that renders text carries a `color.contrast` attribute
+below `4.5` — the WCAG 2.x AA floor for body text (success criterion 1.4.3).
+
+The semantic tree carries no colour of its own, so the attribute exists only on
+trees read with pixels: `verdictui inspect --pid <n> --colors` and
+`verdictui judge --pid <n> --colors` capture the window (window-only, never the
+full screen) and `ColorSampler` annotates each node with its modal background
+(`color.background`), the most frequent colour at least 40 on some channel away
+from it (`color.foreground`) and the ratio between them (`color.contrast`). A tree
+without those attributes — every probe-channel tree — produces no finding, so the
+rule is silent where colour was not observed rather than passing it.
+
+Severity is `warning` because the colours are SAMPLED from the node's frame rather
+than read from a style: a region dominated by a sibling's drawing reports that
+sibling's colours. The finding cites both colours so the sample can be checked
+against the screen:
+
+> 'caption' text contrast is 2.85:1 (#999999 on #FFFFFF), below the 4.5:1 WCAG AA minimum
+>
+> suggestion: darken the text or lighten its background until the ratio reaches 4.5:1
 
 ### `clipped-content`
 

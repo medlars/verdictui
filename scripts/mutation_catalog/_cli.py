@@ -286,4 +286,35 @@ MUTATIONS: list[Mutation] = [
             "/testRepeatedLaunchesReuseOneTemporaryDirectory"
         ),
     ),
+    Mutation(
+        # CIS-009B4F22: `-l <id>` is what makes a capture window-only. Without it
+        # screencapture grabs the whole screen, which can include an unrelated
+        # remote session carrying patient data.
+        name="window capture loses -l and becomes a full-screen grab",
+        path="Sources/VerdictUIWitness/WindowCapture.swift",
+        old='["-x", "-o", "-l", String(windowID), path]',
+        new='["-x", "-o", String(windowID), path]',
+        test="AXSurfaceAndActionTests/testTheCaptureArgvIsAlwaysWindowOnly",
+    ),
+    Mutation(
+        # CIS-1DDD35B2: a running pid has fixed locale and appearance, so a
+        # sweep over it would report one configuration as a whole matrix.
+        name="a sweep accepts a running pid instead of refusing it",
+        path="Sources/VerdictUICLICore/LiveCommands.swift",
+        old="if target.pid != nil { throw Problem.runningAppCannotBeSwept }",
+        new="if target.pid == -12_345 { throw Problem.runningAppCannotBeSwept }",
+        test="LiveCommandTests/testASweepRefusesARunningPidInertDynamicTypeAndAnEmptyMatrix",
+    ),
+    Mutation(
+        # CIS-DD4A93B7: `menubar` and `extras` are different surfaces; swapping
+        # them reads the status-item bar where the main menu was asked for.
+        name="the menubar and extras surfaces read each other's bar",
+        path="Sources/VerdictUIWitness/AXReader.swift",
+        old="let key = surface == .menuBar ? kAXMenuBarAttribute : kAXExtrasMenuBarAttribute",
+        new="let key = surface == .menuBar ? kAXExtrasMenuBarAttribute : kAXMenuBarAttribute",
+        test="AXSurfaceAndActionTests/testAllSurfacesIncludeTheMenuBarNotJustTheFrontWindow",
+        # The witness reads Finder cross-process; XCTest reports its skip as a
+        # pass, so the condition is declared here (no.md #62).
+        skips_when=("the host is headless, lacks Accessibility trust, or Finder is not running"),
+    ),
 ]

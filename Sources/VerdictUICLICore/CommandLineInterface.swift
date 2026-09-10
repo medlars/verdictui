@@ -37,7 +37,7 @@ public struct VerdictUITool: AsyncParsableCommand {
         subcommands: [
             List.self, Render.self, Actions.self, Verify.self, Judge.self, Baseline.self,
             SweepRun.self,
-            Inspect.self, AppKit.self, Daemon.self, MCP.self,
+            Inspect.self, Capture.self, AppKit.self, Daemon.self, MCP.self,
         ],
         defaultSubcommand: List.self
     )
@@ -74,15 +74,78 @@ public struct VerdictUITool: AsyncParsableCommand {
         }
     }
 
+    /// Target options shared by every live-app verb.
+    public struct LiveTargetOptions: ParsableArguments, Sendable {
+        public init() {}
+
+        @Option(name: .long, help: "Process id of a running application.")
+        public var pid: Int32?
+
+        @Option(
+            name: .long,
+            help: "Path to an .app to LAUNCH fresh (a new instance, terminated afterwards).")
+        public var app: String?
+
+        @Option(
+            name: .customLong("launch-arg"), parsing: .unconditionalSingleValue,
+            help: "With --app: one launch argument (repeat), e.g. -AppleLanguages or a fixture flag.")
+        public var launchArgs: [String] = []
+
+        @Option(name: .customLong("launch-env"), help: "With --app: KEY=VALUE environment (repeat).")
+        public var launchEnv: [String] = []
+
+        @Option(name: .long, help: "With --app: seconds to wait for a readable surface.")
+        public var launchTimeout: Double = 20
+
+        @Option(name: .long, help: "Surface: window:N (default window:0), menubar, extras, or all.")
+        public var surface: String = "window:0"
+
+        func liveTarget() throws -> LiveTarget {
+            LiveTarget(
+                pid: pid, app: app, launchArguments: launchArgs,
+                environment: try LiveTarget.parseEnvironment(launchEnv),
+                timeout: launchTimeout, surface: surface)
+        }
+    }
+
     public struct Inspect: AsyncParsableCommand {
         public static let configuration = CommandConfiguration(
             commandName: "inspect",
-            abstract: "Read (or press) the UI of a RUNNING app by pid — no adoption needed."
+            abstract: "Read, act on, or colour-sample a RUNNING app — no adoption needed.",
+            discussion: """
+                Reads the accessibility tree of an app by --pid, or of a fresh
+                instance launched from --app (terminated afterwards). Nodes carry
+                interaction state when not default: enabled=false, focused=true,
+                selected=true. Hover is not observable through accessibility.
+
+                  verdictui inspect --pid 123 --surface all        # every window + menu bars
+                  verdictui inspect --pid 123 --colors             # sampled colours + contrast
+                  verdictui inspect --pid 123 --path root/textField[0] --act set-value --value hi
+                  verdictui inspect --app /Applications/X.app --launch-arg -MyFixture --launch-arg empty
+
+                Act verbs: press, increment, decrement, show-menu, confirm, cancel,
+                raise, pick, scroll-to-visible, focus, set-value, scroll-to (0...1),
+                type, or ax:<AXActionName>. Drag and hover are not offered: they
+                would move the real pointer.
+                """
         )
         public init() {}
 
-        @Option(name: .long, help: "Process id of the running application to inspect.")
-        public var pid: Int32
+        @OptionGroup public var target: LiveTargetOptions
+
+        @Flag(name: .long, help: "Sample per-node colours from a window-only capture.")
+        public var colors = false
+
+        @Option(name: .long, help: "Structural path an --act verb applies to.")
+        public var path: String?
+
+        @Option(name: .long, help: "Action verb to perform on --path (see above).")
+        public var act: String?
+
+        @Option(
+            name: .long, parsing: .unconditional,
+            help: "Argument for the verb: text for set-value/type, 0...1 for scroll-to.")
+        public var value: String?
 
         @Option(
             name: .long,
@@ -107,8 +170,45 @@ public struct VerdictUITool: AsyncParsableCommand {
         @MainActor
         public func run() async throws {
             let environment = CommandEnvironment.standard()
-            let code = await InspectCommand(pid: pid, press: press, pressPath: pressPath)
-                .run(environment, pretty: formatting.pretty)
+            let code = await InspectCommand(
+                target: try target.liveTarget(), press: press, pressPath: pressPath, path: path,
+                act: act, value: value, colors: colors
+            ).run(environment, pretty: formatting.pretty)
+            try VerdictUITool.finish(code)
+        }
+    }
+
+    public struct Capture: AsyncParsableCommand {
+        public static let configuration = CommandConfiguration(
+            commandName: "capture",
+            abstract: "Capture ONE window of a running app to PNG — never the full screen.",
+            discussion: """
+                Resolves windows through CoreGraphics (not System Events) and
+                captures a single window id. There is no full-screen path: a pid
+                with no on-screen window is an error (exit 2).
+
+                  verdictui capture --pid 123 --out shot.png
+                  verdictui capture --app /Applications/X.app --out shot.png --window 1
+                """
+        )
+        public init() {}
+
+        @OptionGroup public var target: LiveTargetOptions
+
+        @Option(name: .long, help: "Index among the app's on-screen windows, front to back.")
+        public var window: Int = 0
+
+        @Option(name: .long, help: "Where to write the PNG.")
+        public var out: String
+
+        @OptionGroup public var formatting: FormattingOptions
+
+        @MainActor
+        public func run() async throws {
+            let environment = CommandEnvironment.standard()
+            let code = await CaptureCommand(
+                target: try target.liveTarget(), windowIndex: window, outputPath: out
+            ).run(environment, pretty: formatting.pretty)
             try VerdictUITool.finish(code)
         }
     }
@@ -181,12 +281,17 @@ public struct VerdictUITool: AsyncParsableCommand {
         )
         public var pixels = false
 
+        @Flag(
+            name: .long,
+            help: "Annotate nodes with colours sampled from the render (implies --pixels).")
+        public var colors = false
+
         @OptionGroup public var formatting: FormattingOptions
 
         @MainActor
         public func run() async throws {
             let environment = CommandEnvironment.standard()
-            let code = await RenderCommand(scenario: scenario, pixels: pixels)
+            let code = await RenderCommand(scenario: scenario, pixels: pixels, colors: colors)
                 .run(environment, pretty: formatting.pretty)
             try VerdictUITool.finish(code)
         }
@@ -275,12 +380,23 @@ public struct VerdictUITool: AsyncParsableCommand {
                 the tree could not be read — the two are never conflated.
 
                 The tree shape is a JSON `SemanticNode`; see docs/tree-contract.md.
+
+                Or judge a RUNNING app with no adoption at all — its live
+                accessibility tree, optionally with sampled colours:
+
+                  verdictui judge --pid 123 --colors
+                  verdictui inspect --pid 123 | verdictui judge -
                 """
         )
         public init() {}
 
-        @Argument(help: "Path to a JSON semantic tree, or `-` to read stdin.")
-        public var tree: String
+        @Argument(help: "Path to a JSON semantic tree, or `-` to read stdin. Omit with --pid/--app.")
+        public var tree: String?
+
+        @OptionGroup public var live: LiveTargetOptions
+
+        @Flag(name: .long, help: "With --pid/--app: sample colours so low-contrast can judge them.")
+        public var colors = false
 
         @Option(
             name: .long,
@@ -302,6 +418,21 @@ public struct VerdictUITool: AsyncParsableCommand {
         @MainActor
         public func run() async throws {
             let environment = CommandEnvironment.standard()
+            guard let tree else {
+                let code = await LiveJudgeCommand(
+                    target: try live.liveTarget(), colors: colors,
+                    viewportWidth: viewportWidth, viewportHeight: viewportHeight,
+                    scenarioName: name == "judged-tree" ? "live-app" : name
+                ).run(environment, pretty: formatting.pretty, summary: formatting.summary)
+                try VerdictUITool.finish(code)
+                return
+            }
+            if live.pid != nil || live.app != nil {
+                environment.output.writeError(
+                    "verdictui: pass a tree path OR --pid/--app, not both\n")
+                try VerdictUITool.finish(.couldNotVerify)
+                return
+            }
             let code = await JudgeCommand(
                 treePath: tree,
                 viewportWidth: viewportWidth,
@@ -349,12 +480,26 @@ public struct VerdictUITool: AsyncParsableCommand {
     public struct SweepRun: AsyncParsableCommand {
         public static let configuration = CommandConfiguration(
             commandName: "sweep",
-            abstract: "Render a scenario across a variant matrix."
+            abstract: "Render a scenario — or relaunch a real app — across a variant matrix.",
+            discussion: """
+                With a scenario name, renders it in-process per variant. With
+                --app, launches a fresh instance per locale x appearance cell
+                (-AppleLanguages/-AppleLocale, -AppleInterfaceStyle), judges each
+                live tree and terminates it. A running --pid cannot be swept: its
+                locale and appearance are fixed at launch.
+
+                  verdictui sweep --app /Applications/X.app --locales de_DE ar_SA --color-schemes light dark
+                """
         )
         public init() {}
 
-        @Argument(help: "Scenario name.")
-        public var scenario: String
+        @Argument(help: "Scenario name. Omit with --app.")
+        public var scenario: String?
+
+        @OptionGroup public var live: LiveTargetOptions
+
+        @Flag(name: .long, help: "With --app: sample colours in every cell.")
+        public var colors = false
 
         @Option(
             name: .long,
@@ -378,6 +523,14 @@ public struct VerdictUITool: AsyncParsableCommand {
         @MainActor
         public func run() async throws {
             let environment = CommandEnvironment.standard()
+            guard let scenario else {
+                let code = await LiveSweepCommand(
+                    target: try live.liveTarget(), locales: locales, colorSchemes: colorSchemes,
+                    dynamicTypeSizes: dynamicTypeSizes, colors: colors
+                ).run(environment, pretty: formatting.pretty)
+                try VerdictUITool.finish(code)
+                return
+            }
             let code = await SweepCommand(
                 scenario: scenario,
                 locales: locales,
