@@ -212,17 +212,24 @@ extension AXReaderTests {
             encoding: .utf8
         )
         let reads = source.components(separatedBy: "kAXWindowsAttribute as CFString").count - 1
-        let callers = source.components(separatedBy: "try firstWindow(of: pid)").count - 1
+        let anchors = source.components(separatedBy: "try windows(of: pid)").count - 1
+        let anchorUsers = source.components(separatedBy: "try anchor(pid: pid, surface: surface)")
+            .count - 1
         XCTAssertEqual(
             reads, 1,
-            "the windows attribute must be read in exactly ONE place — firstWindow(of:) — "
+            "the windows attribute must be read in exactly ONE place — windows(of:) — "
                 + "so the degenerate-list guard cannot be skipped at one site; found "
                 + "\(reads) raw read(s)"
         )
         XCTAssertEqual(
-            callers, 3,
-            "all three read sites (anchoredWindow, press(pid:named:), readTree) must go "
-                + "through the helper; found \(callers)"
+            anchors, 2,
+            "only anchor(pid:surface:) (which resolves a window) and readAllSurfaces "
+                + "(which counts them) may call windows(of:); found \(anchors)"
+        )
+        XCTAssertEqual(
+            anchorUsers, 3,
+            "press(atPath:), press(named:) and readSurface must all resolve through "
+                + "anchor(pid:surface:); found \(anchorUsers)"
         )
     }
 }

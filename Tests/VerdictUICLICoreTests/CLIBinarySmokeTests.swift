@@ -141,6 +141,27 @@ final class CLIBinarySmokeTests: XCTestCase {
         )
     }
 
+    /// The live-app verbs added for CIS-009B4F22 / CIS-B5DA3C41 / CIS-1DDD35B2,
+    /// asserted on the ARTIFACT for the same reason as `inspect` above.
+    func testTheLiveAppVerbsAreReachableFromTheBinary() throws {
+        let cases: [([String], [String])] = [
+            (["capture", "--help"], ["--pid", "--out", "--window"]),
+            (["judge", "--help"], ["--pid", "--app", "--colors"]),
+            (["sweep", "--help"], ["--app", "--launch-arg"]),
+            (["inspect", "--help"], ["--surface", "--act", "--colors", "--app"]),
+        ]
+        for (argv, flags) in cases {
+            guard let result = try run(argv, in: try temporaryDirectory()) else {
+                throw XCTSkip("verdictui has not been built — run `swift build --product verdictui`")
+            }
+            XCTAssertEqual(result.exitCode, 0, "\(argv): \(result.standardError)")
+            let help = result.standardOutput + result.standardError
+            for flag in flags {
+                XCTAssertTrue(help.contains(flag), "\(argv.joined(separator: " ")) lacks \(flag)")
+            }
+        }
+    }
+
     /// The three-valued exit contract, asserted on the shipped artifact.
     ///
     /// Table-driven across all three codes in one test because the contract is

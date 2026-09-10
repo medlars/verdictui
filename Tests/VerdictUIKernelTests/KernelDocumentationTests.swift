@@ -186,8 +186,32 @@ final class KernelDocumentationTests: XCTestCase {
         )
     }
 
+    private func lowContrastScenario() -> SemanticNode {
+        SemanticNode(
+            id: "root",
+            role: .container,
+            frame: viewport,
+            structuralPath: "root",
+            children: [
+                SemanticNode(
+                    id: "caption",
+                    role: .text,
+                    frame: Rect(x: 16, y: 16, width: 60, height: 16),
+                    text: "Terms",
+                    attributes: [
+                        ColorSampler.contrastKey: .number(2.85),
+                        ColorSampler.foregroundKey: .string("#999999"),
+                        ColorSampler.backgroundKey: .string("#FFFFFF"),
+                    ],
+                    structuralPath: "root/text[0]"
+                )
+            ]
+        )
+    }
+
     private func documentedScenarios() -> [(rule: any LintRule, tree: SemanticNode)] {
         [
+            (LowContrastRule(), lowContrastScenario()),
             (DuplicateProbeIDRule(), duplicateProbeIDScenario()),
             (ZeroSizeRule(), zeroSizeScenario()),
             (SiblingOverlapRule(), siblingOverlapScenario()),

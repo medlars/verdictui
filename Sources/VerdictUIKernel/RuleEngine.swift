@@ -180,6 +180,7 @@ public enum RuleEngine {
         MisalignmentRule(),
         InconsistentSpacingRule(),
         ClippedContentRule(),
+        LowContrastRule(),
     ]
 
     /// Identifier of the structural vacuity guard. Not a ``LintRule`` id: no

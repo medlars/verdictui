@@ -54,6 +54,14 @@ public enum AXReader {
         /// meanings for the caller: the name is right and the control declined,
         /// versus the name is wrong.
         case actionRefused(axError: Int32)
+        /// The requested surface (a window index, the menu bar, the extras menu
+        /// bar) does not exist for this process.
+        case surfaceNotFound(String)
+        /// The element does not advertise the requested action. Carries what it
+        /// DOES advertise, so the caller learns the vocabulary instead of guessing.
+        case actionUnsupported(action: String, available: [String])
+        /// The element publishes the attribute but will not accept a write to it.
+        case attributeNotSettable(String)
 
         public var description: String {
             switch self {
@@ -81,6 +89,13 @@ public enum AXReader {
                 "no element in the tree matches that name or path"
             case .actionRefused(let code):
                 "the element was found but refused the press (AXError \(code))"
+            case .surfaceNotFound(let detail):
+                "no such surface: \(detail)"
+            case .actionUnsupported(let action, let available):
+                "the element does not support \(action); it advertises "
+                    + (available.isEmpty ? "no actions" : available.joined(separator: ", "))
+            case .attributeNotSettable(let attribute):
+                "the element does not accept a write to \(attribute)"
             }
         }
     }
@@ -107,9 +122,11 @@ public enum AXReader {
     /// same anchor, same child order, same `role[index]` segments — because a
     /// resolver that indexes differently from the assigner is a second
     /// implementation of one rule, and the two drift silently.
-    public static func press(pid: pid_t, atPath path: String) throws {
+    public static func press(
+        pid: pid_t, atPath path: String, surface: Surface = .window(0)
+    ) throws {
         guard isTrusted else { throw Failure.notTrusted }
-        let (_, content) = try anchoredWindow(pid: pid)
+        let content = try anchor(pid: pid, surface: surface).element
 
         guard let target = element(at: path, from: content) else {
             throw Failure.elementNotFound
@@ -122,7 +139,7 @@ public enum AXReader {
 
     /// Walk `path` from the SAME anchor and in the SAME child order the reader
     /// uses, so a path it emitted resolves here by construction.
-    private static func element(at path: String, from content: AXUIElement) -> AXUIElement? {
+    static func element(at path: String, from content: AXUIElement) -> AXUIElement? {
         var segments = path.split(separator: "/").map(String.init)
         // The first segment names the root itself ("root"); anything else is not
         // a path this reader could have emitted.
@@ -152,12 +169,82 @@ public enum AXReader {
         return current
     }
 
-    /// The window and its hosting content group, resolved the way `readTree`
-    /// resolves them. Extracted so the reader and the presser cannot drift onto
-    /// different anchors — which is half of what CIS-3DDA018A was.
-    private static func anchoredWindow(pid: pid_t) throws -> (AXUIElement, AXUIElement) {
-        let window = try firstWindow(of: pid)
-        return (window, hostingContent(of: window) ?? window)
+    /// One readable surface of a running app.
+    ///
+    /// WHY THIS EXISTS (CIS-DD4A93B7). The reader used to take the FIRST window
+    /// and nothing else, so a menu-bar app, a sheet in a second window, or a
+    /// settings window behind the onboarding one were unreachable — and the
+    /// omission was silent: a well-formed tree of one window, exit 0. Naming the
+    /// surface makes "which part of the app did I read?" part of the request.
+    public enum Surface: Equatable, Sendable, CustomStringConvertible {
+        /// The n-th genuine window in the app's `kAXWindowsAttribute` order.
+        case window(Int)
+        /// The app's main menu bar (File, Edit, …).
+        case menuBar
+        /// The app's status-item ("extras") menu bar — where a menu-bar-mode
+        /// app lives.
+        case extrasMenuBar
+
+        /// Parses `window:N` (or a bare `N`), `menubar`, `extras`.
+        public init?(argument: String) {
+            switch argument.lowercased() {
+            case "menubar", "menu-bar": self = .menuBar
+            case "extras", "extras-menubar", "status": self = .extrasMenuBar
+            default:
+                let body = argument.hasPrefix("window:") ? String(argument.dropFirst(7)) : argument
+                guard let index = Int(body), index >= 0 else { return nil }
+                self = .window(index)
+            }
+        }
+
+        public var description: String {
+            switch self {
+            case .window(let index): "window:\(index)"
+            case .menuBar: "menubar"
+            case .extrasMenuBar: "extras"
+            }
+        }
+    }
+
+    /// The anchor a surface's tree is read from, plus the window it lives in.
+    struct Anchor {
+        let element: AXUIElement
+        /// The surface's window, or `nil` for the menu bars (which no window owns).
+        let window: AXUIElement?
+        let title: String?
+    }
+
+    /// The element a surface's tree is rooted at, resolved the way every reader
+    /// AND every actor resolves it. One function so the reader and the presser
+    /// cannot drift onto different anchors — which is half of what CIS-3DDA018A
+    /// was.
+    static func anchor(pid: pid_t, surface: Surface) throws -> Anchor {
+        switch surface {
+        case .window(let index):
+            let all = try windows(of: pid)
+            guard index < all.count else {
+                throw Failure.surfaceNotFound(
+                    "window:\(index) — the app publishes \(all.count) window(s)")
+            }
+            let window = all[index]
+            return Anchor(
+                element: hostingContent(of: window) ?? window, window: window,
+                title: string(window, kAXTitleAttribute))
+        case .menuBar, .extrasMenuBar:
+            let app = AXUIElementCreateApplication(pid)
+            let key = surface == .menuBar ? kAXMenuBarAttribute : kAXExtrasMenuBarAttribute
+            guard let bar = element(copy(app, key)) else {
+                throw Failure.surfaceNotFound("\(surface) — the app publishes none")
+            }
+            return Anchor(element: bar, window: nil, title: nil)
+        }
+    }
+
+    /// A CF value as an `AXUIElement`, checked by type id rather than forced.
+    static func element(_ value: CFTypeRef?) -> AXUIElement? {
+        guard let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+        // swift-format-ignore: NeverForceUnwrap
+        return (value as! AXUIElement)  // audit-allow: checked by CFGetTypeID above
     }
 
     /// True when an element returned in a windows list can be a window.
@@ -193,20 +280,22 @@ public enum AXReader {
     /// treats `.noWindow` as "still registering" and keeps waiting, while any
     /// other failure ends the wait. A host mid-AX-registration was being
     /// abandoned on its first read.
-    private static func firstWindow(of pid: pid_t) throws -> AXUIElement {
+    ///
+    /// Returns EVERY genuine window, in the app's own order, so a caller can
+    /// select one (CIS-DD4A93B7); the application-element guard is applied to
+    /// each entry rather than only to the first.
+    static func windows(of pid: pid_t) throws -> [AXUIElement] {
         let app = AXUIElementCreateApplication(pid)
         var raw: CFTypeRef?
         let status = AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &raw)
-        guard status == .success, let windows = raw as? [AXUIElement], let window = windows.first
-        else {
+        guard status == .success, let listed = raw as? [AXUIElement] else {
             throw Failure.noWindow(axError: status.rawValue)
         }
-        guard isWindowElement(role: string(window, kAXSubroleAttribute) == nil
-            ? string(window, kAXRoleAttribute) : string(window, kAXRoleAttribute))
-        else {
+        let windows = listed.filter { isWindowElement(role: string($0, kAXRoleAttribute)) }
+        guard !windows.isEmpty else {
             throw Failure.noWindow(axError: status.rawValue)
         }
-        return window
+        return windows
     }
 
     /// Press the first element named `name` in `pid`'s window.
@@ -233,12 +322,13 @@ public enum AXReader {
     ///   and ``Failure/actionRefused(axError:)`` when one does and AppKit
     ///   declines. Those are opposite facts for the caller, so they are opposite
     ///   errors — a single "press failed" would collapse them.
-    public static func press(pid: pid_t, named name: String) throws {
+    public static func press(pid: pid_t, named name: String, surface: Surface = .window(0)) throws {
         guard isTrusted else { throw Failure.notTrusted }
 
-        let window = try firstWindow(of: pid)
+        let resolved = try anchor(pid: pid, surface: surface)
+        let root = resolved.window ?? resolved.element
 
-        guard let target = firstElement(in: window, named: name) else {
+        guard let target = firstElement(in: root, named: name) else {
             throw Failure.elementNotFound
         }
         let result = AXUIElementPerformAction(target, kAXPressAction as CFString)
@@ -289,16 +379,79 @@ public enum AXReader {
     /// - Parameter pid: the windowed host process to inspect.
     /// - Returns: the normalized tree, rooted at the hosting view's content group.
     /// - Throws: ``Failure`` when the tree cannot be read.
-    public static func readTree(pid: pid_t) throws -> SemanticNode {
+    public static func readTree(pid: pid_t, surface: Surface = .window(0)) throws -> SemanticNode {
+        try readSurface(pid: pid, surface: surface).tree
+    }
+
+    /// A surface's tree plus the geometry a pixel capture needs to line up with
+    /// it: the anchor's screen origin and, for a window, the window's frame.
+    public struct SurfaceRead: Sendable {
+        public let tree: SemanticNode
+        public let title: String?
+        public let anchorOrigin: CGPoint
+        public let windowFrame: CGRect?
+    }
+
+    /// One entry of ``readAllSurfaces(pid:)``: a surface's tree, or why it could
+    /// not be read. An unreadable surface is REPORTED rather than dropped, so an
+    /// all-surfaces read with no findings means every surface was read.
+    public struct SurfaceTree: Sendable, Encodable {
+        public let surface: String
+        public let title: String?
+        public let tree: SemanticNode?
+        public let error: String?
+    }
+
+    /// Every surface the app publishes: each window, then the menu bar, then
+    /// the extras (status-item) menu bar. Menu bars the app does not publish are
+    /// omitted; windows that fail to read are included with their error.
+    public static func readAllSurfaces(pid: pid_t) throws -> [SurfaceTree] {
+        guard isTrusted else { throw Failure.notTrusted }
+        var surfaces: [Surface] = []
+        var out: [SurfaceTree] = []
+        do {
+            surfaces += (0..<(try windows(of: pid).count)).map { Surface.window($0) }
+        } catch {
+            // The windows could not be listed at all. Say so as a surface entry:
+            // dropping it would make a menu-bar-only result read as "this app
+            // has no windows", which is the silent omission this read exists
+            // to remove.
+            out.append(
+                SurfaceTree(
+                    surface: "window:*", title: nil, tree: nil, error: String(describing: error)))
+        }
+        surfaces += [.menuBar, .extrasMenuBar]
+        for surface in surfaces {
+            do {
+                let read = try readSurface(pid: pid, surface: surface)
+                out.append(
+                    SurfaceTree(
+                        surface: surface.description, title: read.title, tree: read.tree,
+                        error: nil))
+            } catch Failure.surfaceNotFound {
+                continue
+            } catch {
+                out.append(
+                    SurfaceTree(
+                        surface: surface.description, title: nil, tree: nil,
+                        error: String(describing: error)))
+            }
+        }
+        guard !out.isEmpty else { throw Failure.noWindow(axError: 0) }
+        return out
+    }
+
+    /// Read one surface with the geometry needed to align a capture to it.
+    public static func readSurface(pid: pid_t, surface: Surface) throws -> SurfaceRead {
         guard isTrusted else { throw Failure.notTrusted }
 
-        let window = try firstWindow(of: pid)
+        let resolved = try anchor(pid: pid, surface: surface)
 
         // Anchor on the hosting group rather than the window: the window frame
         // includes a titlebar (measured at 32 pt), so using it as the origin
         // shifts every node by that amount — a uniform offset that looks like a
         // real disagreement on every single node at once.
-        let content = hostingContent(of: window) ?? window
+        let content = resolved.element
         // NOT `?? .zero`. Falling back to the origin would leave every node in
         // SCREEN coordinates (x in the hundreds) while the probe channel reports
         // root coordinates, so the reconciler would report a frame disagreement
@@ -310,14 +463,32 @@ public enum AXReader {
             throw Failure.anchorUnreadable
         }
 
+        // The app's first responder, compared by identity during the walk so a
+        // focus ring has something in the tree to correspond to (CIS-E9FC906F).
+        let focused = element(copy(AXUIElementCreateApplication(pid), kAXFocusedUIElementAttribute))
+
         var budget = Self.maximumNodes
-        var root = normalize(content, origin: origin, depth: 0, budget: &budget)
+        var root = normalize(
+            content, origin: origin, depth: 0, budget: &budget, focusedElement: focused)
         // Structural paths are the key the reconciler matches on, and the
         // external channel has no probe ids to fall back to, so assigning them
         // is not optional here.
         root = root.withAssignedStructuralPaths()
-        return root
+        return SurfaceRead(
+            tree: root, title: resolved.title, anchorOrigin: origin,
+            windowFrame: resolved.window.flatMap { frame(of: $0) })
     }
+
+    /// Attribute keys for interaction state (CIS-E9FC906F).
+    ///
+    /// Each is written only in its NON-default state — `enabled: false`,
+    /// `focused: true`, `selected: true` — so an ordinary tree stays the size it
+    /// was and a present key always means something happened. Hover has no key:
+    /// the accessibility API publishes no hover state, and a key that could
+    /// only ever read false would be a claim the reader cannot make.
+    public static let enabledKey = "enabled"
+    public static let focusedKey = "focused"
+    public static let selectedKey = "selected"
 
     // MARK: - Normalization
 
@@ -388,7 +559,8 @@ public enum AXReader {
         _ element: AXUIElement,
         origin: CGPoint,
         depth: Int,
-        budget: inout Int
+        budget: inout Int,
+        focusedElement: AXUIElement? = nil
     ) -> SemanticNode {
         budget -= 1
         let axRole = string(element, kAXRoleAttribute) ?? ""
@@ -412,6 +584,20 @@ public enum AXReader {
         if role == .toggle, let number = copy(element, kAXValueAttribute) as? NSNumber {
             attributes["toggleOn"] = .bool(number.intValue != 0)
         }
+        if (copy(element, kAXEnabledAttribute) as? Bool) == false {
+            attributes[Self.enabledKey] = .bool(false)
+        }
+        if (copy(element, kAXSelectedAttribute) as? Bool) == true {
+            attributes[Self.selectedKey] = .bool(true)
+        }
+        // Two sources, because each misses cases the other catches: some
+        // elements publish AXFocused, while the app's focused-element pointer
+        // names the first responder even when the element itself does not.
+        if (copy(element, kAXFocusedAttribute) as? Bool) == true
+            || focusedElement.map({ CFEqual($0, element) }) == true
+        {
+            attributes[Self.focusedKey] = .bool(true)
+        }
 
         // Stop descending at the bound rather than truncating silently: the node
         // itself is still reported, so a tree that hits the limit is visibly
@@ -426,7 +612,9 @@ public enum AXReader {
             for child in copy(element, kAXChildrenAttribute) as? [AXUIElement] ?? [] {
                 guard budget > 0 else { break }
                 children.append(
-                    normalize(child, origin: origin, depth: depth + 1, budget: &budget))
+                    normalize(
+                        child, origin: origin, depth: depth + 1, budget: &budget,
+                        focusedElement: focusedElement))
             }
         }
 
@@ -463,8 +651,11 @@ public enum AXReader {
         case kAXRowRole: return .listRow
         case kAXToolbarRole: return .navigation
         case kAXTabGroupRole: return .tabBar
-        case kAXMenuRole, kAXMenuButtonRole, kAXPopUpButtonRole:
+        case kAXMenuRole, kAXMenuButtonRole, kAXPopUpButtonRole, kAXMenuBarItemRole,
+            kAXMenuItemRole:
             return .menu
+        case kAXMenuBarRole:
+            return .navigation
         case kAXGroupRole, kAXScrollAreaRole, kAXSplitGroupRole:
             return .container
         default:

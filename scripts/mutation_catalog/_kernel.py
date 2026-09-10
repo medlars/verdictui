@@ -358,4 +358,32 @@ MUTATIONS: list[Mutation] = [
         "            maxX <= width || true, maxY <= height",
         test="PixelDiffTests/testARegionOutsideTheCaptureIsRefusedRatherThanClamped",
     ),
+    Mutation(
+        # CIS-29DC2767: a rule that fires on every sampled text node is
+        # satisfied by the positive test alone; the at-the-floor control is
+        # what fails.
+        name="low-contrast fires on text that clears the WCAG AA floor",
+        path="Sources/VerdictUIKernel/Rules/LowContrastRule.swift",
+        old="ratio < Self.minimumRatio",
+        new="ratio < Self.minimumRatio * 100",
+        test="ColorSamplingTests/testLowContrastIsSilentAtTheFloorWithoutColourAndWithoutText",
+    ),
+    Mutation(
+        # Noise one channel off the background must not become a foreground,
+        # or every container reports an invented text colour.
+        name="the sampler accepts noise as a foreground colour",
+        path="Sources/VerdictUIKernel/ColorSampling.swift",
+        old=".first { $0.channelDistance(to: background) >= minimumForegroundDistance }",
+        new=".first { $0.channelDistance(to: background) >= 1 }",
+        test="ColorSamplingTests/testNoiseBelowTheDistanceFloorIsNotAForeground",
+    ),
+    Mutation(
+        # A transparent canvas composited over nothing reports the ink as the
+        # background. Zeroing the backdrop term keeps `back` live (no.md #31).
+        name="a transparent canvas is not composited over the backdrop",
+        path="Sources/VerdictUIKernel/ColorSampling.swift",
+        old="+ (255 - alpha) * Int(back) / 255))",
+        new="+ 0 * Int(back) / 255))",
+        test="ColorSamplingTests/testATransparentCanvasIsCompositedOverTheBackdrop",
+    ),
 ]

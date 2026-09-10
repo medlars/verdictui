@@ -685,13 +685,14 @@ final class StandardRuleSetTests: XCTestCase {
     /// Order matters as much as membership: `duplicate-probe-id` runs FIRST
     /// because every later rule's evidence cites node ids, and ambiguous ids
     /// make that evidence unfollowable.
-    func testStandardRulesAreTheTwelveRulesWithIDFirst() {
+    func testStandardRulesAreTheThirteenRulesWithIDFirst() {
         XCTAssertEqual(
             RuleEngine.standardRules.map { type(of: $0).id },
             [
                 "duplicate-probe-id", "zero-size", "sibling-overlap", "content-overlap",
                 "offscreen", "truncation", "excessive-wrap", "tap-target",
                 "empty-container", "misalignment", "inconsistent-spacing", "clipped-content",
+                "low-contrast",
             ]
         )
     }

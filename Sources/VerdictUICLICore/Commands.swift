@@ -208,10 +208,36 @@ public struct RenderCommand: Sendable {
     /// open a path, while one that does not pays nothing.
     public let pixels: Bool
 
-    public init(scenario: String, pixels: Bool = false) {
+    /// Annotate every node with colours sampled from the render
+    /// (CIS-29DC2767). Implies ``pixels``: colour only exists in pixels.
+    public let colors: Bool
+
+    public init(scenario: String, pixels: Bool = false, colors: Bool = false) {
         self.scenario = scenario
-        self.pixels = pixels
+        self.pixels = pixels || colors
+        self.colors = colors
     }
+
+    /// The rendered tree with sampled colours. The render is windowless at a
+    /// known backing scale and the tree shares its origin, so the mapping needs
+    /// a scale and no offset.
+    ///
+    /// The windowless canvas is TRANSPARENT, so it is composited over
+    /// ``renderBackdrop``. Measured 2026-09-10 without one: every text node on
+    /// `demo-clean-settings` reported its own ink (#000000) as its background
+    /// and no contrast at all, because the only opaque pixels were the glyphs.
+    static func colored(_ tree: SemanticNode, capture: PixelCapture) throws -> SemanticNode {
+        let raster = try PixelRaster(decoding: capture)
+        let scale = tree.frame.width > 0 ? Double(capture.pixelsWide) / tree.frame.width : 1
+        return ColorSampler.annotate(
+            tree, raster: raster, scale: scale, offsetX: 0, offsetY: 0, backdrop: renderBackdrop)
+    }
+
+    /// What a scenario's transparent canvas is assumed to sit on: white, the
+    /// light-appearance content background the oracle host pins. A stated
+    /// assumption — a scenario drawn on a dark window must paint its own
+    /// background to be judged against it.
+    static let renderBackdrop = SampledColor(red: 255, green: 255, blue: 255)
 
     @MainActor
     public func run(_ environment: CommandEnvironment, pretty: Bool) async -> ExitCode {
@@ -230,7 +256,9 @@ public struct RenderCommand: Sendable {
                 try VerdictOutput.json(
                     PixelRenderReport(
                         scenario: scenario,
-                        tree: rendered.tree,
+                        tree: colors
+                            ? try Self.colored(rendered.tree, capture: rendered.capture)
+                            : rendered.tree,
                         image: path,
                         pixelsWide: rendered.capture.pixelsWide,
                         pixelsHigh: rendered.capture.pixelsHigh,
@@ -670,67 +698,6 @@ public struct JudgeCommand: Sendable {
                     : try VerdictOutput.json(verdict, pretty: pretty)
             )
             return verdict.status == .pass ? .pass : .verdictFailed
-        }
-    }
-}
-
-// MARK: - inspect
-
-/// Read — and optionally press — the UI of a RUNNING application by pid.
-///
-/// The reachable surface for ``AXReader``, which had none. `readTree(pid:)` and
-/// `press(pid:named:)` were correct, tested library API that no CLI verb, MCP
-/// tool or production caller could reach, so the capability existed only for
-/// someone already writing Swift against the package — precisely the audience
-/// that does not need a tool. That is a PORT, not an integration.
-///
-/// Distinct from `render` on purpose. `render` asks a SCENARIO — an in-process
-/// instrumented view VerdictUI owns — what it drew. This asks a process the
-/// tool did not write and cannot instrument, which is the only question
-/// available for a shipped `.app`, and the one that found two real defects in
-/// LaunchGate that a 331-test green suite had shipped.
-///
-/// No adoption step: it takes a pid, so it answers questions about any GUI
-/// product today, before that product declares a single scenario.
-public struct InspectCommand: Sendable {
-    public let pid: pid_t
-    /// When set, PRESS the element with this name instead of printing the tree.
-    public let press: String?
-    /// When set, PRESS the element at this structural path — the identity the
-    /// tree itself prints, so read-then-press round-trips (CIS-3DDA018A).
-    public let pressPath: String?
-
-    public init(pid: pid_t, press: String? = nil, pressPath: String? = nil) {
-        self.pid = pid
-        self.press = press
-        self.pressPath = pressPath
-    }
-
-    @MainActor
-    public func run(_ environment: CommandEnvironment, pretty: Bool) async -> ExitCode {
-        await CommandRunner.run(output: environment.output) {
-            // Trust is checked by the reader and surfaces as a typed failure.
-            // Pre-checking here would put the rule in two places where they can
-            // disagree — and the reader's answer is authoritative, since
-            // `AXIsProcessTrusted()` can be true while a read still fails.
-            // PATH FIRST: it is the identity the tree prints, so it is what a
-            // caller who just read the tree actually holds. A name is a
-            // convenience for a human typing one, and two controls can share it.
-            if let path = pressPath {
-                try AXReader.press(pid: pid, atPath: path)
-                environment.output.writeOut(
-                    try VerdictOutput.json(["pressed": path], pretty: pretty))
-                return .pass
-            }
-            if let name = press {
-                try AXReader.press(pid: pid, named: name)
-                environment.output.writeOut(
-                    try VerdictOutput.json(["pressed": name], pretty: pretty))
-                return .pass
-            }
-            let tree = try AXReader.readTree(pid: pid)
-            environment.output.writeOut(try VerdictOutput.json(tree, pretty: pretty))
-            return .pass
         }
     }
 }

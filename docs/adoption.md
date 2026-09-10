@@ -74,6 +74,36 @@ own team has not got to (`KastTune/no.md` #6).
 
 ---
 
+## Judging a macOS app that has NOT adopted probes
+
+Adoption is not the only way in. A project can decide not to place probes (for
+example because a misplaced probe fails silently toward PASS) and still get real
+verdicts from the running app. Everything below works against a shipped `.app`
+with no code change, through the accessibility tree plus window pixels:
+
+| Need | Command |
+|------|---------|
+| Read every surface — each window, the menu bar, status items | `verdictui inspect --pid <n> --surface all` |
+| Interaction state (disabled, focused, selected) | present in every `inspect` tree as `enabled: false`, `focused: true`, `selected: true` (default states are omitted; hover is not observable through accessibility) |
+| Per-node colour and contrast | `verdictui inspect --pid <n> --colors` (`color.background`, `color.foreground`, `color.contrast`) |
+| A verdict, including `low-contrast` | `verdictui judge --pid <n> --colors` (or `verdictui inspect --pid <n> \| verdictui judge -`) |
+| Pixel evidence | `verdictui capture --pid <n> --out shot.png` — one window, never the full screen |
+| Drive the UI beyond a press | `verdictui inspect --pid <n> --path <structuralPath> --act set-value --value "text"`; also `focus`, `increment`, `decrement`, `show-menu`, `scroll-to --value 0.5`, `type`, `ax:<AXAction>` |
+| Light/dark x locale matrix | `verdictui sweep --app /Applications/X.app --locales en_US de_DE --color-schemes light dark` |
+| A named data state (empty, error, partial) | `verdictui inspect --app /Applications/X.app --launch-arg -YourFixtureFlag --launch-arg empty` |
+
+Two limits, stated so they are not discovered later. **A running pid cannot be
+swept** — locale and appearance are fixed at launch, so `sweep` takes `--app` and
+relaunches per cell. **A data state needs the app's cooperation**: VerdictUI passes
+any launch argument or `--launch-env KEY=VALUE`, but the app must read that flag and
+render the state. Declaring one fixture flag per non-default state (read once at
+launch, ignored in release builds if you prefer) is the whole adoption cost.
+
+Drag and hover are not offered: both need synthesized pointer events that move
+the real cursor.
+
+---
+
 ## Wiring the package (do this before the first probe)
 
 Two targets need dependencies, and the second one is not obvious.
