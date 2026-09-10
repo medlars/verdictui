@@ -47,6 +47,18 @@ public enum WebBrowserError: Error, Equatable, CustomStringConvertible {
     /// A lock file operation failed for a reason that is not "someone else
     /// holds it" — permissions, an unwritable parent, non-convergence.
     case lockIOFailure(path: String, reason: String)
+    /// The WebSocket is closed or a socket operation failed. This is terminal.
+    case cdpConnectionClosed(reason: String)
+    /// The complete request (including its socket write) exceeded its deadline.
+    case cdpRequestTimedOut(method: String)
+    /// The caller cancelled its request before a reply arrived.
+    case cdpRequestCancelled(method: String)
+    /// CDP returned an error envelope for this request.
+    case cdpError(code: Int, message: String)
+    /// The socket delivered an invalid CDP envelope or a non-text frame.
+    case invalidCDPResponse(reason: String)
+    /// The endpoint, timeout, or parameters cannot form a valid request.
+    case invalidCDPRequest(reason: String)
 
     public var description: String {
         switch self {
@@ -72,6 +84,18 @@ public enum WebBrowserError: Error, Equatable, CustomStringConvertible {
             return "the CGWindowList window audit does not exist on this platform."
         case let .lockIOFailure(path, reason):
             return "lock file operation on '\(path)' failed: \(reason)"
+        case let .cdpConnectionClosed(reason):
+            return "CDP connection closed: \(reason)"
+        case let .cdpRequestTimedOut(method):
+            return "CDP request '\(method)' exceeded its deadline."
+        case let .cdpRequestCancelled(method):
+            return "CDP request '\(method)' was cancelled."
+        case let .cdpError(code, message):
+            return "CDP error \(code): \(message)"
+        case let .invalidCDPResponse(reason):
+            return "invalid CDP response: \(reason)"
+        case let .invalidCDPRequest(reason):
+            return "invalid CDP request: \(reason)"
         }
     }
 }

@@ -305,4 +305,17 @@ MUTATIONS: list[Mutation] = [
         ),
         runner=Runner.PYTEST,
     ),
+    Mutation(
+        # Wave 11 T2: a reply must resume the request with ITS id. Resuming the
+        # oldest pending request instead hands a caller another call's result,
+        # which is a well-formed wrong answer rather than an error.
+        name="a CDP reply resumes the oldest pending request instead of its own",
+        path="Sources/VerdictUIWeb/CDPTransport.swift",
+        old="guard let request = pending.removeValue(forKey: id) else { return }",
+        new=(
+            "guard let request = pending.removeValue(forKey: pending.keys.min() ?? id)"
+            " else { return }"
+        ),
+        test="CDPTransportTests/testOutOfOrderRepliesMatchRequestIDs",
+    ),
 ]

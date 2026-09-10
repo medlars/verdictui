@@ -16,7 +16,7 @@ public enum BrowserLocator {
     public static let overrideEnvironmentKey = "VERDICTUI_WEB_BROWSER"
 
     /// One candidate browser and the path it installs at.
-    public struct Channel {
+    public struct Channel: Sendable {
         public let name: String
         public let path: String
         public init(name: String, path: String) {
