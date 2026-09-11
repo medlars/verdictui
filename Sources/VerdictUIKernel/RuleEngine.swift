@@ -95,6 +95,23 @@ public struct LintContext: Sendable {
     /// Rules skipped entirely by ``RuleEngine/run(rules:on:context:)``.
     public var disabledRules: Set<String>
 
+    /// Whether the vacuity guard applies — i.e. whether this tree was supposed
+    /// to carry probe ids at all.
+    ///
+    /// TRUE for every probe-channel tree, and it must stay true there: a tree
+    /// with no probed node yields zero findings, and zero findings derives to
+    /// PASS, so the guard is the only thing between a caller and an engine
+    /// announcing a screen is fine on the strength of having observed nothing.
+    ///
+    /// FALSE for a tree observed from OUTSIDE — an accessibility read of a
+    /// running app (`inspect --pid`, `judge --pid`), a DOM walk, a Flutter
+    /// semantics dump. Those carry no probe ids by construction, so the guard
+    /// could only ever fire: measured 2026-09-10 against a live Calculator,
+    /// `judge --pid` reported `vacuous-verdict` on a 58-node tree it had read
+    /// perfectly, i.e. a check that cannot pass for the case it was aimed at.
+    /// Their identity is the structural path, which is assigned for every node.
+    public var requiresProbedNodes: Bool
+
     public init(
         scenario: String = "unnamed",
         viewport: Rect,
@@ -102,8 +119,10 @@ public struct LintContext: Sendable {
         truncationTolerance: Double = 0.5,
         maximumWrappedLines: Int = 3,
         severityOverrides: [String: Finding.Severity] = [:],
-        disabledRules: Set<String> = []
+        disabledRules: Set<String> = [],
+        requiresProbedNodes: Bool = true
     ) {
+        self.requiresProbedNodes = requiresProbedNodes
         self.scenario = scenario
         self.viewport = viewport
         self.minimumTapTarget = minimumTapTarget
@@ -236,7 +255,7 @@ public enum RuleEngine {
             // through `makeFinding`, because that consults per-node suppression
             // -- there is no node to suppress on here, and a tree-level
             // suppression key would reopen the hole from the other side.
-            if !containsProbedNode(root) {
+            if context.requiresProbedNodes, !containsProbedNode(root) {
                 findings.append(
                     Finding(
                         rule: vacuousVerdictRule,

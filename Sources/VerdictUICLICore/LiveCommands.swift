@@ -275,7 +275,10 @@ public struct LiveJudgeCommand: Sendable {
             }
             let verdict = JudgeCommand.judge(
                 tree: tree, viewportWidth: viewportWidth, viewportHeight: viewportHeight,
-                scenarioName: scenarioName)
+                scenarioName: scenarioName,
+                // An AX tree carries no probe ids, so the vacuity guard would
+                // fire on every live read — a check that cannot pass.
+                requiresProbedNodes: false)
             environment.output.writeOut(
                 summary
                     ? VerdictOutput.humanReadable(verdict)
@@ -430,7 +433,7 @@ public struct LiveSweepCommand: Sendable {
                         locale: cell.locale, colorScheme: cell.colorScheme,
                         verdict: JudgeCommand.judge(
                             tree: tree, viewportWidth: 0, viewportHeight: 0,
-                            scenarioName: "sweep \(name)")))
+                            scenarioName: "sweep \(name)", requiresProbedNodes: false)))
             }
             environment.output.writeOut(
                 try VerdictOutput.json(Report(app: target.app ?? "", cells: reports), pretty: pretty))

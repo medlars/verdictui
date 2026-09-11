@@ -199,6 +199,23 @@ final class ColorSamplingTests: XCTestCase {
         XCTAssertTrue(findings(textNode(contrast: 1.5, text: nil)).isEmpty)
     }
 
+    /// The vacuity guard applies to probe-channel trees only, and its opt-out
+    /// lives on the context so an externally observed tree (an AX read, a DOM
+    /// walk) is not accused of having observed nothing.
+    func testTheVacuityGuardIsOptOutOnlyForExternallyObservedTrees() {
+        var context = LintContext.macOS(
+            viewport: Rect(x: 0, y: 0, width: 200, height: 100), scenario: "external")
+        XCTAssertTrue(context.requiresProbedNodes, "probe-channel trees keep the guard")
+        let probeless = SemanticNode(
+            id: "", role: .container, frame: Rect(x: 0, y: 0, width: 200, height: 100),
+            structuralPath: "root")
+        XCTAssertTrue(
+            RuleEngine.run(rules: [], on: probeless, context: context).findings
+                .contains { $0.rule == RuleEngine.vacuousVerdictRule })
+        context.requiresProbedNodes = false
+        XCTAssertTrue(RuleEngine.run(rules: [], on: probeless, context: context).findings.isEmpty)
+    }
+
     func testLowContrastIsInTheStandardRuleSet() {
         XCTAssertTrue(RuleEngine.standardRules.contains { $0 is LowContrastRule })
     }
