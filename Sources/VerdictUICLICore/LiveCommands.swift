@@ -89,8 +89,15 @@ public struct LiveTarget: Sendable, Equatable {
 
     /// Run `body` against the target's pid, launching (and afterwards
     /// terminating) a fresh instance when the target is an app bundle.
+    ///
+    /// `T: Sendable` is load-bearing and is not redundant on a newer compiler:
+    /// `body` is declared nonisolated, so its result crosses back into this
+    /// `@MainActor` context. Swift 6.1 (what CI runs) rejects an unconstrained
+    /// `T` there; 6.3 infers it and stays quiet, so removing the constraint
+    /// reads as a harmless cleanup locally and reddens CI. Every call site
+    /// already returns a `Sendable` type.
     @MainActor
-    public func withPid<T>(
+    public func withPid<T: Sendable>(
         extraArguments: [String] = [], _ body: (pid_t) async throws -> T
     ) async throws -> T {
         try validate()
