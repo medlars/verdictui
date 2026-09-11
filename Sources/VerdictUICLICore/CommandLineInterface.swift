@@ -398,6 +398,15 @@ public struct VerdictUITool: AsyncParsableCommand {
         @Flag(name: .long, help: "With --pid/--app: sample colours so low-contrast can judge them.")
         public var colors = false
 
+        @Flag(
+            name: .long,
+            help: """
+                The tree was observed from OUTSIDE (an accessibility scrape, a \
+                DOM walk), so it carries no probe ids and the vacuity guard \
+                must not fire. Implied by --pid/--app.
+                """)
+        public var external = false
+
         @Option(
             name: .long,
             help: "Viewport width in points. Defaults to the root node's own width."
@@ -437,7 +446,8 @@ public struct VerdictUITool: AsyncParsableCommand {
                 treePath: tree,
                 viewportWidth: viewportWidth,
                 viewportHeight: viewportHeight,
-                scenarioName: name
+                scenarioName: name,
+                externallyObserved: external
             ).run(environment, pretty: formatting.pretty, summary: formatting.summary)
             try VerdictUITool.finish(code)
         }

@@ -140,6 +140,43 @@ final class LiveCommandTests: XCTestCase {
             report.tree.flattened().contains { $0.attributes[ColorSampler.backgroundKey] != nil })
     }
 
+    // MARK: - the vacuity guard and externally observed trees
+
+    private func probelessTree() -> SemanticNode {
+        SemanticNode(
+            id: "", role: .container, frame: Rect(x: 0, y: 0, width: 200, height: 100),
+            structuralPath: "root",
+            children: [
+                SemanticNode(
+                    id: "", role: .button, frame: Rect(x: 0, y: 0, width: 4, height: 4),
+                    text: "Go", structuralPath: "root/button[0]")
+            ]
+        ).withAssignedStructuralPaths()
+    }
+
+    /// An accessibility tree carries no probe ids, so judging one under the
+    /// probe-channel rules reported `vacuous-verdict` on a tree it had read
+    /// perfectly — measured 2026-09-10 against a live Calculator, 58 nodes.
+    func testAnExternallyObservedTreeIsNotCalledVacuous() {
+        let verdict = JudgeCommand.judge(
+            tree: probelessTree(), viewportWidth: 200, viewportHeight: 100,
+            scenarioName: "live", requiresProbedNodes: false)
+        XCTAssertFalse(verdict.findings.contains { $0.rule == RuleEngine.vacuousVerdictRule })
+        XCTAssertTrue(
+            verdict.findings.contains { $0.rule == "tap-target" },
+            "the other rules still judge the tree — this is not a blanket exemption")
+    }
+
+    /// The control, and the reason the flag is not a default: a PROBE-channel
+    /// tree with nothing probed must still be called vacuous, because zero
+    /// findings otherwise derives to PASS on a screen nobody observed.
+    func testAProbeChannelTreeWithNoProbesIsStillVacuous() {
+        let verdict = JudgeCommand.judge(
+            tree: probelessTree(), viewportWidth: 200, viewportHeight: 100,
+            scenarioName: "probe")
+        XCTAssertTrue(verdict.findings.contains { $0.rule == RuleEngine.vacuousVerdictRule })
+    }
+
     // MARK: - refusals before any launch
 
     func testAnActWithoutAPathIsAToolErrorNotALaunch() async {

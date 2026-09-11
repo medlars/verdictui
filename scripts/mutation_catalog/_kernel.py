@@ -14,8 +14,8 @@ MUTATIONS: list[Mutation] = [
         # width, visibly broken, reported PASS with findings: [].
         name="a probeless tree is reported clean again",
         path="Sources/VerdictUIKernel/RuleEngine.swift",
-        old="            if !containsProbedNode(root) {",
-        new="            if false {",
+        old="            if context.requiresProbedNodes, !containsProbedNode(root) {",
+        new="            if !context.requiresProbedNodes, !containsProbedNode(root) {",
         test="VerdictUIKernelTests.VacuousVerdictTests/testAProbelessTreeCannotProduceAPassVerdict",
     ),
     Mutation(
@@ -385,5 +385,15 @@ MUTATIONS: list[Mutation] = [
         old="+ (255 - alpha) * Int(back) / 255))",
         new="+ 0 * Int(back) / 255))",
         test="ColorSamplingTests/testATransparentCanvasIsCompositedOverTheBackdrop",
+    ),
+    Mutation(
+        # The vacuity guard stops applying to probe-channel trees. Zero findings
+        # derives to PASS, so a screen nobody observed would report clean — the
+        # exact hole the guard exists to close, reopened from the new opt-out.
+        name="the vacuity guard is opted out of by default",
+        path="Sources/VerdictUIKernel/RuleEngine.swift",
+        old="requiresProbedNodes: Bool = true",
+        new="requiresProbedNodes: Bool = false",
+        test="LiveCommandTests/testAProbeChannelTreeWithNoProbesIsStillVacuous",
     ),
 ]

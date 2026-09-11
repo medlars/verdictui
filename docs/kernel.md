@@ -133,6 +133,18 @@ Before any rule runs, `RuleEngine.run` checks that the tree contains at least on
 **probed** node, and emits an `error` finding under the id `vacuous-verdict` when
 it does not.
 
+It applies only to trees that were SUPPOSED to carry probe ids. A tree observed
+from outside — `inspect --pid` / `judge --pid` (an accessibility read), a DOM
+walk, a Flutter semantics dump — has none by construction, and its identity is
+the structural path instead, so `LintContext.requiresProbedNodes` is `false`
+there (`judge --external` for a tree you supply yourself; implied by
+`--pid`/`--app`). Measured 2026-09-10: without that distinction, `judge --pid`
+reported `vacuous-verdict` on a 58-node live Calculator tree it had read
+perfectly — a guard that could not pass for the case it was aimed at. The
+default stays `true`, because for a probe-channel tree zero findings derives to
+PASS and this guard is the only thing between a caller and a verdict about a
+screen nobody observed.
+
 This is deliberately **not** a `LintRule`, and it is the only check in the kernel
 that is not:
 

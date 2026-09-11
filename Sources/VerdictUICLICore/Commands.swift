@@ -630,12 +630,18 @@ public struct JudgeCommand: Sendable {
     /// them apart in a report.
     public let scenarioName: String
 
+    /// The tree was observed from outside (an AX scrape, a DOM walk), so it
+    /// carries no probe ids and the vacuity guard must not fire on it.
+    public let externallyObserved: Bool
+
     public init(
         treePath: String,
         viewportWidth: Double = 0,
         viewportHeight: Double = 0,
-        scenarioName: String = "judged-tree"
+        scenarioName: String = "judged-tree",
+        externallyObserved: Bool = false
     ) {
+        self.externallyObserved = externallyObserved
         self.treePath = treePath
         self.viewportWidth = viewportWidth
         self.viewportHeight = viewportHeight
@@ -659,7 +665,8 @@ public struct JudgeCommand: Sendable {
         tree: SemanticNode,
         viewportWidth: Double,
         viewportHeight: Double,
-        scenarioName: String
+        scenarioName: String,
+        requiresProbedNodes: Bool = true
     ) -> Verdict {
         // A zero viewport is not a viewport. Falling back to the root's own
         // frame means OffscreenRule compares against the surface the caller
@@ -667,10 +674,13 @@ public struct JudgeCommand: Sendable {
         // is offscreen and every verdict is noise.
         let width = viewportWidth > 0 ? viewportWidth : tree.frame.width
         let height = viewportHeight > 0 ? viewportHeight : tree.frame.height
-        let context = LintContext.macOS(
+        var context = LintContext.macOS(
             viewport: Rect(x: 0, y: 0, width: width, height: height),
             scenario: scenarioName
         )
+        // An externally observed tree (an AX read, a DOM walk) carries no probe
+        // ids, so the vacuity guard would fire on every one of them.
+        context.requiresProbedNodes = requiresProbedNodes
         return RuleEngine.run(rules: RuleEngine.standardRules, on: tree, context: context)
     }
 
@@ -690,7 +700,8 @@ public struct JudgeCommand: Sendable {
                 tree: tree,
                 viewportWidth: viewportWidth,
                 viewportHeight: viewportHeight,
-                scenarioName: scenarioName
+                scenarioName: scenarioName,
+                requiresProbedNodes: !externallyObserved
             )
             environment.output.writeOut(
                 summary
