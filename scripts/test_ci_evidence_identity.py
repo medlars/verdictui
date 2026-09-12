@@ -547,8 +547,8 @@ class TestWiring(unittest.TestCase):
         # this step -- and if it cannot, the emitter is red first.
         emit = extract_step(WORKFLOW_TEXT, EMITTER_NAME)
         interp = re.search(r"(\bpython[0-9.]*) \"\$GOV_V2/scripts/emit_run_evidence\.py\"", emit)
-        self.assertIsNotNone(interp, "emitter does not invoke the evidence emitter directly")
-        assert interp is not None
+        if interp is None:
+            self.fail("emitter does not invoke the evidence emitter directly")
         self.assertIn(f'run: {interp.group(1)} "$GITHUB_WORKSPACE', run_line)
         emitter_prefix = WORKFLOW_TEXT[: WORKFLOW_TEXT.index(f"- name: {EMITTER_NAME}")]
         self.assertIn(f"- name: {REGRESSION_NAME}", emitter_prefix)
