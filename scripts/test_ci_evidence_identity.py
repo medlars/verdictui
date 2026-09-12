@@ -1,5 +1,10 @@
 #!/usr/bin/env python3.14
-"""Regression harness: every consumer verifier is bound to THIS invocation's producer (CIS-04F12B01)."""
+"""Regression harness: every consumer verifier is bound to THIS invocation's
+producer (CIS-04F12B01).
+
+Wrapped at 100 columns on purpose: six carriers lint this file with E501 live
+at line-length 100, so a single long line reddens their mains.
+"""
 
 import json
 import os
