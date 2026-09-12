@@ -30,6 +30,8 @@ SUMMARY = "Detect tracked files overwritten by a stale editor buffer."
 
 REPO = Path(__file__).resolve().parent.parent
 
+GIT_TIMEOUT_S = 30
+
 
 def _git(args: list[str], cwd: Path) -> str:
     """Run git and return stdout, or "" when the command fails.
@@ -43,7 +45,7 @@ def _git(args: list[str], cwd: Path) -> str:
         cwd=cwd,
         capture_output=True,
         text=True,
-        timeout=30,
+        timeout=GIT_TIMEOUT_S,
         check=False,
     )
     return result.stdout if result.returncode == 0 else ""
