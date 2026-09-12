@@ -151,6 +151,7 @@ def run_case(
         capture_output=True,
         text=True,
         timeout=60,
+        check=False,
     )
     summary_path = Path(env["GITHUB_STEP_SUMMARY"])
     summary = summary_path.read_text(encoding="utf-8") if summary_path.exists() else ""
