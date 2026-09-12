@@ -98,6 +98,7 @@ def run_case(
     record=None,
     emit_outcome="success",
     key_present=True,
+    checkout_outcome=None,
     env_overrides=None,
     evidence_text=None,
     cwd_rel="",
@@ -120,7 +121,12 @@ def run_case(
     env["GITHUB_STEP_SUMMARY"] = str(tmp / "summary.md")
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     env["GOV_V2_KEY_PRESENT"] = "true" if key_present else "false"
-    env["GOV_V2_CHECKOUT_OUTCOME"] = "success"
+    # The two carve-out signals come from ONE step outcome, so key_present=False
+    # with a successful checkout is a combination the workflow cannot emit; the
+    # default pairs them and adversarial cases override explicitly.
+    if checkout_outcome is None:
+        checkout_outcome = "success" if key_present else "failure"
+    env["GOV_V2_CHECKOUT_OUTCOME"] = checkout_outcome
     env["EVIDENCE_EMIT_OUTCOME"] = emit_outcome
     env["EVIDENCE_EXPECTED_RUN_ID"] = "900001"
     env["EVIDENCE_EXPECTED_COMMIT"] = "a" * 40
@@ -339,6 +345,117 @@ class TestCurrentProducerBinding(unittest.TestCase):
         self.assertIn("PRESENT", summary)
 
 
+class TestKeylessCarveOutSignals(unittest.TestCase):
+    """The carve-out must fire on an OBSERVED unavailable checkout, never on an
+    unobservable one. A renamed checkout step id or a dropped env mapping leaves
+    the signals blank, and a blank signal used to take the allow branch --
+    CIS-04F12B01 security finding 4. "Unavailable" and "could not observe" demand
+    opposite answers, so the verifier needs a third state, not a boolean."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory(prefix="cis04f12b01-")
+        self.addCleanup(self._tmp.cleanup)
+        self.tmp = Path(self._tmp.name)
+
+    def test_genuine_keyless_checkout_failure_still_skips_loudly(self):
+        # The owner-decided fleet standard (2026-09-12): keep this carve-out.
+        rc, _out, err, summary = run_case(
+            self.tmp,
+            record=base_record(),
+            emit_outcome="skipped",
+            key_present=False,
+            checkout_outcome="failure",
+        )
+        self.assertEqual(rc, 0, msg=err)
+        self.assertNotIn("PRESENT", summary)
+        self.assertIn("produced no run-v2 evidence", summary.lower())
+
+    def test_genuine_keyless_checkout_skipped_still_skips_loudly(self):
+        rc, _out, err, summary = run_case(
+            self.tmp,
+            record=base_record(),
+            emit_outcome="skipped",
+            key_present=False,
+            checkout_outcome="skipped",
+        )
+        self.assertEqual(rc, 0, msg=err)
+        self.assertIn("produced no run-v2 evidence", summary.lower())
+
+    def test_blank_key_present_signal_fails_closed(self):
+        # A dropped `GOV_V2_KEY_PRESENT` env mapping renders blank.
+        rc, out, err, summary = run_case(
+            self.tmp,
+            record=base_record(),
+            emit_outcome="skipped",
+            env_overrides={"GOV_V2_KEY_PRESENT": ""},
+        )
+        self.assertEqual(rc, 1, msg=out)
+        self.assertIn("GOV_V2_KEY_PRESENT", err)
+        self.assertNotIn("PRESENT", summary)
+
+    def test_unrecognised_key_present_signal_fails_closed(self):
+        rc, out, err, _summary = run_case(
+            self.tmp,
+            record=base_record(),
+            emit_outcome="skipped",
+            env_overrides={"GOV_V2_KEY_PRESENT": "maybe"},
+        )
+        self.assertEqual(rc, 1, msg=out)
+        self.assertIn("GOV_V2_KEY_PRESENT", err)
+
+    def test_blank_checkout_outcome_fails_closed(self):
+        # A renamed checkout step id renders `steps.<id>.outcome` blank, which
+        # makes the boolean mapping evaluate to a perfectly plausible "false".
+        # Only the outcome signal separates that from a real keyless run.
+        rc, out, err, summary = run_case(
+            self.tmp,
+            record=base_record(),
+            emit_outcome="skipped",
+            key_present=False,
+            checkout_outcome="",
+        )
+        self.assertEqual(rc, 1, msg=out)
+        self.assertIn("GOV_V2_CHECKOUT_OUTCOME", err)
+        self.assertNotIn("PRESENT", summary)
+
+    def test_unrecognised_checkout_outcome_fails_closed(self):
+        rc, out, err, _summary = run_case(
+            self.tmp,
+            record=base_record(),
+            emit_outcome="skipped",
+            key_present=False,
+            checkout_outcome="notastate",
+        )
+        self.assertEqual(rc, 1, msg=out)
+        self.assertIn("GOV_V2_CHECKOUT_OUTCOME", err)
+
+    def test_contradictory_signals_fail_closed(self):
+        # Both signals derive from one step outcome, so "key absent" plus
+        # "checkout succeeded" cannot both be true; observing it means the
+        # wiring no longer reports what it claims to report.
+        rc, out, _err, summary = run_case(
+            self.tmp,
+            record=base_record(),
+            emit_outcome="skipped",
+            key_present=False,
+            checkout_outcome="success",
+        )
+        self.assertEqual(rc, 1, msg=out)
+        self.assertNotIn("PRESENT", summary)
+
+    def test_keyed_repo_with_failed_producer_still_fails(self):
+        # Positive control for the whole class: the carve-out must not widen
+        # into the keyed path this ticket exists to keep red.
+        rc, out, err, _summary = run_case(
+            self.tmp,
+            record=base_record(),
+            emit_outcome="failure",
+            key_present=True,
+        )
+        self.assertEqual(rc, 1, msg=out)
+        self.assertIn("EVIDENCE_EMIT_OUTCOME", err)
+
+
 class TestWiring(unittest.TestCase):
     def setUp(self):
         self.verifier = extract_step(WORKFLOW_TEXT, VERIFIER_NAME)
@@ -346,6 +463,33 @@ class TestWiring(unittest.TestCase):
     def test_step_ids_unique(self):
         self.assertEqual(WORKFLOW_TEXT.count("id: runv2_emit"), 1)
         self.assertEqual(WORKFLOW_TEXT.count("id: runv2_verify"), 1)
+
+    def test_govv2_step_id_is_unique_and_precedes_the_verifier(self):
+        # `steps.<id>.outcome` reads blank for an unknown OR a later step, so a
+        # rename and a reorder both silence the carve-out signals.
+        self.assertEqual(WORKFLOW_TEXT.count("id: govv2"), 1)
+        self.assertLess(
+            WORKFLOW_TEXT.index("id: govv2"),
+            WORKFLOW_TEXT.index(f"- name: {VERIFIER_NAME}"),
+        )
+
+    def test_keyless_carveout_env_wiring_is_pinned(self):
+        # Owner decision 2026-09-12: the carve-out stays, and its wiring is
+        # pinned so a silent rewiring flips this control red instead of
+        # flipping the verifier to allow (CIS-04F12B01 finding 4).
+        self.assertIn(
+            identity_env_line("GOV_V2_KEY_PRESENT", "steps.govv2.outcome == 'success'"),
+            self.verifier,
+        )
+        self.assertIn(
+            identity_env_line("GOV_V2_CHECKOUT_OUTCOME", "steps.govv2.outcome"),
+            self.verifier,
+        )
+
+    def test_both_carveout_signals_are_consumed_not_dead_env(self):
+        # A mapped-but-unread env var is indistinguishable from an absent one.
+        self.assertIn("GOV_V2_KEY_PRESENT", BODY)
+        self.assertIn("GOV_V2_CHECKOUT_OUTCOME", BODY)
 
     def test_verifier_env_uses_emitter_outcome_exactly(self):
         self.assertIn(
