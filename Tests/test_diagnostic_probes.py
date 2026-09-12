@@ -125,6 +125,28 @@ def test_the_refusal_names_the_working_invocation(relative: str) -> None:
     )
 
 
+@needs_appkit
+def test_publication_probe_logs_through_emit_not_print() -> None:
+    """CIS-87482578: production Swift reports through Logger(subsystem:category:),
+    never print(). The compile step typechecks the Logger/emit path; the source
+    scan is the reintroduction guard, because print()'s defect is a source-level
+    call that a compile of valid Swift cannot catch."""
+    probe = REPO / "scripts" / "ax-window-publication-probe.swift"
+
+    checked = subprocess.run(
+        ["swiftc", "-typecheck", str(probe)],
+        capture_output=True,
+        text=True,
+        timeout=300,
+        cwd=REPO,
+    )
+    assert checked.returncode == 0, f"probe does not compile:\n{checked.stderr[-800:]}"
+
+    source = probe.read_text(encoding="utf-8")
+    assert "print(" not in source, "probe still reports through print()"
+    assert "Logger(subsystem:" in source, "structured logging path went missing"
+
+
 def test_every_self_exec_probe_is_listed_here() -> None:
     """A probe added later must not silently escape this suite.
 
