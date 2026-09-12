@@ -163,3 +163,24 @@ class TestGitHelperFailsClosedTowardSilence:
         as a finding: `_git` returns "" on a non-zero exit, so an unanswerable
         question produces no accusation (the script's own docstring rule)."""
         assert _mod._git(["log", "-1"], tmp_path) == ""
+
+
+class TestGitTimeoutIsConfiguredNotHardcoded:
+    def test_git_timeout_comes_from_the_module_constant(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`_git` must pass the module's timeout constant to subprocess.run, so
+        a tuning change is a one-line edit at the top of the script rather than
+        a hunt through the helper body (CIS-52AEA404)."""
+        captured: dict[str, object] = {}
+
+        def fake_run(argv: list[str], **kwargs: object) -> object:
+            captured.update(kwargs)
+            from types import SimpleNamespace
+
+            return SimpleNamespace(returncode=1, stdout="")
+
+        monkeypatch.setattr(_mod.subprocess, "run", fake_run)
+        _mod._git(["log", "-1"], tmp_path)
+
+        assert captured["timeout"] == _mod.GIT_TIMEOUT_S
