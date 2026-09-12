@@ -58,6 +58,16 @@ jobs:
       # key that is present and healthy. Evidence that exists only when
       # everything passed cannot describe a failure. Measured 2026-08-11 on
       # financeflow-pro run 31458757494; swept fleet-wide, 24 repos affected.
+      # CIS-04F12B01: runs the identity-contract harness against the workflow
+      # text itself, so the verifier cannot silently weaken.
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.14'
+
+      - name: Verify CI evidence identity contract
+        run: python "$GITHUB_WORKSPACE/scripts/test_ci_evidence_identity.py"
+
       - name: Check out governance-v2
         if: ${{ !cancelled() }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -73,6 +83,7 @@ jobs:
       # everything passed cannot describe a failure, which is when it matters.
       - name: Emit run-v2 evidence (shadow)
         if: ${{ !cancelled() && hashFiles('.gov-v2/governance-v2/scripts/emit_run_evidence.py') != '' }}
+        id: runv2_emit
         env:
           GOV_V2: ${{ github.workspace }}/.gov-v2/governance-v2
           RUN_URL: github://${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -112,19 +123,103 @@ jobs:
       # same expression as the thing it verifies skips in exactly the case it
       # exists to catch, and is unfalsifiable for its own defect (lesson 224).
       - name: Verify run-v2 evidence was produced
+        id: runv2_verify
         if: ${{ !cancelled() }}
+        env:
+          GOV_V2_KEY_PRESENT: ${{ steps.govv2.outcome == 'success' }}
+          GOV_V2_CHECKOUT_OUTCOME: ${{ steps.govv2.outcome }}
+          EVIDENCE_EMIT_OUTCOME: ${{ steps.runv2_emit.outcome }}
+          EVIDENCE_EXPECTED_RUN_ID: ${{ github.run_id }}
+          EVIDENCE_EXPECTED_COMMIT: ${{ github.sha }}
+          EVIDENCE_EXPECTED_REPO: ${{ github.repository }}
+          EVIDENCE_EXPECTED_PROJECT: verdictui
+          EVIDENCE_PATH: ${{ github.workspace }}/evidence/run-v2.json
         run: |
-          if [ ! -s evidence/run-v2.json ]; then
-            echo "::error::evidence missing. The emit step did not run or wrote nothing."
-            echo "Most likely the governance-v2 checkout failed: this repo needs a"
-            echo "SHARED_LIBS_DEPLOY_KEY (read-only deploy key) on medlars/projects-shared."
-            echo "A green build that ships no evidence is the false green this program removes."
-            exit 1
-          fi
-          echo "run-v2 evidence present: $(wc -c < evidence/run-v2.json) bytes"
+          python - <<'PYVERIFY'
+          import json
+          import os
+          import sys
+
+          # CIS-04F12B01: a checked-out HISTORICAL run-v2.json is not proof that
+          # THIS invocation emitted a record. Gate on the producer first, then
+          # bind repo/commit/project/run identity, then -- only then -- accept.
+          def fail(msg):
+              print("::error::" + msg, file=sys.stderr)
+              sys.exit(1)
+
+          def note(line):
+              with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as fh:
+                  fh.write(line + "\n")
+
+          emit_outcome = os.environ.get("EVIDENCE_EMIT_OUTCOME", "")
+          if emit_outcome != "success":
+              if os.environ.get("GOV_V2_KEY_PRESENT", "").lower() != "true":
+                  # Keyless repo: the emit step structurally cannot run. The
+                  # skip is loud in the summary, never a silent PRESENT.
+                  note("run-v2 evidence: produced no run-v2 evidence (governance-v2 checkout unavailable)")
+                  print("run-v2 evidence: producer did not run (no governance-v2 checkout); skipping identity check")
+                  sys.exit(0)
+              fail(f"EVIDENCE_EMIT_OUTCOME is {emit_outcome!r}, not 'success' -- this invocation produced no record, so any evidence file present is historical and is not accepted (CIS-04F12B01)")
+
+          expected = {
+              key: os.environ.get(key, "")
+              for key in (
+                  "EVIDENCE_EXPECTED_RUN_ID",
+                  "EVIDENCE_EXPECTED_COMMIT",
+                  "EVIDENCE_EXPECTED_REPO",
+                  "EVIDENCE_EXPECTED_PROJECT",
+              )
+          }
+          for key, value in expected.items():
+              if not value:
+                  fail(f"{key} is blank -- identity binding has nothing to bind against (CIS-04F12B01)")
+
+          path = os.environ["EVIDENCE_PATH"]
+          try:
+              with open(path, encoding="utf-8") as fh:
+                  text = fh.read()
+          except FileNotFoundError:
+              fail(f"evidence file missing at {path} -- producer succeeded but wrote nothing (CIS-04F12B01)")
+          if not text.strip():
+              fail(f"evidence file at {path} is empty -- producer succeeded but wrote nothing (CIS-04F12B01)")
+          try:
+              record = json.loads(text)
+          except json.JSONDecodeError as exc:
+              fail(f"evidence at {path} is not valid JSON: {exc} (CIS-04F12B01)")
+          if not isinstance(record, dict):
+              fail(f"evidence at {path} is not a JSON object (CIS-04F12B01)")
+
+          if record.get("schema_version") != "2.0.0":
+              fail(f"schema_version is {record.get('schema_version')!r}, expected '2.0.0' (CIS-04F12B01)")
+
+          for section in ("project", "source", "runner"):
+              if not isinstance(record.get(section), dict):
+                  fail(f"evidence section {section!r} is missing or not an object (CIS-04F12B01)")
+
+          project = record["project"]
+          source = record["source"]
+          runner = record["runner"]
+
+          if project.get("canonical_id") != expected["EVIDENCE_EXPECTED_PROJECT"]:
+              fail(f"project.canonical_id is {project.get('canonical_id')!r}, expected {expected['EVIDENCE_EXPECTED_PROJECT']!r} -- evidence belongs to a different project (CIS-04F12B01)")
+          if source.get("repo") != expected["EVIDENCE_EXPECTED_REPO"]:
+              fail(f"source.repo is {source.get('repo')!r}, expected {expected['EVIDENCE_EXPECTED_REPO']!r} -- evidence from another repo (CIS-04F12B01)")
+          if source.get("commit_sha") != expected["EVIDENCE_EXPECTED_COMMIT"]:
+              fail(f"source.commit_sha is {source.get('commit_sha')!r}, expected {expected['EVIDENCE_EXPECTED_COMMIT']!r} -- evidence from an earlier commit (CIS-04F12B01)")
+          if runner.get("kind") != "ci":
+              fail(f"runner.kind is {runner.get('kind')!r}, expected 'ci' (CIS-04F12B01)")
+          want_identity = "github-actions/run/" + expected["EVIDENCE_EXPECTED_RUN_ID"]
+          if runner.get("identity") != want_identity:
+              fail(f"runner.identity is {runner.get('identity')!r}, expected {want_identity!r} -- evidence was not produced by THIS invocation (CIS-04F12B01)")
+
+          # Identity holds. The record's verdict is NOT re-graded: a valid FAIL
+          # record from this run is still this run's evidence.
+          note("run-v2 evidence: PRESENT -- identity bound to this invocation")
+          print("run-v2 evidence identity verified: record belongs to this successful producer invocation (CIS-04F12B01)")
+          PYVERIFY
 
       - name: Upload run-v2 evidence
-        if: ${{ !cancelled() && hashFiles('.gov-v2/governance-v2/scripts/emit_run_evidence.py') != '' }}
+        if: ${{ !cancelled() && steps.runv2_emit.outcome == 'success' && steps.runv2_verify.outcome == 'success' && hashFiles('evidence/run-v2.json') != '' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: run-evidence
