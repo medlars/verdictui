@@ -1,5 +1,10 @@
 #!/usr/bin/env python3.14
-"""Regression harness: every consumer verifier is bound to THIS invocation's producer (CIS-04F12B01)."""
+"""Regression harness: every consumer verifier is bound to THIS invocation's
+producer (CIS-04F12B01).
+
+Wrapped at 100 columns on purpose: six carriers lint this file with E501 live
+at line-length 100, so a single long line reddens their mains.
+"""
 
 import json
 import os
@@ -174,7 +179,7 @@ class TestCurrentProducerBinding(unittest.TestCase):
         # and still passes: the verifier compares runner.identity, not run_id.
         record = base_record()
         self.assertNotEqual(record["run_id"], "900001")
-        rc, out, err, summary = run_case(self.tmp, record=record)
+        rc, _out, err, summary = run_case(self.tmp, record=record)
         self.assertEqual(rc, 0, msg=err)
         self.assertIn("PRESENT", summary)
 
@@ -196,14 +201,14 @@ class TestCurrentProducerBinding(unittest.TestCase):
                 "evaluator_version": "pytest/9.0.3",
             },
         ]
-        rc, out, err, summary = run_case(self.tmp, record=record)
+        rc, _out, err, summary = run_case(self.tmp, record=record)
         self.assertEqual(rc, 0, msg=err)
         self.assertIn("PRESENT", summary)
 
     def test_old_run_identity_rejected(self):
         record = base_record()
         record["runner"]["identity"] = "github-actions/run/900000"
-        rc, out, err, summary = run_case(self.tmp, record=record)
+        rc, _out, err, summary = run_case(self.tmp, record=record)
         self.assertEqual(rc, 1)
         self.assertIn("runner.identity", err)
         self.assertNotIn("PRESENT", summary)
@@ -211,35 +216,35 @@ class TestCurrentProducerBinding(unittest.TestCase):
     def test_wrong_commit_rejected(self):
         record = base_record()
         record["source"]["commit_sha"] = "b" * 40
-        rc, out, err, summary = run_case(self.tmp, record=record)
+        rc, _out, err, _summary = run_case(self.tmp, record=record)
         self.assertEqual(rc, 1)
         self.assertIn("commit", err)
 
     def test_wrong_repo_rejected(self):
         record = base_record()
         record["source"]["repo"] = "audit/other"
-        rc, out, err, summary = run_case(self.tmp, record=record)
+        rc, _out, err, _summary = run_case(self.tmp, record=record)
         self.assertEqual(rc, 1)
         self.assertIn("repo", err)
 
     def test_wrong_project_rejected(self):
         record = base_record()
         record["project"]["canonical_id"] = "another-project"
-        rc, out, err, summary = run_case(self.tmp, record=record)
+        rc, _out, err, _summary = run_case(self.tmp, record=record)
         self.assertEqual(rc, 1)
         self.assertIn("project", err)
 
     def test_non_ci_runner_rejected(self):
         record = base_record()
         record["runner"]["kind"] = "local"
-        rc, out, err, summary = run_case(self.tmp, record=record)
+        rc, _out, err, _summary = run_case(self.tmp, record=record)
         self.assertEqual(rc, 1)
         self.assertIn("runner.kind", err)
 
     def test_spoofed_suffix_rejected_strict_equality(self):
         record = base_record()
         record["runner"]["identity"] = "evil-prefix/github-actions/run/900001"
-        rc, out, err, summary = run_case(self.tmp, record=record)
+        rc, _out, _err, summary = run_case(self.tmp, record=record)
         self.assertEqual(rc, 1)
         self.assertNotIn("PRESENT", summary)
 
@@ -248,7 +253,7 @@ class TestCurrentProducerBinding(unittest.TestCase):
             for key_present in (True, False):
                 with self.subTest(outcome=outcome, key_present=key_present):
                     with tempfile.TemporaryDirectory(prefix="cis04f12b01-") as d:
-                        rc, out, err, summary = run_case(
+                        rc, _out, err, summary = run_case(
                             Path(d),
                             record=base_record(),
                             emit_outcome=outcome,
@@ -272,7 +277,7 @@ class TestCurrentProducerBinding(unittest.TestCase):
         ):
             with self.subTest(key=key):
                 with tempfile.TemporaryDirectory(prefix="cis04f12b01-") as d:
-                    rc, out, err, summary = run_case(
+                    rc, _out, err, summary = run_case(
                         Path(d),
                         record=base_record(),
                         env_overrides={key: ""},
@@ -282,17 +287,17 @@ class TestCurrentProducerBinding(unittest.TestCase):
 
     def test_absent_evidence_file_rejected(self):
         with tempfile.TemporaryDirectory(prefix="cis04f12b01-") as d:
-            rc, out, err, summary = run_case(Path(d), record=None)
+            rc, _out, err, _summary = run_case(Path(d), record=None)
         self.assertEqual(rc, 1, msg=err)
 
     def test_zero_byte_evidence_file_rejected(self):
         with tempfile.TemporaryDirectory(prefix="cis04f12b01-") as d:
-            rc, out, err, summary = run_case(Path(d), evidence_text="")
+            rc, _out, err, _summary = run_case(Path(d), evidence_text="")
         self.assertEqual(rc, 1, msg=err)
 
     def test_invalid_json_rejected(self):
         with tempfile.TemporaryDirectory(prefix="cis04f12b01-") as d:
-            rc, out, err, summary = run_case(Path(d), evidence_text="{not-json")
+            rc, _out, err, _summary = run_case(Path(d), evidence_text="{not-json")
         self.assertEqual(rc, 1, msg=err)
         self.assertNotIn("Traceback", err)
 
@@ -300,7 +305,7 @@ class TestCurrentProducerBinding(unittest.TestCase):
         for text in ("[]", "null", "1", '"text"'):
             with self.subTest(root=text):
                 with tempfile.TemporaryDirectory(prefix="cis04f12b01-") as d:
-                    rc, out, err, summary = run_case(Path(d), evidence_text=text)
+                    rc, _out, err, _summary = run_case(Path(d), evidence_text=text)
                 self.assertEqual(rc, 1, msg=err)
                 self.assertNotIn("Traceback", err)
 
@@ -318,7 +323,7 @@ class TestCurrentProducerBinding(unittest.TestCase):
                     else:
                         record[section] = "oops"
                     with tempfile.TemporaryDirectory(prefix="cis04f12b01-") as d:
-                        rc, out, err, summary = run_case(Path(d), record=record)
+                        rc, _out, err, _summary = run_case(Path(d), record=record)
                     self.assertEqual(rc, 1, msg=err)
                     self.assertNotIn("Traceback", err)
 
@@ -331,12 +336,12 @@ class TestCurrentProducerBinding(unittest.TestCase):
                 else:
                     record["schema_version"] = value
                 with tempfile.TemporaryDirectory(prefix="cis04f12b01-") as d:
-                    rc, out, err, summary = run_case(Path(d), record=record)
+                    rc, _out, err, _summary = run_case(Path(d), record=record)
                 self.assertEqual(rc, 1, msg=err)
 
     def test_sentinel_style_subdirectory_cwd_reaches_root_evidence(self):
         with tempfile.TemporaryDirectory(prefix="cis04f12b01-") as d:
-            rc, out, err, summary = run_case(
+            rc, _out, err, summary = run_case(
                 Path(d),
                 record=base_record(),
                 cwd_rel="app",
@@ -535,15 +540,21 @@ class TestWiring(unittest.TestCase):
             WORKFLOW_TEXT.index(f"- name: {UPLOAD_NAME}"),
         )
 
-    def test_regression_step_present_after_python_setup(self):
+    def test_regression_step_runs_before_the_emitter_on_its_interpreter(self):
         regression = extract_step(WORKFLOW_TEXT, REGRESSION_NAME)
         run_line = next(ln for ln in regression.splitlines() if ln.strip().startswith("run:"))
-        self.assertIn(
-            'python "$GITHUB_WORKSPACE/scripts/test_ci_evidence_identity.py"',
-            run_line,
-        )
-        prefix = WORKFLOW_TEXT[: WORKFLOW_TEXT.index(f"- name: {REGRESSION_NAME}")]
-        self.assertIn("actions/setup-python", prefix)
+        self.assertIn('"$GITHUB_WORKSPACE/scripts/test_ci_evidence_identity.py"', run_line)
+        # Interpreter PARITY with the emitter, not the presence of a named setup
+        # action: some consumers run on images that already provide `python` and
+        # never call actions/setup-python, and asserting one spelling of "an
+        # interpreter exists" fails for them while saying nothing about whether
+        # the interpreter actually resolves. If the emitter can run it, so can
+        # this step -- and if it cannot, the emitter is red first.
+        emit = extract_step(WORKFLOW_TEXT, EMITTER_NAME)
+        interp = re.search(r"(\bpython[0-9.]*) \"\$GOV_V2/scripts/emit_run_evidence\.py\"", emit)
+        if interp is None:
+            self.fail("emitter does not invoke the evidence emitter directly")
+        self.assertIn(f'run: {interp.group(1)} "$GITHUB_WORKSPACE', run_line)
         emitter_prefix = WORKFLOW_TEXT[: WORKFLOW_TEXT.index(f"- name: {EMITTER_NAME}")]
         self.assertIn(f"- name: {REGRESSION_NAME}", emitter_prefix)
 
@@ -556,28 +567,26 @@ FIXTURE_STEP = textwrap.dedent("""\
             run: echo hi
 """)
 FIXTURE_DUPLICATE = textwrap.dedent(
-    """\
+    f"""\
     jobs:
       test:
         steps:
-          - name: %s
+          - name: {VERIFIER_NAME}
             run: |
               echo one
-          - name: %s
+          - name: {VERIFIER_NAME}
             run: |
               echo two
 """
-    % (VERIFIER_NAME, VERIFIER_NAME)
 )
 FIXTURE_NO_RUN = textwrap.dedent(
-    """\
+    f"""\
     jobs:
       test:
         steps:
-          - name: %s
+          - name: {VERIFIER_NAME}
             uses: actions/checkout@v4
 """
-    % VERIFIER_NAME
 )
 
 
