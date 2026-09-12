@@ -14,6 +14,19 @@
 // Finder 0 / 1 window with readable geometry. See `no.md`.
 import AppKit
 import ApplicationServices
+import os
+
+// Production Swift reports through Logger(subsystem:category:), never via the
+// bare terminal write that print performs (CIS-87482578). emit() ALSO mirrors
+// each line to stderr, because Logger output never reaches a terminal and a
+// probe whose reading is invisible in the shell that ran it is a probe nobody
+// re-runs.
+let probeLog = Logger(subsystem: "com.vohux.verdictui", category: "ax-publication-probe")
+
+func emit(_ line: String) {
+    probeLog.notice("\(line, privacy: .public)")
+    FileHandle.standardError.write(Data((line + "\n").utf8))
+}
 
 /// Cross-process read of what `pid` publishes. This is the read the witness
 /// performs, reduced to its essentials.
@@ -31,7 +44,7 @@ func read(pid: pid_t, label: String) {
         let sizeStatus = AXUIElementCopyAttributeValue(first, kAXSizeAttribute as CFString, &size)
         detail = "  geometry: position=\(positionStatus.rawValue) size=\(sizeStatus.rawValue)"
     }
-    print("\(label): status=\(status.rawValue) windows=\(windows.count)\(detail)")
+    emit("\(label): status=\(status.rawValue) windows=\(windows.count)\(detail)")
 }
 
 // A child process is required, not a nicety: a process cannot read its OWN
@@ -45,7 +58,7 @@ if CommandLine.arguments.contains("--child") {
         styleMask: [.titled], backing: .buffered, defer: false)
     window.title = "ax-publication-probe"
     window.orderFront(nil)
-    print("child: pid=\(ProcessInfo.processInfo.processIdentifier) NSApp.windows=\(app.windows.count)")
+    emit("child: pid=\(ProcessInfo.processInfo.processIdentifier) NSApp.windows=\(app.windows.count)")
     // Long enough for the parent to read it several times over.
     RunLoop.current.run(until: Date().addingTimeInterval(10))
     exit(0)
@@ -93,16 +106,16 @@ do {
 }
 Thread.sleep(forTimeInterval: 2)
 
-print("--- a freshly-launched GUI process (the witness's own case) ---")
+emit("--- a freshly-launched GUI process (the witness's own case) ---")
 read(pid: child.processIdentifier, label: "fresh")
 
-print("--- control: an established app. If THIS fails, the grant is missing ---")
+emit("--- control: an established app. If THIS fails, the grant is missing ---")
 if let finder = NSWorkspace.shared.runningApplications
     .first(where: { $0.bundleIdentifier == "com.apple.finder" })
 {
     read(pid: finder.processIdentifier, label: "Finder")
 } else {
-    print("Finder: not running — no control available")
+    emit("Finder: not running — no control available")
 }
 
 // `isRunning` first: `terminate()` on a task that never launched raises
@@ -111,7 +124,7 @@ if let finder = NSWorkspace.shared.runningApplications
 if child.isRunning {
     child.terminate()
 }
-print("""
+emit("""
 
     Reading: fresh=0-windows-with-error AND control=readable means the SESSION \
     is not publishing new windows. That is an environment state, not a defect \
