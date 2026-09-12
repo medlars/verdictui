@@ -74,7 +74,7 @@ jobs:
         with:
           repository: medlars/projects-shared
           path: .gov-v2
-          ref: "69b2c65651e983ccd42f45d39564c6ff7397f772"  # projects-shared main @ 2026-08-28; pinned so this repo's CI verdict cannot change without a commit here (GOV-AUD-010)
+          ref: "30aa65f762bf0198323c704629bfb8e14c96b199"  # projects-shared main @ 2026-09-11; pinned so this repo's CI verdict cannot change without a commit here (GOV-AUD-010)
           ssh-key: ${{ secrets.SHARED_LIBS_DEPLOY_KEY }}
         continue-on-error: true
         id: govv2
@@ -153,7 +153,22 @@ jobs:
 
           emit_outcome = os.environ.get("EVIDENCE_EMIT_OUTCOME", "")
           if emit_outcome != "success":
-              if os.environ.get("GOV_V2_KEY_PRESENT", "").lower() != "true":
+              # THREE states, not two: "the governance checkout was unavailable"
+              # and "the carve-out signals could not be observed" demand opposite
+              # answers. A renamed checkout step id or a dropped env mapping
+              # renders `steps.<id>.outcome` blank -- and a blank boolean maps to
+              # a perfectly plausible 'false', which used to take the allow
+              # branch. Reading the outcome is what separates the two
+              # (CIS-04F12B01 security finding 4; owner decision 2026-09-12).
+              key_present = os.environ.get("GOV_V2_KEY_PRESENT", "").lower()
+              checkout_outcome = os.environ.get("GOV_V2_CHECKOUT_OUTCOME", "")
+              if key_present not in ("true", "false"):
+                  fail("GOV_V2_KEY_PRESENT is " + repr(key_present) + ", expected 'true' or 'false' -- the carve-out signal is unreadable, so no skip can be justified (CIS-04F12B01)")
+              if checkout_outcome not in ("success", "failure", "cancelled", "skipped"):
+                  fail("GOV_V2_CHECKOUT_OUTCOME is " + repr(checkout_outcome) + ", expected a step outcome -- a blank value means the checkout step id no longer resolves, which is a rewiring and not a keyless run (CIS-04F12B01)")
+              if key_present != "true":
+                  if checkout_outcome == "success":
+                      fail("GOV_V2_KEY_PRESENT is 'false' while GOV_V2_CHECKOUT_OUTCOME is 'success' -- both derive from one step outcome, so this pair is unreachable and the wiring no longer reports what it claims (CIS-04F12B01)")
                   # Keyless repo: the emit step structurally cannot run. The
                   # skip is loud in the summary, never a silent PRESENT.
                   note("run-v2 evidence: produced no run-v2 evidence (governance-v2 checkout unavailable)")
