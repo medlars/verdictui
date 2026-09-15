@@ -110,6 +110,33 @@ final class AXReaderTests: XCTestCase {
             "the bound must stay well inside the stack, or it cannot prevent the crash")
     }
 
+    // MARK: - Non-finite geometry
+
+    /// CIS-1BDB5536: an offscreen LaunchGate onboarding element published an
+    /// infinite frame.x, and the whole tree read died at JSON encode with
+    /// EncodingError — finite sibling controls became unreadable because one
+    /// offscreen rect could not encode. The seam is static so it can be tested
+    /// without a window server (a test that needs one is not a unit test).
+    func testNonFiniteGeometryIsUnavailableNotAFatalEncode() {
+        let finite = CGRect(x: 10, y: 20, width: 300, height: 200)
+        XCTAssertEqual(AXReader.finiteGeometry(finite), finite)
+
+        XCTAssertNil(
+            AXReader.finiteGeometry(
+                CGRect(x: CGFloat.infinity, y: 20, width: 300, height: 200)),
+            "an infinite origin must mark geometry unavailable, not ride to the encoder")
+        XCTAssertNil(
+            AXReader.finiteGeometry(
+                CGRect(x: 10, y: -CGFloat.infinity, width: 300, height: 200)))
+        XCTAssertNil(
+            AXReader.finiteGeometry(
+                CGRect(x: 10, y: 20, width: CGFloat.nan, height: 200)),
+            "NaN fails JSONEncoder the same way .infinity does")
+        XCTAssertNil(
+            AXReader.finiteGeometry(
+                CGRect(x: 10, y: 20, width: 300, height: CGFloat.infinity)))
+    }
+
     // MARK: - Coordinate conversion
 
     func testCoordinatesConvertRelativeToTheHostingGroupNotTheScreen() {

@@ -722,6 +722,20 @@ public enum AXReader {
         guard AXValueGetValue(position, .cgPoint, &point),
             AXValueGetValue(extent, .cgSize, &size)
         else { return nil }
-        return CGRect(origin: point, size: size)
+        return finiteGeometry(CGRect(origin: point, size: size))
+    }
+
+    /// The rect, or `nil` when any component is non-finite. An offscreen
+    /// element can publish infinite geometry (measured 2026-09-12 on
+    /// LaunchGate onboarding, CIS-1BDB5536): JSONEncoder throws on
+    /// .infinity/.nan, so passing it through killed the WHOLE tree read at
+    /// encode time and made every finite sibling unreadable. `nil` maps to the
+    /// empty Rect downstream — the documented "geometry unavailable" marker —
+    /// which is exactly what an offscreen element's geometry is.
+    static func finiteGeometry(_ rect: CGRect) -> CGRect? {
+        guard rect.origin.x.isFinite, rect.origin.y.isFinite,
+            rect.size.width.isFinite, rect.size.height.isFinite
+        else { return nil }
+        return rect
     }
 }
