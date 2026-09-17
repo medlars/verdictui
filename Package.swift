@@ -124,6 +124,16 @@ let package = Package(
             dependencies: ["VerdictUIKernel"],
             swiftSettings: strictSettings
         ),
+        // Wave 11's web backend, T1: profile registry, lock registry, browser
+        // discovery, and headless process lifecycle. Deliberately depends on
+        // NOTHING in this package — T1 is process management and needs no
+        // kernel types (the CDP->SemanticNode mapping is T3, which will add
+        // the kernel dependency). Rollback is additive: deleting this target
+        // touches no other file's behavior.
+        .target(
+            name: "VerdictUIWeb",
+            swiftSettings: strictSettings
+        ),
         // Ships the runner `docs/appkit.md` documents, so that snippet is
         // compile-checked rather than only prose (CTS-491C01E5).
         .executableTarget(
@@ -189,6 +199,11 @@ let package = Package(
         .testTarget(
             name: "VerdictUIAppKitTests",
             dependencies: ["VerdictUIAppKit", "VerdictUIKernel"],
+            swiftSettings: strictSettings
+        ),
+        .testTarget(
+            name: "VerdictUIWebTests",
+            dependencies: ["VerdictUIWeb"],
             swiftSettings: strictSettings
         ),
         .testTarget(
