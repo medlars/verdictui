@@ -57,6 +57,8 @@ final class WebOpeningLifecycleTests: XCTestCase {
         let process = Process(), input = Pipe()
         process.executableURL = repository.appendingPathComponent(".build/debug/verdictui")
         process.arguments = ["mcp"]
+        // This fixture owns the browser lifecycle, not a consumer build.
+        process.currentDirectoryURL = root
         var environment = ProcessInfo.processInfo.environment
         environment["VERDICTUI_WEB_BROWSER"] = executable.path
         environment["VERDICTUI_WEB_PROFILE_ROOT"] = root.appendingPathComponent("profiles").path

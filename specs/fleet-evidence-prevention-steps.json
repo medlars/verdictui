@@ -1,0 +1,168 @@
+{
+  "slug": "fleet-evidence-prevention",
+  "tier": "T3",
+  "status": "authorized",
+  "blueprint": "specs/fleet-evidence-prevention-architecture.md",
+  "adr": ".decisions/2026-09-23-fleet-evidence.md",
+  "steps": [
+    {
+      "id": "S1",
+      "title": "Preserve originals across providers",
+      "files": [
+        {
+          "path": "~/.claude/hooks/log-user-prompt.sh",
+          "action": "modify",
+          "layer": "adapter"
+        },
+        {
+          "path": "~/.claude/hooks/lib/prompt_archive.py",
+          "action": "modify",
+          "layer": "adapter"
+        }
+      ],
+      "interface": "Exact bytes plus provenance and private receipts; policy-excluded clinical content never silently retained.",
+      "test": "hooks/tests/test_prompt_archive.py",
+      "acceptance": "Named focused suite exits 0 with nonzero test summary; actual consumer outcome observed separately.",
+      "depends_on": [],
+      "model_tier": "opus",
+      "rollback": "Revert scoped commit; retain original evidence and restore prior executable/config from verified artifact."
+    },
+    {
+      "id": "S2",
+      "title": "Require complete clause evidence",
+      "files": [
+        {
+          "path": "shared-libs/instruction_store/store.py",
+          "action": "modify",
+          "layer": "adapter"
+        },
+        {
+          "path": "shared-libs/instruction_store/completion.py",
+          "action": "modify",
+          "layer": "adapter"
+        },
+        {
+          "path": "shared-libs/central_todo_store/cts.py",
+          "action": "modify",
+          "layer": "adapter"
+        }
+      ],
+      "interface": "Source spans cover complete original requirement; current workflow observations for every clause.",
+      "test": "tests/test_instruction_completion.py tests/test_cts_completion.py",
+      "acceptance": "Named focused suite exits 0 with nonzero test summary; actual consumer outcome observed separately.",
+      "depends_on": [],
+      "model_tier": "opus",
+      "rollback": "Revert scoped commit; retain original evidence and restore prior executable/config from verified artifact."
+    },
+    {
+      "id": "S3",
+      "title": "Measure fleet UI evidence",
+      "files": [
+        {
+          "path": "shared-libs/pm-base/ui_coverage.py",
+          "action": "modify",
+          "layer": "adapter"
+        },
+        {
+          "path": "shared-libs/pm-base/real_visual_diff_monitor.py",
+          "action": "modify",
+          "layer": "adapter"
+        },
+        {
+          "path": "shared-libs/pm-base/ceo_ui_coverage.py",
+          "action": "modify",
+          "layer": "adapter"
+        }
+      ],
+      "interface": "Every registered root is reported; layout, paint and behavior remain independent; a new attempt invalidates previous proof.",
+      "test": "tests/test_ui_coverage.py tests/test_ceo_ui_coverage.py tests/test_real_visual_diff_monitor.py",
+      "acceptance": "Named focused suite exits 0 with nonzero test summary; actual consumer outcome observed separately.",
+      "depends_on": [],
+      "model_tier": "opus",
+      "rollback": "Revert scoped commit; retain original evidence and restore prior executable/config from verified artifact."
+    },
+    {
+      "id": "S4",
+      "title": "Wire edit and completion boundaries",
+      "files": [
+        {
+          "path": "~/.claude/hooks/verdictui-render-check.sh",
+          "action": "modify",
+          "layer": "adapter"
+        },
+        {
+          "path": "shared-libs/pm-base/ceo.py",
+          "action": "modify",
+          "layer": "adapter"
+        },
+        {
+          "path": "shared-libs/pm-base/ceo_aftermath.py",
+          "action": "modify",
+          "layer": "adapter"
+        }
+      ],
+      "interface": "Hooks write attempt-bound observations and CEO reports incomplete coverage separately from build grade.",
+      "test": "hooks/tests/test_verdictui_coverage_receipt.py tests/test_ceo_ui_coverage.py",
+      "acceptance": "Named focused suite exits 0 with nonzero test summary; actual consumer outcome observed separately.",
+      "depends_on": [
+        "S3"
+      ],
+      "model_tier": "opus",
+      "rollback": "Revert scoped commit; retain original evidence and restore prior executable/config from verified artifact."
+    },
+    {
+      "id": "S5",
+      "title": "Repair project MCP bootstrap",
+      "files": [
+        {
+          "path": "Package.swift",
+          "action": "modify",
+          "layer": "adapter"
+        },
+        {
+          "path": ".verdictui/config.json",
+          "action": "modify",
+          "layer": "adapter"
+        },
+        {
+          "path": "Sources/VerdictUIProjectRunner/VerdictUIProjectRunner.swift",
+          "action": "modify",
+          "layer": "adapter"
+        }
+      ],
+      "interface": "Installed launcher builds and enters explicit project registry host; stock launcher never recurses.",
+      "test": "Tests/test_project_mcp_bootstrap.py",
+      "acceptance": "Named focused suite exits 0 with nonzero test summary; actual consumer outcome observed separately.",
+      "depends_on": [],
+      "model_tier": "opus",
+      "rollback": "Revert scoped commit; retain original evidence and restore prior executable/config from verified artifact."
+    },
+    {
+      "id": "S6",
+      "title": "Repair and verify original PanoMac notification clause",
+      "files": [
+        {
+          "path": "PanoMac/Sources/App/AppDelegate.swift",
+          "action": "modify",
+          "layer": "adapter"
+        },
+        {
+          "path": "PanoMac/Sources/Scanner/AgentLogging.swift",
+          "action": "modify",
+          "layer": "adapter"
+        },
+        {
+          "path": "PanoMac/Sources/App/Info.plist",
+          "action": "modify",
+          "layer": "adapter"
+        }
+      ],
+      "interface": "Supported warm/cold notification route persists and visibly presents its alert exactly once.",
+      "test": "PanoMac/Tests/NotificationDeliveryContractTests.swift",
+      "acceptance": "Named focused suite exits 0 with nonzero test summary; actual consumer outcome observed separately.",
+      "depends_on": [],
+      "model_tier": "opus",
+      "rollback": "Revert scoped commit; retain original evidence and restore prior executable/config from verified artifact."
+    }
+  ]
+}

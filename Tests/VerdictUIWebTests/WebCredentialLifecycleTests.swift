@@ -135,6 +135,8 @@ final class WebCredentialLifecycleTests: XCTestCase {
         let process = Process(), input = Pipe(), output = Pipe()
         process.executableURL = repository.appendingPathComponent(".build/debug/verdictui")
         process.arguments = ["mcp"]
+        // Isolate the credential lifecycle from the repository's runner manifest.
+        process.currentDirectoryURL = root
         var environment = ProcessInfo.processInfo.environment
         environment["VERDICTUI_WEB_OP"] = executable.path
         environment["RESOLVER_ROOT"] = root.path
