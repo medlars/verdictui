@@ -1,7 +1,10 @@
 @~/Projects/shared/rules.md
-@no.md
 
 # VerdictUI
+
+> Path-scoped detail loads when a source, test, script, doc or contract file is read:
+> `.claude/rules/project-reference.md` (architecture, key paths, model) and `.claude/rules/no-log.md` -> `no.md`
+> (deliberate non-decisions — never re-propose one).
 
 SwiftUI verification engine that replaces the screenshot–wait–click–confirm cycle with in-process instrumentation, virtual-clock settling, and atomic act-and-observe verdicts.
 
@@ -45,37 +48,6 @@ python3.14 scripts/verdictui-pm.py --quick # health check
   from framework acceptance. Missing founding transcripts are not reconstructed
   from assistant summaries as if they were original user messages.
 
-## Architecture
-
-Three concentric verification loops (see `docs/implementation-plan.md` for the full wave plan):
-
-1. **Inner loop (in-process, every edit)** — `VerdictUIProbe` instruments SwiftUI via public API only (Layout-protocol transparent probe, `PreferenceKey` frame streams, `.verdictProbe(id:)`); `VerdictUIKernel` turns the emitted semantic tree into a PASS/FAIL `Verdict` with evidence. Milliseconds, no pixels, no permissions.
-2. **Middle loop (cross-validation, per scenario)** — external `AXUIElement` tree + real event injection + windowless pixel capture, reconciled against the in-process stream. Divergence _is_ the bug detector.
-3. **Outer loop (thin E2E smoke)** — orchestrated XCUITest for OS-level truths only.
-
-Target layout:
-
-| Target                            | Purpose                                          | Constraint                                                                      |
-| --------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------- |
-| `VerdictUIKernel`                 | Semantic tree, diff, lint rules, verdict schema  | **Platform-pure: no SwiftUI/AppKit imports** (PM `stage_architecture` enforces) |
-| `VerdictUIProbe`                  | SwiftUI instrumentation runtime + oracle harness | Public SwiftUI API only — no private API in this target                         |
-| `VerdictUIMacros` (Wave 4)        | `@Verifiable`, compile-time lint                 | SwiftSyntax                                                                     |
-| `verdictui` CLI + MCP (Waves 6–7) | Agent-facing surface                             | Warm daemon, atomic act→diff                                                    |
-
-## Key Paths
-
-| Item                       | Path                          |
-| -------------------------- | ----------------------------- |
-| Root                       | `~/Projects/VerdictUI/`       |
-| PM                         | `scripts/verdictui-pm.py`     |
-| Wave plan                  | `docs/implementation-plan.md` |
-| Wave status (resume point) | `docs/wave-status.md`         |
-| Business decisions         | `docs/business-decisions.md`  |
-| SLOs                       | `docs/slo.md`                 |
-| Runbook                    | `docs/runbook.md`             |
-| Contracts                  | `contracts/`                  |
-| File registry              | `docs/FILE_REGISTRY.md`       |
-
 ## Canonical Implementations (SSoT)
 
 | Concern                    | Canonical implementation                 | Location                                     | Notes                                                                                      |
@@ -87,11 +59,6 @@ Target layout:
 | Probe records → tree       | `TreeAssembly.assemble`                  | `Sources/VerdictUIProbe/TreeAssembly.swift`  | The only place records become a `SemanticNode` tree                                        |
 | Headless render + settle   | `OracleHost`, `LayoutSettle`             | `Sources/VerdictUIProbe/OracleHost.swift`    | Windowless `NSHostingView`; `LayoutSettle` is the reusable pump primitive Wave 3 builds on |
 | Scenario definition        | `VerdictScenario`                        | `Sources/VerdictUIProbe/Scenario.swift`      | Injection point for variant sweeps                                                         |
-
-## Model
-
-Recommended: **opus** — Swift-native product with deep framework internals (Layout protocol, macros, AttributeGraph adjacency); high-stakes design decisions per wave.
-Switch with `/model opus` if current session model differs.
 
 ## Rules
 

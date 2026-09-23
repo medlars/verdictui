@@ -27,7 +27,10 @@ Tests/untracked_scan_probe_*.py
 # Claude Code hook runtime state (live turn counters, per-session scratch).
 # Machine-local and rewritten every turn, so it is a build artifact rather than
 # work product — the DIR-031 exception, as KastTune and SagaMail already treat it.
-.claude/
+# .claude/rules/ is the exception: path-scoped project instructions ARE product
+# docs (CIS-7E05B3C2), so they are tracked; everything else under .claude/ is not.
+.claude/*
+!.claude/rules/
 # Codex CLI/plugin runtime state. Machine-local configuration, not product source.
 .codex/
 
