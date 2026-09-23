@@ -153,5 +153,63 @@ The host remains responsible for validating bridge messages and running targets.
 The app icon is the original lens signature in `assets/workbench-icon.svg`:
 local gradients, concentric optical shells, and the VerdictUI aperture on a pearl
 rounded square. Its 1024×1024 browser render is measured; it contains no external
-references or third-party branding. Packaging may rasterize the SVG into the
-standard macOS icon sizes. No new runtime dependency is needed by the app.
+references or third-party branding. `assets/workbench-icon.icns` contains all ten
+standard macOS representations (16 through 1024 pixels). `iconutil` round-trip
+verification confirmed each size and pixel-identical 1024px source content.
+No new runtime dependency is needed by the app.
+
+Regenerate from the repository root with the pinned Playwright dependency above,
+its Chromium runtime, and macOS's built-in `sips` and `iconutil`. Intermediate
+PNGs live in the temporary directory; only the resulting ICNS belongs in Git.
+
+```bash
+python3.14 - <<'PY'
+from pathlib import Path
+import subprocess
+import tempfile
+from playwright.sync_api import sync_playwright
+
+source = Path('assets/workbench-icon.svg').resolve()
+with tempfile.TemporaryDirectory(prefix='verdictui-icon-') as temporary:
+    temporary = Path(temporary)
+    raster = temporary / 'source.png'
+    iconset = temporary / 'VerdictUI.iconset'
+    iconset.mkdir()
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch()
+        page = browser.new_page(
+            viewport={'width': 1024, 'height': 1024}, device_scale_factor=1
+        )
+        page.goto(source.as_uri())
+        page.screenshot(path=str(raster), omit_background=True)
+        browser.close()
+    for size in (16, 32, 128, 256, 512):
+        for scale in (1, 2):
+            suffix = '@2x' if scale == 2 else ''
+            target = iconset / f'icon_{size}x{size}{suffix}.png'
+            pixels = str(size * scale)
+            subprocess.run(
+                ['sips', '-z', pixels, pixels, str(raster), '--out', str(target)],
+                check=True, capture_output=True,
+            )
+    subprocess.run(
+        ['iconutil', '-c', 'icns', str(iconset),
+         '-o', 'assets/workbench-icon.icns'], check=True,
+    )
+PY
+```
+
+Independent review of the integrated native window confirmed the same bundled
+design and actual persisted pass/fail/unavailable history. The read-only visual
+review identified a history alignment defect: content-width status pills placed
+the date/count column at x=335.27, 295.50, and 302.67 respectively in a 1000px
+WebKit viewport. The integration lane repaired the status column to 70px. The
+expanded smoke gate measures all three history states at 1000px and 360px in both
+engines and passed against the integrated assets: 94 assertions, zero failures,
+2/2 browser flows complete. Date/count columns now share x=340 at desktop and
+x=113 at 360px; result buttons align and the document has no horizontal overflow.
+The narrow screenshot also confirms readable wrapped dates and unclipped badges.
+Evidence: `/tmp/verdictui-workbench-final-review/verification.json`,
+`webkit-history-1000-rects.json`, `webkit-history-360-rects.json`, and their PNGs
+in the same directory. No other high-confidence visual defect was observed;
+this review remains separate from the native engine acceptance.
