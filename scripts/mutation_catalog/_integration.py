@@ -1,6 +1,6 @@
 """Real-product transport and project coverage guard witnesses."""
 
-from mutation_catalog_types import Mutation
+from mutation_catalog_types import Mutation, Runner
 
 MUTATIONS: list[Mutation] = [
     Mutation(
@@ -184,5 +184,29 @@ MUTATIONS: list[Mutation] = [
         old='!(argv + env + [directory.path]).contains(where: { $0.contains("\\0") })',
         new='!directory.path.contains("\\0")',
         test="ProjectChecksTests/testSubprocessRejectsInvalidLimitsAndNulArguments",
+    ),
+    Mutation(
+        name="artifact secret audit overlooks leaked credential values",
+        path="scripts/product-smoke.py",
+        old="if any(secret in candidate for secret in self.values):",
+        new="if False and any(secret in candidate for secret in self.values):",
+        test="Tests/test_product_smoke.py::ProductSmokeAssertions::test_credential_leaks_in_wire_nested_json_and_argv_are_rejected_without_echo",
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
+        name="artifact secret audit passes without measured output and arguments",
+        path="scripts/product-smoke.py",
+        old="required <= self.channels and all(self.argv_counts.values()),",
+        new="True,",
+        test="Tests/test_product_smoke.py::ProductSmokeAssertions::test_missing_secret_audit_channels_or_process_samples_cannot_pass",
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
+        name="artifact secret audit ignores MCP shutdown stderr",
+        path="scripts/product-smoke.py",
+        old='self.audit.scan("MCP stderr", self.stderr.read())',
+        new='self.audit.scan("MCP stderr", "")',
+        test="Tests/test_product_smoke.py::ProductSmokeAssertions::test_mcp_shutdown_output_cannot_escape_scan",
+        runner=Runner.PYTEST,
     ),
 ]
