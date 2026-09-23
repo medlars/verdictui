@@ -26,6 +26,16 @@ public struct CommandEnvironment: Sendable {
     /// at a temporary directory — a command that hardcodes its output path can
     /// only be tested by letting it write into the repository.
     public let pixelArtifactRoot: URL
+    public let projectRoot: URL?
+
+    public var daemonSocketPath: String {
+        guard let projectRoot else { return VerdictDaemon.defaultSocketPath }
+        let digest = projectRoot.resolvingSymlinksInPath().path.utf8.reduce(UInt64(14695981039346656037)) {
+            ($0 ^ UInt64($1)) &* 1099511628211
+        }
+        return FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".verdictui/project-\(String(digest, radix: 16)).sock").path
+    }
 
     /// - Parameter usesFallbackCatalog: defaults to `false` so a caller that
     ///   builds its own registry (every test, the daemon, an embedder) is not
@@ -36,80 +46,26 @@ public struct CommandEnvironment: Sendable {
         usesFallbackCatalog: Bool = false,
         engine: VerdictEngine,
         output: OutputSink,
-        pixelArtifactRoot: URL
+        pixelArtifactRoot: URL,
+        projectRoot: URL? = nil
     ) {
+        self.projectRoot = projectRoot
         self.usesFallbackCatalog = usesFallbackCatalog
         self.engine = engine
         self.output = output
         self.pixelArtifactRoot = pixelArtifactRoot
     }
 
-    /// The default environment: the demo catalog, baselines under the current
-    /// directory, writing to the real streams.
-    ///
-    /// Wave 6 ships the demo catalog as the registry because a consumer's own
-    /// scenarios arrive through the Wave 6 Task 3 integration path (building
-    /// the consumer's package and loading it), and shipping a CLI that can only
-    /// say "no scenarios" would make the whole surface untestable end to end.
-    /// Whether the registry this environment carries is VerdictUI's own demo
-    /// catalog rather than the invoking project's.
-    ///
-    /// The catalog is COMPILED IN, so `list` returns the same six `demo-*`
-    /// scenarios from any directory on the machine (measured 2026-08-16 in
-    /// LaunchGate, `/tmp` and VerdictUI — CTS-99986645). A caller that reports
-    /// those as the edited project's findings states something false, so it
-    /// needs to be able to ask.
-    ///
-    /// Derived from the project manifest rather than from the scenario NAMES:
-    /// a consumer is free to name a scenario `demo-anything`, and string-matching
-    /// the prefix would then mislabel their real catalog as borrowed.
+    /// True only for the stock demo registry. A manifest or executable location
+    /// cannot establish ownership; the consumer entrypoint supplies the registry.
     public let usesFallbackCatalog: Bool
 
     @MainActor
     public static func standard(root: URL = URL(fileURLWithPath: ".")) -> CommandEnvironment {
-        // A project owns its scenarios only if the runner it declares IS THE
-        // BINARY NOW RUNNING. Declaring one is not enough, and the difference is
-        // the whole point of this flag.
-        //
-        // `ScenarioRegistry` holds `@Sendable @MainActor` closures, so a
-        // consumer's scenarios cannot cross a process boundary — they are
-        // reachable only by running the consumer's own executable. Nothing in
-        // this package does that for the SwiftUI path: `declaredRunner` has
-        // exactly ONE production consumer, this line, and the engine below is
-        // built with `DemoScenarios.registry` unconditionally.
-        //
-        // So treating "a manifest exists" as "the catalog is theirs" let a
-        // consumer SILENCE the borrowed-catalog note by adding a file, while
-        // still receiving verdicts about VerdictUI's own fixtures. That is worse
-        // than not adopting: a config file plus a quiet run reads as coverage
-        // that does not exist.
-        //
-        // VerdictUI's own manifest points at the verdictui binary and its
-        // scenarios genuinely ARE the compiled-in catalog, so comparing against
-        // the running executable keeps that case correct rather than papering
-        // the note over every run of the tool against itself.
-        // Compared by PROJECT, not by exact path. Path equality was measured and
-        // rejected: VerdictUI's own manifest names `.build/release/verdictui`,
-        // so running the DEBUG binary from this repo printed the borrowed-catalog
-        // note against its own scenarios — a false warning in the one case the
-        // flag exists to keep quiet.
-        //
-        // The honest question is whether the compiled-in catalog belongs to the
-        // project that declared the manifest, answered by asking whether the
-        // running binary lives inside that project root.
-        let runningBinary = URL(fileURLWithPath: CommandLine.arguments[0])
-            .resolvingSymlinksInPath().standardizedFileURL
-        let declaringRoot = ProjectScenarios.findProjectRoot(startingAt: root)
-            .flatMap { rt in
-                ProjectScenarios.declaredRunner(projectRoot: rt) == nil
-                    ? nil : rt.resolvingSymlinksInPath().standardizedFileURL
-            }
-        let declaresOwnScenarios = declaringRoot.map { rt in
-            ProjectScenarios.runnerBelongsToProject(runningBinary: runningBinary, projectRoot: rt)
-        } ?? false
+        if let environment = VerdictUIRunner.environment { return environment }
 
         return CommandEnvironment(
-            usesFallbackCatalog: !declaresOwnScenarios,
+            usesFallbackCatalog: true,
             engine: VerdictEngine(
                 registry: DemoScenarios.registry,
                 baselines: BaselineStore.standard(root: root)

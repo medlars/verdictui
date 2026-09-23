@@ -73,21 +73,7 @@ public enum ProjectScenarios {
         }
     }
 
-    /// Whether `runningBinary` is the declaring project's OWN executable.
-    ///
-    /// The discriminator behind `CommandEnvironment.usesFallbackCatalog`, kept
-    /// as a pure function because the environment it governs cannot be tested
-    /// in process: under `swift test`, `CommandLine.arguments[0]` is Xcode's
-    /// `xctest` agent (measured 2026-08-31 —
-    /// `/Applications/Xcode.app/.../Agents/xctest`), so the running binary is
-    /// NEVER the project's binary inside a test. A fixture there could only ever
-    /// exercise a weaker rule than the one that ships.
-    ///
-    /// Compared by PROJECT ROOT, not by path equality. Equality was tried and
-    /// measured wrong: VerdictUI's manifest names `.build/release/verdictui`, so
-    /// running the DEBUG binary from its own repo printed the borrowed-catalog
-    /// note against its own scenarios — a false warning in the one case the flag
-    /// exists to suppress.
+    /// Filesystem membership only; this does not establish catalog ownership.
     public static func runnerBelongsToProject(
         runningBinary: URL,
         projectRoot: URL
@@ -124,6 +110,12 @@ public enum ProjectScenarios {
             manifest = try JSONDecoder().decode(Manifest.self, from: data)
         } catch {
             throw MalformedManifest(path: manifestPath, underlying: "\(error)")
+        }
+
+        guard !manifest.runner.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            !manifest.runner.contains("\0")
+        else {
+            throw MalformedManifest(path: manifestPath, underlying: "runner must be a nonempty executable path")
         }
 
         // Resolve against the PROJECT ROOT, not the process's cwd: the CLI is

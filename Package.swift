@@ -49,6 +49,7 @@ let package = Package(
     ],
     products: [
         .library(name: "VerdictUIKernel", targets: ["VerdictUIKernel"]),
+        .library(name: "VerdictUICLICore", targets: ["VerdictUICLICore"]),
         .library(name: "VerdictUIProbe", targets: ["VerdictUIProbe"]),
         // Wave 11. The AppKit producer — a SEPARATE product from the probe so an
         // AppKit-only app never resolves SwiftUI instrumentation it cannot use,
