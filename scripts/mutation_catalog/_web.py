@@ -87,7 +87,7 @@ MUTATIONS: list[Mutation] = [
         name="web negative geometry is normalized instead of refused",
         path=_BASE + "DOMSnapshotAssembly.swift",
         old='else { throw malformed("negative rectangle extent") }',
-        new="else { return .zero }",
+        new="else { return Rect(x: 0, y: 0, width: 0, height: 0) }",
         test=_TEST + "DOMSnapshotAssemblyTests/testMalformedColumnsAndInvalidTopologyFailClosed",
     ),
     Mutation(
@@ -129,8 +129,8 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="web declared onepassword reference silently uses fallback",
         path=_BASE + "WebCredentials.swift",
-        old="return try await readOnePassword(opReference, executable: onePassword)",
-        new='do { return try await readOnePassword(opReference, executable: onePassword) } catch { return sharedValue(key) ?? "unresolved" }',
+        old='return try await runOnePassword(["read", opReference, "--no-newline"], executable: onePassword)',
+        new='do { return try await runOnePassword(["read", opReference, "--no-newline"], executable: onePassword) } catch { return sharedValue(key) ?? "unresolved" }',
         test=_TEST + "WebCredentialsTests/testSharedFileFallbackAndOnePasswordReferencePrecedence",
     ),
     Mutation(
@@ -171,5 +171,19 @@ MUTATIONS: list[Mutation] = [
         new='parameters["commands"] = .array([])',
         test=_TEST
         + "WebSessionIntegrationTests/testLoginTaskBadPasswordSecretRedactionAndProfilePersistence",
+    ),
+    Mutation(
+        name="web named onepassword item loses to environment fallback",
+        path=_BASE + "WebCredentials.swift",
+        old='return try await runOnePassword(["item", "get", reference, "--fields", "label=password", "--reveal"], executable: onePassword)',
+        new='let resolved = try await runOnePassword(["item", "get", reference, "--fields", "label=password", "--reveal"], executable: onePassword); return configured ?? resolved',
+        test=_TEST + "WebCredentialsTests/testOnePasswordNamedItemWinsBeforeSharedFallback",
+    ),
+    Mutation(
+        name="web custom roles expose reflected credentials",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old="role = .custom(WebRedaction.clean(raw, secrets: secrets))",
+        new="role = .custom(raw)",
+        test=_TEST + "DOMSnapshotAssemblyTests/testCredentialReflectedIntoCustomRoleIsRedacted",
     ),
 ]

@@ -63,7 +63,7 @@ final class WebSessionIntegrationTests: XCTestCase {
         var url = URLComponents(url: try fixture("login"), resolvingAgainstBaseURL: false)!
         url.queryItems = [URLQueryItem(name: "hash", value: hash)]
         let manager = WebSessionManager(root: root, environment: [
-            "VERDICTUI_WEB_CRED_GOOD": secret, "VERDICTUI_WEB_CRED_BAD": badSecret])
+            "VERDICTUI_WEB_CRED_GOOD": secret, "VERDICTUI_WEB_CRED_BAD": badSecret, "VERDICTUI_WEB_OP": ""])
         do {
             let info = try await manager.open(profile: "login", url: XCTUnwrap(url.url))
             XCTAssertFalse(info.url.contains(hash))

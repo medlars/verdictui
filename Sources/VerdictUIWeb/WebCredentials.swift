@@ -11,10 +11,16 @@ public struct WebCredentials: Sendable {
 
     public init(environment: [String: String] = ProcessInfo.processInfo.environment,
                 sharedFile: URL = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Projects/.env.shared"),
-                onePassword: URL? = nil) {
+                onePassword: URL? = WebCredentials.installedOnePassword()) {
         self.environment = environment
         self.sharedFile = sharedFile
-        self.onePassword = onePassword ?? ["/opt/homebrew/bin/op", "/usr/local/bin/op"]
+        if let override = environment["VERDICTUI_WEB_OP"] {
+            self.onePassword = override.isEmpty ? nil : URL(fileURLWithPath: override)
+        } else { self.onePassword = onePassword }
+    }
+
+    public static func installedOnePassword() -> URL? {
+        ["/opt/homebrew/bin/op", "/usr/local/bin/op"]
             .first(where: { FileManager.default.isExecutableFile(atPath: $0) }).map(URL.init(fileURLWithPath:))
     }
 
@@ -27,11 +33,19 @@ public struct WebCredentials: Sendable {
         let key = "VERDICTUI_WEB_CRED_" + reference.uppercased()
         let configured = direct ? reference : environment[key] ?? sharedValue(key)
         let opReference = configured?.hasPrefix("op://") == true ? configured : nil
-        if let opReference, let onePassword {
-            return try await readOnePassword(opReference, executable: onePassword)
+        if let opReference {
+            guard let onePassword else { throw WebBrowserError.credentialUnavailable }
+            return try await runOnePassword(["read", opReference, "--no-newline"], executable: onePassword)
         }
-        // Never pass a credential name to `op item get`: names can resolve
-        // ambiguously. A configured op:// reference selects the exact field.
+        // Named references select a 1Password item first. The shared secret is
+        // a fallback when that item cannot be resolved, never command text.
+        if let onePassword {
+            do {
+                return try await runOnePassword(["item", "get", reference, "--fields", "label=password", "--reveal"], executable: onePassword)
+            } catch {
+                if Task.isCancelled { throw WebBrowserError.credentialUnavailable }
+            }
+        }
         guard !direct, let configured, !configured.isEmpty, opReference == nil else {
             throw WebBrowserError.credentialUnavailable
         }
@@ -54,11 +68,11 @@ public struct WebCredentials: Sendable {
         return nil
     }
 
-    private func readOnePassword(_ reference: String, executable: URL) async throws -> String {
+    private func runOnePassword(_ arguments: [String], executable: URL) async throws -> String {
         let process = Process()
         let pipe = Pipe()
         process.executableURL = executable
-        process.arguments = ["read", reference, "--no-newline"]
+        process.arguments = arguments
         process.environment = environment
         process.standardOutput = pipe
         process.standardError = FileHandle.nullDevice
@@ -79,7 +93,7 @@ public struct WebCredentials: Sendable {
                 let value = String(data: data, encoding: .utf8), !value.isEmpty else {
                 throw WebBrowserError.credentialUnavailable
             }
-            return value
+            return value.hasSuffix("\n") ? String(value.dropLast()) : value
         } catch {
             if process.isRunning { kill(process.processIdentifier, SIGKILL) }
             _ = await reader.value
