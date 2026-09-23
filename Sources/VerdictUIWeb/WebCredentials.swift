@@ -4,7 +4,13 @@ import Foundation
 /// A reference resolver, never a command-line password channel. 1Password reads
 /// receive only an op:// reference in argv; fallback values come from the shared
 /// environment. Child output is kept in memory and never included in an error.
-public struct WebCredentials: Sendable {
+public actor WebCredentials {
+    private struct Operation {
+        let process: OwnedCommandProcess
+        let worker: Task<String, Error>
+    }
+    private var operations: [UUID: Operation] = [:]
+    private var closed = false
     let environment: [String: String]
     let sharedFile: URL
     let onePassword: URL?
@@ -24,7 +30,24 @@ public struct WebCredentials: Sendable {
             .first(where: { FileManager.default.isExecutableFile(atPath: $0) }).map(URL.init(fileURLWithPath:))
     }
 
+    /// Cancels and awaits every resolver before the browser profile is released.
+    public func close() async throws {
+        closed = true
+        let pending = operations
+        pending.values.forEach { $0.worker.cancel() }
+        var failed = false
+        for (id, operation) in pending {
+            do {
+                _ = try await Task.detached { try operation.process.stop() }.value
+                _ = await operation.worker.result
+                operations.removeValue(forKey: id)
+            } catch { failed = true }
+        }
+        if failed { throw WebBrowserError.credentialUnavailable }
+    }
+
     public func resolve(_ reference: String) async throws -> String {
+        guard !closed, !Task.isCancelled else { throw WebBrowserError.credentialUnavailable }
         let direct = reference.hasPrefix("op://")
         guard direct || (!reference.isEmpty && reference.count <= 100
             && reference.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "_") })) else {
@@ -43,7 +66,7 @@ public struct WebCredentials: Sendable {
             do {
                 return try await runOnePassword(["item", "get", reference, "--fields", "label=password", "--reveal"], executable: onePassword)
             } catch {
-                if Task.isCancelled { throw WebBrowserError.credentialUnavailable }
+                if closed || Task.isCancelled { throw WebBrowserError.credentialUnavailable }
             }
         }
         guard !direct, let configured, !configured.isEmpty, opReference == nil else {
@@ -69,34 +92,62 @@ public struct WebCredentials: Sendable {
     }
 
     private func runOnePassword(_ arguments: [String], executable: URL) async throws -> String {
-        let process = Process()
+        guard !closed, !Task.isCancelled else { throw WebBrowserError.credentialUnavailable }
         let pipe = Pipe()
-        process.executableURL = executable
-        process.arguments = arguments
-        process.environment = environment
-        process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
-        process.standardInput = FileHandle.nullDevice
-        do { try process.run() } catch { throw WebBrowserError.credentialUnavailable }
-        // op outputs small credential fields. Read concurrently so a larger
-        // field cannot fill a pipe and stall the deadline loop.
-        let reader = Task.detached { pipe.fileHandleForReading.readDataToEndOfFile() }
+        let process: OwnedCommandProcess
         do {
-            let deadline = ContinuousClock.now + .seconds(15)
-            while process.isRunning {
-                try Task.checkCancellation()
-                guard ContinuousClock.now < deadline else { throw WebBrowserError.credentialUnavailable }
-                try await Task.sleep(for: .milliseconds(25))
+            process = try OwnedCommandProcess.spawn(executable: executable, arguments: arguments,
+                directory: FileManager.default.temporaryDirectory, environment: environment,
+                standardOutput: pipe.fileHandleForWriting.fileDescriptor)
+        } catch {
+            try? pipe.fileHandleForReading.close()
+            try? pipe.fileHandleForWriting.close()
+            throw WebBrowserError.credentialUnavailable
+        }
+        // Only the owned child retains the writer. EOF is now tied to group
+        // cleanup, including any helper that inherited stdout from the CLI.
+        try? pipe.fileHandleForWriting.close()
+        let reader = Task.detached {
+            defer { try? pipe.fileHandleForReading.close() }
+            var output = Data()
+            while let chunk = try pipe.fileHandleForReading.read(upToCount: 8192), !chunk.isEmpty {
+                guard output.count + chunk.count <= 65_536 else { throw WebBrowserError.credentialUnavailable }
+                output.append(chunk)
             }
-            let data = await reader.value
-            guard process.terminationStatus == 0, data.count <= 65_536,
-                let value = String(data: data, encoding: .utf8), !value.isEmpty else {
+            return output
+        }
+        let worker = Task.detached {
+            do {
+                let deadline = ContinuousClock.now + .seconds(15)
+                while try process.status() == nil {
+                    try Task.checkCancellation()
+                    guard ContinuousClock.now < deadline else { throw WebBrowserError.credentialUnavailable }
+                    _ = process.waitForExitEvent(timeout: 0.025)
+                }
+                let code = try process.stop(grace: 0)
+                let data = try await reader.value
+                try Task.checkCancellation()
+                guard code == 0, let value = String(data: data, encoding: .utf8), !value.isEmpty else {
+                    throw WebBrowserError.credentialUnavailable
+                }
+                return value.hasSuffix("\n") ? String(value.dropLast()) : value
+            } catch {
+                try process.stop()
+                _ = await reader.result
                 throw WebBrowserError.credentialUnavailable
             }
-            return value.hasSuffix("\n") ? String(value.dropLast()) : value
+        }
+        let id = UUID()
+        operations[id] = Operation(process: process, worker: worker)
+        do {
+            let value = try await withTaskCancellationHandler {
+                try await worker.value
+            } onCancel: { worker.cancel() }
+            operations.removeValue(forKey: id)
+            guard !closed, !Task.isCancelled else { throw WebBrowserError.credentialUnavailable }
+            return value
         } catch {
-            if process.isRunning { kill(process.processIdentifier, SIGKILL) }
-            _ = await reader.value
+            if (try? process.status()) != nil { operations.removeValue(forKey: id) }
             throw WebBrowserError.credentialUnavailable
         }
     }
