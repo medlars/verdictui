@@ -153,3 +153,16 @@ The measured path covers local clean/broken pages, trusted login and task comple
 This is a Chromium CDP driver with semantic/layout verification. It is not universal Playwright feature parity or a replacement for browser chrome, Safari/Firefox, OS dialogs, biometric authentication, downloads, uploads, screenshots, arbitrary JavaScript evaluation or the separate native macOS driver. Unavailable evidence stays unavailable. Rules applied to DOM geometry are not a full browser accessibility certification or a pixel comparison.
 
 For project checks, only `web` and `live` declarations accept `expectText`. A `scenario` declaration requires `scenario`; an `appkit` declaration requires `runner` and `subject`. Fields belonging to another kind are rejected instead of being silently ignored. Cancelled checks report cancellation and wait for their owned command groups to stop before shutdown.
+
+Positioned content uses measured DOM containing-block ancestry. An intermediate
+static overflow container cannot invent clipping for content anchored outside
+it; genuine containing-block clips remain enforced, including individual CSS
+transforms. Controls are overlap subjects by their measured bounds even when
+their label glyphs do not touch. Editable descendants remain redacted and are
+excluded from the inline measurement inventory.
+
+If a remote iframe appears between the parent snapshot and frame inventory,
+VerdictUI discards that inconsistent capture and retries at most three times
+under one capture deadline. Settling confirmations restart after recovery. A
+persistent inconsistency, resource failure or cancellation stays unavailable;
+the frame is never silently omitted from a passing result.
