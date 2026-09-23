@@ -14,6 +14,7 @@ import re
 import signal
 import subprocess
 import tempfile
+import time
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -378,14 +379,27 @@ def _run_locked_swift_build_product(*, timeout: int) -> subprocess.CompletedProc
 
 def _terminate_process_group(proc) -> None:  # noqa: ANN001 — subprocess-like in tests
     """Terminate a started Swift process group before releasing the PM lock."""
-    try:
-        os.killpg(proc.pid, signal.SIGTERM)
-        proc.wait(timeout=S.TIMEOUT_PROC_TERM_GRACE)
-    except ProcessLookupError, subprocess.TimeoutExpired:
+    for sig in (signal.SIGTERM, signal.SIGKILL):
         try:
-            os.killpg(proc.pid, signal.SIGKILL)
-            proc.wait(timeout=S.TIMEOUT_PROC_TERM_GRACE)
+            os.killpg(proc.pid, sig)
         except ProcessLookupError:
-            pass
-        except subprocess.TimeoutExpired:
-            pass
+            proc.poll()
+            return
+        deadline = time.monotonic() + S.TIMEOUT_PROC_TERM_GRACE
+        while time.monotonic() < deadline:
+            # Reap the leader, but keep waiting for its descendants: SwiftPM
+            # can exit while an XCTest child retains the same owned group.
+            proc.poll()
+            try:
+                os.killpg(proc.pid, 0)
+            except ProcessLookupError:
+                return
+            except PermissionError:
+                # Darwin can report EPERM while a signalled group exits. Only
+                # ESRCH proves absence; retry within the same bounded wait.
+                pass
+            time.sleep(min(0.01, max(0, deadline - time.monotonic())))
+    raise subprocess.TimeoutExpired(
+        getattr(proc, "args", f"process group {proc.pid}"),
+        2 * S.TIMEOUT_PROC_TERM_GRACE,
+    )
