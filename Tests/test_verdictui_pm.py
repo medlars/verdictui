@@ -11,6 +11,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 import types
 from pathlib import Path
 
@@ -46,6 +47,112 @@ _mod = load_pm()
 _S = _mod.S
 _SW = _mod.SW
 VerdictUIPM = _mod.VerdictUIPM
+
+
+class TestOwnedGroupDescendants:
+    def test_transient_probe_permission_error_is_not_group_absence(self, monkeypatch) -> None:
+        proc = types.SimpleNamespace(pid=4242, poll=lambda: 0)
+        probes = []
+
+        def _killpg(pid, sig):
+            assert pid == 4242
+            if sig == 0:
+                probes.append(sig)
+                if len(probes) == 1:
+                    raise PermissionError
+                raise ProcessLookupError
+
+        monkeypatch.setattr(_S, "TIMEOUT_PROC_TERM_GRACE", 1)
+        monkeypatch.setattr(_SW.os, "killpg", _killpg)
+        _SW._terminate_process_group(proc)
+        assert len(probes) == 2, "EPERM must be retried, never interpreted as group absence"
+
+    def test_group_that_outlives_both_grace_periods_is_reported(self, monkeypatch) -> None:
+        """A failed cleanup must not report success after exhausting its waits."""
+        proc = types.SimpleNamespace(pid=4242, args=["owned-fixture"], poll=lambda: 0)
+        delivered = []
+        monkeypatch.setattr(_S, "TIMEOUT_PROC_TERM_GRACE", 0.01)
+        monkeypatch.setattr(_SW.os, "killpg", lambda pid, sig: delivered.append((pid, sig)))
+        with pytest.raises(subprocess.TimeoutExpired):
+            _SW._terminate_process_group(proc)
+        assert [item for item in delivered if item[1]] == [
+            (4242, _SW.signal.SIGTERM),
+            (4242, _SW.signal.SIGKILL),
+        ]
+
+    @pytest.mark.parametrize("leader_exits_first", [False, True])
+    def test_exited_leader_does_not_leave_term_resistant_descendant(
+        self, monkeypatch, tmp_path, leader_exits_first
+    ) -> None:
+        """Leader reaping is not evidence that its owned process group stopped."""
+        ready = tmp_path / "descendant-ready"
+        child_code = (
+            "import os, signal, time\n"
+            "from pathlib import Path\n"
+            "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+            f"Path({str(ready)!r}).write_text(str(os.getpid()))\n"
+            "while True: time.sleep(0.1)\n"
+        )
+        leader_code = (
+            "import subprocess, sys, time\n"
+            "from pathlib import Path\n"
+            f"subprocess.Popen([sys.executable, '-c', {child_code!r}])\n"
+            f"while not Path({str(ready)!r}).exists(): time.sleep(0.01)\n"
+            + ("sys.exit(0)\n" if leader_exits_first else "while True: time.sleep(0.1)\n")
+        )
+        proc = subprocess.Popen(
+            [sys.executable, "-c", leader_code],
+            start_new_session=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        real_killpg = os.killpg
+        delivered = []
+
+        def owned_signal(pid, sig):
+            assert pid == proc.pid, "cleanup must only signal the owned group"
+            if sig:
+                delivered.append(sig)
+            return real_killpg(pid, sig)
+
+        try:
+            deadline = time.monotonic() + 10
+            while not ready.exists():
+                assert time.monotonic() < deadline, "descendant did not install its TERM trap"
+                time.sleep(0.01)
+            descendant = int(ready.read_text())
+            assert os.getpgid(descendant) == proc.pid
+            if leader_exits_first:
+                assert proc.wait(timeout=5) == 0
+            monkeypatch.setattr(_S, "TIMEOUT_PROC_TERM_GRACE", 0.15)
+            monkeypatch.setattr(_SW.os, "killpg", owned_signal)
+            started = time.monotonic()
+            try:
+                _SW._terminate_process_group(proc)
+            except subprocess.TimeoutExpired:
+                pytest.fail(
+                    "owned TERM-resistant descendant was not killed within the grace periods"
+                )
+            assert time.monotonic() - started < 2, "owned-group cleanup must remain bounded"
+            assert proc.poll() is not None, "leader was not reaped"
+            deadline = time.monotonic() + 1
+            while time.monotonic() < deadline:
+                try:
+                    real_killpg(proc.pid, 0)
+                except ProcessLookupError:
+                    break
+                time.sleep(0.01)
+            with pytest.raises(ProcessLookupError):
+                os.kill(descendant, 0)
+            with pytest.raises(ProcessLookupError):
+                real_killpg(proc.pid, 0)
+            assert delivered == [_SW.signal.SIGTERM, _SW.signal.SIGKILL]
+        finally:
+            try:
+                real_killpg(proc.pid, _SW.signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            proc.wait(timeout=5)
 
 
 class TestLoadsWithoutSharedLibs:
@@ -919,6 +1026,9 @@ class TestKilledRunnerIsInconclusive:
             pid = 4242
             waits = 0
 
+            def poll(self):
+                return 0
+
             def wait(self, timeout=None):  # noqa: ARG002 — signature parity
                 self.waits += 1
                 if self.waits == 1:
@@ -938,7 +1048,13 @@ class TestKilledRunnerIsInconclusive:
         kills = []
         cleaned = []
         monkeypatch.setattr(_mod.subprocess, "Popen", _popen)
-        monkeypatch.setattr(_mod.os, "killpg", lambda pid, sig: kills.append((pid, sig)))
+
+        def _killpg(pid, sig):
+            if sig == 0:
+                raise ProcessLookupError
+            kills.append((pid, sig))
+
+        monkeypatch.setattr(_mod.os, "killpg", _killpg)
 
         # A def, not a lambda: the real function is annotated -> int and line 621
         # consumes that value, so the stub must state the same contract. The

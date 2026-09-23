@@ -8,6 +8,62 @@ from mutation_catalog_types import Mutation, Runner  # noqa: F401
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="PM cleanup treats a transient group probe permission error as absence",
+        path="scripts/verdictui_pm_swift.py",
+        old=(
+            "            except PermissionError:\n"
+            "                # Darwin can report EPERM while a signalled group exits. Only\n"
+            "                # ESRCH proves absence; retry within the same bounded wait.\n"
+            "                pass"
+        ),
+        new="            except PermissionError:\n                return",
+        test=(
+            "Tests/test_verdictui_pm.py::TestOwnedGroupDescendants"
+            "::test_transient_probe_permission_error_is_not_group_absence"
+        ),
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
+        name="PM cleanup mistakes a reaped leader for a stopped process group",
+        path="scripts/verdictui_pm_swift.py",
+        old="            proc.poll()\n            try:\n                os.killpg(proc.pid, 0)",
+        new=(
+            "            if proc.poll() is not None:\n                return\n"
+            "            try:\n                os.killpg(proc.pid, 0)"
+        ),
+        test=(
+            "Tests/test_verdictui_pm.py::TestOwnedGroupDescendants"
+            "::test_exited_leader_does_not_leave_term_resistant_descendant"
+        ),
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
+        name="PM cleanup never escalates the surviving owned group",
+        path="scripts/verdictui_pm_swift.py",
+        old="for sig in (signal.SIGTERM, signal.SIGKILL):",
+        new="for sig in (signal.SIGTERM,):",
+        test=(
+            "Tests/test_verdictui_pm.py::TestOwnedGroupDescendants"
+            "::test_exited_leader_does_not_leave_term_resistant_descendant"
+        ),
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
+        name="PM cleanup silently succeeds after both group waits expire",
+        path="scripts/verdictui_pm_swift.py",
+        old=(
+            "    raise subprocess.TimeoutExpired(\n"
+            '        getattr(proc, "args", f"process group {proc.pid}"),\n'
+            "        2 * S.TIMEOUT_PROC_TERM_GRACE,\n    )"
+        ),
+        new="    return",
+        test=(
+            "Tests/test_verdictui_pm.py::TestOwnedGroupDescendants"
+            "::test_group_that_outlives_both_grace_periods_is_reported"
+        ),
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
         name="the demo stage re-enters SwiftPM instead of running the built executable",
         path="scripts/verdictui_pm_stages.py",
         old="[str(demo)]",
