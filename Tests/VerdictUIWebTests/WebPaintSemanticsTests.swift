@@ -30,6 +30,212 @@ final class WebPaintSemanticsTests: XCTestCase {
         verdict.findings.filter { [SiblingOverlapRule.id, ContentOverlapRule.id].contains($0.rule) }
     }
 
+    private func positioning(_ node: SemanticNode, depth: Int, root: Int? = nil, block: Int? = nil) -> SemanticNode {
+        var result = node
+        result.attributes["web.domDepth"] = .number(Double(depth))
+        if let root { result.attributes["web.positioningRootDepth"] = .number(Double(root)) }
+        if let block { result.attributes["web.containingBlockDepth"] = .number(Double(block)) }
+        return result
+    }
+
+    func testPositionedEscapeKeepsVisibleControlAndInheritedTextCollision() throws {
+        for position in ["absolute", "fixed"] {
+            for block in [1, 2] {
+                let text = positioning(node("glyph", tag: "#text", role: .text, x: 200,
+                    attributes: ["web.position": .string(position)]), depth: 4, root: 3, block: block)
+                let escaping = positioning(node("escaping", tag: "button", role: .button, x: 200,
+                    attributes: ["web.position": .string(position)], children: [text]), depth: 3, root: 3, block: block)
+                let clip = positioning(node("clip", x: 0, width: 100, attributes: ["web.overflowX": .string("hidden"),
+                    "web.fixedContainer": .bool(block == 2)], children: [escaping]), depth: 2)
+                let outer = positioning(node("outer", x: 0, width: 500,
+                    attributes: ["web.fixedContainer": .bool(true)], children: [clip]), depth: 1)
+                let outside = positioning(node("outside", tag: "button", role: .button, x: 200), depth: 2)
+                let verdict = try report([outer, outside])
+                XCTAssertEqual(overlaps(verdict).contains { $0.nodeID == "outside" && $0.message.contains("escaping") }, block == 1)
+                for id in ["escaping", "glyph"] {
+                    XCTAssertEqual(verdict.findings.contains { $0.rule == ClippedContentRule.id && $0.nodeID == id }, block == 2)
+                }
+                XCTAssertEqual(verdict.tree, tree([outer, outside]))
+            }
+        }
+    }
+
+    func testPositionedRootOwnClipAndNestedClipsRemainEffective() throws {
+        let leaf = positioning(node("leaf", tag: "button", role: .button, x: 250), depth: 5, root: 4, block: 3)
+        let nested = positioning(node("nested", x: 200, width: 100, attributes: ["web.position": .string("absolute")], children: [leaf]),
+                                 depth: 4, root: 4, block: 3)
+        let escaping = positioning(node("escaping", x: 200, width: 100, attributes: ["web.position": .string("absolute")], children: [nested]),
+                                   depth: 3, root: 3, block: 1)
+        let clip = positioning(node("clip", x: 0, width: 100, attributes: ["web.overflowX": .string("clip")], children: [escaping]), depth: 2)
+        let outer = positioning(node("outer", width: 500, children: [clip]), depth: 1)
+        XCTAssertTrue(overlaps(try report([outer, node("outside", tag: "button", role: .button, x: 250)])).contains { $0.nodeID == "outside" })
+        for depth in [3, 4] {
+            var own = escaping
+            if depth == 3 { own.attributes["web.overflowX"] = .string("hidden"); own.frame.width = 20 }
+            else { own.children[0].attributes["web.overflowX"] = .string("hidden"); own.children[0].frame.width = 20 }
+            var chain = outer; chain.children[0].children = [own]
+            let verdict = try report([chain, node("outside", tag: "button", role: .button, x: 250)])
+            XCTAssertTrue(verdict.findings.contains { $0.rule == ClippedContentRule.id && $0.nodeID == "leaf" })
+            XCTAssertFalse(overlaps(verdict).contains { $0.nodeID == "outside" && $0.message.contains("leaf") })
+        }
+    }
+
+    func testPositionedEscapeKeepsMeasuredFragmentsBeyondStaticClip() throws {
+        var text = positioning(node("text", tag: "#text", role: .text, x: 200,
+            attributes: ["web.position": .string("absolute"), "web.textFragmentCount": .number(1)]), depth: 3, root: 3, block: 1)
+        WebLint.store(text.frame, key: "web.textFragment0", in: &text.attributes)
+        let clip = positioning(node("clip", x: 0, width: 100, attributes: ["web.overflowX": .string("hidden")], children: [text]), depth: 2)
+        let verdict = try report([positioning(node("outer", width: 500, children: [clip]), depth: 1),
+                                 node("outside", tag: "button", role: .button, x: 200)])
+        XCTAssertTrue(overlaps(verdict).contains { $0.nodeID == "outside" && $0.message.contains("text") })
+        XCTAssertFalse(verdict.findings.contains { $0.rule == ClippedContentRule.id && $0.nodeID == "text" })
+    }
+
+    func testStaticScrollEscapeUsesEnclosingReachabilityAndSkipsExtraScrollComparisons() throws {
+        let escaping = positioning(node("escaping", tag: "button", role: .button, y: 250,
+            attributes: ["web.position": .string("absolute")]), depth: 4, root: 4, block: 1)
+        let wrapper = positioning(node("wrapper", x: 0, y: 0, width: 100, height: 100, children: [escaping]), depth: 3)
+        var scroll = positioning(node("scroll", x: 0, y: 0, width: 100, height: 100,
+            attributes: ["web.overflowY": .string("auto")], children: [wrapper]), depth: 2)
+        WebLint.store(scroll.frame, key: "web.scrollViewport", in: &scroll.attributes)
+        WebLint.store(scroll.frame, key: "web.scrollBounds", in: &scroll.attributes)
+        var outer = positioning(node("outer", x: 0, y: 0, width: 500, height: 500, children: [scroll]), depth: 1)
+        let outside = node("outside", tag: "button", role: .button, y: 250)
+        let verdict = try report([outer, outside])
+        XCTAssertTrue(overlaps(verdict).contains { $0.nodeID == "outside" && $0.message.contains("escaping") })
+        XCTAssertFalse(verdict.findings.contains { $0.rule == OffscreenRule.id && $0.nodeID == "escaping" })
+        let flow = positioning(node("flow", tag: "button", role: .button, y: 250), depth: 3)
+        scroll.children.append(flow)
+        WebLint.store(Rect(x: 0, y: 0, width: 100, height: 500), key: "web.scrollBounds", in: &scroll.attributes)
+        outer.children = [scroll]
+        let separated = try report([outer])
+        XCTAssertFalse(overlaps(separated).contains { $0.message.contains("escaping") && $0.message.contains("flow") })
+        var retained = escaping; retained.attributes["web.containingBlockDepth"] = .number(2)
+        outer.children[0].children[0].children = [retained]
+        XCTAssertTrue(overlaps(try report([outer])).contains { $0.message.contains("escaping") && $0.message.contains("flow") })
+    }
+
+    func testPositioningProofRequiresFiniteOrderedSameFrameDepths() {
+        let owner = positioning(node("clip"), depth: 2)
+        let boundary = WebPaintSemantics.Boundary(WebPaintSemantics.Clip(owner.frame), owner: owner)
+        let valid = positioning(node("target"), depth: 4, root: 3, block: 1)
+        XCTAssertTrue(boundary.escaped(by: valid))
+        for (key, value) in [("web.domDepth", AttributeValue.number(.infinity)), ("web.domDepth", .number(257)),
+            ("web.domDepth", .number(2)), ("web.positioningRootDepth", .number(3.5)),
+            ("web.containingBlockDepth", .number(-2)), ("web.containingBlockDepth", .number(3)),
+            ("web.frame", .string("other")), ("web.frame", .string(""))] {
+            var invalid = valid; invalid.attributes[key] = value
+            XCTAssertFalse(boundary.escaped(by: invalid), key)
+            if key != "web.frame" { XCTAssertNil(WebPaintSemantics.positioningRange(invalid), key) }
+        }
+        for key in ["web.domDepth", "web.positioningRootDepth", "web.containingBlockDepth", "web.frame"] {
+            var missing = valid; missing.attributes.removeValue(forKey: key)
+            XCTAssertFalse(boundary.escaped(by: missing), key)
+        }
+        for depth in [-1.0, 1, 3, 257, .infinity] {
+            var changed = owner; changed.attributes["web.domDepth"] = .number(depth)
+            XCTAssertFalse(WebPaintSemantics.Boundary(WebPaintSemantics.Clip(changed.frame), owner: changed).escaped(by: valid))
+        }
+        var emptyOwner = owner; emptyOwner.attributes["web.frame"] = .string("")
+        var emptyTarget = valid; emptyTarget.attributes["web.frame"] = .string("")
+        XCTAssertFalse(WebPaintSemantics.Boundary(WebPaintSemantics.Clip(emptyOwner.frame), owner: emptyOwner).escaped(by: emptyTarget))
+        var viewportFixed = valid; viewportFixed.attributes["web.containingBlockDepth"] = .number(-1)
+        XCTAssertTrue(boundary.escaped(by: viewportFixed))
+    }
+
+    func testStaticScrollerEscapeStillHonorsGenuineOuterClip() throws {
+        let escaping = positioning(node("escaping", tag: "button", role: .button, y: 250,
+            attributes: ["web.position": .string("absolute")]), depth: 3, root: 3, block: 1)
+        var scroll = positioning(node("scroll", x: 0, y: 0, width: 100, height: 100,
+            attributes: ["web.overflowY": .string("auto")], children: [escaping]), depth: 2)
+        WebLint.store(scroll.frame, key: "web.scrollViewport", in: &scroll.attributes)
+        WebLint.store(scroll.frame, key: "web.scrollBounds", in: &scroll.attributes)
+        let outer = positioning(node("outer", x: 0, y: 0, width: 500, height: 150,
+            attributes: ["web.overflowY": .string("hidden")], children: [scroll]), depth: 1)
+        let verdict = try report([outer, node("outside", tag: "button", role: .button, y: 250)])
+        XCTAssertTrue(verdict.findings.contains { $0.rule == ClippedContentRule.id && $0.nodeID == "escaping" })
+        XCTAssertFalse(overlaps(verdict).contains { $0.message.contains("escaping") })
+    }
+
+    func testControlAndImageBorderOverlapCannotHideBehindSeparatedGlyphs() throws {
+        for role in [Role.button, .textField, .image] {
+            let first = node("first", tag: "button", role: role, x: 100, width: 120,
+                children: [node("first-glyph", tag: "#text", role: .text, x: 105, width: 20)])
+            let second = node("second", tag: "button", role: role, x: 200, width: 120,
+                children: [node("second-glyph", tag: "#text", role: .text, x: 280, width: 20)])
+            let wrapper = node("ordinary-wrapper", x: 0, width: 80, children: [first])
+            let verdict = try report([wrapper, second])
+            XCTAssertTrue(overlaps(verdict).contains { $0.rule == ContentOverlapRule.id && $0.nodeID == "second" && $0.message.contains("first") })
+            XCTAssertEqual(verdict.tree, tree([wrapper, second]))
+            var layered = first; layered.zIndex = 1
+            var layeredWrapper = wrapper; layeredWrapper.children = [layered]
+            XCTAssertFalse(overlaps(try report([layeredWrapper, second])).contains { $0.message.contains("first") })
+            let siblings = try report([first, second])
+            XCTAssertTrue(overlaps(siblings).contains { $0.rule == SiblingOverlapRule.id })
+            XCTAssertFalse(overlaps(siblings).contains { $0.rule == ContentOverlapRule.id })
+        }
+    }
+
+    func testEscapingScrollScopeCannotResurrectEarlierClipsForNestedPositionedControls() throws {
+        let first = positioning(node("first", tag: "button", role: .button, x: 220, y: 300,
+            attributes: ["web.position": .string("absolute")]), depth: 4, root: 4, block: 3)
+        var second = first; second.id = "second"
+        var scroll = positioning(node("scroll", x: 200, y: 0, width: 200, height: 100,
+            attributes: ["web.position": .string("absolute"), "web.overflowY": .string("auto")], children: [first, second]), depth: 3, root: 3, block: 1)
+        WebLint.store(scroll.frame, key: "web.scrollViewport", in: &scroll.attributes)
+        WebLint.store(Rect(x: 200, y: 0, width: 200, height: 500), key: "web.scrollBounds", in: &scroll.attributes)
+        let clip = positioning(node("clip", x: 0, y: 0, width: 100, height: 100,
+            attributes: ["web.overflowX": .string("hidden")], children: [scroll]), depth: 2)
+        let outer = positioning(node("outer", x: 0, y: 0, width: 600, height: 600, children: [clip]), depth: 1)
+        XCTAssertTrue(overlaps(try report([outer])).contains { $0.nodeID == "second" && $0.message.contains("first") })
+    }
+
+    func testMeasuredFixedContainingBlockSurvivesOmittedSemanticAncestor() throws {
+        let fixed = positioning(node("fixed", tag: "button", role: .button, y: 700,
+            attributes: ["web.position": .string("fixed")]), depth: 3, root: 3, block: 1)
+        var document = positioning(node("document", x: 0, y: 0, width: 800, height: 1000, children: [fixed]), depth: 0)
+        WebLint.store(document.frame, key: "web.documentBounds", in: &document.attributes)
+        WebLint.store(viewport, key: "web.documentViewport", in: &document.attributes)
+        XCTAssertFalse(try report([document]).findings.contains { $0.rule == OffscreenRule.id && $0.nodeID == "fixed" })
+        document.children[0].attributes["web.containingBlockDepth"] = .number(-1)
+        XCTAssertTrue(try report([document]).findings.contains { $0.rule == OffscreenRule.id && $0.nodeID == "fixed" })
+    }
+
+    func testIndividualTransformsAndWillChangeEstablishContainingBlocks() {
+        var styles = Array(repeating: "none", count: 36)
+        XCTAssertFalse(WebLint.establishesFixedContainer(styles: styles))
+        for (index, value) in [(33, "0px"), (34, "0deg"), (35, "1")] {
+            styles[index] = value
+            XCTAssertTrue(WebLint.establishesFixedContainer(styles: styles), "individual transform \(index)")
+            styles[index] = "none"
+        }
+        for property in ["translate", "rotate", "scale"] {
+            styles[13] = property
+            XCTAssertTrue(WebLint.establishesFixedContainer(styles: styles), property)
+        }
+        styles[13] = "opacity"
+        XCTAssertFalse(WebLint.establishesFixedContainer(styles: styles))
+        XCTAssertFalse(WebLint.establishesFixedContainer(styles: Array(styles.prefix(14))))
+    }
+
+    func testOverlapScopeDiscoveryAndReachableCopiesShareWorkBudget() throws {
+        let single = tree([node("single")])
+        XCTAssertThrowsError(try WebLint.run(tree: single, scenario: "bounded", viewport: viewport, overlapLimit: 0))
+        var nested = node("leaf")
+        for index in 0..<5 {
+            var scroll = node("scroll-\(index)", x: 0, y: 0, width: 200, height: 100,
+                attributes: ["web.overflowY": .string("auto")], children: [nested])
+            WebLint.store(scroll.frame, key: "web.scrollViewport", in: &scroll.attributes)
+            WebLint.store(scroll.frame, key: "web.scrollBounds", in: &scroll.attributes)
+            nested = scroll
+        }
+        let source = tree([nested])
+        XCTAssertThrowsError(try WebLint.run(tree: source, scenario: "bounded", viewport: viewport, overlapLimit: 7)) { error in
+            guard case WebBrowserError.invalidWebOperation = error else { return XCTFail("\(error)") }
+        }
+        XCTAssertEqual(try WebLint.run(tree: source, scenario: "bounded", viewport: viewport, overlapLimit: 100).status, .pass)
+    }
+
     func testPassiveSVGCompositionIsAtomicButOwnerStillCollides() throws {
         let svg = node("icon", tag: "svg", role: .image, children: [node("path-a", tag: "path"), node("path-b", tag: "path")])
         let source = tree([svg])

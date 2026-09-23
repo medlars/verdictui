@@ -102,6 +102,42 @@ enum WebPaintSemantics {
                                    suggestion: suggestion, defaultSeverity: .error)
     }
 
+    /// Raw DOM depths survive omitted html/body/display:contents ancestors.
+    /// Only a complete same-document measured interval can discard a clip.
+    static func positioningRange(_ node: SemanticNode) -> (root: Int, block: Int)? {
+        guard let depth = node.attributes["web.domDepth"]?.numberValue.flatMap(Int.init(exactly:)),
+              let root = node.attributes["web.positioningRootDepth"]?.numberValue.flatMap(Int.init(exactly:)),
+              let block = node.attributes["web.containingBlockDepth"]?.numberValue.flatMap(Int.init(exactly:)),
+              (0...256).contains(depth), (0...depth).contains(root), (-1..<root).contains(block) else { return nil }
+        return (root, block)
+    }
+
+    struct Boundary {
+        var clip: Clip
+        var depth: Int?
+        var frame: String?
+
+        init(_ clip: Clip, owner: SemanticNode) {
+            self.clip = clip
+            depth = owner.attributes["web.domDepth"]?.numberValue.flatMap(Int.init(exactly:))
+            frame = owner.attributes["web.frame"]?.stringValue
+        }
+
+        func escaped(by node: SemanticNode) -> Bool {
+            guard let range = positioningRange(node), let depth, (0...256).contains(depth),
+                  let frame, !frame.isEmpty, node.attributes["web.frame"] == .string(frame) else { return false }
+            return range.block < depth && depth < range.root
+        }
+
+        func removing(x: Bool, y: Bool) -> Boundary {
+            var result = self; result.clip = clip.removing(x: x, y: y); return result
+        }
+
+        static func combined(_ boundaries: [Boundary]) -> Clip? {
+            boundaries.reduce(nil as Clip?) { result, boundary in Clip.combined(result, boundary.clip) }
+        }
+    }
+
     /// Optional axes avoid invented huge rectangles when only one axis clips.
     struct Clip {
         var minX: Double?

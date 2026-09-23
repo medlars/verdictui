@@ -551,7 +551,7 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="web scroll will change containing block is ignored",
         path=_BASE + "WebLint.swift",
-        old='!willChange.isDisjoint(with: ["transform", "filter", "perspective", "contain"])',
+        old='!willChange.isDisjoint(with: ["transform", "filter", "perspective", "contain", "translate", "rotate", "scale"])',
         new='!willChange.isDisjoint(with: ["unsupported"])',
         test=_TEST + "WebLintTests/testComputedContainingBlockPropertiesHaveIndependentWitnesses",
     ),
@@ -640,8 +640,8 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="web scroll iframe fixed child escapes outer scroll clip",
         path=_BASE + "WebLint.swift",
-        old="Clip.combined(ownDocument, documentClip, childScroll, childCSS)",
-        new="Clip.combined(ownDocument, documentClip, childCSS)",
+        old="Clip.combined(ownDocument, documentClip, Boundary.combined(childScroll), Boundary.combined(childCSS))",
+        new="Clip.combined(ownDocument, documentClip, Boundary.combined(childCSS))",
         test=_TEST + "WebLintTests/testFixedChildCannotEscapeOuterScrollPanelThroughIframe",
     ),
     Mutation(
@@ -683,7 +683,7 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="web scroll fixed content uses document extent",
         path=_BASE + "WebLint.swift",
-        old='if source.attributes["web.position"] == .string("fixed"), !contained, !scope.fixed {',
+        old='if source.attributes["web.position"] == .string("fixed"), viewportFixed, !scope.fixed {',
         new='if source.attributes["web.position"] == .string("fixed"), !contained, !scope.fixed, scope.bounds.width < 0 {',
         test=_TEST + "WebLintTests/testNegativeAndFixedDisplacementStillFailWithOriginalIDs",
     ),
@@ -1475,8 +1475,8 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="web paint CSS single-axis clipping is ignored",
         path=_BASE + "WebLint.swift",
-        old="let ownCSS = clipsX || clipsY ? Clip(source.frame, x: clipsX, y: clipsY) : nil",
-        new="let ownCSS = clipsX && clipsY ? Clip(source.frame, x: clipsX, y: clipsY) : nil",
+        old="let ownCSS = clipsX || clipsY ? Boundary(Clip(source.frame, x: clipsX, y: clipsY), owner: source) : nil",
+        new="let ownCSS = clipsX && clipsY ? Boundary(Clip(source.frame, x: clipsX, y: clipsY), owner: source) : nil",
         test=_TEST
         + "WebPaintSemanticsTests/testCSSPaintClipsOnlySpecifiedAxisAndKeepsRealClippedContentError",
     ),
@@ -1491,62 +1491,62 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="web paint CSS clip traps viewport fixed content",
         path=_BASE + "WebLint.swift",
-        old="let activeCSS = fixed ? nil : cssClip",
-        new="let activeCSS = cssClip",
+        old="let activeCSS = fixed ? [] : cssClips.filter { !$0.escaped(by: source) }",
+        new="let activeCSS = cssClips.filter { !$0.escaped(by: source) }",
         test=_TEST
         + "WebPaintSemanticsTests/testFixedPaintEscapesOrdinaryCSSClipButNotTransformedClip",
     ),
     Mutation(
         name="web paint iframe fixed content escapes outer CSS clip",
         path=_BASE + "WebLint.swift",
-        old="Clip.combined(ownDocument, documentClip, childScroll, childCSS)",
-        new="Clip.combined(ownDocument, documentClip, childScroll)",
+        old="Clip.combined(ownDocument, documentClip, Boundary.combined(childScroll), Boundary.combined(childCSS))",
+        new="Clip.combined(ownDocument, documentClip, Boundary.combined(childScroll))",
         test=_TEST + "WebPaintSemanticsTests/testFixedChildCannotEscapeOuterCSSClipThroughIframe",
     ),
     Mutation(
         name="web paint overlap uses independent SVG internals again",
         path=_BASE + "WebLint.swift",
-        old="= [(semantic.tree, nil, false)]",
-        new="= [(tree, nil, false)]",
+        old="= [(semantic.tree, [], false)]",
+        new="= [(tree, [], false)]",
         test=_TEST
         + "WebPaintSemanticsTests/testPassiveSVGCompositionIsAtomicButOwnerStillCollides",
     ),
     Mutation(
         name="web paint followup reachable scroll scope discards hidden axes",
         path=_BASE + "WebLint.swift",
-        old="childClip?.removing(x: scrollX, y: scrollY)",
-        new="childClip?.removing(x: scrollX || clipsX, y: scrollY || clipsY)",
+        old="childClips.map { $0.removing(x: scrollX, y: scrollY) }",
+        new="childClips.map { $0.removing(x: scrollX || clipsX, y: scrollY || clipsY) }",
         test=_TEST
         + "WebPaintSemanticsTests/testReachableScrollScopeRetainsHiddenAxisWithoutLosingScrollableAxis",
     ),
     Mutation(
         name="web paint followup reachable scroll scope retains its scrolling-axis clips",
         path=_BASE + "WebLint.swift",
-        old="childClip?.removing(x: scrollX, y: scrollY)",
-        new="childClip?.removing(x: !scrollX, y: !scrollY)",
+        old="childClips.map { $0.removing(x: scrollX, y: scrollY) }",
+        new="childClips.map { $0.removing(x: !scrollX, y: !scrollY) }",
         test=_TEST
         + "WebPaintSemanticsTests/testReachableScrollScopeRetainsAncestorClipOnItsNonScrollingAxis",
     ),
     Mutation(
         name="web paint followup reachable scroll scope discards ancestor clipping",
         path=_BASE + "WebLint.swift",
-        old="Clip.combined(fixed ? nil : inheritedClip, ownClip)",
-        new="Clip.combined(fixed ? nil : nil, ownClip)",
+        old="let activeClips = fixed ? [] : inheritedClips.filter { !$0.escaped(by: node) }",
+        new="let activeClips = fixed ? [] : inheritedClips.filter { _ in false }",
         test=_TEST
         + "WebPaintSemanticsTests/testReachableScrollScopeRetainsAncestorClipOnItsNonScrollingAxis",
     ),
     Mutation(
         name="web paint followup viewport fixed scroll scope keeps ancestor clipping",
         path=_BASE + "WebLint.swift",
-        old="Clip.combined(fixed ? nil : inheritedClip, ownClip)",
-        new="Clip.combined(fixed ? inheritedClip : inheritedClip, ownClip)",
+        old="let activeClips = fixed ? [] : inheritedClips.filter { !$0.escaped(by: node) }",
+        new="let activeClips = fixed ? inheritedClips : inheritedClips.filter { !$0.escaped(by: node) }",
         test=_TEST + "WebPaintSemanticsTests/testViewportFixedScrollScopeEscapesAncestorCSSClip",
     ),
     Mutation(
         name="web paint followup reachable scroll root loses fixed-container state",
         path=_BASE + "WebLint.swift",
-        old="retainedClip, changesDocument ? false : childContained)",
-        new="retainedClip, false)",
+        old="retainedClips, changesDocument ? false : childContained)",
+        new="retainedClips, false)",
         test=_TEST + "WebPaintSemanticsTests/testReachableScrollScopeRetainsFixedContainerAncestry",
     ),
     Mutation(
@@ -1559,16 +1559,16 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="web paint followup independent document inherits outer CSS clipping",
         path=_BASE + "WebLint.swift",
-        old="let retainedClip = changesDocument ? nil : childClip?.removing",
-        new="let retainedClip = childClip?.removing",
+        old="let retainedClips = changesDocument ? [] : childClips.map",
+        new="let retainedClips = childClips.map",
         test=_TEST
         + "WebPaintSemanticsTests/testIndependentDocumentScopeKeepsItsReachableInternalCollisions",
     ),
     Mutation(
         name="web paint followup nested document scroll scope inherits outer CSS clipping",
         path=_BASE + "WebLint.swift",
-        old="inheritedClip: changed ? nil : childClip",
-        new="inheritedClip: childClip",
+        old="inheritedClips: changed ? [] : childClips",
+        new="inheritedClips: childClips",
         test=_TEST
         + "WebPaintSemanticsTests/testIndependentDocumentScopeKeepsItsReachableInternalCollisions",
     ),
@@ -1707,5 +1707,236 @@ MUTATIONS: list[Mutation] = [
         new="other: leaves[first].node, fontPaintUnverified: false",
         test=_TEST
         + "WebPaintSemanticsTests/testQualifiedFontUncertaintySurvivesCrossParentComparison",
+    ),
+    Mutation(
+        name="web paint positioning raw depth bound is ignored",
+        path=_BASE + "WebPaintSemantics.swift",
+        old="(0...256).contains(depth), (0...depth).contains(root)",
+        new="(0...512).contains(depth), (0...depth).contains(root)",
+        test=_TEST
+        + "WebPaintSemanticsTests/testPositioningProofRequiresFiniteOrderedSameFrameDepths",
+    ),
+    Mutation(
+        name="web paint positioning positioned root may exceed target depth",
+        path=_BASE + "WebPaintSemantics.swift",
+        old="(0...depth).contains(root)",
+        new="(0...256).contains(root)",
+        test=_TEST
+        + "WebPaintSemanticsTests/testPositioningProofRequiresFiniteOrderedSameFrameDepths",
+    ),
+    Mutation(
+        name="web paint positioning unknown negative containing block is accepted",
+        path=_BASE + "WebPaintSemantics.swift",
+        old="(-1..<root).contains(block)",
+        new="(-2..<root).contains(block)",
+        test=_TEST
+        + "WebPaintSemanticsTests/testPositioningProofRequiresFiniteOrderedSameFrameDepths",
+    ),
+    Mutation(
+        name="web paint positioning containing block may equal positioned root",
+        path=_BASE + "WebPaintSemantics.swift",
+        old="(-1..<root).contains(block)",
+        new="(-1...root).contains(block)",
+        test=_TEST
+        + "WebPaintSemanticsTests/testPositioningProofRequiresFiniteOrderedSameFrameDepths",
+    ),
+    Mutation(
+        name="web paint positioning containing block own clip is discarded",
+        path=_BASE + "WebPaintSemantics.swift",
+        old="range.block < depth && depth < range.root",
+        new="range.block <= depth && depth < range.root",
+        test=_TEST
+        + "WebPaintSemanticsTests/testPositionedEscapeKeepsVisibleControlAndInheritedTextCollision",
+    ),
+    Mutation(
+        name="web paint positioning positioned root own clip is discarded",
+        path=_BASE + "WebPaintSemantics.swift",
+        old="range.block < depth && depth < range.root",
+        new="range.block < depth && depth <= range.root",
+        test=_TEST
+        + "WebPaintSemanticsTests/testPositionedRootOwnClipAndNestedClipsRemainEffective",
+    ),
+    Mutation(
+        name="web paint positioning frame identity cannot bound clip escape",
+        path=_BASE + "WebPaintSemantics.swift",
+        old='node.attributes["web.frame"] == .string(frame) else { return false }',
+        new='node.attributes["web.frame"] != nil else { return false }',
+        test=_TEST
+        + "WebPaintSemanticsTests/testPositioningProofRequiresFiniteOrderedSameFrameDepths",
+    ),
+    Mutation(
+        name="web paint positioning CSS boundary ignores containing block",
+        path=_BASE + "WebLint.swift",
+        old="cssClips.filter { !$0.escaped(by: source) }",
+        new="cssClips.filter { _ in true }",
+        test=_TEST
+        + "WebPaintSemanticsTests/testPositionedEscapeKeepsMeasuredFragmentsBeyondStaticClip",
+    ),
+    Mutation(
+        name="web paint positioning scroll boundary ignores containing block",
+        path=_BASE + "WebLint.swift",
+        old="scrollClips.filter { !$0.escaped(by: source) }",
+        new="scrollClips.filter { _ in true }",
+        test=_TEST
+        + "WebPaintSemanticsTests/testStaticScrollEscapeUsesEnclosingReachabilityAndSkipsExtraScrollComparisons",
+    ),
+    Mutation(
+        name="web paint positioning clipping findings ignore containing block",
+        path=_BASE + "WebLint.swift",
+        old="!WebPaintSemantics.Boundary(WebPaintSemantics.Clip($0.node.frame), owner: $0.node).escaped(by: node)",
+        new="WebPaintSemantics.Boundary(WebPaintSemantics.Clip($0.node.frame), owner: $0.node).depth != nil",
+        test=_TEST
+        + "WebPaintSemanticsTests/testPositionedEscapeKeepsVisibleControlAndInheritedTextCollision",
+    ),
+    Mutation(
+        name="web paint positioning escaped scroller loses genuine outer clip",
+        path=_BASE + "WebLint.swift",
+        old="inherited = restored + inherited.filter { !paths.contains($0.node.structuralPath) }",
+        new="inherited = inherited.filter { !paths.contains($0.node.structuralPath) }",
+        test=_TEST + "WebPaintSemanticsTests/testStaticScrollerEscapeStillHonorsGenuineOuterClip",
+    ),
+    Mutation(
+        name="web paint positioning escaped control stays in scroll reachability",
+        path=_BASE + "WebLint.swift",
+        old="enclosing.firstIndex(where: { $0.boundary.escaped(by: source) })",
+        new="enclosing.firstIndex(where: { _ in false })",
+        test=_TEST
+        + "WebPaintSemanticsTests/testStaticScrollEscapeUsesEnclosingReachabilityAndSkipsExtraScrollComparisons",
+    ),
+    Mutation(
+        name="web paint positioning escaped controls enter extra scroll comparisons",
+        path=_BASE + "WebLint.swift",
+        old="guard !owner.escaped(by: node) else { return nil }",
+        new="guard node.isVisible else { return nil }",
+        test=_TEST
+        + "WebPaintSemanticsTests/testStaticScrollEscapeUsesEnclosingReachabilityAndSkipsExtraScrollComparisons",
+    ),
+    Mutation(
+        name="web paint positioning interactive bounds are hidden by glyph children",
+        path=_BASE + "WebLint.swift",
+        old="node.children.isEmpty || node.role.isInteractive || node.role == .image",
+        new="node.children.isEmpty || (node.role.isInteractive && false) || node.role == .image",
+        test=_TEST
+        + "WebPaintSemanticsTests/testControlAndImageBorderOverlapCannotHideBehindSeparatedGlyphs",
+    ),
+    Mutation(
+        name="web paint positioning image bounds are hidden by descendants",
+        path=_BASE + "WebLint.swift",
+        old="node.children.isEmpty || node.role.isInteractive || node.role == .image",
+        new="node.children.isEmpty || node.role.isInteractive || (node.role == .image && false)",
+        test=_TEST
+        + "WebPaintSemanticsTests/testControlAndImageBorderOverlapCannotHideBehindSeparatedGlyphs",
+    ),
+    Mutation(
+        name="web paint positioning ordinary wrappers hide contained controls",
+        path=_BASE + "WebLint.swift",
+        old="node.children.isEmpty || node.role.isInteractive || node.role == .image",
+        new="node.children.isEmpty || node.role.isInteractive || node.role == .image || node.role == .container",
+        test=_TEST
+        + "WebPaintSemanticsTests/testControlAndImageBorderOverlapCannotHideBehindSeparatedGlyphs",
+    ),
+    Mutation(
+        name="web paint positioning empty frame identity proves clip escape",
+        path=_BASE + "WebPaintSemantics.swift",
+        old='let frame, !frame.isEmpty, node.attributes["web.frame"]',
+        new='let frame, frame.isEmpty || !frame.isEmpty, node.attributes["web.frame"]',
+        test=_TEST
+        + "WebPaintSemanticsTests/testPositioningProofRequiresFiniteOrderedSameFrameDepths",
+    ),
+    Mutation(
+        name="web paint positioning omitted fixed container becomes viewport scope",
+        path=_BASE + "WebLint.swift",
+        old="WebPaintSemantics.positioningRange(source).map { $0.block == -1 } ?? !contained",
+        new="WebPaintSemantics.positioningRange(source).map { _ in true } ?? !contained",
+        test=_TEST
+        + "WebPaintSemanticsTests/testMeasuredFixedContainingBlockSurvivesOmittedSemanticAncestor",
+    ),
+    Mutation(
+        name="web paint positioning nested scroll projection resurrects skipped clips",
+        path=_BASE + "WebLint.swift",
+        old="inheritedClips.filter { !$0.escaped(by: node) }",
+        new="inheritedClips.filter { _ in true }",
+        test=_TEST
+        + "WebPaintSemanticsTests/testEscapingScrollScopeCannotResurrectEarlierClipsForNestedPositionedControls",
+    ),
+    Mutation(
+        name="web paint positioning legacy style bounds disable actual transforms",
+        path=_BASE + "WebLint.swift",
+        old='styles.indices.contains($0) && styles[$0] != "none"',
+        new='styles.indices.contains($0 + 3) && styles[$0] != "none"',
+        test=_TEST
+        + "WebPaintSemanticsTests/testIndividualTransformsAndWillChangeEstablishContainingBlocks",
+    ),
+    Mutation(
+        name="web paint positioning none individual transform creates containing block",
+        path=_BASE + "WebLint.swift",
+        old='styles[$0] != "none"',
+        new='styles[$0] == "none"',
+        test=_TEST
+        + "WebPaintSemanticsTests/testIndividualTransformsAndWillChangeEstablishContainingBlocks",
+    ),
+    Mutation(
+        name="web paint positioning individual translate is ignored",
+        path=_BASE + "WebLint.swift",
+        old="[33, 34, 35].contains(where:",
+        new="[34, 35].contains(where:",
+        test=_TEST
+        + "WebPaintSemanticsTests/testIndividualTransformsAndWillChangeEstablishContainingBlocks",
+    ),
+    Mutation(
+        name="web paint positioning will change translate is ignored",
+        path=_BASE + "WebLint.swift",
+        old='["transform", "filter", "perspective", "contain", "translate", "rotate", "scale"]',
+        new='["transform", "filter", "perspective", "contain", "rotate", "scale"]',
+        test=_TEST
+        + "WebPaintSemanticsTests/testIndividualTransformsAndWillChangeEstablishContainingBlocks",
+    ),
+    Mutation(
+        name="web paint positioning individual rotate is ignored",
+        path=_BASE + "WebLint.swift",
+        old="[33, 34, 35].contains(where:",
+        new="[33, 35].contains(where:",
+        test=_TEST
+        + "WebPaintSemanticsTests/testIndividualTransformsAndWillChangeEstablishContainingBlocks",
+    ),
+    Mutation(
+        name="web paint positioning will change rotate is ignored",
+        path=_BASE + "WebLint.swift",
+        old='["transform", "filter", "perspective", "contain", "translate", "rotate", "scale"]',
+        new='["transform", "filter", "perspective", "contain", "translate", "scale"]',
+        test=_TEST
+        + "WebPaintSemanticsTests/testIndividualTransformsAndWillChangeEstablishContainingBlocks",
+    ),
+    Mutation(
+        name="web paint positioning individual scale is ignored",
+        path=_BASE + "WebLint.swift",
+        old="[33, 34, 35].contains(where:",
+        new="[33, 34].contains(where:",
+        test=_TEST
+        + "WebPaintSemanticsTests/testIndividualTransformsAndWillChangeEstablishContainingBlocks",
+    ),
+    Mutation(
+        name="web paint positioning will change scale is ignored",
+        path=_BASE + "WebLint.swift",
+        old='["transform", "filter", "perspective", "contain", "translate", "rotate", "scale"]',
+        new='["transform", "filter", "perspective", "contain", "translate", "rotate"]',
+        test=_TEST
+        + "WebPaintSemanticsTests/testIndividualTransformsAndWillChangeEstablishContainingBlocks",
+    ),
+    Mutation(
+        name="web paint positioning reachable scope copies escape work limit",
+        path=_BASE + "WebLint.swift",
+        old="try budget.charge() // Bound each copied reachable-scope node before materializing it.",
+        new="try budget.charge(0) // Bound each copied reachable-scope node before materializing it.",
+        test=_TEST
+        + "WebPaintSemanticsTests/testOverlapScopeDiscoveryAndReachableCopiesShareWorkBudget",
+    ),
+    Mutation(
+        name="web paint positioning scope discovery escapes work limit",
+        path=_BASE + "WebLint.swift",
+        old="try budget.charge() // Scope discovery shares the same fail-closed work budget.",
+        new="try budget.charge(0) // Scope discovery shares the same fail-closed work budget.",
+        test=_TEST
+        + "WebPaintSemanticsTests/testOverlapScopeDiscoveryAndReachableCopiesShareWorkBudget",
     ),
 ]
