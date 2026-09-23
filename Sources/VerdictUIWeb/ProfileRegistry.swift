@@ -12,7 +12,7 @@ import Foundation
 /// Each SESSION on a profile is arbitrated by that one lock; two sessions on
 /// one profile can never attach to one browser by construction (G4). A
 /// session wanting a fresh identity uses a fresh profile name.
-public struct ProfileRegistry {
+public struct ProfileRegistry: Sendable {
     /// The root every profile and lock lives under.
     public let root: URL
 

@@ -60,8 +60,15 @@ public enum WebBrowserError: Error, Equatable, CustomStringConvertible {
     /// The endpoint, timeout, or parameters cannot form a valid request.
     case invalidCDPRequest(reason: String)
 
+    case invalidWebOperation(reason: String)
+    case unknownSession(profile: String)
+    case credentialUnavailable
+
     public var description: String {
         switch self {
+        case let .invalidWebOperation(reason): return "web operation unavailable: \(reason)"
+        case let .unknownSession(profile): return "no open web session for profile \(profile)"
+        case .credentialUnavailable: return "credential reference could not be resolved"
         case let .browserNotFound(channels):
             return "no Chromium-channel browser found; searched: \(channels.joined(separator: ", ")). Set VERDICTUI_WEB_BROWSER to an explicit path to override."
         case let .overrideNotExecutable(path):

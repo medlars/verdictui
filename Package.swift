@@ -133,6 +133,7 @@ let package = Package(
         // touches no other file's behavior.
         .target(
             name: "VerdictUIWeb",
+            dependencies: ["VerdictUIKernel"],
             swiftSettings: strictSettings
         ),
         // Ships the runner `docs/appkit.md` documents, so that snippet is
@@ -204,7 +205,8 @@ let package = Package(
         ),
         .testTarget(
             name: "VerdictUIWebTests",
-            dependencies: ["VerdictUIWeb"],
+            dependencies: ["VerdictUIWeb", "VerdictUIKernel"],
+            resources: [.copy("Fixtures")],
             swiftSettings: strictSettings
         ),
         .testTarget(
