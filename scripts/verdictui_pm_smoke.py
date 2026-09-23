@@ -351,28 +351,33 @@ class VerdictUISmokeMixin:
         return {"passed": True, "detail": "appkit example: defect FAILS (1), clean PASSES (0)"}
 
     def stage_consumer_runner(self) -> dict:
-        """Cold consumer compilation and real custom CLI/MCP registry acceptance."""
+        """Cold compilation plus rebuild/recovery through persistent transports."""
         binary = S.PROJECT_ROOT / ".build/debug/verdictui"
-        result = subprocess.run(
-            [
-                sys.executable,
-                str(S.PROJECT_ROOT / "examples/ConsumerApp/verify-integration.py"),
-                str(binary),
-                "--cold",
-            ],
-            cwd=S.PROJECT_ROOT,
-            capture_output=True,
-            text=True,
-            timeout=660,
-        )
-        passed = (
-            result.returncode == 0 and "cold external consumer auto-build PASS" in result.stdout
-        )
+        for mode, marker in (
+            ("--cold", "cold external consumer auto-build PASS"),
+            ("--reload", "consumer reload PASS: same MCP/daemon PID"),
+        ):
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(S.PROJECT_ROOT / "examples/ConsumerApp/verify-integration.py"),
+                    str(binary),
+                    mode,
+                ],
+                cwd=S.PROJECT_ROOT,
+                capture_output=True,
+                text=True,
+                timeout=660,
+            )
+            if result.returncode != 0 or marker not in result.stdout:
+                return {
+                    "passed": False,
+                    "detail": f"consumer {mode} acceptance failed: "
+                    + (result.stderr or result.stdout)[-700:],
+                }
         return {
-            "passed": passed,
-            "detail": "cold external consumer CLI/MCP PASS"
-            if passed
-            else "consumer acceptance failed: " + (result.stderr or result.stdout)[-700:],
+            "passed": True,
+            "detail": "cold external consumer and persistent CLI/MCP rebuild/recovery PASS",
         }
 
     def stage_real_products(self) -> dict:
