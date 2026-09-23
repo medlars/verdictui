@@ -164,3 +164,12 @@ containing-block ownership before flattening; apply the same ancestry rule to
 clipping findings, visible paint projection and scroll reachability. Include
 fixed/transformed, omitted ancestors and iframe controls. Do not globally
 exempt positioned nodes or infer ownership from the flattened semantic tree.
+
+### Retained editable subtree inventory
+
+Actual CLI opening a contenteditable textbox with a span fails unavailable with
+`missing inline border fragments`. Collection uses the redacted semantic tree,
+but the second assembly requires raw descendants that were deliberately omitted.
+Use one coherent retained-node inventory for collection and validation. Keep
+editable descendants out of public evidence; verify a normal outside button
+remains actionable and missing geometry for retained inline content still fails.
