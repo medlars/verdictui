@@ -16,8 +16,6 @@ final class CDPLiveIntegrationTests: XCTestCase {
         let profile = root.appendingPathComponent(".build/t2-live-profile-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: profile, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: profile) }
-        // T1 opens this existing file for writing; it does not create the file.
-        try Data().write(to: profile.appendingPathComponent(HeadlessBrowser.Options.stderrName))
         let browser = try await HeadlessBrowser.launch(.init(
             browser: executable, profileDirectory: profile, discoveryTimeout: 20))
         do {

@@ -69,6 +69,8 @@ final class WebSessionIntegrationTests: XCTestCase {
             XCTAssertFalse(info.url.contains(hash))
             let initial = try await manager.render(profile: "login")
             let password = try node(initial, id: "password")
+            XCTAssertEqual(password.text, "Password")
+            XCTAssertEqual(try node(initial, id: "username").text, "Username")
             do {
                 _ = try await manager.act(profile: "login", action: .type(nodeID: password.id, text: "not-a-reference"))
                 XCTFail("password accepted literal typing")
@@ -149,6 +151,28 @@ final class WebSessionIntegrationTests: XCTestCase {
         do { _ = try await missing.open(profile: "missing", url: fixture("clean")); XCTFail("missing browser opened") }
         catch { XCTAssertEqual(error as? WebBrowserError, .overrideNotExecutable(path: "/nonexistent")) }
         XCTAssertFalse(FileManager.default.fileExists(atPath: ProfileRegistry(root: root).lockPath(for: "missing").path))
+    }
+
+    func testRealControlLabelsAreDiscoverableWithoutExposingExistingValues() async throws {
+        let root = try root()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let manager = WebSessionManager(root: root, environment: [:])
+        do {
+            _ = try await manager.open(profile: "names", url: fixture("names"))
+            let tree = try await manager.render(profile: "names")
+            for (id, expected) in [("explicit", "Account name"), ("wrapped", "Wrapped username"),
+                ("referenced", "Accessible reference"), ("placeholder", "Search catalogue"), ("notes", "Private notes")] {
+                let field = try node(tree, id: id)
+                XCTAssertEqual(field.role, .textField)
+                XCTAssertEqual(field.text, expected)
+                XCTAssertFalse(field.id.isEmpty)
+                XCTAssertTrue(field.children.isEmpty)
+            }
+            let encoded = String(decoding: try JSONEncoder().encode(tree), as: UTF8.self)
+            XCTAssertFalse(encoded.contains("existing-private-input-value"))
+            XCTAssertFalse(encoded.contains("existing-private-textarea-value"))
+            await manager.closeAll()
+        } catch { await manager.closeAll(); throw error }
     }
 
     func testInvalidNavigationAndUnknownIdentityFailClosed() async throws {

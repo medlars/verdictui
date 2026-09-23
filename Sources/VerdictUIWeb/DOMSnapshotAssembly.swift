@@ -66,6 +66,21 @@ public enum DOMSnapshotAssembly {
             guard depth <= 256 else { throw malformed("node hierarchy exceeds depth limit") }
             depths.append(depth)
         }
+        let tags = try names.map { try string($0, in: strings).lowercased() }
+        // CDP uses -1 for an absent or empty string value.
+        let nodeValues = try values.enumerated().map { types[$0.offset] == 3 && $0.element != -1 ? try string($0.element, in: strings) : "" }
+        let nodeAttributes = try attributes.map { value -> [String: String] in
+            let rawAttrs = try integers(value)
+            guard rawAttrs.count.isMultiple(of: 2) else { throw malformed("odd attribute column") }
+            var attrs: [String: String] = [:]
+            for pair in stride(from: 0, to: rawAttrs.count, by: 2) {
+                let valueIndex = rawAttrs[pair + 1]
+                attrs[try string(rawAttrs[pair], in: strings)] = valueIndex == -1 ? "" : try string(valueIndex, in: strings)
+            }
+            return attrs
+        }
+        let accessibleNames = DOMAccessibleNames.resolve(tags: tags, types: types, values: nodeValues,
+                                                         attributes: nodeAttributes, parents: parents)
         let layoutNodes = try integers(layout["nodeIndex"])
         guard case let .array(bounds) = layout["bounds"], case let .array(styles) = layout["styles"],
             bounds.count == layoutNodes.count, styles.count == layoutNodes.count
@@ -111,20 +126,17 @@ public enum DOMSnapshotAssembly {
                 seenIDs.insert(backend[index]).inserted else {
                 throw malformed("invalid parent topology or backend identity")
             }
-            let tag = try string(names[index], in: strings).lowercased()
+            let tag = tags[index]
             var descendants = assembled[index] ?? []
             if let (frame, style) = geometry[index], types[index] == 1 || types[index] == 3 {
-                let rawAttrs = try integers(attributes[index])
-                guard rawAttrs.count.isMultiple(of: 2) else { throw malformed("odd attribute column") }
-                var attrs: [String: String] = [:]
-                for pair in stride(from: 0, to: rawAttrs.count, by: 2) {
-                    attrs[try string(rawAttrs[pair], in: strings)] = try string(rawAttrs[pair + 1], in: strings)
-                }
-                let rawText = types[index] == 3 ? try string(values[index], in: strings) : nil
+                let attrs = nodeAttributes[index]
+                let rawText = types[index] == 3 ? nodeValues[index] : nil
                 let mappedRole = role(tag: tag, attributes: attrs)
                 let role: Role
                 if case let .custom(raw) = mappedRole { role = .custom(WebRedaction.clean(raw, secrets: secrets)) }
                 else { role = mappedRole }
+                if role == .textField || tag == "input" || tag == "textarea" { descendants = [] }
+                let accessibleName = accessibleNames[index].map { WebRedaction.clean($0, secrets: secrets) }
                 let visible = style[0] != "none" && style[1] != "hidden" && style[1] != "collapse"
                     && (Double(style[2]) ?? 1) > 0
                 if !visible { descendants = descendants.map(hidden) }
@@ -145,8 +157,8 @@ public enum DOMSnapshotAssembly {
                         metadata["web.scaleY"] = .number(scaleY)
                     }
                     if let domID = attrs["id"] { metadata["web.id"] = .string(WebRedaction.clean(domID, secrets: secrets)) }
-                    if let label = attrs["aria-label"] ?? attrs["alt"] ?? attrs["placeholder"] {
-                        metadata["accessibilityLabel"] = .string(WebRedaction.clean(label, secrets: secrets))
+                    if let label = accessibleName {
+                        metadata["accessibilityLabel"] = .string(label)
                     }
                     metadata["web.enabled"] = .bool(attrs["disabled"] == nil && attrs["aria-disabled"] != "true")
                     metadata["web.password"] = .bool(attrs["type"]?.lowercased() == "password")
@@ -159,7 +171,7 @@ public enum DOMSnapshotAssembly {
                         renderedLineCount: lineCount, idealLineCount: lineCount)
                     let node = SemanticNode(
                         id: role == .container ? "" : (frameID == "main" ? "web/\(backend[index])" : "web/\(frameID)/\(backend[index])"), role: role, frame: frame,
-                        text: rawText.map { WebRedaction.clean($0, secrets: secrets) },
+                        text: rawText.map { WebRedaction.clean($0, secrets: secrets) } ?? accessibleName,
                         attributes: metadata, isVisible: visible,
                         zIndex: Double(style[3]), textMetrics: metrics, children: descendants)
                     descendants = [node]

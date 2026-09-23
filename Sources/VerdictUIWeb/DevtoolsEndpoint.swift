@@ -7,8 +7,8 @@ import Foundation
 /// 152.0.7977.65 / macOS: `--headless=new --remote-debugging-port=0` writes
 /// a two-line file (port, then the browser WS path) AND prints
 /// `DevTools listening on ws://127.0.0.1:<port>/devtools/browser/<id>` to
-/// stderr. The file is the parseable contract; stderr is the fallback only
-/// on the failure path (the launch error carries its excerpt).
+/// stderr. Only the file is consumed; browser output is discarded because
+/// diagnostic messages can echo authenticated URLs or page content.
 public struct DevtoolsEndpoint: Equatable, Sendable {
     /// The TCP port DevTools bound.
     public let port: Int
