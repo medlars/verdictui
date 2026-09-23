@@ -22,11 +22,7 @@ public final class OwnedCommandProcess: @unchecked Sendable {
         var actions: posix_spawn_file_actions_t?
         try checked(posix_spawn_file_actions_init(&actions))
         defer { posix_spawn_file_actions_destroy(&actions) }
-        if #available(macOS 26.0, *) {
-            try checked(posix_spawn_file_actions_addchdir(&actions, directory.path))
-        } else {
-            try checked(posix_spawn_file_actions_addchdir_np(&actions, directory.path))
-        }
+        try checked(addWorkingDirectory(&actions, path: directory.path))
         for (source, destination) in [(standardInput, STDIN_FILENO), (standardOutput, STDOUT_FILENO), (standardError, STDERR_FILENO)] {
             if let source { try checked(posix_spawn_file_actions_adddup2(&actions, source, destination)) }
             else { try checked(posix_spawn_file_actions_addopen(&actions, destination, "/dev/null", O_RDWR, 0)) }
@@ -153,10 +149,23 @@ public final class OwnedCommandProcess: @unchecked Sendable {
         return true
     }
 
+    private static func addWorkingDirectory(_ actions: inout posix_spawn_file_actions_t?, path: String) -> Int32 {
+        // Xcode 26 pairs Swift 6.2 with the first SDK declaring the POSIX name.
+        // A runtime availability check alone cannot compile against older SDKs.
+        #if compiler(>=6.2)
+        if #available(macOS 26.0, *) {
+            return posix_spawn_file_actions_addchdir(&actions, path)
+        } else {
+            return posix_spawn_file_actions_addchdir_np(&actions, path)
+        }
+        #else
+        return posix_spawn_file_actions_addchdir_np(&actions, path)
+        #endif
+    }
+
     private static func checked(_ result: Int32) throws {
         guard result == 0 else { throw Failure.system(result) }
     }
 
     deinit { _ = try? stop(grace: 0) }
 }
-
