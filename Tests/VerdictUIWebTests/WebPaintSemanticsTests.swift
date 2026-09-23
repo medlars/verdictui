@@ -208,4 +208,186 @@ final class WebPaintSemanticsTests: XCTestCase {
         let empty = try report([])
         XCTAssertTrue(empty.findings.contains { $0.rule == "vacuous-verdict" && $0.severity == .error })
     }
+
+    func testReachableScrollScopeRetainsHiddenAxisWithoutLosingScrollableAxis() throws {
+        for axis in ["X", "Y"] {
+            for hidden in [false, true] {
+                let x = axis == "X" ? (hidden ? 150.0 : 20) : 200
+                let y = axis == "Y" ? (hidden ? 150.0 : 20) : 200
+                let children = [node("first", tag: "button", role: .button, x: x, y: y, width: 50),
+                                node("second", tag: "button", role: .button, x: x, y: y, width: 50)]
+                var panel = node("panel", x: 0, y: 0, width: 100, height: 100,
+                    attributes: ["web.overflow" + axis: .string("hidden"),
+                                 "web.overflow" + (axis == "X" ? "Y" : "X"): .string("scroll")], children: children)
+                WebLint.store(Rect(x: 0, y: 0, width: 500, height: 500), key: "web.scrollBounds", in: &panel.attributes)
+                WebLint.store(panel.frame, key: "web.scrollViewport", in: &panel.attributes)
+                XCTAssertEqual(overlaps(try report([panel])).contains { $0.nodeID == "second" }, !hidden, axis)
+            }
+        }
+    }
+
+    func testReachableScrollScopeRetainsAncestorClipOnItsNonScrollingAxis() throws {
+        for axis in ["X", "Y"] {
+            let x = axis == "X" ? 150.0 : 20
+            var panel = node("panel", x: 0, y: 0, width: 100, height: 100,
+                             attributes: ["web.overflowY": .string("scroll")], children: [
+                                node("first", tag: "button", role: .button, x: x, y: 200),
+                                node("second", tag: "button", role: .button, x: x, y: 200),
+                             ])
+            WebLint.store(Rect(x: 0, y: 0, width: 500, height: 500), key: "web.scrollBounds", in: &panel.attributes)
+            WebLint.store(panel.frame, key: "web.scrollViewport", in: &panel.attributes)
+            let ancestor = node("ancestor", x: 0, y: 0, width: 100, height: 100,
+                                attributes: ["web.overflow" + axis: .string("clip")], children: [panel])
+            XCTAssertEqual(overlaps(try report([ancestor])).contains { $0.nodeID == "second" }, axis == "Y")
+        }
+    }
+
+    func testViewportFixedScrollScopeEscapesAncestorCSSClip() throws {
+        var panel = node("panel", x: 150, y: 0, width: 100, height: 100,
+                         attributes: ["web.overflowY": .string("scroll"), "web.position": .string("fixed")], children: [
+                            node("first", tag: "button", role: .button, x: 150, y: 200),
+                            node("second", tag: "button", role: .button, x: 150, y: 200),
+                         ])
+        WebLint.store(Rect(x: 150, y: 0, width: 100, height: 500), key: "web.scrollBounds", in: &panel.attributes)
+        WebLint.store(panel.frame, key: "web.scrollViewport", in: &panel.attributes)
+        let ancestor = node("ancestor", x: 0, y: 0, width: 100, height: 500,
+                            attributes: ["web.overflowX": .string("hidden")], children: [panel])
+        XCTAssertTrue(overlaps(try report([ancestor])).contains { $0.nodeID == "second" })
+    }
+
+    func testReachableScrollScopeRetainsFixedContainerAncestry() throws {
+        for transformed in [false, true] {
+            var panel = node("panel", x: 0, y: 0, width: 100, height: 100,
+                attributes: ["web.overflowX": .string("hidden"), "web.overflowY": .string("scroll")], children: [
+                    node("first", tag: "button", role: .button, x: 150, y: 200, attributes: ["web.position": .string("fixed")]),
+                    node("second", tag: "button", role: .button, x: 150, y: 200, attributes: ["web.position": .string("fixed")]),
+                ])
+            WebLint.store(Rect(x: 0, y: 0, width: 500, height: 500), key: "web.scrollBounds", in: &panel.attributes)
+            WebLint.store(panel.frame, key: "web.scrollViewport", in: &panel.attributes)
+            let ancestor = node("ancestor", x: 0, y: 0, width: 500, height: 500,
+                                attributes: ["web.fixedContainer": .bool(transformed)], children: [panel])
+            XCTAssertEqual(overlaps(try report([ancestor])).contains { $0.nodeID == "second" }, !transformed)
+        }
+    }
+
+    func testIndependentDocumentScopeKeepsItsReachableInternalCollisions() throws {
+        let children = ["first", "second"].map { id in
+            var child = node(id, tag: "button", role: .button, x: 150, y: 200, attributes: ["web.frame": .string("child")])
+            WebLint.store(Rect(x: 0, y: 0, width: 500, height: 500), key: "web.documentBounds", in: &child.attributes)
+            WebLint.store(Rect(x: 0, y: 0, width: 100, height: 100), key: "web.documentViewport", in: &child.attributes)
+            return child
+        }
+        var iframe = node("iframe", tag: "iframe", x: 0, y: 0, width: 100, height: 100,
+            attributes: ["web.overflowX": .string("hidden"), "web.overflowY": .string("scroll")], children: children)
+        WebLint.store(Rect(x: 0, y: 0, width: 500, height: 500), key: "web.scrollBounds", in: &iframe.attributes)
+        WebLint.store(iframe.frame, key: "web.scrollViewport", in: &iframe.attributes)
+        XCTAssertTrue(overlaps(try report([iframe])).contains { $0.nodeID == "second" })
+        var panel = node("inner-panel", x: 0, y: 0, width: 500, height: 100,
+                         attributes: ["web.frame": .string("child"), "web.overflowY": .string("scroll")], children: children)
+        for key in ["web.documentBounds", "web.scrollBounds"] {
+            WebLint.store(Rect(x: 0, y: 0, width: 500, height: 500), key: key, in: &panel.attributes)
+        }
+        WebLint.store(panel.frame, key: "web.scrollViewport", in: &panel.attributes)
+        WebLint.store(Rect(x: 0, y: 0, width: 100, height: 100), key: "web.documentViewport", in: &panel.attributes)
+        iframe.children = [panel]
+        XCTAssertTrue(overlaps(try report([iframe])).contains { $0.nodeID == "second" })
+    }
+
+    private func fontNode(_ id: String, fragments: [Rect], inline: Bool = false,
+                          frame: Rect = Rect(x: 0, y: 0, width: 200, height: 120)) -> SemanticNode {
+        var result = node(id, tag: inline ? "span" : "#text", role: inline ? .container : .text,
+            attributes: ["web.inlineFormattingContext": .string("main/42"), "web.fontBoxOnly": .bool(true)])
+        result.frame = frame; result.text = "Heading"
+        let key = inline ? "web.inlineFragment" : "web.textFragment"
+        if inline { result.attributes["web.inlineCandidate"] = .bool(true) }
+        result.attributes[key + "Count"] = .number(Double(fragments.count))
+        for (index, rect) in fragments.enumerated() { WebLint.store(rect, key: key + String(index), in: &result.attributes) }
+        return result
+    }
+
+    func testNormalFlowFontIntersectionUsesActualFragmentsAndStaysUnverified() throws {
+        let first = fontNode("first", fragments: [Rect(x: 0, y: 0, width: 100, height: 30)])
+        for inline in [false, true] {
+            // Both union origins are zero; the actual intersecting lines differ.
+            let second = fontNode("second", fragments: [Rect(x: 0, y: 20, width: 100, height: 30)], inline: inline)
+            let verdict = try report([first, second])
+            XCTAssertTrue(overlaps(verdict).isEmpty)
+            XCTAssertTrue(verdict.findings.contains {
+                $0.rule == WebPaintSemantics.unverifiedRule && $0.nodeID == "second" && $0.severity == .warning && $0.message.contains("glyph paint")
+            })
+            XCTAssertEqual(verdict.tree, tree([first, second]))
+        }
+    }
+
+    func testLaterSameLineFragmentCollisionOverridesEarlierUncertainFontOverlap() throws {
+        let first = fontNode("first", fragments: [Rect(x: 0, y: 0, width: 100, height: 30), Rect(x: 0, y: 80, width: 100, height: 30)])
+        let second = fontNode("second", fragments: [Rect(x: 0, y: 20, width: 100, height: 30), Rect(x: 0, y: 80, width: 100, height: 30)])
+        let verdict = try report([first, second])
+        XCTAssertTrue(verdict.findings.contains { $0.rule == SiblingOverlapRule.id && $0.nodeID == "second" && $0.severity == .error })
+        XCTAssertFalse(verdict.findings.contains { $0.rule == WebPaintSemantics.unverifiedRule })
+        let pair = tree([first, second])
+        var budget = WebLint.OverlapBudget()
+        _ = try WebLint.overlapFindings(pair, context: context, budget: &budget)
+        XCTAssertGreaterThanOrEqual(budget.fragmentComparisons, 2, "uncertain matches must not short circuit later candidates")
+        var insufficient = WebLint.OverlapBudget(limit: 10)
+        XCTAssertThrowsError(try WebLint.overlapFindings(pair, context: context, budget: &insufficient))
+    }
+
+    func testSameLineFontCollisionUsesFragmentsInsteadOfDifferentUnionOrigins() throws {
+        let line = Rect(x: 0, y: 40, width: 100, height: 30)
+        let first = fontNode("first", fragments: [line])
+        let second = fontNode("second", fragments: [line], frame: Rect(x: 0, y: 20, width: 200, height: 100))
+        XCTAssertTrue(try report([first, second]).findings.contains { $0.rule == SiblingOverlapRule.id && $0.severity == .error })
+    }
+
+    func testFontWarningRequiresBothMeasurementsSameContextAndTextOnlyRoles() throws {
+        let first = fontNode("first", fragments: [Rect(x: 0, y: 0, width: 100, height: 30)])
+        let second = fontNode("second", fragments: [Rect(x: 0, y: 20, width: 100, height: 30)])
+        var cases: [SemanticNode] = []
+        for attributes: [String: AttributeValue] in [
+            ["web.fontBoxOnly": .bool(false), "web.position": .string("absolute")],
+            ["web.fontBoxOnly": .bool(false), "web.borderTopWidth": .string("1px")],
+            ["web.inlineFormattingContext": .string("main/99")], ["web.inlineFormattingContext": .string("")],
+            ["web.frame": .string("other")],
+        ] {
+            var candidate = second; candidate.attributes.merge(attributes) { _, supplied in supplied }; cases.append(candidate)
+        }
+        var missing = second; missing.attributes.removeValue(forKey: "web.fontBoxOnly"); cases.append(missing)
+        for role in [Role.button, .image, .container] { var candidate = second; candidate.role = role; cases.append(candidate) }
+        for candidate in cases {
+            // Check both argument orders; one unqualified subject blocks warning.
+            for pair in [[first, candidate], [candidate, first]] {
+                XCTAssertTrue(try report(pair).findings.contains { $0.rule == SiblingOverlapRule.id && $0.severity == .error }, "\(candidate.attributes)")
+            }
+        }
+        for key in ["web.inlineFormattingContext", "web.frame"] {
+            var a = first, b = second
+            a.attributes[key] = .string(""); b.attributes[key] = .string("")
+            XCTAssertTrue(try report([a, b]).findings.contains { $0.rule == SiblingOverlapRule.id && $0.severity == .error })
+        }
+    }
+
+    func testQualifiedFontUncertaintySurvivesCrossParentComparison() throws {
+        let firstBox = Rect(x: 0, y: 0, width: 100, height: 30)
+        let secondBox = Rect(x: 0, y: 20, width: 100, height: 30)
+        var first = fontNode("branch1", fragments: [firstBox], inline: true)
+        var second = fontNode("branch2", fragments: [secondBox], inline: true)
+        first.children = [fontNode("first", fragments: [firstBox])]
+        second.children = [fontNode("second", fragments: [secondBox])]
+        let verdict = try report([first, second])
+        XCTAssertTrue(overlaps(verdict).isEmpty)
+        XCTAssertTrue(verdict.findings.contains {
+            $0.rule == WebPaintSemantics.unverifiedRule && $0.nodeID == "second" && $0.message.contains("across different parents")
+        })
+    }
+
+    func testFontUncertaintyCannotSuppressActualCSSClippingOrCrossRowErrors() throws {
+        let first = fontNode("first", fragments: [Rect(x: 0, y: 0, width: 100, height: 30)])
+        let second = fontNode("second", fragments: [Rect(x: 0, y: 20, width: 100, height: 30)])
+        let clip = node("clip", x: 0, y: 0, width: 50, height: 120, attributes: ["web.overflowX": .string("hidden")], children: [first, second])
+        XCTAssertTrue(try report([clip]).findings.contains { $0.rule == ClippedContentRule.id && $0.nodeID == "second" && $0.severity == .error })
+        var otherRow = second; otherRow.attributes["web.inlineFormattingContext"] = .string("main/row2")
+        let rows = [node("row1", children: [first]), node("row2", children: [otherRow])]
+        XCTAssertTrue(try report(rows).findings.contains { $0.rule == ContentOverlapRule.id && $0.nodeID == "second" && $0.severity == .error })
+    }
 }

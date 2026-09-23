@@ -182,7 +182,7 @@ enum WebLint {
             }
             return measured
         }
-        func overlap(_ first: SemanticNode, _ second: SemanticNode, budget: inout OverlapBudget) throws -> Rect? {
+        func overlap(_ first: SemanticNode, _ second: SemanticNode, budget: inout OverlapBudget) throws -> (rect: Rect, fontPaintUnverified: Bool)? {
             try budget.charge(); budget.originalPairs += 1
             guard first.frame.intersects(second.frame) else { return nil }
             let firstBoxes = try boxes(first, budget: &budget), secondBoxes = try boxes(second, budget: &budget)
@@ -195,6 +195,7 @@ enum WebLint {
             let ends = rectangles.indices.sorted { rectangles[$0].maxY == rectangles[$1].maxY ? $0 < $1 : rectangles[$0].maxY < rectangles[$1].maxY }
             var firstActive: Set<Int> = [], secondActive: Set<Int> = []
             var end = 0
+            var uncertain: Rect?
             for index in starts {
                 budget.fragmentEvents += 1
                 let box = rectangles[index]
@@ -204,20 +205,26 @@ enum WebLint {
                 let isFirst = index < firstBoxes.count
                 let opposite = isFirst ? secondActive : firstActive
                 var match: (Int, Rect)?
+                var fontMatch: (Int, Rect)?
                 for other in opposite {
                     try budget.charge(); budget.fragmentComparisons += 1
                     if let intersection = box.intersection(rectangles[other]),
-                       intersection.width > SiblingOverlapRule.tolerance, intersection.height > SiblingOverlapRule.tolerance,
-                       match.map({ other < $0.0 }) ?? true {
-                        match = (other, intersection)
+                       intersection.width > SiblingOverlapRule.tolerance, intersection.height > SiblingOverlapRule.tolerance {
+                        if WebPaintSemantics.fontPaintUnverified(first, second, firstBox: box, secondBox: rectangles[other]) {
+                            if fontMatch.map({ other < $0.0 }) ?? true { fontMatch = (other, intersection) }
+                        } else if match.map({ other < $0.0 }) ?? true {
+                            match = (other, intersection)
+                        }
                     }
                 }
-                // Choose a stable fragment order without sorting an active set
-                // on every event; set iteration cannot change evidence metrics.
-                if let match { return match.1 }
+                // Keep the first stable uncertain pair, but keep scanning: a
+                // later same-line collision is still a confirmed layout error.
+                if let match { return (match.1, false) }
+                if uncertain == nil, let fontMatch { uncertain = fontMatch.1 }
+
                 if isFirst { firstActive.insert(index) } else { secondActive.insert(index) }
             }
-            return nil
+            return uncertain.map { ($0, true) }
         }
         var findings: [Finding] = []
         if !context.disabledRules.contains(SiblingOverlapRule.id) {
@@ -226,8 +233,8 @@ enum WebLint {
                 for first in children.indices {
                     for second in children.indices where second > first {
                         if let collision = try overlap(children[first], children[second], budget: &budget),
-                           let finding = WebPaintSemantics.finding(rule: SiblingOverlapRule.id, node: children[second], other: children[first],
-                            message: "'\(label(children[second]))' overlaps sibling '\(label(children[first]))' by \(collision.width) x \(collision.height) pt",
+                           let finding = WebPaintSemantics.finding(rule: SiblingOverlapRule.id, node: children[second], other: children[first], fontPaintUnverified: collision.fontPaintUnverified,
+                            message: "'\(label(children[second]))' overlaps sibling '\(label(children[first]))' by \(collision.rect.width) x \(collision.rect.height) pt",
                             suggestion: "Give the siblings disjoint painted bounds or declare intentional layering.", context: context) {
                             findings.append(finding)
                         }
@@ -254,8 +261,8 @@ enum WebLint {
                     try budget.charge()
                     guard leaves[first].parent != leaves[second].parent else { continue }
                     if let collision = try overlap(leaves[first].node, leaves[second].node, budget: &budget),
-                       let finding = WebPaintSemantics.finding(rule: ContentOverlapRule.id, node: leaves[second].node, other: leaves[first].node,
-                        message: "'\(label(leaves[second].node))' overlaps '\(label(leaves[first].node))' by \(collision.width) x \(collision.height) pt across different parents",
+                       let finding = WebPaintSemantics.finding(rule: ContentOverlapRule.id, node: leaves[second].node, other: leaves[first].node, fontPaintUnverified: collision.fontPaintUnverified,
+                        message: "'\(label(leaves[second].node))' overlaps '\(label(leaves[first].node))' by \(collision.rect.width) x \(collision.rect.height) pt across different parents",
                         suggestion: "Keep content from separate branches from colliding, or declare intentional layering.", context: context) {
                         findings.append(finding)
                     }
@@ -393,16 +400,34 @@ enum WebLint {
         // visible paint contribution in the enclosing hierarchy. This preserves
         // fixed/flow overlap without comparing an iframe's unpainted below-fold
         // content to unrelated content outside the iframe.
-        var overlapRoots = [semantic.tree]
-        for node in semantic.tree.flattened() where !node.children.isEmpty && node.attributes["web.frame"] != nil {
-            if rect(key: "web.scrollBounds", in: node.attributes) != nil || node.children.contains(where: {
-                $0.attributes["web.frame"] != node.attributes["web.frame"]
-            }) {
-                overlapRoots.append(SemanticNode(id: tree.id, role: .container, frame: node.frame, children: node.children))
+        typealias Clip = WebPaintSemantics.Clip
+        var overlapRoots: [(tree: SemanticNode, clip: Clip?, contained: Bool)] = [(semantic.tree, nil, false)]
+        func collectOverlapRoots(_ node: SemanticNode, inheritedClip: Clip?, contained: Bool) {
+            let fixed = node.attributes["web.position"] == .string("fixed") && !contained
+            let clipsX = WebPaintSemantics.clips(node.attributes["web.overflowX"]?.stringValue)
+            let clipsY = WebPaintSemantics.clips(node.attributes["web.overflowY"]?.stringValue)
+            let ownClip = clipsX || clipsY ? Clip(node.frame, x: clipsX, y: clipsY) : nil
+            let childClip = Clip.combined(fixed ? nil : inheritedClip, ownClip)
+            let childContained = contained || node.attributes["web.fixedContainer"] == .bool(true)
+            let changesDocument = node.children.contains { $0.attributes["web.frame"] != node.attributes["web.frame"] }
+            let scroll = rect(key: "web.scrollBounds", in: node.attributes) != nil
+            if !node.children.isEmpty, node.attributes["web.frame"] != nil, scroll || changesDocument {
+                let scrollX = scroll && ["auto", "scroll"].contains(node.attributes["web.overflowX"]?.stringValue ?? "visible")
+                let scrollY = scroll && ["auto", "scroll"].contains(node.attributes["web.overflowY"]?.stringValue ?? "visible")
+                // A reachable scroll scope escapes clipping only on its actual
+                // scrolling axes. A new document owns its own reachable layout.
+                let retainedClip = changesDocument ? nil : childClip?.removing(x: scrollX, y: scrollY)
+                overlapRoots.append((SemanticNode(id: tree.id, role: .container, frame: node.frame, children: node.children),
+                                     retainedClip, changesDocument ? false : childContained))
+            }
+            for child in node.children {
+                let changed = node.attributes["web.frame"] != nil && child.attributes["web.frame"] != node.attributes["web.frame"]
+                collectOverlapRoots(child, inheritedClip: changed ? nil : childClip, contained: changed ? false : childContained)
             }
         }
+        collectOverlapRoots(semantic.tree, inheritedClip: nil, contained: false)
         for root in overlapRoots {
-            let paint = paintProjection(root)
+            let paint = paintProjection(root.tree, cssClip: root.clip, contained: root.contained)
             let overlaps = try overlapFindings(paint,
                 context: LintContext(scenario: scenario, viewport: viewport, requiresProbedNodes: false), budget: &budget)
             try accumulated.append(overlaps, budget: &budget)

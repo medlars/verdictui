@@ -70,9 +70,29 @@ enum WebPaintSemantics {
     static func clips(_ value: String?) -> Bool { value == "hidden" || value == "clip" }
     static func isPresentation(_ node: SemanticNode) -> Bool { node.attributes[presentationKey] == .bool(true) }
 
-    static func finding(rule: String, node: SemanticNode, other: SemanticNode? = nil,
+    static func fontPaintUnverified(_ first: SemanticNode, _ second: SemanticNode, firstBox: Rect, secondBox: Rect) -> Bool {
+        func textOnly(_ node: SemanticNode) -> Bool {
+            node.role == .text || (node.role == .container && node.attributes["web.inlineCandidate"] == .bool(true))
+        }
+        guard textOnly(first), textOnly(second),
+              first.attributes["web.fontBoxOnly"] == .bool(true), second.attributes["web.fontBoxOnly"] == .bool(true),
+              let context = first.attributes["web.inlineFormattingContext"]?.stringValue, !context.isEmpty,
+              second.attributes["web.inlineFormattingContext"] == .string(context),
+              let frame = first.attributes["web.frame"]?.stringValue, !frame.isEmpty,
+              second.attributes["web.frame"] == .string(frame) else { return false }
+        // These are the intersecting measured fragments, not their node unions.
+        // Same-line intersections remain errors even for normal-flow glyphs.
+        return abs(firstBox.y - secondBox.y) > SiblingOverlapRule.tolerance
+    }
+
+    static func finding(rule: String, node: SemanticNode, other: SemanticNode? = nil, fontPaintUnverified: Bool = false,
                         message: String, suggestion: String, context: LintContext) -> Finding? {
         guard !context.isSuppressed(rule: rule, on: node) else { return nil }
+        if fontPaintUnverified {
+            return context.makeFinding(rule: unverifiedRule, node: node,
+                message: message + ". Normal-flow font rectangles intersect on separate measured lines; glyph paint remains unverified.",
+                suggestion: "Inspect the rendered glyphs before classifying this font-box intersection as a visual defect.", defaultSeverity: .warning)
+        }
         if isPresentation(node) || other.map(isPresentation) == true {
             return context.makeFinding(rule: unverifiedRule, node: node,
                 message: message + ". Presentation-layer paint is unverified; geometry alone establishes neither a functional defect nor harmlessness.",
@@ -102,6 +122,13 @@ enum WebPaintSemantics {
             for key in [\Clip.maxX, \Clip.maxY] {
                 if let value = other[keyPath: key] { result[keyPath: key] = result[keyPath: key].map { min($0, value) } ?? value }
             }
+            return result
+        }
+
+        func removing(x: Bool, y: Bool) -> Clip {
+            var result = self
+            if x { result.minX = nil; result.maxX = nil }
+            if y { result.minY = nil; result.maxY = nil }
             return result
         }
 
