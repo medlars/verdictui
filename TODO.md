@@ -9,7 +9,7 @@
 
 ## P1 — High Priority
 
-- [ ] (2026-09-23) Repair measured MCP startup scan: canonical checkout includes 1.08 GB of generated `.build-codex-verify` and `.vexp` data. Preserve source/resource invalidation and bounded scans; verify real clients after repair.
+- [x] (2026-09-23) Repair measured MCP startup scan: canonical checkout includes 1.08 GB of generated `.build-codex-verify` and `.vexp` data. Source/resource invalidation and scan bounds retained;22 focused tests and2/2 new mutation witnesses pass. Actual Claude project handshake connected after relocating the unused build artifact; installed1.1.3 and Codex client activation remain in the owner follow-up.
 
 - [x] (P1) CEO/stage_pytest: Classified VerdictUIProjectRunner as SwiftSyntax-free; full Python suite 499 passed, 3 explicitly skipped.
 
