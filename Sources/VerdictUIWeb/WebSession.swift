@@ -258,10 +258,14 @@ public actor WebSession {
         throw WebBrowserError.invalidWebOperation(reason: "page did not finish loading and settle within 10 seconds")
     }
 
-    private func snapshot(session: String) async throws -> [String: CDPValue] {
-        try await command("DOMSnapshot.captureSnapshot", [
+    private func snapshot(session: String, budget: inout WebInlineGeometry.Budget) async throws -> [String: CDPValue] {
+        let payload = try await transport.send(method: "DOMSnapshot.captureSnapshot", params: [
             "computedStyles": .array(DOMSnapshotAssembly.computedStyles.map(CDPValue.string)),
-            "includePaintOrder": .bool(false), "includeDOMRects": .bool(true)], session: session)
+            "includePaintOrder": .bool(false), "includeDOMRects": .bool(true)], timeout: try budget.timeout(), sessionID: session)
+        let transport = self.transport
+        return try await WebInlineGeometry.enrich(payload, viewport: viewport, budget: &budget) { method, params, timeout in
+            try await transport.send(method: method, params: params, timeout: timeout, sessionID: session)
+        }
     }
 
     private func documentFrames(_ snapshot: [String: CDPValue]) -> Set<String> {
@@ -274,7 +278,8 @@ public actor WebSession {
     }
 
     private func captureTree() async throws -> SemanticNode {
-        let main = try await snapshot(session: pageSessionID)
+        var inlineBudget = WebInlineGeometry.Budget()
+        let main = try await snapshot(session: pageSessionID, budget: &inlineBudget)
         var tree = try DOMSnapshotAssembly.assemble(main, viewport: viewport, redacting: secrets)
         var known = documentFrames(main)
         var routing = Dictionary(uniqueKeysWithValues: known.map { ($0, pageSessionID) })
@@ -311,7 +316,7 @@ public actor WebSession {
                 _ = try await command("Network.enable", session: session)
             }
             activeRemote.insert(frame)
-            let frameSnapshot = try await snapshot(session: session)
+            let frameSnapshot = try await snapshot(session: session, budget: &inlineBudget)
             let descendants = try DOMSnapshotAssembly.assemble(frameSnapshot, viewport: viewport, redacting: secrets)
             let owner = try await command("DOM.getFrameOwner", ["frameId": .string(frame)], session: parentSession)
             guard let backendID = owner["backendNodeId"]?.doubleValue else {

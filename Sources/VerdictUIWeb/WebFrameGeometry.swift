@@ -58,6 +58,9 @@ enum WebFrameGeometry {
         if let count = node.attributes["web.textFragmentCount"]?.numberValue.flatMap(Int.init(exactly:)), (0...100_000).contains(count) {
             rectangleKeys += (0..<count).map { "web.textFragment\($0)" }
         }
+        if let count = node.attributes["web.inlineFragmentCount"]?.numberValue.flatMap(Int.init(exactly:)), (0...100_000).contains(count) {
+            rectangleKeys += (0..<count).map { "web.inlineFragment\($0)" }
+        }
         for key in rectangleKeys {
             if let rect = WebLint.rect(key: key, in: node.attributes) {
                 let shifted = try WebLint.checkedRect(x: x + rect.x * scaleX, y: y + rect.y * scaleY,

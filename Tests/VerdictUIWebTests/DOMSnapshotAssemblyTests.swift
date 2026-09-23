@@ -64,6 +64,105 @@ final class DOMSnapshotAssemblyTests: XCTestCase {
         return payload
     }
 
+    func testInlineBorderFragmentsPreserveUnionAndRejectIncompleteOrChangedGeometry() throws {
+        var payload = snapshot()
+        guard case var .array(strings) = payload["strings"], case var .array(documents) = payload["documents"],
+              case var .object(document) = documents[0] else { return XCTFail("fixture") }
+        strings[5] = .string("inline")
+        let first: CDPValue = .array([20, 20, 120, 20].map { .integer(Int64($0)) })
+        let second: CDPValue = .array([20, 44, 50, 20].map { .integer(Int64($0)) })
+        document["verdictInlineFragments"] = .object(["2": .array([first, second])])
+        documents[0] = .object(document); payload["strings"] = .array(strings); payload["documents"] = .array(documents)
+        let tree = try DOMSnapshotAssembly.assemble(payload, viewport: viewport)
+        let button = try XCTUnwrap(tree.children.first)
+        XCTAssertEqual(button.frame, Rect(x: 20, y: 20, width: 120, height: 44))
+        XCTAssertEqual(button.attributes["web.inlineFragmentCount"], .number(2))
+        XCTAssertEqual(WebLint.rect(key: "web.inlineFragment1", in: button.attributes), Rect(x: 20, y: 44, width: 50, height: 20))
+        let owner = SemanticNode(id: "frame", role: .container, frame: Rect(x: 200, y: 300, width: 200, height: 200),
+                                attributes: ["web.scaleX": .number(2), "web.scaleY": .number(2)])
+        let embedded = try WebFrameGeometry.embedding(button, in: owner)
+        XCTAssertEqual(WebLint.rect(key: "web.inlineFragment1", in: embedded.attributes), Rect(x: 240, y: 388, width: 100, height: 40))
+        for malformed: CDPValue in [.object([:]), .object(["2": .array([])]), .object(["2": .array([first])]),
+                                   .object(["2": .array([first, second]), "99": .null]),
+                                   .object(["2": .array([.array([.number(.infinity), .integer(0), .integer(1), .integer(1)])])]),
+                                   .object(["2": .array(Array(repeating: first, count: 100_001))])] {
+            document["verdictInlineFragments"] = malformed; documents[0] = .object(document); payload["documents"] = .array(documents)
+            XCTAssertThrowsError(try DOMSnapshotAssembly.assemble(payload, viewport: viewport))
+        }
+    }
+
+    func testOmittedAncestorsRetainClickAndFocusEvidenceOnDescendants() throws {
+        for (tag, unlaid, click, focus) in [("BODY", false, true, false), ("HTML", false, false, true),
+                                          ("DIV", true, true, false), ("DIV", true, false, true),
+                                          ("DIV", true, false, false)] {
+            var payload = snapshot()
+            guard case var .array(strings) = payload["strings"], case var .array(documents) = payload["documents"],
+                  case var .object(document) = documents[0], case var .object(nodes) = document["nodes"],
+                  case var .object(layout) = document["layout"], case let .array(styles) = layout["styles"] else {
+                return XCTFail("fixture")
+            }
+            strings[1] = .string(tag)
+            if focus { strings[9] = .string("tabindex"); strings[10] = .string("-1") }
+            nodes["isClickable"] = .object(["index": .array(click ? [.integer(1)] : [])])
+            if unlaid {
+                layout["nodeIndex"] = .array([.integer(2)])
+                layout["bounds"] = .array([.array([30, 30, 35, 20].map { .integer(Int64($0)) })])
+                layout["styles"] = .array([styles[1]])
+                document["textBoxes"] = .object(["layoutIndex": .array([]), "bounds": .array([])])
+            }
+            document["nodes"] = .object(nodes); document["layout"] = .object(layout)
+            documents[0] = .object(document); payload["documents"] = .array(documents); payload["strings"] = .array(strings)
+            let tree = try DOMSnapshotAssembly.assemble(payload, viewport: viewport)
+            let text = try XCTUnwrap(tree.flattened().first { $0.role == .text })
+            XCTAssertEqual(text.attributes["web.hasInteractiveAncestor"], .bool(click || focus))
+            XCTAssertEqual(text.attributes["web.isClickable"], .bool(false))
+            XCTAssertEqual(text.attributes["web.isFocusable"], .bool(false))
+            XCTAssertFalse(tree.flattened().contains { $0.attributes["web.backendID"] == .number(2) })
+        }
+    }
+
+    func testFocusabilityUsesExplicitDOMEvidenceConservatively() throws {
+        for (tag, attribute, value, expected) in [
+            ("DIV", "tabindex", "-1", true), ("DIV", "contenteditable", "", true),
+            ("DIV", "contenteditable", "false", false), ("A", "href", "/local", true),
+            ("A", "id", "link", false), ("DIV", "role", "button", true),
+            ("DIV", "role", "presentation", false), ("VIDEO", "controls", "", true),
+            ("SUMMARY", "id", "summary", true), ("SPAN", "id", "passive", false)] {
+            var payload = snapshot()
+            guard case var .array(strings) = payload["strings"], case var .array(documents) = payload["documents"],
+                  case var .object(document) = documents[0], case var .object(nodes) = document["nodes"] else { return XCTFail("fixture") }
+            strings[1] = .string(tag); strings[9] = .string(attribute); strings[10] = .string(value)
+            nodes["isClickable"] = .object(["index": .array([])])
+            document["nodes"] = .object(nodes); documents[0] = .object(document)
+            payload["documents"] = .array(documents); payload["strings"] = .array(strings)
+            let node = try XCTUnwrap(DOMSnapshotAssembly.assemble(payload, viewport: viewport).children.first)
+            XCTAssertEqual(node.attributes["web.isFocusable"], .bool(expected), "\(tag) \(attribute)")
+            XCTAssertEqual(node.attributes["web.isClickable"], .bool(false))
+        }
+    }
+
+    func testClickableIndicesAndConservativeFocusableEvidenceAreValidated() throws {
+        let unmeasured = try DOMSnapshotAssembly.assemble(snapshot(), viewport: viewport)
+        XCTAssertEqual(unmeasured.children.first?.attributes["web.interactionMeasured"], .bool(false))
+        var payload = snapshot()
+        guard case var .array(documents) = payload["documents"], case var .object(document) = documents[0],
+              case var .object(nodes) = document["nodes"] else { return XCTFail("fixture") }
+        nodes["isClickable"] = .object(["index": .array([.integer(1)])])
+        document["nodes"] = .object(nodes); documents[0] = .object(document); payload["documents"] = .array(documents)
+        let tree = try DOMSnapshotAssembly.assemble(payload, viewport: viewport)
+        let button = try XCTUnwrap(tree.children.first)
+        XCTAssertEqual(button.attributes["web.isClickable"], .bool(true))
+        XCTAssertEqual(button.attributes["web.isFocusable"], .bool(true))
+        XCTAssertEqual(button.attributes["web.interactionMeasured"], .bool(true))
+        XCTAssertEqual(button.children.first?.attributes["web.isClickable"], .bool(false))
+        XCTAssertEqual(button.children.first?.attributes["web.isFocusable"], .bool(false))
+        for invalid in [[-1], [3], [1, 1]] {
+            nodes["isClickable"] = .object(["index": .array(invalid.map { .integer(Int64($0)) })])
+            document["nodes"] = .object(nodes); documents[0] = .object(document); payload["documents"] = .array(documents)
+            XCTAssertThrowsError(try DOMSnapshotAssembly.assemble(payload, viewport: viewport))
+        }
+    }
+
     func testUnlaidFrameOwnersPreserveIdentityWithoutInventingVisibleEvidence() throws {
         for tag in ["IFRAME", "FRAME"] {
             let tree = try DOMSnapshotAssembly.assemble(snapshotWithUnlaidOwner(tag: tag), viewport: viewport)

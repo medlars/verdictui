@@ -252,6 +252,43 @@ final class WebFrameIntegrationTests: XCTestCase {
         await manager.closeAll()
         try await server.stop()
     }
+    func testWrappedInlineBorderMeasurementsAcrossFramesAndScroll() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("vui-inline-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let (server, port) = try await server(root: root)
+        let manager = WebSessionManager(root: root.appendingPathComponent("profiles"), environment: [:])
+        do {
+            for route in ["inline", "inline-same", "inline-cross"] {
+                _ = try await manager.open(profile: "inline", url: XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/\(route)")))
+                let report = try await manager.verify(profile: "inline", expectText: "Run inline task")
+                XCTAssertEqual(report.status, .pass, "\(route): \(report.findings)")
+                let nodes = try XCTUnwrap(report.tree).flattened()
+                for id in ["wrapped", "bordered", "replaced"] {
+                    let node = try XCTUnwrap(nodes.first { $0.attributes["web.id"] == .string(id) })
+                    XCTAssertGreaterThan(try XCTUnwrap(node.attributes["web.inlineFragmentCount"]?.numberValue), 1)
+                }
+                let empty = try XCTUnwrap(nodes.first { $0.attributes["web.id"] == .string("empty") })
+                XCTAssertGreaterThan(try XCTUnwrap(WebLint.rect(key: "web.inlineFragment0", in: empty.attributes)).width, 0)
+                let action = try XCTUnwrap(nodes.first { $0.attributes["web.id"] == .string("inline-action") })
+                let after = try await manager.act(profile: "inline", action: .click(nodeID: action.id), expectText: "Inline complete")
+                XCTAssertEqual(after.status, .pass, "\(route) after scroll: \(after.findings)")
+            }
+            _ = try await manager.open(profile: "inline", url: XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/inline-overlap")))
+            let broken = try await manager.verify(profile: "inline")
+            XCTAssertEqual(broken.status, .fail)
+            let collision = try XCTUnwrap(broken.tree?.flattened().first { $0.attributes["web.id"] == .string("border-collision") })
+            XCTAssertTrue(broken.findings.contains { $0.rule == "sibling-overlap" && $0.nodeID == collision.structuralPath })
+            do {
+                _ = try await manager.open(profile: "inline", url: XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/inline-budget")))
+                XCTFail("over-limit inline geometry must not produce a partial tree")
+            } catch { XCTAssertTrue(String(describing: error).contains("inline element limit"), "\(error)") }
+        } catch {
+            await manager.closeAll(); try await server.stop(); throw error
+        }
+        await manager.closeAll(); try await server.stop()
+    }
+
     func testLongDocumentsNestedPanelsAndFramesRemainScrollableAndActionable() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("vui-scroll-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
