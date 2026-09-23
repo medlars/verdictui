@@ -501,8 +501,8 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="web fixture stops the server after handing it to its caller",
         path="Tests/VerdictUIWebTests/WebFrameIntegrationTests.swift",
-        old="if !handedOff {",
-        new="if handedOff {",
+        old="return (fixtureProcess, port)",
+        new="try await fixtureProcess.stop(); return (fixtureProcess, port)",
         test=_TEST
         + "WebFrameIntegrationTests/testSameAndCrossOriginFramesRenderAndActWithCorrectRootCoordinates",
     ),
