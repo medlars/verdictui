@@ -177,3 +177,13 @@ but the second assembly requires raw descendants that were deliberately omitted.
 Use one coherent retained-node inventory for collection and validation. Keep
 editable descendants out of public evidence; verify a normal outside button
 remains actionable and missing geometry for retained inline content still fails.
+
+### Dynamic embedded-frame capture coherence
+
+Repeated public homepage captures exposed a remote hidden tracking frame that
+appears after the parent snapshot: three of four fresh runs returned unavailable
+with an absent owner, while a coherent run passed. Diagnose the exact protocol
+sequence and reproduce it deterministically. A bounded retry may discard an
+inconsistent snapshot and restart settling, but must never omit the frame,
+reuse stale routing, suppress permanent inconsistency or swallow cancellation
+and resource failures. Preserve a permanent-inconsistency unavailable control.
