@@ -192,6 +192,31 @@ final class DOMSnapshotAssemblyTests: XCTestCase {
         XCTAssertEqual(WebLint.run(tree: tree, scenario: "empty", viewport: viewport).findings.map(\.rule), ["vacuous-verdict"])
     }
 
+    func testTextFragmentGeometryTracksScrollAndFrameTransforms() throws {
+        var payload = fragmentedSnapshot([[30, 40, 35, 20], [20, 70, 50, 20]], textBoxRows: [0, 1])
+        guard case var .array(documents) = payload["documents"], case var .object(document) = documents[0] else { return XCTFail("fixture") }
+        document["scrollOffsetY"] = .number(10); documents[0] = .object(document); payload["documents"] = .array(documents)
+        let tree = try DOMSnapshotAssembly.assemble(payload, viewport: viewport)
+        let text = try XCTUnwrap(tree.children.first)
+        XCTAssertEqual(text.attributes["web.textFragmentCount"], .number(2))
+        XCTAssertEqual(WebLint.rect(key: "web.textFragment0", in: text.attributes), Rect(x: 30, y: 30, width: 35, height: 20))
+        let owner = SemanticNode(id: "frame", role: .container, frame: Rect(x: 100, y: 200, width: 500, height: 300))
+        let embedded = try WebFrameGeometry.embedding(text, in: owner)
+        XCTAssertEqual(WebLint.rect(key: "web.textFragment1", in: embedded.attributes), Rect(x: 120, y: 260, width: 50, height: 20))
+    }
+
+    func testTextBoxBudgetAndLineBreakRoles() {
+        XCTAssertEqual(DOMSnapshotAssembly.role(tag: "br", attributes: [:]), .spacer)
+        XCTAssertEqual(DOMSnapshotAssembly.role(tag: "wbr", attributes: [:]), .spacer)
+        var payload = fragmentedSnapshot([[30, 40, 35, 20]])
+        guard case var .array(documents) = payload["documents"], case var .object(document) = documents[0] else { return XCTFail("fixture") }
+        document["textBoxes"] = .object(["layoutIndex": .array(Array(repeating: .integer(0), count: 100_001)), "bounds": .array([])])
+        documents[0] = .object(document); payload["documents"] = .array(documents)
+        XCTAssertThrowsError(try DOMSnapshotAssembly.assemble(payload, viewport: viewport)) { error in
+            XCTAssertTrue(String(describing: error).contains("oversized text box index column"))
+        }
+    }
+
     func testMeasuredPseudoElementCanHaveMultipleLayoutRows() throws {
         // Reduced from Chrome's capture of the published VerdictUI page:
         // ::before has a full-page box plus an empty anonymous layout child.

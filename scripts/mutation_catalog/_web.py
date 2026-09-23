@@ -7,6 +7,80 @@ _TEST = "VerdictUIWebTests."
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="web paint scrollable descendant inherits outer clipping axis",
+        path=_BASE + "WebLint.swift",
+        old="y: $0.y && !scrollY)",
+        new="y: $0.y && (scrollY || $0.y))",
+        test=_TEST + "WebLintTests/testScrollPanelInsideHiddenCardDoesNotClipReachableContent",
+    ),
+    Mutation(
+        name="web paint text box row budget is removed",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old="rawIndices.count <= 100_000",
+        new="rawIndices.count <= 200_000",
+        test=_TEST + "DOMSnapshotAssemblyTests/testTextBoxBudgetAndLineBreakRoles",
+    ),
+    Mutation(
+        name="web paint line breaks become visible containers",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old='case "br", "wbr": return .spacer',
+        new='case "br", "wbr": return .container',
+        test=_TEST + "DOMSnapshotAssemblyTests/testTextBoxBudgetAndLineBreakRoles",
+    ),
+    Mutation(
+        name="web paint line breaks fabricate evidence",
+        path=_BASE + "WebLint.swift",
+        old='if node.role == .spacer { node.id = "" }',
+        new="if node.role == .spacer { node.id = source.id }",
+        test=_TEST + "WebLintTests/testLineBreakIsLayoutOnlyAndCannotFabricateEvidence",
+    ),
+    Mutation(
+        name="web paint text overlap uses union rectangle",
+        path=_BASE + "WebLint.swift",
+        old="guard nested.children.isEmpty, nested.role == .text,",
+        new="guard nested.children.isEmpty, nested.role == .spacer,",
+        test=_TEST
+        + "WebLintTests/testTextFragmentsAvoidUnionOverlapAndRetainRealCollisionEvidence",
+    ),
+    Mutation(
+        name="web paint fragment citations leak synthetic identities",
+        path=_BASE + "WebLint.swift",
+        old="if let original = originals[finding.nodeID] { finding.nodeID = original }",
+        new="if let original = originals[finding.nodeID] { finding.nodeID += original }",
+        test=_TEST
+        + "WebLintTests/testTextFragmentsAvoidUnionOverlapAndRetainRealCollisionEvidence",
+    ),
+    Mutation(
+        name="web paint text boxes ignore document scroll",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old="y: box.y - scrollY,",
+        new="y: box.y - scrollY * 0,",
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/testTextFragmentGeometryTracksScrollAndFrameTransforms",
+    ),
+    Mutation(
+        name="web paint text boxes remain in child coordinates",
+        path=_BASE + "WebFrameGeometry.swift",
+        old='rectangleKeys += (0..<count).map { "web.textFragment\\($0)" }',
+        new='rectangleKeys += (0..<min(count, 0)).map { "web.textFragment\\($0)" }',
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/testTextFragmentGeometryTracksScrollAndFrameTransforms",
+    ),
+    Mutation(
+        name="web paint visible overflow is treated as clipping",
+        path=_BASE + "WebLint.swift",
+        old='value == "hidden" || value == "clip"',
+        new='value == "hidden" || value == "clip" || value == "visible"',
+        test=_TEST + "WebLintTests/testVisibleFontInkIsNotClippedButHiddenAxisStillFails",
+    ),
+    Mutation(
+        name="web paint real clipped ink is ignored",
+        path=_BASE + "WebLint.swift",
+        old="if amount > ClippedContentRule.tolerance {",
+        new="if amount > ClippedContentRule.tolerance + 100 {",
+        test=_TEST + "WebLintTests/testVisibleFontInkIsNotClippedButHiddenAxisStillFails",
+    ),
+    Mutation(
         name="web scroll iframe fixed child escapes outer scroll clip",
         path=_BASE + "WebLint.swift",
         old="for outer in [documentClip, childScroll].compactMap({ $0 }) {",

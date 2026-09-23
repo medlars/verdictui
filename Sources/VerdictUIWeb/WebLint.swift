@@ -105,6 +105,79 @@ enum WebLint {
         return node
     }
 
+    private static func fragmentProjection(_ source: SemanticNode, originals: inout [String: String]) -> SemanticNode {
+        var node = source
+        node.children = source.children.flatMap { child -> [SemanticNode] in
+            let nested = fragmentProjection(child, originals: &originals)
+            guard nested.children.isEmpty, nested.role == .text,
+                  let count = nested.attributes["web.textFragmentCount"]?.numberValue.flatMap(Int.init(exactly:)),
+                  (1...100_000).contains(count) else { return [nested] }
+            let boxes = (0..<count).compactMap { rect(key: "web.textFragment\($0)", in: nested.attributes) }
+            guard boxes.count == count else { return [nested] }
+            return boxes.enumerated().map { index, box in
+                var fragment = nested
+                fragment.id = nested.id + "/paint-fragment/\(index)"
+                fragment.structuralPath = nested.structuralPath + "/paint-fragment/\(index)"
+                fragment.frame = box
+                originals[fragment.id] = (nested.id.isEmpty ? nested.structuralPath : nested.id)
+                return fragment
+            }
+        }
+        return node
+    }
+
+    /// CSS overflow:visible is allowed to paint outside its layout box (font ink
+    /// often does). Only measured hidden/clip axes establish clipping here;
+    /// scrolling axes and separate iframe documents retain their own scopes.
+    private struct WebClippingRule: LintRule {
+        static let id = ClippedContentRule.id
+        static func clips(_ value: String?) -> Bool { value == "hidden" || value == "clip" }
+        func evaluate(_ root: SemanticNode, context: LintContext) -> [Finding] {
+            var findings: [Finding] = []
+            func walk(_ node: SemanticNode, ancestors: [(node: SemanticNode, x: Bool, y: Bool)], frame: AttributeValue?, contained: Bool) {
+                let ownFrame = node.attributes["web.frame"]
+                let changed = ownFrame != frame
+                let fixed = node.attributes["web.position"] == .string("fixed") && !contained
+                let chain = changed || fixed ? [] : ancestors
+                if node.isVisible, !node.frame.isEmpty, node.role != .spacer {
+                    for clip in chain {
+                        let ancestor = clip.node
+                        let xClips = clip.x
+                        let yClips = clip.y
+                        let dx = xClips ? max(ancestor.frame.x - node.frame.x, node.frame.maxX - ancestor.frame.maxX) : 0
+                        let dy = yClips ? max(ancestor.frame.y - node.frame.y, node.frame.maxY - ancestor.frame.maxY) : 0
+                        let amount = max(dx, dy)
+                        if amount > ClippedContentRule.tolerance {
+                            if let finding = context.makeFinding(rule: Self.id, node: node,
+                                message: "'\((node.id.isEmpty ? node.structuralPath : node.id))' extends \(amount) pt outside the CSS clipping bounds of '\((ancestor.id.isEmpty ? ancestor.structuralPath : ancestor.id))'",
+                                suggestion: "Keep the content inside the clipped axis or make that axis scrollable.", defaultSeverity: .error) {
+                                findings.append(finding)
+                            }
+                            break
+                        }
+                    }
+                }
+                // Judge the scroll owner against its ancestors first. Its
+                // reachable content is then independent on each scrolling axis;
+                // it does not paint beyond an outer card merely by being below
+                // the panel's current scroll position.
+                let scrolling = WebLint.rect(key: "web.scrollBounds", in: node.attributes) != nil
+                let scrollX = scrolling && ["auto", "scroll"].contains(node.attributes["web.overflowX"]?.stringValue ?? "visible")
+                let scrollY = scrolling && ["auto", "scroll"].contains(node.attributes["web.overflowY"]?.stringValue ?? "visible")
+                var next = chain.map { (node: $0.node, x: $0.x && !scrollX, y: $0.y && !scrollY) }
+                let clipsX = Self.clips(node.attributes["web.overflowX"]?.stringValue)
+                let clipsY = Self.clips(node.attributes["web.overflowY"]?.stringValue)
+                if node.isVisible && (clipsX || clipsY) { next.append((node: node, x: clipsX, y: clipsY)) }
+                for child in node.children {
+                    walk(child, ancestors: next, frame: ownFrame,
+                         contained: (changed ? false : contained) || node.attributes["web.fixedContainer"] == .bool(true))
+                }
+            }
+            walk(root, ancestors: [], frame: nil, contained: false)
+            return findings
+        }
+    }
+
     private struct Scope {
         var key: String
         var frame: String
@@ -116,11 +189,13 @@ enum WebLint {
 
     static func run(tree: SemanticNode, scenario: String, viewport: Rect) -> Verdict {
         // Run the non-optional no-evidence guard once on the original tree.
-        let boundaryRules: [any LintRule] = [OffscreenRule(), ClippedContentRule()]
-        let sharedRules = RuleEngine.standardRules.filter { type(of: $0).id != OffscreenRule.id && type(of: $0).id != ClippedContentRule.id
+        let boundaryRules: [any LintRule] = [OffscreenRule()]
+        var sharedRules = RuleEngine.standardRules.filter { type(of: $0).id != OffscreenRule.id && type(of: $0).id != ClippedContentRule.id
             && type(of: $0).id != SiblingOverlapRule.id && type(of: $0).id != ContentOverlapRule.id }
+        sharedRules.append(WebClippingRule())
         func visibleEvidence(_ source: SemanticNode) -> SemanticNode {
             var node = source
+            if node.role == .spacer { node.id = "" }
             node.children = source.children.filter(\.isVisible).map(visibleEvidence)
             return node
         }
@@ -186,10 +261,23 @@ enum WebLint {
             }
         }
         for root in overlapRoots {
-            let paint = paintProjection(root)
+            var originals: [String: String] = [:]
+            let fragmented = fragmentProjection(root, originals: &originals)
+            let paint = paintProjection(fragmented)
             let report = RuleEngine.run(rules: [SiblingOverlapRule(), ContentOverlapRule()], on: paint,
                 context: LintContext(scenario: scenario, viewport: viewport, requiresProbedNodes: false))
-            for finding in report.findings where !findings.contains(finding) { findings.append(finding) }
+            for source in report.findings {
+                var finding = source
+                if let original = originals[finding.nodeID] { finding.nodeID = original }
+                func remap(_ message: String) -> String {
+                    message.split(separator: "'", omittingEmptySubsequences: false).enumerated().map { index, part in
+                        index.isMultiple(of: 2) ? String(part) : (originals[String(part)] ?? String(part))
+                    }.joined(separator: "'")
+                }
+                finding.message = remap(finding.message)
+                finding.suggestion = finding.suggestion.map(remap)
+                if !findings.contains(finding) { findings.append(finding) }
+            }
             elapsed += report.timing.evaluateMs ?? 0
         }
         for scope in scopes {
