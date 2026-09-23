@@ -157,14 +157,22 @@ enum WebLint {
     static func overlapFindings(_ root: SemanticNode, context: LintContext, budget: inout OverlapBudget) throws -> [Finding] {
         func label(_ node: SemanticNode) -> String { node.id.isEmpty ? node.structuralPath : node.id }
         func boxes(_ node: SemanticNode, budget: inout OverlapBudget) throws -> [Rect] {
-            guard node.role == .text,
-                  let count = node.attributes["web.textFragmentCount"]?.numberValue.flatMap(Int.init(exactly:)),
-                  (1...100_000).contains(count) else { return [node.frame] }
+            let inline = node.attributes["web.inlineCandidate"] == .bool(true)
+                && node.attributes["web.inlineNonHTML"] != .bool(true)
+            let key = inline ? "web.inlineFragment" : "web.textFragment"
+            guard inline || node.role == .text else { return [node.frame] }
+            guard let count = node.attributes[key + "Count"]?.numberValue.flatMap(Int.init(exactly:)),
+                  (1...100_000).contains(count) else {
+                if inline { throw WebBrowserError.invalidCDPResponse(reason: "missing inline border geometry") }
+                return [node.frame]
+            }
             // Charge the raw measurements before decoding or clipping them.
             // A tiny visible slice must not hide repeated scans of a long text.
             try budget.charge(count)
-            let measured = (0..<count).compactMap { rect(key: "web.textFragment\($0)", in: node.attributes) }
-            guard measured.count == count else { return [node.frame] }
+            let measured = (0..<count).compactMap { rect(key: key + "\($0)", in: node.attributes) }
+            guard measured.count == count else {
+                throw WebBrowserError.invalidCDPResponse(reason: "incomplete measured overlap geometry")
+            }
             if let clip = rect(key: "web.paintClip", in: node.attributes) {
                 return measured.compactMap { $0.intersection(clip) }
             }

@@ -21,6 +21,29 @@ final class WebLintTests: XCTestCase {
         return SemanticNode(id: "web/root", role: .container, frame: viewport, children: roots).withAssignedStructuralPaths()
     }
 
+    func testInlineBorderFragmentsAvoidUnionOverlapAndRetainPaddingCollisions() throws {
+        var first = node("label", x: 20, y: 20); first.frame = Rect(x: 20, y: 20, width: 80, height: 20)
+        var detail = SemanticNode(id: "detail", role: .container, frame: Rect(x: 20, y: 20, width: 280, height: 44),
+                                  attributes: ["web.inlineCandidate": .bool(true), "web.inlineFragmentCount": .number(2)])
+        WebLint.store(Rect(x: 100, y: 20, width: 200, height: 20), key: "web.inlineFragment0", in: &detail.attributes)
+        WebLint.store(Rect(x: 20, y: 44, width: 100, height: 20), key: "web.inlineFragment1", in: &detail.attributes)
+        let context = LintContext(viewport: viewport)
+        var budget = WebLint.OverlapBudget()
+        XCTAssertTrue(try WebLint.overlapFindings(document([first, detail]), context: context, budget: &budget).isEmpty)
+        // Measured border padding really overlaps the label; descendant text
+        // substitution would lose this collision.
+        WebLint.store(Rect(x: 94, y: 18, width: 206, height: 24), key: "web.inlineFragment0", in: &detail.attributes)
+        budget = WebLint.OverlapBudget()
+        XCTAssertTrue(try WebLint.overlapFindings(document([first, detail]), context: context, budget: &budget)
+            .contains { $0.nodeID == "detail" && $0.rule == "sibling-overlap" })
+        detail.attributes.removeValue(forKey: "web.inlineFragment1Width")
+        budget = WebLint.OverlapBudget()
+        XCTAssertThrowsError(try WebLint.overlapFindings(document([first, detail]), context: context, budget: &budget))
+        detail.attributes.removeValue(forKey: "web.inlineFragmentCount")
+        budget = WebLint.OverlapBudget()
+        XCTAssertThrowsError(try WebLint.overlapFindings(document([first, detail]), context: context, budget: &budget))
+    }
+
     func testLongDocumentAndNonzeroScrollRetainFullEvidence() throws {
         for scroll in [0.0, 2400] {
             let tree = document([node("top", y: 20 - scroll), node("bottom", y: 3000 - scroll)], scroll: scroll)

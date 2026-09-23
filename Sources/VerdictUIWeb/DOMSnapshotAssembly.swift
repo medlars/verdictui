@@ -64,6 +64,7 @@ public enum DOMSnapshotAssembly {
             names.count == parents.count, values.count == parents.count, backend.count == parents.count,
             case let .array(attributes) = nodes["attributes"], attributes.count == parents.count
         else { throw malformed("mismatched or oversized node columns") }
+        let clickable = try clickableIndices(nodes["isClickable"], count: parents.count)
         var depths: [Int] = []
         for (index, parent) in parents.enumerated() {
             guard parent == -1 || (parent >= 0 && parent < index) else { throw malformed("invalid parent topology") }
@@ -83,6 +84,13 @@ public enum DOMSnapshotAssembly {
                 attrs[try string(rawAttrs[pair], in: strings)] = valueIndex == -1 ? "" : try string(valueIndex, in: strings)
             }
             return attrs
+        }
+        let focusableNodes = parents.indices.map { types[$0] == 1 && focusable(tag: tags[$0], attributes: nodeAttributes[$0]) }
+        // html/body and display:contents can be omitted from the semantic tree.
+        // Preserve their interaction evidence before that omission, in O(nodes).
+        var interactiveAncestors: [Bool] = []
+        for parent in parents {
+            interactiveAncestors.append(parent >= 0 && (interactiveAncestors[parent] || clickable.contains(parent) || focusableNodes[parent]))
         }
         let accessibleNames = DOMAccessibleNames.resolve(tags: tags, types: types, values: nodeValues,
                                                          attributes: nodeAttributes, parents: parents)
@@ -154,6 +162,15 @@ public enum DOMSnapshotAssembly {
                 textBoxes[layoutNodes[index], default: []].append(try rectangle(boxBounds[offset]))
             }
         }
+        let inlineGeometry: [String: CDPValue]?
+        if let supplied = document["verdictInlineFragments"] {
+            guard case let .object(records) = supplied, records.count <= 4096 else {
+                throw malformed("invalid inline fragment table")
+            }
+            inlineGeometry = records
+        } else { inlineGeometry = nil }
+        var consumedInline: Set<String> = []
+        var inlineFragmentCount = 0
         var assembled: [Int: [SemanticNode]] = [:]
         var seenIDs: Set<Int> = []
         for index in parents.indices.reversed() {
@@ -171,6 +188,10 @@ public enum DOMSnapshotAssembly {
                 var metadata: [String: AttributeValue] = [
                     "web.tag": .string(tag), "web.backendID": .number(Double(backend[index])),
                     "web.frame": .string(frameID),
+                    "web.isClickable": .bool(clickable.contains(index)),
+                    "web.isFocusable": .bool(focusableNodes[index]),
+                    "web.hasInteractiveAncestor": .bool(interactiveAncestors[index]),
+                    "web.interactionMeasured": .bool(nodes["isClickable"] != nil),
                 ]
                 if let embedded = embedded[index] { metadata["web.documentIndex"] = .number(Double(embedded)) }
                 if let domID = nodeAttributes[index]["id"] { metadata["web.id"] = .string(WebRedaction.clean(domID, secrets: secrets)) }
@@ -194,6 +215,41 @@ public enum DOMSnapshotAssembly {
                     var metadata: [String: AttributeValue] = ["web.tag": .string(WebRedaction.clean(tag, secrets: secrets)), "web.backendID": .number(Double(backend[index]))]
                     metadata["web.frame"] = .string(frameID)
                     metadata["web.position"] = .string(style[4])
+                    metadata["web.isClickable"] = .bool(clickable.contains(index))
+                    metadata["web.isFocusable"] = .bool(focusableNodes[index])
+                    metadata["web.hasInteractiveAncestor"] = .bool(interactiveAncestors[index])
+                    metadata["web.interactionMeasured"] = .bool(nodes["isClickable"] != nil)
+                    if types[index] == 1 && style[0] == "inline" && !tag.hasPrefix("::") {
+                        metadata["web.inlineCandidate"] = .bool(true)
+                        if let inlineGeometry {
+                            let key = String(backend[index])
+                            guard let measured = inlineGeometry[key] else { throw malformed("missing inline border fragments") }
+                            consumedInline.insert(key)
+                            if measured == .null {
+                                metadata["web.inlineNonHTML"] = .bool(true)
+                            } else {
+                                guard case let .array(raw) = measured, !raw.isEmpty,
+                                      raw.count <= 100_000 - inlineFragmentCount else {
+                                    throw malformed("invalid or oversized inline border fragments")
+                                }
+                                inlineFragmentCount += raw.count
+                                let fragments = try raw.map(rectangle)
+                                let measuredUnion = try fragments.dropFirst().reduce(fragments[0], union)
+                                // Layout snapshot bounds are quantized to 1/64 CSS px;
+                                // client rects retain fractional transformed coordinates.
+                                guard abs(measuredUnion.x - frame.x) <= 0.1,
+                                      abs(measuredUnion.y - frame.y) <= 0.1,
+                                      abs(measuredUnion.width - frame.width) <= 0.1,
+                                      abs(measuredUnion.height - frame.height) <= 0.1 else {
+                                    throw malformed("inline geometry changed during capture")
+                                }
+                                metadata["web.inlineFragmentCount"] = .number(Double(fragments.count))
+                                for (part, fragment) in fragments.enumerated() {
+                                    WebLint.store(fragment, key: "web.inlineFragment\(part)", in: &metadata)
+                                }
+                            }
+                        }
+                    }
                     metadata["web.overflowX"] = .string(style[7])
                     metadata["web.overflowY"] = .string(style[8])
                     metadata["web.scrollX"] = .number(scrollX)
@@ -264,6 +320,9 @@ public enum DOMSnapshotAssembly {
             if parent >= 0 { assembled[parent, default: []].insert(contentsOf: descendants, at: 0) }
             else { assembled[-1, default: []].insert(contentsOf: descendants, at: 0) }
         }
+        if let inlineGeometry, consumedInline.count != inlineGeometry.count {
+            throw malformed("unexpected inline border fragment identity")
+        }
         return (assembled[-1] ?? []).map { source in
             var node = source
             WebLint.store(documentBounds, key: "web.documentBounds", in: &node.attributes)
@@ -311,6 +370,30 @@ public enum DOMSnapshotAssembly {
         case "nav": return .navigation
         default: return .container
         }
+    }
+
+    // Chromium emits an empty sparse index list for measured non-clickability.
+    // An absent optional column stays unmeasured in the semantic metadata.
+    // https://github.com/chromium/chromium/blob/main/third_party/blink/renderer/core/inspector/inspector_dom_snapshot_agent.cc
+    private static func clickableIndices(_ value: CDPValue?, count: Int) throws -> Set<Int> {
+        guard let value else { return [] }
+        guard case let .object(column) = value else { throw malformed("invalid clickable column") }
+        let indices = try integers(column["index"])
+        guard indices.count <= count, Set(indices).count == indices.count,
+              indices.allSatisfy({ (0..<count).contains($0) }) else { throw malformed("invalid clickable index") }
+        return Set(indices)
+    }
+
+    private static func focusable(tag: String, attributes: [String: String]) -> Bool {
+        if attributes["tabindex"] != nil { return true }
+        if let editable = attributes["contenteditable"], editable.lowercased() != "false" { return true }
+        if ["button", "input", "select", "textarea", "summary"].contains(tag) { return true }
+        if ["a", "area"].contains(tag), attributes["href"] != nil { return true }
+        if ["audio", "video"].contains(tag), attributes["controls"] != nil { return true }
+        let roles: Set<String> = ["button", "link", "checkbox", "radio", "switch", "slider", "spinbutton",
+                                  "textbox", "combobox", "listbox", "option", "menuitem", "menuitemcheckbox",
+                                  "menuitemradio", "tab", "treeitem", "searchbox"]
+        return attributes["role"]?.split(separator: " ").contains { roles.contains(String($0).lowercased()) } == true
     }
 
     private static func rareIntegers(_ value: CDPValue?) throws -> [Int: Int] {

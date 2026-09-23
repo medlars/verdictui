@@ -50,6 +50,35 @@ class Handler(http.server.BaseHTTPRequestHandler):
             else:
                 content = '<style>#skip{position:absolute;left:-1px;top:-1px;width:1px;height:1px;clip-path:inset(50%)}#skip:focus{position:fixed;left:16px;top:16px;width:160px;height:44px;clip-path:none}</style><a id="skip" href="#main">Skip to content</a><p id="main" style="margin-top:120px">Visible content</p>'
             body = (prefix + content + "</body></html>").encode()
+        elif self.path in ("/inline-same", "/inline-cross"):
+            host = "localhost" if self.path == "/inline-cross" else "127.0.0.1"
+            body = (
+                '<!doctype html><html><body style="margin:24px;font:16px sans-serif"><p>Main document</p>'
+                '<iframe style="margin-top:1000px;transform:scale(.8);transform-origin:top left;border:3px solid;width:500px;height:500px" src="http://'
+                + host
+                + ":"
+                + str(self.server.server_port)
+                + '/inline"></iframe></body></html>'
+            ).encode()
+        elif self.path in ("/inline", "/inline-overlap", "/inline-budget"):
+            if self.path == "/inline-budget":
+                content = "".join(f"<span>Item {i} </span>" for i in range(4097))
+            else:
+                content = (
+                    '<p style="width:300px"><span id="label">Project templates:</span><span id="wrapped"> from beginner to advanced examples with source code and detailed instructions.</span></p>'
+                    '<p style="width:300px"><span>Label </span><span id="bordered" style="padding:3px 7px;border:2px solid black">Bordered wrapped inline content keeps actual padding and border measurements.</span></p>'
+                    '<p style="width:300px;transform:translate(25px,10px) scale(.9);transform-origin:top left"><span id="replaced" style="padding:3px 7px;border:2px solid black">Text before <img alt="fixture mark" style="width:30px;height:20px" src="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2230%22 height=%2220%22%3E%3Crect width=%2230%22 height=%2220%22 fill=%22blue%22/%3E%3C/svg%3E"> and text after the replaced content wraps naturally.</span></p>'
+                    '<p><span id="empty" style="padding:3px 7px;border:2px solid black"></span></p>'
+                    '<button id="inline-action" style="width:160px;height:44px;margin-top:700px" onclick="this.textContent=&quot;Inline complete&quot;">Run inline task</button>'
+                    "<script>Element.prototype.getClientRects=function(){return []};</script>"
+                )
+                if self.path == "/inline-overlap":
+                    content += '<p style="width:300px"><span id="before-collision">Measured label</span><span id="border-collision" style="margin-left:-20px;padding:4px 20px;border:2px solid black">Actual border collision with wrapped content.</span></p>'
+            body = (
+                '<!doctype html><html><body style="margin:24px;font:16px/44px sans-serif">'
+                + content
+                + "</body></html>"
+            ).encode()
         elif self.path == "/long-text":
             body = (
                 '<!doctype html><html><body><pre style="font:16px/20px monospace">'
