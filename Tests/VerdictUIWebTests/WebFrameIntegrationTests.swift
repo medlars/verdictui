@@ -5,6 +5,54 @@ import VerdictUIKernel
 @testable import VerdictUIWeb
 
 final class WebFrameIntegrationTests: XCTestCase {
+    /// The callback is installed before launch so even an immediate exit is
+    /// observed. Async tests must never enter Process.waitUntilExit's run loop.
+    private final class FixtureProcess: @unchecked Sendable {
+        private final class ExitObservation: @unchecked Sendable {
+            private let lock = NSLock()
+            private var value: Int32?
+            func record(_ status: Int32) {
+                lock.lock(); defer { lock.unlock() }
+                value = status
+            }
+            func status() -> Int32? {
+                lock.lock(); defer { lock.unlock() }
+                return value
+            }
+        }
+        let process: Process
+        private let observation = ExitObservation()
+        var exitStatus: Int32? { observation.status() }
+        init(_ process: Process) {
+            self.process = process
+            let observation = observation
+            process.terminationHandler = { child in observation.record(child.terminationStatus) }
+        }
+        func waitForExit(timeout: Duration = .seconds(5)) async -> Int32? {
+            let observation = observation
+            // Cleanup must still finish when the test task has been cancelled.
+            // This detached observer is bounded and always awaited by its owner.
+            return await Task.detached {
+                let deadline = ContinuousClock.now + timeout
+                while ContinuousClock.now < deadline {
+                    if let status = observation.status() { return status }
+                    try? await Task.sleep(for: .milliseconds(10))
+                }
+                return observation.status()
+            }.value
+        }
+        @discardableResult
+        func stop() async throws -> Int32 {
+            if let status = exitStatus { return status }
+            if process.isRunning, kill(process.processIdentifier, SIGKILL) != 0, errno != ESRCH {
+                throw WebBrowserError.invalidWebOperation(reason: "fixture termination failed: errno \(errno)")
+            }
+            guard let status = await waitForExit() else {
+                throw WebBrowserError.invalidWebOperation(reason: "fixture termination was not observed within 5 seconds")
+            }
+            return status
+        }
+    }
     private func fixturePython(environment: [String: String]) throws -> URL {
         if let configured = environment["VERDICTUI_TEST_PYTHON"] {
             guard configured.hasPrefix("/"), FileManager.default.isExecutableFile(atPath: configured) else {
@@ -19,7 +67,7 @@ final class WebFrameIntegrationTests: XCTestCase {
         throw WebBrowserError.invalidWebOperation(reason: "fixture requires VERDICTUI_TEST_PYTHON or python3.14 on PATH")
     }
 
-    private func server(root: URL, environment: [String: String] = ProcessInfo.processInfo.environment) async throws -> (Process, Int) {
+    private func server(root: URL, environment: [String: String] = ProcessInfo.processInfo.environment) async throws -> (FixtureProcess, Int) {
         let python = try fixturePython(environment: environment)
         let fixture = try XCTUnwrap(Bundle.module.url(forResource: "server", withExtension: "py", subdirectory: "Fixtures"))
         let portFile = root.appendingPathComponent("server.port")
@@ -33,35 +81,33 @@ final class WebFrameIntegrationTests: XCTestCase {
         process.environment = environment
         process.arguments = [fixture.path, fixture.deletingLastPathComponent().path, portFile.path]
         process.standardOutput = output; process.standardError = output
+        let fixtureProcess = FixtureProcess(process)
         do { try process.run() }
         catch {
             throw WebBrowserError.invalidWebOperation(reason: "fixture interpreter=\(python.path) could not launch: \(error)")
         }
-        var handedOff = false
-        defer {
-            if !handedOff {
-                if process.isRunning { kill(process.processIdentifier, SIGKILL) }
-                process.waitUntilExit()
+        do {
+            let deadline = ContinuousClock.now + .seconds(5)
+            while ContinuousClock.now < deadline {
+                if let text = try? String(contentsOf: portFile, encoding: .utf8),
+                   let port = Int(text) {
+                    return (fixtureProcess, port)
+                }
+                if fixtureProcess.exitStatus != nil { break }
+                try await Task.sleep(for: .milliseconds(25))
             }
+            let timedOut = fixtureProcess.exitStatus == nil
+            let status = try await fixtureProcess.stop()
+            let reader = try FileHandle(forReadingFrom: outputFile)
+            defer { try? reader.close() }
+            let excerpt = String(decoding: try reader.read(upToCount: 4096) ?? Data(), as: UTF8.self)
+            let outcome = timedOut ? "timed out after 5 seconds" : "exited with status \(status)"
+            throw WebBrowserError.invalidWebOperation(reason:
+                "loopback fixture server failed to start; interpreter=\(python.path); \(outcome); output (first 4096 bytes): \(excerpt)")
+        } catch {
+            try await fixtureProcess.stop()
+            throw error
         }
-        let deadline = ContinuousClock.now + .seconds(5)
-        while ContinuousClock.now < deadline {
-            if let text = try? String(contentsOf: portFile, encoding: .utf8),
-               let port = Int(text) {
-                handedOff = true
-                return (process, port)
-            }
-            if !process.isRunning { break }
-            try await Task.sleep(for: .milliseconds(25))
-        }
-        let timedOut = process.isRunning
-        if process.isRunning { kill(process.processIdentifier, SIGKILL); process.waitUntilExit() }
-        let reader = try FileHandle(forReadingFrom: outputFile)
-        defer { try? reader.close() }
-        let excerpt = String(decoding: try reader.read(upToCount: 4096) ?? Data(), as: UTF8.self)
-        let outcome = timedOut ? "timed out after 5 seconds" : "exited with status \(process.terminationStatus)"
-        throw WebBrowserError.invalidWebOperation(reason:
-            "loopback fixture server failed to start; interpreter=\(python.path); \(outcome); output (first 4096 bytes): \(excerpt)")
     }
 
     func testConfiguredFixtureInterpreterReportsExitAndBoundedOutput() async throws {
@@ -76,7 +122,7 @@ final class WebFrameIntegrationTests: XCTestCase {
         environment["VERDICTUI_TEST_PYTHON"] = interpreter.path
         do {
             let (process, _) = try await server(root: root, environment: environment)
-            if process.isRunning { kill(process.processIdentifier, SIGKILL); process.waitUntilExit() }
+            try await process.stop()
             XCTFail("the configured interpreter failure must not fall back to another Python")
         } catch {
             let message = String(describing: error)
@@ -85,6 +131,39 @@ final class WebFrameIntegrationTests: XCTestCase {
             XCTAssertTrue(message.contains("fixture-startup-diagnostic"), message)
             XCTAssertLessThan(message.utf8.count, 5000, "startup diagnostics must remain bounded")
         }
+    }
+
+    func testFixtureExitObservationHandlesFastExitLateWaitAndCancelledCleanup() async throws {
+        for _ in 0..<20 {
+            let child = Process()
+            child.executableURL = URL(fileURLWithPath: "/bin/sh")
+            child.arguments = ["-c", "exit 73"]
+            let fixture = FixtureProcess(child)
+            try child.run()
+            let firstExit = await fixture.waitForExit()
+            XCTAssertEqual(firstExit, 73)
+            // A second waiter begins after Foundation has already reaped it.
+            let lateExit = await fixture.waitForExit()
+            XCTAssertEqual(lateExit, 73)
+            let stoppedExit = try await fixture.stop()
+            XCTAssertEqual(stoppedExit, 73)
+            XCTAssertEqual(kill(child.processIdentifier, 0), -1)
+            XCTAssertEqual(errno, ESRCH)
+        }
+        let child = Process()
+        child.executableURL = URL(fileURLWithPath: "/bin/sh")
+        child.arguments = ["-c", "exec /bin/sleep 30"]
+        let fixture = FixtureProcess(child)
+        try child.run()
+        let cleanup = Task { try await fixture.stop() }
+        cleanup.cancel()
+        let killedExit = try await cleanup.value
+        XCTAssertEqual(killedExit, SIGKILL)
+        XCTAssertEqual(kill(child.processIdentifier, 0), -1)
+        XCTAssertEqual(errno, ESRCH)
+        let unlaunched = FixtureProcess(Process())
+        let missingExit = await unlaunched.waitForExit(timeout: .milliseconds(20))
+        XCTAssertNil(missingExit)
     }
 
     func testFixtureInterpreterUsesPATHAndRefusesInvalidConfiguration() throws {
@@ -104,7 +183,6 @@ final class WebFrameIntegrationTests: XCTestCase {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let (server, port) = try await server(root: root)
-        defer { if server.isRunning { kill(server.processIdentifier, SIGKILL); server.waitUntilExit() } }
         let manager = WebSessionManager(root: root.appendingPathComponent("profiles"), environment: [:])
         do {
             for route in ["hidden-same", "hidden-cross"] {
@@ -131,8 +209,13 @@ final class WebFrameIntegrationTests: XCTestCase {
                 let complete = try await manager.act(profile: "frames", action: .click(nodeID: button.id), expectText: "Task complete")
                 XCTAssertEqual(complete.status, .pass, "\(route): \(complete.findings)")
             }
+        } catch {
             await manager.closeAll()
-        } catch { await manager.closeAll(); throw error }
+            try await server.stop()
+            throw error
+        }
+        await manager.closeAll()
+        try await server.stop()
     }
 
     func testSameAndCrossOriginFramesRenderAndActWithCorrectRootCoordinates() async throws {
@@ -140,7 +223,6 @@ final class WebFrameIntegrationTests: XCTestCase {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let (server, port) = try await server(root: root)
-        defer { if server.isRunning { kill(server.processIdentifier, SIGKILL); server.waitUntilExit() } }
         let manager = WebSessionManager(root: root.appendingPathComponent("profiles"), environment: [:])
         do {
             for route in ["same", "cross"] {
@@ -161,15 +243,19 @@ final class WebFrameIntegrationTests: XCTestCase {
             _ = try await manager.open(profile: "frames", url: XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/network")))
             let completed = try await manager.verify(profile: "frames", expectText: "Network task complete")
             XCTAssertEqual(completed.status, .pass)
+        } catch {
             await manager.closeAll()
-        } catch { await manager.closeAll(); throw error }
+            try await server.stop()
+            throw error
+        }
+        await manager.closeAll()
+        try await server.stop()
     }
     func testLongDocumentsNestedPanelsAndFramesRemainScrollableAndActionable() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("vui-scroll-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let (server, port) = try await server(root: root)
-        defer { if server.isRunning { kill(server.processIdentifier, SIGKILL); server.waitUntilExit() } }
         let manager = WebSessionManager(root: root.appendingPathComponent("profiles"), environment: [:])
         var phase = "starting"
         do {
@@ -239,8 +325,9 @@ final class WebFrameIntegrationTests: XCTestCase {
             } catch {
                 XCTAssertTrue(String(describing: error).contains("bounded work budget"), "\(error)")
             }
-            await manager.closeAll()
-        } catch { await manager.closeAll(); XCTFail("\(phase): \(error)") }
+        } catch { XCTFail("\(phase): \(error)") }
+        await manager.closeAll()
+        try await server.stop()
     }
 
 }
