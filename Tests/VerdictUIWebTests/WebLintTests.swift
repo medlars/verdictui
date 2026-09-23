@@ -307,7 +307,7 @@ final class WebLintTests: XCTestCase {
         XCTAssertThrowsError(try WebLint.overlapFindings(disjoint, context: LintContext(viewport: viewport), budget: &budget))
         // One original pair plus its two events fit; the actual comparison does not.
         budget = WebLint.OverlapBudget(limit: 3)
-        XCTAssertThrowsError(try WebLint.overlapFindings(tree, context: LintContext(viewport: viewport), budget: &budget))
+        XCTAssertThrowsError(try WebLint.overlapFindings(tree, context: siblingsOnly, budget: &budget))
         var suppressed = tree
         suppressed.children[1].attributes[LintContext.suppressionKey] = .string("sibling-overlap")
         budget = WebLint.OverlapBudget()
