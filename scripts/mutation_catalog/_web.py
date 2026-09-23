@@ -249,4 +249,40 @@ MUTATIONS: list[Mutation] = [
         new='contents[index] += ""',
         test=_TEST + "DOMSnapshotAssemblyTests/testAccessibleLabelsExcludeEditableValues",
     ),
+    Mutation(
+        name="web availability trusts a recycled live pid",
+        path=_BASE + "HeadlessBrowser.swift",
+        old="func isRunning() -> Bool { process.isRunning }",
+        new="func isRunning() -> Bool { ProcessLiveness.isAlive(pid) }",
+        test=_TEST
+        + "BrowserProcessIdentityTests/testReusedLivePIDDoesNotAuthorizeTerminatingADeadChild",
+    ),
+    Mutation(
+        name="web dead session retains transport and profile ownership",
+        path=_BASE + "WebSession.swift",
+        old="guard await browser.isRunning() else",
+        new="guard browser.pid > 0 else",
+        test=_TEST + "WebSessionIntegrationTests/testBrowserDownIsUnavailableAndReleasesProfile",
+    ),
+    Mutation(
+        name="web session list advertises a dead browser",
+        path=_BASE + "WebSessionManager.swift",
+        old="if await session.isAvailable() { result.append",
+        new="if !key.isEmpty { result.append",
+        test=_TEST + "WebSessionIntegrationTests/testBrowserDownIsUnavailableAndReleasesProfile",
+    ),
+    Mutation(
+        name="web reopen navigates a dead session",
+        path=_BASE + "WebSessionManager.swift",
+        old="if await session.isAvailable() {\n                try await session.navigate",
+        new="if !profile.isEmpty {\n                try await session.navigate",
+        test=_TEST + "WebSessionIntegrationTests/testBrowserDownIsUnavailableAndReleasesProfile",
+    ),
+    Mutation(
+        name="web session lookup bypasses dead child eviction",
+        path=_BASE + "WebSessionManager.swift",
+        old="guard await session.isAvailable() else",
+        new="guard !profile.isEmpty else",
+        test=_TEST + "WebSessionIntegrationTests/testBrowserDownIsUnavailableAndReleasesProfile",
+    ),
 ]

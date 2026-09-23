@@ -25,6 +25,8 @@ final class BrowserProcessIdentityTests: XCTestCase {
         var browser: HeadlessBrowser? = HeadlessBrowser(process: identity,
             endpoint: DevtoolsEndpoint(port: 12345, browserPath: "/devtools/browser/test"),
             profileDirectory: FileManager.default.temporaryDirectory)
+        let running = await browser?.isRunning()
+        XCTAssertEqual(running, false, "availability must also use the retained child identity")
         try await browser?.terminate(grace: 0)
         XCTAssertTrue(identity.signals.isEmpty, "termination must consult the original child, not PID liveness")
         browser = nil

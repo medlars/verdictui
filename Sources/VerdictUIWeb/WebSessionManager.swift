@@ -22,7 +22,10 @@ public actor WebSessionManager {
     public func list() async -> [WebSessionInfo] {
         var result: [WebSessionInfo] = []
         for key in sessions.keys.sorted() {
-            if let session = sessions[key] { result.append(await session.info()) }
+            if let session = sessions[key] {
+                if await session.isAvailable() { result.append(await session.info()) }
+                else if sessions[key] === session { sessions.removeValue(forKey: key) }
+            }
         }
         return result
     }
@@ -33,12 +36,15 @@ public actor WebSessionManager {
         guard !invalidRootOverride else { throw WebBrowserError.invalidWebOperation(reason: "VERDICTUI_WEB_PROFILE_ROOT must be an absolute nonempty path") }
         guard !stopping else { throw WebBrowserError.invalidWebOperation(reason: "session manager is closing") }
         guard !opening.contains(profile) else { throw WebBrowserError.invalidWebOperation(reason: "profile is opening") }
-        if let session = sessions[profile] {
-            try await session.navigate(url: url)
-            return await session.info()
-        }
         opening.insert(profile)
         defer { opening.remove(profile) }
+        if let session = sessions[profile] {
+            if await session.isAvailable() {
+                try await session.navigate(url: url)
+                return await session.info()
+            }
+            if sessions[profile] === session { sessions.removeValue(forKey: profile) }
+        }
         let session = try await WebSession.open(profile: profile, url: url, registry: ProfileRegistry(root: root),
                                                 environment: environment, width: width, height: height)
         guard !stopping else {
@@ -60,9 +66,9 @@ public actor WebSessionManager {
         try await session(profile).act(action, expectText: expectText)
     }
     public func close(profile: String) async throws {
-        let owned = try session(profile)
+        guard let owned = sessions[profile] else { throw WebBrowserError.unknownSession(profile: profile) }
         try await owned.close()
-        sessions.removeValue(forKey: profile)
+        if sessions[profile] === owned { sessions.removeValue(forKey: profile) }
     }
     @discardableResult
     public func closeAll() async -> [WebBrowserError] {
@@ -74,8 +80,12 @@ public actor WebSessionManager {
         }
         return failures
     }
-    private func session(_ profile: String) throws -> WebSession {
+    private func session(_ profile: String) async throws -> WebSession {
         guard let session = sessions[profile] else { throw WebBrowserError.unknownSession(profile: profile) }
+        guard await session.isAvailable() else {
+            if sessions[profile] === session { sessions.removeValue(forKey: profile) }
+            throw WebBrowserError.unknownSession(profile: profile)
+        }
         return session
     }
 }

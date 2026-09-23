@@ -143,8 +143,25 @@ final class WebSessionIntegrationTests: XCTestCase {
             kill(info.pid, SIGKILL)
             _ = await HeadlessBrowser.awaitDeath(pid: info.pid, within: 5)
             do { _ = try await manager.verify(profile: "dead"); XCTFail("dead browser produced verdict") }
-            catch { XCTAssertTrue(error is WebBrowserError) }
+            catch { XCTAssertEqual(error as? WebBrowserError, .unknownSession(profile: "dead")) }
             XCTAssertFalse(FileManager.default.fileExists(atPath: ProfileRegistry(root: root).lockPath(for: "dead").path))
+            let sessionsAfterFailure = await manager.list()
+            XCTAssertTrue(sessionsAfterFailure.isEmpty, "dead identity must not remain discoverable")
+            let reopened = try await manager.open(profile: "dead", url: fixture("clean"))
+            XCTAssertTrue(ProcessLiveness.isAlive(reopened.pid))
+            let recovered = try await manager.verify(profile: "dead", expectText: "Ready to verify")
+            XCTAssertEqual(recovered.status, .pass)
+            // list itself must detect a crash even without a preceding action.
+            kill(reopened.pid, SIGKILL)
+            _ = await HeadlessBrowser.awaitDeath(pid: reopened.pid, within: 5)
+            let sessionsAfterIdleCrash = await manager.list()
+            XCTAssertTrue(sessionsAfterIdleCrash.isEmpty)
+            let third = try await manager.open(profile: "dead", url: fixture("clean"))
+            kill(third.pid, SIGKILL)
+            _ = await HeadlessBrowser.awaitDeath(pid: third.pid, within: 5)
+            // open must evict a dead identity without requiring list/close.
+            let fourth = try await manager.open(profile: "dead", url: fixture("clean"))
+            XCTAssertTrue(ProcessLiveness.isAlive(fourth.pid))
             await manager.closeAll()
         } catch { await manager.closeAll(); throw error }
         let missing = WebSessionManager(root: root, environment: ["VERDICTUI_WEB_BROWSER": "/nonexistent"])
