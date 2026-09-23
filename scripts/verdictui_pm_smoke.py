@@ -350,6 +350,63 @@ class VerdictUISmokeMixin:
             }
         return {"passed": True, "detail": "appkit example: defect FAILS (1), clean PASSES (0)"}
 
+    def stage_consumer_runner(self) -> dict:
+        """Cold consumer compilation and real custom CLI/MCP registry acceptance."""
+        binary = S.PROJECT_ROOT / ".build/debug/verdictui"
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(S.PROJECT_ROOT / "examples/ConsumerApp/verify-integration.py"),
+                str(binary),
+                "--cold",
+            ],
+            cwd=S.PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=660,
+        )
+        passed = (
+            result.returncode == 0 and "cold external consumer auto-build PASS" in result.stdout
+        )
+        return {
+            "passed": passed,
+            "detail": "cold external consumer CLI/MCP PASS"
+            if passed
+            else "consumer acceptance failed: " + (result.stderr or result.stdout)[-700:],
+        }
+
+    def stage_real_products(self) -> dict:
+        """Actual browser/native artifact acceptance; unavailable is not a skip."""
+        binary = S.PROJECT_ROOT / ".build/debug/verdictui"
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(S.PROJECT_ROOT / "scripts/product-smoke.py"),
+                "--binary",
+                str(binary),
+            ],
+            cwd=S.PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=360,
+        )
+        try:
+            report = json.loads(result.stdout)
+            passed = (
+                result.returncode == 0
+                and report.get("status") == "PASS"
+                and bool(report.get("checks"))
+                and bool(report.get("sha256"))
+            )
+        except json.JSONDecodeError, AttributeError:
+            passed = False
+        return {
+            "passed": passed,
+            "detail": "real browser and native CLI/MCP acceptance PASS"
+            if passed
+            else "real product acceptance failed: " + (result.stderr or result.stdout)[-700:],
+        }
+
     def stage_installed_parity(self) -> dict:
         """The binary a developer/agent invokes must not lag the repo's surface.
 

@@ -254,6 +254,8 @@ final class MCPTransportTests: XCTestCase {
             // test's own XCTUnwrap message warns against.
             "node_path": #""advanced-toggle""#,
             "runner": #""\#(runner)""#,
+            "path": #""fixture-control""#,
+            "url": #""invalid://fixture""#,
         ]
 
         for tool in MCPServer.tools {
@@ -267,6 +269,13 @@ final class MCPTransportTests: XCTestCase {
                 )
                 pairs.append(#""\#(name)":\#(value)"#)
             }
+            // External native apps are exercised by the hidden fixture's
+            // integration suite. Here prove the wire preserves unavailable
+            // targets as errors, without depending on the developer's apps.
+            let nativeUnavailable = tool.name.hasPrefix("live_")
+            let webUnavailable = tool.name.hasPrefix("web_") && tool.name != "web_list"
+            let externalUnavailable = nativeUnavailable || webUnavailable
+            if nativeUnavailable { pairs.append(#""pid":0"#) }
             let arguments =
                 pairs.isEmpty ? "" : #","arguments":{"# + pairs.joined(separator: ",") + "}"
             let replies = try await exchange(
@@ -284,9 +293,15 @@ final class MCPTransportTests: XCTestCase {
             )
             XCTAssertEqual(
                 result["isError"] as? Bool,
-                false,
+                externalUnavailable,
                 "\(tool.name) could not answer: \(result["content"] ?? "no content")"
             )
+            if externalUnavailable {
+                let content = try XCTUnwrap(result["content"] as? [[String: Any]])
+                let text = try XCTUnwrap(content.first?["text"] as? String)
+                XCTAssertTrue(text.contains(nativeUnavailable ? "live-unavailable" : "web-unavailable"))
+                XCTAssertFalse(text.contains("unknown method"))
+            }
         }
     }
 

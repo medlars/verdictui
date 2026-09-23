@@ -47,6 +47,10 @@ public struct MCPTransport: Sendable {
                 // EOF. A trailing partial frame is a truncated request; it is
                 // not answered, because the bytes that would say what it asked
                 // never arrived.
+                let failures = await engine.webSessions.closeAll()
+                if !failures.isEmpty {
+                    FileHandle.standardError.write(Data("verdictui: browser shutdown incomplete\n".utf8))
+                }
                 return
             }
             pending.append(chunk)
@@ -181,6 +185,14 @@ public struct MCPTransport: Sendable {
             )
         }
 
+        let live: LiveRequest?
+        let web: WebRequest?
+        do {
+            live = method.hasPrefix("live_") ? try ExtendedMCP.liveRequest(arguments) : nil
+            web = method.hasPrefix("web_") ? try ExtendedMCP.webRequest(arguments) : nil
+        } catch {
+            return Self.toolFailure(id: id, message: String(describing: error))
+        }
         let request = DaemonRequest(
             method: method,
             scenario: arguments["scenario"]?.stringValue,
@@ -196,14 +208,18 @@ public struct MCPTransport: Sendable {
             // argument list is written down and can drift from the catalog.
             runner: arguments["runner"]?.stringValue,
             subject: arguments["subject"]?.stringValue,
-            id: nil
+            id: nil,
+            live: live,
+            web: web
         )
         let response = await VerdictDaemon.handle(request, engine: engine)
 
         guard response.ok, let result = response.result else {
             return Self.toolFailure(
                 id: id,
-                message: response.error ?? "the tool produced no result"
+                message: response.findings == nil
+                    ? response.error ?? "the tool produced no result"
+                    : (try? VerdictOutput.json(response, pretty: false)) ?? "live-unavailable"
             )
         }
 
@@ -253,6 +269,7 @@ public struct MCPTransport: Sendable {
         // most probes are not. There is nothing to compact — a per-node form
         // carrying `false` for every other probe is what this shape avoids.
         case .actions(let actionable): data = try encoder.encode(actionable)
+        case .webSessions(let sessions): data = try encoder.encode(sessions)
         }
         return String(decoding: data, as: UTF8.self)
     }
