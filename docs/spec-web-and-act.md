@@ -129,7 +129,7 @@ byte-identical, and the profile/lock directories are inert when unused.
 
 | Task | Deliverable | Exit gate |
 |---|---|---|
-| T1 | Web-profile registry + lock registry + Chromium discovery + headless process lifecycle (launch, ephemeral port, health probe, `kill -0` liveness, terminate) | A launched browser answers a health probe; two sessions on one profile: second blocks; crashed-run lock stolen only after liveness check; zero CGWindowList entries (positive control: a real window IS seen) |
+| T1 | Web-profile registry + lock registry + Chromium discovery + headless process lifecycle (launch, ephemeral port, health probe, `kill -0` liveness, terminate) | A launched browser answers a health probe; two sessions on one profile: second blocks; crashed-run lock stolen only after liveness check; zero on-screen CGWindowList entries (positive control: a real visible window IS seen; Chromium may retain off-screen surfaces) |
 | T2 | CDP transport over `URLSessionWebSocketTask` (DevTools discovery, JSON-RPC framing, timeouts, fail-closed) | Talks to the T1 browser; a dead browser is exit 2 with a named reason, never a timeout hang; fake-WS unit tests + live integration |
 | T3 | `DOMSnapshot.captureSnapshot` → SemanticNode assembly (ARIA/implicit roles, CSS-px frames, text boxes) | A bundled `file://` fixture page renders a tree the kernel judges; the kernel's `vacuous-verdict` guard still fires on an unprobed-mapping page |
 | T4 | `verdictui web list/render/verify` through `VerdictDaemon.handle` (one-handler rule), MCP catalog + contract rows updated | cli_smoke-class stage drives the BUILT binary against the fixture site; exit 0/1/2 all asserted (0 clean, 1 planted defect, 2 browser-down) |
