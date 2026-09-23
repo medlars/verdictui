@@ -1157,6 +1157,8 @@ def test_installed_binary_exposes_every_built_subcommand() -> None:
                 # trailing "See 'verdictui help ...'" footer as a subcommand.
                 if not line.startswith(" ") or not line.strip():
                     break
+                if line.startswith("   "):
+                    continue
                 token = line.strip().split(" ", 1)[0]
                 if token and token.isidentifier():
                     names.add(token)
@@ -1260,6 +1262,17 @@ class TestStageInstalledParity:
         result = pm.stage_installed_parity()
         assert result["passed"], result
         assert "parity ok" in result["detail"]
+
+    def test_wrapped_descriptions_are_not_subcommands(self, monkeypatch):
+        wrapped = (
+            "SUBCOMMANDS:\n  list    List scenarios.\n"
+            "  render  Render an app in a\n"
+            "          headless environment.\n  appkit  Judge a view.\n"
+        )
+        pm = self._pm_with(monkeypatch, self._HELP, built_help=wrapped)
+        result = pm.stage_installed_parity()
+        assert result["passed"], result
+        assert "3 subcommands" in result["detail"]
 
     def test_fails_and_names_every_missing_subcommand(self, monkeypatch):
         """The defect this stage was written for: a stale install, 41h behind."""

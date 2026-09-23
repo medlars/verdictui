@@ -4,6 +4,14 @@ from mutation_catalog_types import Mutation, Runner
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="installed parity mistakes wrapped descriptions for commands",
+        path="scripts/verdictui_pm_smoke.py",
+        old='                    if line.startswith("   "):\n                        continue',
+        new="                    # continuation filter omitted under mutation",
+        test="Tests/test_verdictui_pm.py::TestStageInstalledParity::test_wrapped_descriptions_are_not_subcommands",
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
         name="PM consumer gate omits persistent rebuild recovery",
         path="scripts/verdictui_pm_smoke.py",
         old='            ("--reload", "consumer reload PASS: same MCP/daemon PID"),',
