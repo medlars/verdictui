@@ -82,6 +82,13 @@ client's working-directory setting to the project root. A client that cannot
 set a working directory can use a small project-owned wrapper that changes to
 that root and executes `verdictui mcp`.
 
+After upgrading the installed executable, reconnect an already-open MCP client.
+Replacing the file does not replace a running stdio server or refresh the
+client's cached tool catalog. A fresh 1.1.2 connection exposes 18 tools,
+including `web_open`, `web_act`, `live_inspect`, `live_verify`, and `live_act`.
+An older nine-tool catalog is not evidence that those installed capabilities
+are absent. Do not terminate other sessions to refresh one client's connection.
+
 Direct consumer executable configuration is also supported, but deliberately
 bypasses the launcher broker and requires an explicit restart after rebuilding:
 

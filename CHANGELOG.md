@@ -17,7 +17,8 @@
 
 ## [1.1.1] — 2026-09-23
 
-- Preserved scenario-state publications made during initial view construction.
+- Stopped change publications during initial view construction while retaining
+  notifications for subsequent binding updates.
 - Published the signed, notarized desktop app and matching Homebrew CLI, with
   installed browser/native CLI and MCP acceptance.
 

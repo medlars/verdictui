@@ -37,22 +37,30 @@ while demo success, partial probes, or the presence of a hook stood in for
 end-to-end product evidence. Release evidence must distinguish supported
 capability, observed scenario coverage, and unavailable measurement.
 
-Release reconciliation: v1.1.1 is published with a notarized desktop archive and
-updated Homebrew CLI. Both installed binaries passed the controlled native/browser
-CLI/MCP artifact gate. Additional public-site checks then exposed valid Chrome
-snapshot cases that the browser parser rejected. The browser instruction
-INS-402715D8 remains partial pending installed real-site acceptance.
-CTS-E47F57A8 was reopened, then closed with verified implementation and notarized
-candidate evidence; required publication and installed upgrades continue as
-CTS-B70C5383. The earlier 1.1.2 candidate verified both public product-page URLs with zero
-errors and eight warnings and passed 10,000-line/work-budget controls. Further
-homepage adjudication exposed false inline-union and SVG reports plus unresolved
-presentation-layer paint, so that candidate is superseded. Measured border
-fragments and conservative paint classification are being integrated, with an
-explicit paint-unverified qualification in CLI, MCP documentation and desktop
-results. Final rebuild and installed release gates remain open. INS-FAE07628 cites delivered desktop
-evidence; INS-0105EE8B cites the real consumer surfaces. Fleet coverage remains
-scoped by [product-adoption.md](product-adoption.md).
+Release reconciliation: **v1.1.2 is published and installed** with a notarized,
+stapled desktop archive and an updated Homebrew CLI. Both installed engines
+passed real native/browser CLI/MCP acceptance, including wrong-login failure,
+observed successful actions, session isolation, persistence, cleanup and secret
+checks. The installed desktop showed **Engine connected 1.1.2** and preserved
+saved state. INS-402715D8 and INS-FAE07628 now cite installed evidence.
+
+The installed browser engine verified three public URLs with zero confirmed
+errors: the homepage carried 114 warnings and each updated product page nine. Thirteen
+controlled positioned-clipping, transform and editor cases passed. A real
+10,000-line page passed; exhausted overlap work returned exit 2 without a
+verdict. Paint uncertainty remains explicitly qualified in CLI, MCP guidance,
+workbench results, badges and history. These results do not certify unmeasured
+paint or complete consumer products. Earlier superseded candidates were not
+published. Full PM passed Grade A (100), and the release source passed CI.
+
+Fresh MCP connections expose 18 tools. This long-running Codex session retained
+its older nine-tool catalog; existing clients must reconnect after the binary
+upgrade. Automating Codex's own UI was denied by the computer-use tool, so
+pre-existing connections were preserved rather than interrupted.
+
+CTS-E47F57A8 records completed implementation; CTS-B70C5383 records completed
+publication and installed acceptance. INS-0105EE8B cites real consumer surfaces. Fleet coverage
+remains scoped by [product-adoption.md](product-adoption.md).
 
 The installed background wrapper was also checked, not only the hook script:
 17 supported file-extension edit cases reached an actual configured web check;
