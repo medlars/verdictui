@@ -82,21 +82,21 @@ MUTATIONS: list[Mutation] = [
     ),
     Mutation(
         name="owned command cleanup signals only leader leaving descendants",
-        path="Sources/VerdictUICLICore/BoundedCommand.swift",
+        path="Sources/VerdictUIWeb/OwnedCommandProcess.swift",
         old="guard kill(-processIdentifier, number) != 0 else { return }",
         new="guard kill(processIdentifier, number) != 0 else { return }",
         test="ProjectChecksTests/testCancellationStopsOwnedRunnerAndDescendant",
     ),
     Mutation(
         name="owned command observation reaps its identity anchor",
-        path="Sources/VerdictUICLICore/BoundedCommand.swift",
+        path="Sources/VerdictUIWeb/OwnedCommandProcess.swift",
         old="WEXITED | WNOHANG | WNOWAIT",
         new="WEXITED | WNOHANG",
         test="ProjectChecksTests/testExitedLeaderRemainsPinnedUntilDescendantCleanup",
     ),
     Mutation(
         name="owned command mistakes exited Darwin group for live permission denial",
-        path="Sources/VerdictUICLICore/BoundedCommand.swift",
+        path="Sources/VerdictUIWeb/OwnedCommandProcess.swift",
         old="if failure == EPERM && groupHasOnlyExitedMembers() { return }",
         new="if failure == ESRCH && groupHasOnlyExitedMembers() { return }",
         test="ProjectChecksTests/testSubprocessBoundsOutputAndTime",
@@ -180,7 +180,7 @@ MUTATIONS: list[Mutation] = [
     ),
     Mutation(
         name="owned command arguments silently truncate at NUL",
-        path="Sources/VerdictUICLICore/BoundedCommand.swift",
+        path="Sources/VerdictUIWeb/OwnedCommandProcess.swift",
         old='!(argv + env + [directory.path]).contains(where: { $0.contains("\\0") })',
         new='!directory.path.contains("\\0")',
         test="ProjectChecksTests/testSubprocessRejectsInvalidLimitsAndNulArguments",

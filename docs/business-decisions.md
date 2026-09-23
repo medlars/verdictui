@@ -203,3 +203,13 @@ history. It does not claim or depend on CleanMyMac's implementation technology.
 The audit across recovered Claude sessions found that most broad requirements
 were already registered; the major gap was implementation and closure evidence.
 See `instruction-coverage.md` for the matrix and missing-archive qualification.
+
+
+## Public documentation route, 2026-09-23
+
+Use the existing `vohux.com/verdictui` product/documentation page and Cloudflare
+Pages deployment. This satisfies the recorded goal of a public surface at a
+name already owned, without treating an unapproved new domain purchase as a
+software blocker. A later dedicated-domain redirect is optional. This implements
+the owner's instruction to complete the product and improve its design where
+warranted; it does not authorize a purchase or retire the recorded domain wish.

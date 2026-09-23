@@ -1,37 +1,27 @@
-# VerdictUI — Roadmap
+# VerdictUI roadmap
 
-> Phases in intended sequence. Current phase is bold.
-> Update after each milestone ships: mark ✓, add next phase.
-> Full execution detail per wave: `docs/implementation-plan.md`.
+Updated September 23, 2026. Implementation and release evidence are distinct;
+[wave-status.md](wave-status.md) is the current release checkpoint.
 
-## Phase 0 — Scaffold ✓ (2026-08-04)
+| Phase | State | Evidence and remaining boundary |
+| --- | --- | --- |
+| Scaffold | Complete | Package, project floor and contracts |
+| Inner loop (Waves 1–3) | Implemented | Semantic kernel, public probe, headless host and settle engine |
+| Agent surface (Waves 4–7) | Implemented | Macros, scenarios, CLI, warm daemon and MCP; external consumer broker added in 1.1 |
+| Independent channels (Waves 8–9) | Implemented | Accessibility reconciliation, pixel comparison and evidence; denied OS access stays unavailable |
+| Proof and release (Wave 10) | Existing 1.0.1 CLI; 1.1 release gates in progress | Benchmarks and consumer dogfood are documented; public docs use the existing Vohux site without waiting for a new domain purchase |
+| Native/browser acting (Wave 11) | Implemented; final combined gate in progress | CLI/MCP input with observed outcomes, isolated browser ownership, secret hygiene and restart recovery |
+| Desktop workbench | Implemented; signed distribution in progress | Local web-rendered UI with motion, project checks, evidence, history and cancellation |
 
-Project floor, buildable package (kernel + probe seeds), wave plan, registrations.
+## Continuing adoption
 
-## **Phase 1 — Trustworthy Inner Loop (Waves 1–3)** ← CURRENT
+Each consumer owns its screen and account coverage. The measured fleet census
+and remaining product-specific work are in [product-adoption.md](product-adoption.md).
+Do not turn an import, demo run or empty-state fixture into a whole-app claim.
 
-**Goal**: An agent can render a probed SwiftUI view headless, act on it, and get a PASS/FAIL verdict with evidence in <100 ms — no screenshots, no sleeps.
-**Waves**: 1 Kernel · 2 Probe runtime + oracle harness · 3 Settle engine ("pumpAndSettle for SwiftUI")
-**Status**: In progress
+## Future product work
 
-## Phase 2 — Ergonomics & Agent Surface (Waves 4–7)
-
-**Goal**: Zero-boilerplate adoption (`@Verifiable` macro, `#Preview` auto-registration) and the agent-facing surface (CLI + warm daemon + MCP server with atomic act→diff).
-**Status**: Not started
-
-## Phase 3 — Honest Channels (Waves 8–9)
-
-**Goal**: Cross-validation (external AX tree + real events + windowless pixel diff reconciled against the in-process stream) and the deterministic pixel exception path with subtree-hash render caching.
-**Status**: Not started
-
-## Phase 4 — Proof & Release (Wave 10)
-
-**Goal**: Dogfood on SagaMail/PanoMac, benchmark vs SLO, MIT release, Homebrew tap, docs site on verdictui.com.
-**Status**: Not started
-
-## Icebox (future ideas, not committed)
-
-- Web backend behind the same CLI/MCP contract (assembly over CDP/Playwright engines)
-- Optional private-API adapter (`_viewDebugData` backend) for apps that can't add the package
-- Hosted workflow layer (baseline storage, team review, CI policy) — the open-core monetization
-- UIKit/AppKit probe variants (NSViewController render-fleet pattern)
+Hosted baselines and team review, optional adapters for uninstrumentable
+frameworks, and additional product-owned coverage can build on these contracts.
+A dedicated domain remains optional; the existing Vohux publication satisfies
+the requirement for a reachable public product/docs surface.
