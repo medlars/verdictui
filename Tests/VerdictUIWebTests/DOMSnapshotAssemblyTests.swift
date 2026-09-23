@@ -36,6 +36,138 @@ final class DOMSnapshotAssemblyTests: XCTestCase {
                                      context: LintContext(viewport: viewport)).status, .pass)
     }
 
+    private func fragmentedSnapshot(
+        _ frames: [[Double]], tag: String = "#text", nodeType: Int = 3,
+        textBoxRows: [Int] = [], opacity: String = "1", zIndex: String = "auto"
+    ) -> [String: CDPValue] {
+        let integers: ([Int]) -> CDPValue = { .array($0.map { .integer(Int64($0)) }) }
+        let rectangles: ([[Double]]) -> CDPValue = { .array($0.map { .array($0.map(CDPValue.number)) }) }
+        return [
+            "strings": .array(["#document", tag, "", "Save", "block", "visible", opacity, zIndex].map(CDPValue.string)),
+            "documents": .array([.object([
+                "nodes": .object([
+                    "parentIndex": integers([-1, 0]), "nodeType": integers([9, nodeType]),
+                    "nodeName": integers([0, 1]), "nodeValue": integers([2, nodeType == 3 ? 3 : 2]),
+                    "backendNodeId": integers([1, 2]), "attributes": .array([.array([]), .array([])]),
+                ]),
+                "layout": .object([
+                    "nodeIndex": integers(Array(repeating: 1, count: frames.count)),
+                    "bounds": rectangles(frames),
+                    "styles": .array(Array(repeating: integers([4, 5, 6, 7]), count: frames.count)),
+                ]),
+                "textBoxes": .object([
+                    "layoutIndex": integers(textBoxRows),
+                    "bounds": rectangles(textBoxRows.map { frames[$0] }),
+                ]),
+            ])]),
+        ]
+    }
+
+    func testMeasuredPseudoElementCanHaveMultipleLayoutRows() throws {
+        // Reduced from Chrome's capture of the published VerdictUI page:
+        // ::before has a full-page box plus an empty anonymous layout child.
+        let payload = fragmentedSnapshot(
+            [[0, 0, 1280, 900], [0, 0, 0, 0]], tag: "::before", nodeType: 1,
+            opacity: "0.02", zIndex: "9999"
+        )
+        let tree = try DOMSnapshotAssembly.assemble(payload, viewport: viewport)
+        XCTAssertEqual(tree.children.count, 1)
+        let node = try XCTUnwrap(tree.children.first)
+        XCTAssertEqual(node.frame, Rect(x: 0, y: 0, width: 1280, height: 900))
+        XCTAssertEqual(node.attributes["web.tag"], .string("::before"))
+        XCTAssertEqual(node.attributes["web.backendID"], .number(2))
+        XCTAssertTrue(node.isVisible)
+        XCTAssertEqual(node.zIndex, 9999)
+        XCTAssertNil(node.text)
+    }
+
+    func testLayoutFragmentsPreserveUnionTextAndLayoutRowTextBoxes() throws {
+        var payload = fragmentedSnapshot(
+            [[30, 40, 35, 20], [20, 70, 50, 20], [35, 45, 10, 10]], textBoxRows: [0, 1]
+        )
+        guard case var .array(documents) = payload["documents"],
+            case var .object(document) = documents[0] else { return XCTFail("invalid fixture") }
+        document["scrollOffsetX"] = .number(5)
+        document["scrollOffsetY"] = .number(10)
+        documents[0] = .object(document); payload["documents"] = .array(documents)
+        let tree = try DOMSnapshotAssembly.assemble(payload, viewport: viewport)
+        XCTAssertEqual(tree.children.count, 1, "layout fragments must not duplicate DOM identities")
+        let node = try XCTUnwrap(tree.children.first)
+        XCTAssertEqual(node.id, "web/2")
+        XCTAssertEqual(node.text, "Save")
+        XCTAssertEqual(node.frame, Rect(x: 15, y: 30, width: 50, height: 50))
+        XCTAssertEqual(node.textMetrics, TextMetrics(intrinsicWidth: 85, renderedLineCount: 2, idealLineCount: 2))
+        XCTAssertEqual(node.attributes["web.inputX"], .number(15))
+    }
+
+    func testEmptyLayoutFragmentsDoNotExpandDisplacedGeometry() throws {
+        let nonempty: [Double] = [100, 200, 30, 20]
+        let empty: [[Double]] = [[0, 0, 0, 0], [0, 0, 10, 0], [0, 0, 0, 10]]
+        for frames in [[nonempty] + empty, empty + [nonempty]] {
+            let tree = try DOMSnapshotAssembly.assemble(fragmentedSnapshot(frames), viewport: viewport)
+            XCTAssertEqual(tree.children.first?.frame, Rect(x: 100, y: 200, width: 30, height: 20))
+        }
+        let emptyTree = try DOMSnapshotAssembly.assemble(
+            fragmentedSnapshot([[60, 70, 0, 0], [0, 0, 0, 0]]), viewport: viewport
+        )
+        XCTAssertEqual(emptyTree.children.first?.frame, Rect(x: 60, y: 70, width: 0, height: 0))
+    }
+
+    func testDuplicateLayoutRowsStillValidateEveryRectangleAndStyle() {
+        for invalid in [[Double.nan, 0, 0, 0], [0, 0, -1, 0], [0, 0, 1]] {
+            XCTAssertThrowsError(try DOMSnapshotAssembly.assemble(
+                fragmentedSnapshot([[10, 20, 30, 40], invalid]), viewport: viewport
+            ))
+        }
+        for style in [CDPValue.array([]), .array([.integer(4), .integer(5), .integer(6), .integer(99)]),
+                      .array([.integer(4), .integer(5), .integer(5), .integer(7)])] {
+            var payload = fragmentedSnapshot([[10, 20, 30, 40], [0, 0, 0, 0]])
+            guard case var .array(documents) = payload["documents"],
+                case var .object(document) = documents[0], case var .object(layout) = document["layout"],
+                case var .array(styles) = layout["styles"] else { return XCTFail("invalid fixture") }
+            styles[1] = style; layout["styles"] = .array(styles)
+            document["layout"] = .object(layout); documents[0] = .object(document)
+            payload["documents"] = .array(documents)
+            XCTAssertThrowsError(try DOMSnapshotAssembly.assemble(payload, viewport: viewport))
+        }
+    }
+
+    func testLayoutRowBudgetStillAppliesWhenDOMIndicesRepeat() {
+        let payload = fragmentedSnapshot(Array(repeating: [10, 20, 30, 40], count: 100_001))
+        XCTAssertThrowsError(try DOMSnapshotAssembly.assemble(payload, viewport: viewport)) { error in
+            XCTAssertTrue(String(describing: error).contains("oversized layout index column"))
+        }
+    }
+
+    func testFiniteRectangleInputsCannotOverflowDerivedGeometry() {
+        let large = Double.greatestFiniteMagnitude
+        for frames in [
+            [[-large, 0, 1, 1], [large, 0, 1, 1]],
+            [[0, -large, 1, 1], [0, large, 1, 1]],
+            [[large, 0, large, 1]],
+            [[0, large, 1, large]],
+        ] {
+            XCTAssertThrowsError(try DOMSnapshotAssembly.assemble(fragmentedSnapshot(frames), viewport: viewport))
+        }
+        for axis in ["scrollOffsetX", "scrollOffsetY"] {
+            var payload = fragmentedSnapshot([[large, large, 1, 1]])
+            guard case var .array(documents) = payload["documents"],
+                case var .object(document) = documents[0] else { return XCTFail("invalid fixture") }
+            document[axis] = .number(-large)
+            documents[0] = .object(document); payload["documents"] = .array(documents)
+            XCTAssertThrowsError(try DOMSnapshotAssembly.assemble(payload, viewport: viewport))
+        }
+    }
+
+    func testTextBoxLineCoordinatesOutsideIntegerRangeFailWithoutTrapping() {
+        for y in [1e20, 1e308, -1e20, -1e308] {
+            let payload = fragmentedSnapshot([[0, y, 1, 1]], textBoxRows: [0])
+            XCTAssertThrowsError(try DOMSnapshotAssembly.assemble(payload, viewport: viewport)) { error in
+                XCTAssertTrue(String(describing: error).contains("text box line coordinate out of range"))
+            }
+        }
+    }
+
     func testImplicitAndAriaRolesAreMapped() {
         XCTAssertEqual(DOMSnapshotAssembly.role(tag: "input", attributes: ["type": "password"]), .textField)
         XCTAssertEqual(DOMSnapshotAssembly.role(tag: "input", attributes: ["type": "checkbox"]), .toggle)

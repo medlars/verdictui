@@ -7,6 +7,92 @@ _TEST = "VerdictUIWebTests."
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="web fragmented layout duplicates are rejected again",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old="guard parents.indices.contains(index) else {",
+        new="guard parents.indices.contains(index), geometry[index] == nil else {",
+        test=_TEST + "DOMSnapshotAssemblyTests/testMeasuredPseudoElementCanHaveMultipleLayoutRows",
+    ),
+    Mutation(
+        name="web fragmented layout later geometry is discarded",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old="geometry[index] = (try union(previous, shifted), style)",
+        new="geometry[index] = (previous, style)",
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/testLayoutFragmentsPreserveUnionTextAndLayoutRowTextBoxes",
+    ),
+    Mutation(
+        name="web fragmented layout trailing empty boxes expand the union",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old="if second.isEmpty { return first }",
+        new="if false { return first }",
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/testEmptyLayoutFragmentsDoNotExpandDisplacedGeometry",
+    ),
+    Mutation(
+        name="web fragmented layout leading empty boxes expand the union",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old="if first.isEmpty { return second }",
+        new="if false { return second }",
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/testEmptyLayoutFragmentsDoNotExpandDisplacedGeometry",
+    ),
+    Mutation(
+        name="web fragmented layout conflicting styles are accepted",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old="guard previousStyle == style else",
+        new="guard previousStyle.count == style.count else",
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/testDuplicateLayoutRowsStillValidateEveryRectangleAndStyle",
+    ),
+    Mutation(
+        name="web fragmented layout row budget is removed",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old="rawLayoutNodes.count <= 100_000",
+        new="true",
+        test=_TEST + "DOMSnapshotAssemblyTests/testLayoutRowBudgetStillAppliesWhenDOMIndicesRepeat",
+    ),
+    Mutation(
+        name="web fragmented layout union overflow is accepted",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old='throw malformed("layout fragment union overflow")',
+        new="return first",
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/testFiniteRectangleInputsCannotOverflowDerivedGeometry",
+    ),
+    Mutation(
+        name="web fragmented layout rectangle endpoint overflow is accepted",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old='throw malformed("rectangle coordinate overflow")',
+        new="return Rect(x: 0, y: 0, width: 0, height: 0)",
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/testFiniteRectangleInputsCannotOverflowDerivedGeometry",
+    ),
+    Mutation(
+        name="web fragmented layout translated coordinate overflow is accepted",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old='throw malformed("layout coordinate overflow")',
+        new="return []",
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/testFiniteRectangleInputsCannotOverflowDerivedGeometry",
+    ),
+    Mutation(
+        name="web fragmented layout text line overflow is accepted",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old='throw malformed("text box line coordinate out of range")',
+        new="return 0",
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/testTextBoxLineCoordinatesOutsideIntegerRangeFailWithoutTrapping",
+    ),
+    Mutation(
+        name="web fragmented layout text boxes use DOM indices as layout rows",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old="textBoxes[layoutNodes[index], default: []].append",
+        new="textBoxes[index, default: []].append",
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/testLayoutFragmentsPreserveUnionTextAndLayoutRowTextBoxes",
+    ),
+    Mutation(
         name="web loopback fixture waits for reverse DNS before listening",
         path="Tests/VerdictUIWebTests/Fixtures/server.py",
         old="socketserver.TCPServer.server_bind(self)",
@@ -114,7 +200,7 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="web malformed layout indices silently disappear",
         path=_BASE + "DOMSnapshotAssembly.swift",
-        old='throw malformed("invalid or duplicate layout index")',
+        old='throw malformed("invalid layout index")',
         new="return []",
         test=_TEST + "DOMSnapshotAssemblyTests/testMalformedColumnsAndInvalidTopologyFailClosed",
     ),
