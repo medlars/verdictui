@@ -77,6 +77,18 @@ final class NativeInputIntegrationTests: XCTestCase {
         let rows = (CGWindowListCopyWindowInfo(.optionAll, kCGNullWindowID) as? [[String: Any]]) ?? []
         let ownRows = rows.filter { ($0[kCGWindowOwnerPID as String] as? Int32) == initial.pid }
         XCTAssertFalse(ownRows.isEmpty, "positive control: the fixture really has a window")
+        let measuredWindow = try XCTUnwrap(ownRows.first {
+            ($0[kCGWindowNumber as String] as? Int) == initial.windowID
+        }, "the actual fixture window must be present in the window-server inventory")
+        XCTAssertGreaterThan(initial.windowID, 0)
+        XCTAssertEqual(measuredWindow[kCGWindowAlpha as String] as? Double, 0)
+        let evidence: [String: Any] = [
+            "mode": mode, "pid": initial.pid, "windowID": initial.windowID,
+            "windowCount": ownRows.count, "windowServerAlpha": measuredWindow[kCGWindowAlpha as String] ?? NSNull(),
+            "windowServerOnscreen": measuredWindow[kCGWindowIsOnscreen as String] ?? NSNull(),
+        ]
+        let evidenceData = try JSONSerialization.data(withJSONObject: evidence, options: .sortedKeys)
+        print("native-fixture-window-evidence \(String(decoding: evidenceData, as: UTF8.self))")
         let invisible = ownRows.allSatisfy {
             ($0[kCGWindowAlpha as String] as? Double) == 0
                 || ($0[kCGWindowIsOnscreen as String] as? Bool) == false
@@ -89,37 +101,37 @@ final class NativeInputIntegrationTests: XCTestCase {
 
         let input = NativeInput()
         let point = try NativeInput.Point(x: initial.x, y: initial.y)
-        try assertCursorUnchanged { try input.type("Hello🦉", to: initial.pid) }
+        try await assertCursorUnchanged { try input.type("Hello🦉", to: initial.pid) }
         _ = try await awaitState(output) { $0.text == "Hello🦉" }
-        try assertCursorUnchanged { try input.key(.init("control+z"), to: initial.pid) }
+        try await assertCursorUnchanged { try input.key(.init("control+z"), to: initial.pid) }
         _ = try await awaitState(output) { $0.keyChords == 1 }
-        try assertCursorUnchanged { try input.click(at: point, to: initial.pid) }
+        try await assertCursorUnchanged { try input.click(at: point, to: initial.pid) }
         _ = try await awaitState(output) { $0.clicks == 1 }
         let destination = try NativeInput.Point(x: point.x + 30, y: point.y + 10)
-        try assertCursorUnchanged { try input.drag(from: point, to: destination, pid: initial.pid) }
+        try await assertCursorUnchanged { try input.drag(from: point, to: destination, pid: initial.pid) }
         _ = try await awaitState(output) { $0.dragEvents > 0 && $0.clicks == 2 }
 
         // The AX-selected path reaches the SAME driver. A successful post alone
         // would not satisfy these assertions; the app must change its state.
         let tree = try AXReader.readTree(pid: initial.pid)
         let canvas = try XCTUnwrap(tree.flattened().first { $0.text == "Native input canvas" })
-        try assertCursorUnchanged {
+        try await assertCursorUnchanged {
             try AXReader.act(pid: initial.pid, atPath: canvas.structuralPath, action: .click)
         }
         _ = try await awaitState(output) { $0.clicks == 3 }
-        try assertCursorUnchanged {
+        try await assertCursorUnchanged {
             try AXReader.act(pid: initial.pid, atPath: canvas.structuralPath, action: .type("!"))
         }
         _ = try await awaitState(output) { $0.text == "Hello🦉!" }
-        try assertCursorUnchanged {
+        try await assertCursorUnchanged {
             try AXReader.act(pid: initial.pid, atPath: canvas.structuralPath, action: .key(.init("control+z")))
         }
         _ = try await awaitState(output) { $0.keyChords == 2 }
-        try assertCursorUnchanged {
+        try await assertCursorUnchanged {
             try AXReader.act(pid: initial.pid, atPath: canvas.structuralPath, action: .perform(kAXPressAction))
         }
         _ = try await awaitState(output) { $0.clicks == 4 }
-        try assertCursorUnchanged {
+        try await assertCursorUnchanged {
             try AXReader.act(pid: initial.pid, atPath: canvas.structuralPath, action: .hover)
         }
         _ = try await awaitState(output) { $0.mouseMoves > 0 }
@@ -133,8 +145,26 @@ final class NativeInputIntegrationTests: XCTestCase {
         XCTAssertEqual(NSWorkspace.shared.frontmostApplication?.processIdentifier, foreground)
     }
 
-    private func assertCursorUnchanged(_ action: () throws -> Void) throws {
-        let before = try XCTUnwrap(CGEvent(source: nil)?.location)
+    private func assertCursorUnchanged(_ action: () throws -> Void) async throws {
+        // The owner may be using their pointer while this test runs. Wait for
+        // a brief idle interval without intercepting or suppressing their input.
+        let deadline = ContinuousClock.now.advanced(by: .seconds(3))
+        var stationarySince = ContinuousClock.now
+        var before = try XCTUnwrap(CGEvent(source: nil)?.location)
+        while ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(25))
+            let current = try XCTUnwrap(CGEvent(source: nil)?.location)
+            if current != before {
+                before = current
+                stationarySince = ContinuousClock.now
+            }
+            if stationarySince.duration(to: .now) >= .milliseconds(200) { break }
+        }
+        guard stationarySince.duration(to: .now) >= .milliseconds(200) else {
+            throw NSError(
+                domain: "VerdictUINativeFixture", code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "owner pointer did not become stationary for the input check"])
+        }
         try action()
         let after = try XCTUnwrap(CGEvent(source: nil)?.location)
         XCTAssertEqual(after, before, "targeted input must never move the owner's pointer")

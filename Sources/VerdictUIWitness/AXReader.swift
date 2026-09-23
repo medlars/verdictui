@@ -102,8 +102,8 @@ public enum AXReader {
 
     /// True when this process may read accessibility trees.
     ///
-    /// Necessary but **not sufficient** — see ``Failure/noWindow(axError:)``.
-    /// Callers must treat a failed read as authoritative over this flag.
+    /// Advisory only — an actual accessibility read/action is authoritative.
+    /// This flag is useful for guidance but never gates a read or action.
     public static var isTrusted: Bool { AXIsProcessTrusted() }
 
     /// Press the element at `path` — the identity ``readTree(pid:)`` assigns.
@@ -125,7 +125,6 @@ public enum AXReader {
     public static func press(
         pid: pid_t, atPath path: String, surface: Surface = .window(0)
     ) throws {
-        guard isTrusted else { throw Failure.notTrusted }
         let content = try anchor(pid: pid, surface: surface).element
 
         guard let target = element(at: path, from: content) else {
@@ -154,7 +153,7 @@ public enum AXReader {
             guard let open = segment.lastIndex(of: "["), segment.hasSuffix("]") else { return nil }
             let roleName = String(segment[segment.startIndex..<open])
             let digits = segment[segment.index(after: open)..<segment.index(before: segment.endIndex)]
-            guard let index = Int(digits) else { return nil }
+            guard let index = structuralPathIndex(String(digits)) else { return nil }
 
             let children = (copy(current, kAXChildrenAttribute) as? [AXUIElement]) ?? []
             guard index < children.count else { return nil }
@@ -167,6 +166,12 @@ public enum AXReader {
             current = child
         }
         return current
+    }
+
+    /// Reject a negative index before an AX child lookup or array subscript.
+    static func structuralPathIndex(_ digits: String) -> Int? {
+        guard let index = Int(digits), index >= 0 else { return nil }
+        return index
     }
 
     /// One readable surface of a running app.
@@ -219,8 +224,10 @@ public enum AXReader {
     /// cannot drift onto different anchors — which is half of what CIS-3DDA018A
     /// was.
     static func anchor(pid: pid_t, surface: Surface) throws -> Anchor {
+        try requireApplicationPID(pid)
         switch surface {
         case .window(let index):
+            try requireWindowIndex(index)
             let all = try windows(of: pid)
             guard index < all.count else {
                 throw Failure.surfaceNotFound(
@@ -285,6 +292,7 @@ public enum AXReader {
     /// select one (CIS-DD4A93B7); the application-element guard is applied to
     /// each entry rather than only to the first.
     static func windows(of pid: pid_t) throws -> [AXUIElement] {
+        try requireApplicationPID(pid)
         let app = AXUIElementCreateApplication(pid)
         var raw: CFTypeRef?
         let status = AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &raw)
@@ -323,8 +331,6 @@ public enum AXReader {
     ///   declines. Those are opposite facts for the caller, so they are opposite
     ///   errors — a single "press failed" would collapse them.
     public static func press(pid: pid_t, named name: String, surface: Surface = .window(0)) throws {
-        guard isTrusted else { throw Failure.notTrusted }
-
         let resolved = try anchor(pid: pid, surface: surface)
         let root = resolved.window ?? resolved.element
 
@@ -406,7 +412,7 @@ public enum AXReader {
     /// the extras (status-item) menu bar. Menu bars the app does not publish are
     /// omitted; windows that fail to read are included with their error.
     public static func readAllSurfaces(pid: pid_t) throws -> [SurfaceTree] {
-        guard isTrusted else { throw Failure.notTrusted }
+        try requireApplicationPID(pid)
         var surfaces: [Surface] = []
         var out: [SurfaceTree] = []
         do {
@@ -443,8 +449,6 @@ public enum AXReader {
 
     /// Read one surface with the geometry needed to align a capture to it.
     public static func readSurface(pid: pid_t, surface: Surface) throws -> SurfaceRead {
-        guard isTrusted else { throw Failure.notTrusted }
-
         let resolved = try anchor(pid: pid, surface: surface)
 
         // Anchor on the hosting group rather than the window: the window frame
@@ -685,6 +689,14 @@ public enum AXReader {
     }
 
     // MARK: - AX primitives
+
+    static func requireWindowIndex(_ index: Int) throws {
+        guard index >= 0 else { throw Failure.surfaceNotFound("window:\(index)") }
+    }
+
+    private static func requireApplicationPID(_ pid: pid_t) throws {
+        guard pid > 0 else { throw Failure.hostUnavailable("target PID must be greater than zero") }
+    }
 
     static func copy(_ element: AXUIElement, _ attribute: String) -> CFTypeRef? {
         var value: CFTypeRef?

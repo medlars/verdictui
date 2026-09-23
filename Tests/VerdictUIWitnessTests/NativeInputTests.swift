@@ -163,4 +163,20 @@ final class NativeInputTests: XCTestCase {
         try input.type(text, to: 42)
         XCTAssertEqual(observed, text)
     }
+
+    func testAnAXSelectedWindowIsNotReplacedByAnOverlappingWindow() {
+        let chosen = CGRect(x: 100, y: 100, width: 300, height: 300)
+        func window(_ pid: Int32, _ id: UInt32, _ frame: CGRect) -> [String: Any] {
+            [kCGWindowOwnerPID as String: pid, kCGWindowNumber as String: id,
+             kCGWindowBounds as String: frame.dictionaryRepresentation]
+        }
+        let front = window(42, 10, CGRect(x: 50, y: 50, width: 500, height: 500))
+        let target = window(42, 20, chosen)
+        let otherProcess = window(99, 30, chosen)
+        XCTAssertEqual(
+            NativeInput.matchingWindow(pid: 42, frame: chosen, windows: [front, otherProcess, target]), 20)
+        XCTAssertNil(NativeInput.matchingWindow(pid: 42, frame: chosen, windows: [front, otherProcess]))
+        XCTAssertNil(NativeInput.matchingWindow(pid: 42, frame: chosen, windows: [target, target]),
+            "indistinguishable windows must be refused, never chosen arbitrarily")
+    }
 }

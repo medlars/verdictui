@@ -25,7 +25,9 @@ layout-independent Unicode text.
 The driver never activates an app or posts into the global input stream. It
 addresses events to the requested PID and window; unavailable input permission,
 missing geometry, invalid coordinates, and failed focus writes produce an
-unavailable result. Input submission has no OS delivery acknowledgement, so
+unavailable result. If multiple windows of that process have indistinguishable
+geometry, pointer input is refused because the selected AX surface cannot be
+matched uniquely to a window-server ID. Input submission has no OS delivery acknowledgement, so
 read the resulting tree and assert the requested outcome before claiming an
 action succeeded. Live UI code can itself open a window or activate another app
 in response to an action; the driver cannot suppress an application's behavior.
