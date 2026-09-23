@@ -261,7 +261,9 @@ final class WebFrameIntegrationTests: XCTestCase {
         do {
             for (route, escapes) in [("absolute-hidden-static", true), ("absolute-auto-static", true),
                 ("fixed-hidden-static", true), ("fixed-auto-static", true), ("absolute-hidden-relative", false),
-                ("fixed-hidden-transform", false), ("containing-same", true), ("containing-cross", true)] {
+                ("fixed-hidden-transform", false), ("absolute-hidden-translate", false), ("absolute-hidden-rotate", false),
+                ("absolute-hidden-scale", false), ("absolute-hidden-will-translate", false),
+                ("containing-same", true), ("containing-cross", true)] {
                 _ = try await manager.open(profile: "containing", url: XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/\(route)")))
                 let report = try await manager.verify(profile: "containing")
                 let nodes = try XCTUnwrap(report.tree).flattened()
