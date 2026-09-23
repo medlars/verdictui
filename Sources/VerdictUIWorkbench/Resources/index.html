@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>VerdictUI</title>
+  <link rel="stylesheet" href="workbench.css">
+  <script src="workbench.js" defer></script>
+</head>
+<body>
+<svg class="icon-library" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><defs>
+  <symbol id="i-lens" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m16 16 5 5M8 11l2 2 4-4"/></symbol>
+  <symbol id="i-checks" viewBox="0 0 24 24"><path d="m3 6 2 2 3-4m3 2h10M3 13l2 2 3-4m3 2h10M3 20l2 2 3-4m3 2h10"/></symbol>
+  <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 10a9 9 0 1 1 1 7M3 4v6h6m3-4v6l4 2"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7V5h6l2 3h10v12H3Zm0 1h8"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-5-5 5 5-5 5"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7Z"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="m12 3 10 18H2Zm0 6v5m0 3h.01"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+  <symbol id="i-code" viewBox="0 0 24 24"><path d="m8 5-6 7 6 7m8-14 6 7-6 7m-3-17-2 20"/></symbol>
+</defs></svg>
+<div class="app-shell">
+  <aside class="sidebar" aria-label="Workspace navigation">
+    <div class="brand"><span class="brand-mark" aria-hidden="true">V<span>·</span></span><span>Verdict<span class="brand-ui">UI</span></span></div>
+    <nav class="nav-list" aria-label="Views">
+      <button class="nav-item selected" data-view="overview" aria-current="page"><svg><use href="#i-lens"/></svg>Verification</button>
+      <button class="nav-item" data-view="checks"><svg><use href="#i-checks"/></svg>Checks<span id="nav-check-count" class="nav-count">0</span></button>
+      <button class="nav-item" data-view="history"><svg><use href="#i-history"/></svg>History</button>
+    </nav>
+    <div class="project-nav"><div class="sidebar-label">Projects<button id="choose-project-icon" class="icon-button" aria-label="Choose project folder"><svg><use href="#i-plus"/></svg></button></div><div id="project-list" class="project-list"></div><p id="no-projects" class="sidebar-empty">Your projects belong here.</p></div>
+    <div class="sidebar-bottom"><button id="choose-project" class="folder-button"><svg><use href="#i-folder"/></svg>Open a project</button><div class="engine-line"><span id="connection-dot" class="connection-dot"></span><span id="connection-label">Connecting…</span><span id="version"></span></div></div>
+  </aside>
+  <main id="main-content">
+    <header class="workspace-header"><div class="project-heading"><p class="eyebrow">YOUR VERIFICATION WORKSPACE</p><h1 id="project-name">A clearer view of your UI.</h1><p id="project-path" class="project-path">Choose a project to begin.</p></div><button id="run-checks" class="button primary" disabled><svg><use href="#i-play"/></svg><span>Run checks</span></button></header>
+    <div id="notice" class="notice" role="status" hidden></div>
+    <section id="view-overview" class="view" aria-label="Verification">
+      <div class="verification-stage" id="verification-stage" data-status="idle">
+        <div class="lens-scene" aria-hidden="true"><div class="lens-shadow"></div><div class="lens-halo"></div><div class="lens-body"><div class="lens-edge"></div><div class="lens-glass"></div><div class="lens-track"></div><div class="lens-orbit orbit-one"><span></span></div><div class="lens-orbit orbit-two"><span></span></div><div class="lens-core"><svg viewBox="0 0 80 80"><path d="M18 23 37 58 62 18"/></svg></div><div class="lens-shine"></div></div><span class="lens-caption">EVIDENCE, IN FOCUS</span></div>
+        <div class="verification-copy"><div id="run-status" class="status-label" role="status" aria-live="polite"><span class="status-dot"></span><span id="status-label">Ready when you are</span></div><h2 id="status-title">Know what<br>holds up.</h2><p id="status-detail">Run your product’s checks. See what passed, what needs attention, and exactly where.</p><div id="run-progress" class="run-progress" hidden><div class="progress-copy"><span id="progress-name">Preparing checks</span><span id="progress-count">0 / 0 completed</span></div><progress id="progress-bar" value="0" max="1" aria-label="Checks completed"></progress></div><div class="stage-actions"><button id="setup-checks" class="button secondary"><span>Set up checks</span><svg><use href="#i-arrow"/></svg></button><button id="cancel-run" class="button secondary" hidden><svg><use href="#i-stop"/></svg><span>Cancel run</span></button></div><p id="stage-footnote" class="stage-footnote">Only declared checks are measured.</p></div>
+      </div>
+      <section class="evidence-panel" aria-labelledby="evidence-heading"><div class="section-heading"><div><h2 id="evidence-heading">Evidence</h2><p id="evidence-description">The result behind every verdict.</p></div><span id="finding-count" class="quiet-badge">No run yet</span></div><div id="check-results" class="check-results"></div><div id="findings" class="findings"></div><div id="evidence-empty" class="empty-state"><span class="empty-icon"><svg><use href="#i-lens"/></svg></span><div><h3>Start with your own product.</h3><p>Add a project and declare the checks that matter. Your real results will appear here.</p></div></div></section>
+    </section>
+    <section id="view-checks" class="view" aria-labelledby="checks-heading" hidden><div class="section-heading page-section-heading"><div><p class="eyebrow">EXPLICIT COVERAGE</p><h2 id="checks-heading">What should we verify?</h2><p>Choose the exact surfaces of your product to check.</p></div><button id="add-check" class="button secondary"><svg><use href="#i-plus"/></svg>Add check</button></div><form id="checks-form"><div id="check-editors"></div><div id="checks-empty" class="empty-state checks-empty"><span class="empty-icon"><svg><use href="#i-checks"/></svg></span><div><h3>No checks declared yet.</h3><p>Add a scenario, web page, AppKit subject, or running app. An empty list never counts as a pass.</p></div></div><div class="save-bar"><p id="save-status">No unsaved changes</p><button id="save-checks" class="button primary" type="submit" disabled>Save checks</button></div></form></section>
+    <section id="view-history" class="view" aria-labelledby="history-heading" hidden><div class="section-heading page-section-heading"><div><p class="eyebrow">YOUR VERIFICATION RECORD</p><h2 id="history-heading">Every run, in context.</h2><p>Saved results for the selected project.</p></div></div><div id="history-list" class="history-list"></div><div id="history-empty" class="empty-state"><span class="empty-icon"><svg><use href="#i-history"/></svg></span><div><h3>A fresh page.</h3><p>Completed runs will be saved here by the desktop app.</p></div></div></section>
+    <footer class="workspace-footer"><span>VerdictUI</span><span>Real products. Inspectable evidence.</span></footer>
+  </main>
+</div>
+</body>
+</html>
