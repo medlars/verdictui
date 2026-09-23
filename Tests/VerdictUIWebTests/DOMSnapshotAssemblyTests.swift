@@ -94,7 +94,7 @@ final class DOMSnapshotAssemblyTests: XCTestCase {
 
     private func containingBlockSnapshot(position: String = "absolute", middlePosition: String = "static",
         outerTag: String = "DIV", outerTransform: String = "none", middleTransform: String = "none",
-        unlaidMiddle: Bool = false) -> [String: CDPValue] {
+        unlaidMiddle: Bool = false, outerExtra: [Int: String] = [:], middleExtra: [Int: String] = [:]) -> [String: CDPValue] {
         var payload = snapshot()
         guard case var .array(strings) = payload["strings"], case var .array(documents) = payload["documents"],
               case var .object(document) = documents[0], case let .object(layout) = document["layout"],
@@ -106,6 +106,8 @@ final class DOMSnapshotAssemblyTests: XCTestCase {
         middleStyle[4] = intern(middlePosition); middleStyle[9] = intern(middleTransform)
         middleStyle[7] = intern("hidden"); middleStyle[8] = intern("hidden")
         positionedStyle[4] = intern(position)
+        for (index, value) in outerExtra { outerStyle[index] = intern(value) }
+        for (index, value) in middleExtra { middleStyle[index] = intern(value) }
         let ints: ([Int]) -> CDPValue = { .array($0.map { .integer(Int64($0)) }) }
         document["nodes"] = .object([
             "parentIndex": ints([-1, 0, 1, 2, 3]), "nodeType": ints([9, 1, 1, 1, 3]),
@@ -153,6 +155,19 @@ final class DOMSnapshotAssemblyTests: XCTestCase {
             XCTAssertEqual(button.attributes["web.containingBlockDepth"], .number(Double(expected)), "\(position)/\(middle)/\(outerTransform)/\(middleTransform)")
             let text = try XCTUnwrap(button.children.first)
             XCTAssertEqual(text.attributes["web.positioningRootDepth"], .number(3), "text must inherit, not create a positioned box from its inherited style")
+        }
+    }
+
+    func testContainingBlockDepthRecognizesMeasuredIndividualTransforms() throws {
+        for style in [[33: "0px"], [34: "0deg"], [35: "1"], [13: "translate"]] {
+            for position in ["absolute", "fixed"] {
+                for inner in [true, false] {
+                    let tree = try DOMSnapshotAssembly.assemble(containingBlockSnapshot(position: position,
+                        outerExtra: inner ? [:] : style, middleExtra: inner ? style : [:]), viewport: viewport)
+                    let button = try XCTUnwrap(tree.flattened().first { $0.attributes["web.backendID"] == .number(4) })
+                    XCTAssertEqual(button.attributes["web.containingBlockDepth"], .number(inner ? 2 : 1), "\(style)/\(position)/\(inner)")
+                }
+            }
         }
     }
 

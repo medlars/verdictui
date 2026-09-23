@@ -67,6 +67,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             "/fixed-auto-static",
             "/absolute-hidden-relative",
             "/fixed-hidden-transform",
+            "/absolute-hidden-translate",
+            "/absolute-hidden-rotate",
+            "/absolute-hidden-scale",
+            "/absolute-hidden-will-translate",
         ):
             controls = {
                 "/absolute-hidden-static": ("absolute", "hidden", "static", "position:relative"),
@@ -84,6 +88,30 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "hidden",
                     "static;transform:translateX(0)",
                     "transform:translateX(0)",
+                ),
+                "/absolute-hidden-translate": (
+                    "absolute",
+                    "hidden",
+                    "static;translate:0px",
+                    "position:relative",
+                ),
+                "/absolute-hidden-rotate": (
+                    "absolute",
+                    "hidden",
+                    "static;rotate:0deg",
+                    "position:relative",
+                ),
+                "/absolute-hidden-scale": (
+                    "absolute",
+                    "hidden",
+                    "static;scale:1",
+                    "position:relative",
+                ),
+                "/absolute-hidden-will-translate": (
+                    "absolute",
+                    "hidden",
+                    "static;will-change:translate",
+                    "position:relative",
                 ),
             }
             position, overflow, inner, outer = controls[self.path]
