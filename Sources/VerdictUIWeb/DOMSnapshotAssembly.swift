@@ -121,14 +121,17 @@ public enum DOMSnapshotAssembly {
                     attrs[try string(rawAttrs[pair], in: strings)] = try string(rawAttrs[pair + 1], in: strings)
                 }
                 let rawText = types[index] == 3 ? try string(values[index], in: strings) : nil
-                let role = role(tag: tag, attributes: attrs)
+                let mappedRole = role(tag: tag, attributes: attrs)
+                let role: Role
+                if case let .custom(raw) = mappedRole { role = .custom(WebRedaction.clean(raw, secrets: secrets)) }
+                else { role = mappedRole }
                 let visible = style[0] != "none" && style[1] != "hidden" && style[1] != "collapse"
                     && (Double(style[2]) ?? 1) > 0
                 if !visible { descendants = descendants.map(hidden) }
                 // Document/body boxes are browser scaffolding, not evidence. An
                 // empty page must retain the kernel's vacuous-verdict failure.
                 if tag != "html" && tag != "body" && !(types[index] == 3 && rawText?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false) {
-                    var metadata: [String: AttributeValue] = ["web.tag": .string(tag), "web.backendID": .number(Double(backend[index]))]
+                    var metadata: [String: AttributeValue] = ["web.tag": .string(WebRedaction.clean(tag, secrets: secrets)), "web.backendID": .number(Double(backend[index]))]
                     metadata["web.frame"] = .string(frameID)
                     if let embedded = embedded[index] { metadata["web.documentIndex"] = .number(Double(embedded)) }
                     if tag == "iframe" || tag == "frame" {

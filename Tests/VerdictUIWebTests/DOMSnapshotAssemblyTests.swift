@@ -96,4 +96,18 @@ final class DOMSnapshotAssemblyTests: XCTestCase {
         XCTAssertEqual(tree.children.first?.children.first?.isVisible, false)
     }
 
+    func testCredentialReflectedIntoCustomRoleIsRedacted() throws {
+        let secret = UUID().uuidString
+        var payload = snapshot()
+        guard case var .array(strings) = payload["strings"], case var .array(documents) = payload["documents"],
+            case var .object(document) = documents[0], case var .object(nodes) = document["nodes"],
+            case var .array(attributes) = nodes["attributes"] else { return XCTFail("invalid fixture") }
+        strings += [.string("role"), .string(secret)]
+        attributes[1] = .array([.integer(11), .integer(12)])
+        nodes["attributes"] = .array(attributes); document["nodes"] = .object(nodes)
+        documents[0] = .object(document); payload["documents"] = .array(documents); payload["strings"] = .array(strings)
+        let tree = try DOMSnapshotAssembly.assemble(payload, viewport: viewport, redacting: [secret])
+        XCTAssertFalse(String(decoding: try JSONEncoder().encode(tree), as: UTF8.self).contains(secret))
+    }
+
 }
