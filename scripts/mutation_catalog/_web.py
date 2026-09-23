@@ -348,4 +348,28 @@ MUTATIONS: list[Mutation] = [
         test=_TEST
         + "WebCredentialLifecycleTests/testSessionCloseAwaitsCredentialLookupAndReleasesProfile",
     ),
+    Mutation(
+        name="web shutdown omits opening browser ownership",
+        path=_BASE + "WebSessionManager.swift",
+        old="let pending = launches",
+        new="let pending: [String: Task<WebSession, Error>] = [:]",
+        test=_TEST
+        + "WebOpeningLifecycleTests/testOpeningCancellationAndCloseAllAwaitTheUnpublishedBrowser",
+    ),
+    Mutation(
+        name="web caller cancellation does not cancel its opening browser",
+        path=_BASE + "WebSessionManager.swift",
+        old="} onCancel: { launch.cancel() }",
+        new="} onCancel: {}",
+        test=_TEST
+        + "WebOpeningLifecycleTests/testOpeningCancellationAndCloseAllAwaitTheUnpublishedBrowser",
+    ),
+    Mutation(
+        name="web failed discovery leaves its exact launched child alive",
+        path=_BASE + "HeadlessBrowser.swift",
+        old="owned.signal(SIGKILL)",
+        new="_ = owned",
+        test=_TEST
+        + "WebOpeningLifecycleTests/testMCPSIGTERMAwaitsBrowserStillDiscoveringItsEndpoint",
+    ),
 ]

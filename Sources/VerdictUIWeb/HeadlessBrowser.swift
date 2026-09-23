@@ -96,30 +96,29 @@ public actor HeadlessBrowser {
                 reason: "spawn failed: \(error)")
         }
         let owned = LaunchedBrowserProcess(process: process)
-        var handedOff = false
-        defer { if !handedOff { owned.signal(SIGKILL) } }
-        let deadline = ContinuousClock.now
-            + .seconds(options.discoveryTimeout)
-        while true {
-            try Task.checkCancellation()
-            if let endpoint = DevtoolsEndpoint.read(in: options.profileDirectory) {
-                handedOff = true
-                return HeadlessBrowser(
-                    process: owned,
-                    endpoint: endpoint,
-                    profileDirectory: options.profileDirectory)
+        do {
+            let deadline = ContinuousClock.now + .seconds(options.discoveryTimeout)
+            while true {
+                try Task.checkCancellation()
+                if let endpoint = DevtoolsEndpoint.read(in: options.profileDirectory) {
+                    return HeadlessBrowser(process: owned, endpoint: endpoint,
+                                           profileDirectory: options.profileDirectory)
+                }
+                guard owned.isRunning else {
+                    throw WebBrowserError.launchFailed(reason: "browser died before publishing its endpoint")
+                }
+                guard ContinuousClock.now < deadline else {
+                    throw WebBrowserError.devtoolsNotDiscovered(
+                        profileDirectory: options.profileDirectory.path, within: options.discoveryTimeout)
+                }
+                try await Task.sleep(nanoseconds: 100_000_000)
             }
-            guard owned.isRunning else {
-                throw WebBrowserError.launchFailed(
-                    reason: "browser died before publishing its endpoint")
+        } catch {
+            owned.signal(SIGKILL)
+            guard await awaitOwnedDeath(process: owned, within: 5) else {
+                throw WebBrowserError.processRefusedToDie(pid: owned.pid)
             }
-            guard ContinuousClock.now < deadline else {
-                owned.signal(SIGKILL)
-                throw WebBrowserError.devtoolsNotDiscovered(
-                    profileDirectory: options.profileDirectory.path,
-                    within: options.discoveryTimeout)
-            }
-            try await Task.sleep(nanoseconds: 100_000_000)
+            throw error
         }
     }
 
@@ -214,13 +213,13 @@ public actor HeadlessBrowser {
     public func terminate(grace: TimeInterval = 10) async throws {
         guard process.isRunning else { return }
         process.signal(SIGTERM)
-        if await awaitOwnedDeath(within: grace) { return }
+        if await Self.awaitOwnedDeath(process: process, within: grace) { return }
         process.signal(SIGKILL)
-        if await awaitOwnedDeath(within: 5) { return }
+        if await Self.awaitOwnedDeath(process: process, within: 5) { return }
         throw WebBrowserError.processRefusedToDie(pid: pid)
     }
 
-    private func awaitOwnedDeath(within grace: TimeInterval) async -> Bool {
+    private static func awaitOwnedDeath(process: any BrowserProcessIdentity, within grace: TimeInterval) async -> Bool {
         let deadline = ContinuousClock.now + .seconds(grace)
         while ContinuousClock.now < deadline {
             if !process.isRunning { return true }
