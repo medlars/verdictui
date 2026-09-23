@@ -8,7 +8,10 @@ tool output were not treated as original owner instructions.
 
 The original August founding transcripts were not recovered in the searched
 archives. Their surviving command-history prompts and project decisions are
-leads, not equivalent to complete original conversations. The detailed private
+leads, not equivalent to complete original conversations. A follow-up read of all
+198 surviving August 3–4 history prompts across 27 session IDs did not recover
+the founding instructions; one ambiguous pasted prompt retained only a content
+hash. The detailed private
 source ledger stays outside this public repository.
 
 | Owner requirement | Recorded previously? | Finalization work and required evidence |
@@ -34,11 +37,14 @@ while demo success, partial probes, or the presence of a hook stood in for
 end-to-end product evidence. Release evidence must distinguish supported
 capability, observed scenario coverage, and unavailable measurement.
 
-Release reconciliation: v1.1.0 is published with a notarized desktop archive and
-updated Homebrew CLI. Both installed binaries passed real native/browser
-CLI/MCP artifact acceptance. INS-FAE07628 and INS-402715D8 now cite delivered
-desktop/web evidence; INS-0105EE8B cites the real consumer surfaces. Fleet
-coverage remains scoped by [product-adoption.md](product-adoption.md).
+Release reconciliation: v1.1.1 is published with a notarized desktop archive and
+updated Homebrew CLI. Both installed binaries passed the controlled native/browser
+CLI/MCP artifact gate. Additional public-site checks then exposed valid Chrome
+snapshot cases that the browser parser rejected. The browser instruction
+INS-402715D8 and saved-plan task CTS-E47F57A8 were reopened as partial pending
+repair and installed real-site acceptance. INS-FAE07628 cites delivered desktop
+evidence; INS-0105EE8B cites the real consumer surfaces. Fleet coverage remains
+scoped by [product-adoption.md](product-adoption.md).
 
 The installed background wrapper was also checked, not only the hook script:
 17 supported file-extension edit cases reached an actual configured web check;

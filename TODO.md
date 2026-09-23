@@ -1,11 +1,12 @@
 # VerdictUI TODO
 
 ## P0 — Blocking
+- [ ] (2026-09-23) Real-site browser regressions: valid Chrome pseudo-element layout rows share a DOM node index, and embedded frame owners can be absent from the assembled tree. Both parser repairs and genuine Chrome regressions are verified. Actual pages now render, but ordinary below-fold scrollable content is incorrectly reported as offscreen; correct web lint bounds without weakening displaced/clipped-content checks. Ship/install 1.1.2 only after actual public-page acceptance and final gates.
 - [x] (2026-09-23) Desktop workbench: owner-selected web-rendered macOS app, CleanMyMac-inspired motion, real project checks and evidence, accessible UI verification and packaged installation. Delivered in v1.1.0; signed/notarized desktop and both installed CLI copies verified.
 - [x] (2026-09-23) Complete CTS-E47F57A8 / full saved plan: custom scenario runner, live-app MCP and verified input, web semantic verification and trusted input, isolated sessions, artifact smoke, truthful documentation and installed release. Plan: `docs/finalization-plan.md`. Delivered in v1.1.0; signed/notarized desktop and both installed CLI copies verified.
 
 ## P1 — High Priority
-- [ ] (2026-09-23) Final release verification: eliminate initial ScenarioState publications during view construction with observer/mutation coverage; rerun the unchanged timing contract and full PM without concurrent builds; ship and verify the 1.1.1 patch.
+- [x] (2026-09-23) ScenarioState patch released in 1.1.1: initial view-construction publications removed; strict observer/mutation coverage, unchanged timing contract, full PM Grade A, CI and both installed artifact gates passed. Subsequent real-site browser defects are tracked in the open P0 above.
 - [x] (2026-09-23) CEO/stage_installed_parity: Homebrew and unmanaged CLI upgraded to 1.1.0; both installed binaries passed real native/browser CLI/MCP artifact smoke. Desktop helper matches the signed unmanaged CLI.
 - [x] (2026-09-23) CEO/stage_todo_review: the two finalization P0 implementation/release items are delivered in v1.1.0; final PM/CEO evidence is recorded in logs and the wave checkpoint.
 - [x] (2026-08-16) (P1) PM/repair-latency-lane: non-reproduced on the current tree. Evidence: focused `MCPLatencyTests` passed with p50 46.56 ms recorded, not asserted, because the host has unwritable SwiftPM user caches; `python3.14 scripts/verdictui-pm.py --quick` passed Grade A (100.0) with `stage_test` 792 tests PASS (17 skipped/unverified), `stage_runtime_bench` p50 147.18 ms recorded in constrained timing, `stage_mcp_latency` p50 83.66 ms recorded in constrained timing, and all hygiene stages green. No code change was justified by the current tree.
@@ -56,7 +57,7 @@
   ✗ .github/workflows/ci.yml
 
 - [x] (2026-08-18) Execute Wave 1 (kernel: full semantic tree model + verdict schema + rule engine). STALE, not open — closed on measurement during the 2026-08-18 cold check. `Sources/VerdictUIKernel/` carries `SemanticNode`, `Verdict`, `RuleEngine`, `SchemaVersion`, `Baselines`, `PixelDiff`, `Reconcile`, `Expectations` and **12 rules** under `Rules/`. Waves 1-9 all closed with their gates met; Wave 10 shipped the AppKit path. Evidence: `ls Sources/VerdictUIKernel/Rules/ | wc -l` -> 12.
-- [ ] Register verdictui.com (owner action). Tracked as **CTS-962D387A**; the `.dev` half was DECLINED by the owner 2026-08-14 as unnecessary for one docs site, so this narrows to the `.com`. Genuinely owner-only and NOT re-testable: it needs a payment plus a PayPal-hosted approval window, and DIR-034 excludes payments from autonomous action — either reason alone is sufficient. Set Organization to **Vohux Inc.** (the form pre-fills the clinical corporation, which mismatches the LICENSE holder).  measured: 2026-08-18  falsify: `dig +short NS verdictui.com`
+- [ ] Dedicated verdictui.com registration remains tracked as **CTS-962D387A**. The public documentation now ships on the existing Vohux site, so this is not a release blocker. No purchase was made. NS lookup remains empty; this alone does not prove registration availability. measured: 2026-09-23; falsify: `dig +short NS verdictui.com`.
 - [x] (2026-08-18) Fill in docs/runbook.md start/stop commands once the daemon exists. STALE, not open — the daemon shipped in Wave 6/7 and the runbook documents all three verbs. Evidence: `grep -cE 'daemon start|daemon stop|daemon status' docs/runbook.md` -> 3.
 
 ## P2 — Normal
@@ -79,8 +80,8 @@
 
 <!-- testwatch-gaps -->
 ## TestWatch Gaps (auto-generated — one row per module; a `- [x]` line is preserved verbatim)
-- [ ] (P1) testwatch: add tests for `VerdictUISmokeMixin` in `scripts/verdictui_pm_smoke.py` [NONE] (1 untested)
-- [ ] (P1) testwatch: add tests for `VerdictUIStagesMixin` in `scripts/verdictui_pm_stages.py` [NONE] (1 untested)
+- [x] (2026-09-23) TestWatch smoke-mixin NONE classification is stale: composition/reachability in `test_verdictui_pm_composition.py`; defect detection, installed-copy parity and real-product gates in `test_verdictui_pm.py` and `test_product_pm_stages.py`. Included in the 495-test passing PM Python suite. This does not claim exhaustive branch coverage.
+- [x] (2026-09-23) TestWatch stages-mixin NONE classification is stale: `TestStageArchitecture.test_ui_import_in_kernel_fails`, `TestStageContracts.test_validator_failure_is_surfaced_not_swallowed`, and `TestStageWrappers.test_stage_demo_fails_on_an_empty_verdict_array` cover concrete failure behavior. Composition is also tested; all ran in the passing PM suite. This does not claim exhaustive branch coverage.
 - [ ] (P2) testwatch: add tests for `_apply_inherited_docs`, `_case_names`, `_case_symbols`, `_conformances`, `_documented`, `_enclosing_type`, `_is_public`, `_member_name`, `_member_symbol`, `_report`, `_scan_file`, `_type_symbol` in `scripts/kernel-symbol-audit.py` [NONE] (12 untested)
 - [ ] (P2) testwatch: add tests for `main` in `scripts/verdictui-pm.py` [NONE] (1 untested)
 <!-- /testwatch-gaps -->
@@ -91,4 +92,4 @@
 
 ## CEO Audit (2026-08-30)
 
-- [ ] (P2) [CEO-AUDIT 2026-08-30] scripts/verdictui-pm.py is 2073 lines (limit 800). Split into smaller modules. | code_hygiene | scripts/verdictui-pm.py
+- [x] (2026-09-23) Prior 2073-line PM entrypoint finding is resolved by modularization: `verdictui-pm.py` measures 333 lines, `verdictui_pm_stages.py` 305 and `verdictui_pm_smoke.py` 762. Existing composition and behavioral tests pass.
