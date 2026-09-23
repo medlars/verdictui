@@ -125,6 +125,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 '<h1>Containing block control</h1><div id="outer"><div id="intermediary">'
                 '<button id="escaping">Escaping</button></div><button id="outside">Outside</button></div>'
             ).encode()
+        elif self.path == "/late-frame":
+            body = (
+                '<!doctype html><button id="late-action" style="width:180px;height:44px" onclick="this.textContent=&quot;Frame task complete&quot;">Main frame task</button>'
+                "<script>let frameCount=0;window.appendMeasuredFrame=()=>new Promise(resolve=>{"
+                'const f=document.createElement("iframe");f.id="late-frame-"+(++frameCount);f.style.display="none";'
+                'f.onload=()=>resolve(f.id);f.src="http://localhost:'
+                + str(self.server.server_port)
+                + '/late-frame-content";document.body.append(f)});</script>'
+            ).encode()
+        elif self.path == "/late-frame-content":
+            body = b"<!doctype html><p>Remote frame evidence</p>"
         elif self.path == "/editable-inline":
             body = (
                 "<!doctype html><style>body{margin:24px;font:16px Arial}.editor{width:320px;min-height:60px;margin:24px 0}"

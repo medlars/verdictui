@@ -226,10 +226,28 @@ public actor WebSession {
         catch { throw Self.sanitized(error) }
     }
 
+    struct CapturedTree: Sendable {
+        let tree: SemanticNode
+        let retried: Bool
+    }
+
+    struct CaptureStability {
+        private var previous: SemanticNode?
+        private var stable = 0
+        mutating func observe(_ capture: CapturedTree) -> Bool {
+            // A recovered capture cannot reuse confirmations from before the race.
+            if capture.retried { previous = nil; stable = 0 }
+            stable = capture.tree == previous ? stable + 1 : 0
+            previous = capture.tree
+            return stable >= 2
+        }
+    }
+
+    private enum CaptureInconsistency: Error { case missingOwner }
+
     private func settledTree() async throws -> SemanticNode {
         let deadline = ContinuousClock.now + .seconds(10)
-        var previous: SemanticNode?
-        var stable = 0
+        var stability = CaptureStability()
         while ContinuousClock.now < deadline {
             try Task.checkCancellation()
             let ready = try await command("Runtime.evaluate", [
@@ -237,22 +255,20 @@ public actor WebSession {
                 "returnByValue": .bool(true)])
             let pendingNetwork = await transport.pendingNetworkRequests(sessionID: pageSessionID)
             if case let .object(result) = ready["result"], result["value"] == .bool(true), pendingNetwork == 0 {
-                let tree = try await captureTree()
+                let capture = try await captureTree(deadline: deadline)
                 var networkQuiet = true
                 for session in Set(frameSessions.values) {
                     if await transport.pendingNetworkRequests(sessionID: session) > 0 { networkQuiet = false }
                 }
-                if !networkQuiet { stable = 0; previous = nil; try await Task.sleep(for: .milliseconds(100)); continue }
-                stable = tree == previous ? stable + 1 : 0
-                if stable >= 2 {
+                if !networkQuiet { stability = CaptureStability(); try await Task.sleep(for: .milliseconds(100)); continue }
+                if stability.observe(capture) {
                     let frames = try await command("Page.getFrameTree")
                     if case let .object(frameTree) = frames["frameTree"],
                         case let .object(frame) = frameTree["frame"],
                         let rawURL = frame["url"]?.stringValue, let url = URL(string: rawURL) { currentURL = url }
-                    return tree
+                    return capture.tree
                 }
-                previous = tree
-            } else { stable = 0; previous = nil }
+            } else { stability = CaptureStability() }
             try await Task.sleep(for: .milliseconds(100))
         }
         throw WebBrowserError.invalidWebOperation(reason: "page did not finish loading and settle within 10 seconds")
@@ -277,13 +293,33 @@ public actor WebSession {
         })
     }
 
-    private func captureTree() async throws -> SemanticNode {
-        var inlineBudget = WebInlineGeometry.Budget()
-        let main = try await snapshot(session: pageSessionID, budget: &inlineBudget)
+    // Internal test synchronization only; CLI/MCP callers cannot supply code.
+    func captureTree(deadline: ContinuousClock.Instant = .now + .seconds(10),
+        afterMainSnapshot: (@Sendable (CDPTransport, String) async throws -> Void)? = nil) async throws -> CapturedTree {
+        for attempt in 0..<3 {
+            try Task.checkCancellation()
+            // Fresh geometry/work inventory per attempt; one absolute deadline.
+            var budget = WebInlineGeometry.Budget(deadline: deadline)
+            do {
+                let tree = try await captureAttempt(budget: &budget, afterMainSnapshot: afterMainSnapshot)
+                return CapturedTree(tree: tree, retried: attempt > 0)
+            } catch CaptureInconsistency.missingOwner {
+                // A frame may attach after the parent's DOM snapshot. Discard
+                // that entire partial tree and retry; never invent/ignore its owner.
+                continue
+            }
+        }
+        throw WebBrowserError.invalidCDPResponse(reason: "embedded frame owner remained absent after 3 coherent capture attempts")
+    }
+
+    private func captureAttempt(budget: inout WebInlineGeometry.Budget,
+        afterMainSnapshot: (@Sendable (CDPTransport, String) async throws -> Void)?) async throws -> SemanticNode {
+        let main = try await snapshot(session: pageSessionID, budget: &budget)
         var tree = try DOMSnapshotAssembly.assemble(main, viewport: viewport, redacting: secrets)
+        try await afterMainSnapshot?(transport, pageSessionID)
         var known = documentFrames(main)
         var routing = Dictionary(uniqueKeysWithValues: known.map { ($0, pageSessionID) })
-        let targets = try await transport.send(method: "Target.getTargets")
+        let targets = try await transport.send(method: "Target.getTargets", timeout: try budget.timeout())
         guard case let .array(infos) = targets["targetInfos"] else {
             throw WebBrowserError.invalidCDPResponse(reason: "missing frame target inventory")
         }
@@ -305,25 +341,26 @@ public actor WebSession {
             let session: String
             if let existing = remoteSessions[frame] { session = existing }
             else {
-                let attached = try await transport.send(method: "Target.attachToTarget", params: ["targetId": .string(frame), "flatten": .bool(true)])
+                let attached = try await transport.send(method: "Target.attachToTarget", params: ["targetId": .string(frame), "flatten": .bool(true)], timeout: try budget.timeout())
                 guard let attachedID = attached["sessionId"]?.stringValue else {
                     throw WebBrowserError.invalidCDPResponse(reason: "cannot attach embedded frame")
                 }
                 session = attachedID
                 remoteSessions[frame] = session
-                _ = try await command("Page.enable", session: session)
+                _ = try await transport.send(method: "Page.enable", timeout: try budget.timeout(), sessionID: session)
                 await transport.setNetworkRootFrame(frame, sessionID: session)
-                _ = try await command("Network.enable", session: session)
+                _ = try await transport.send(method: "Network.enable", timeout: try budget.timeout(), sessionID: session)
             }
             activeRemote.insert(frame)
-            let frameSnapshot = try await snapshot(session: session, budget: &inlineBudget)
+            let frameSnapshot = try await snapshot(session: session, budget: &budget)
             let descendants = try DOMSnapshotAssembly.assemble(frameSnapshot, viewport: viewport, redacting: secrets)
-            let owner = try await command("DOM.getFrameOwner", ["frameId": .string(frame)], session: parentSession)
+            let owner = try await transport.send(method: "DOM.getFrameOwner", params: ["frameId": .string(frame)],
+                timeout: try budget.timeout(), sessionID: parentSession)
             guard let backendID = owner["backendNodeId"]?.doubleValue else {
                 throw WebBrowserError.invalidCDPResponse(reason: "embedded frame has no owner element")
             }
             let (grafted, found) = try WebFrameGeometry.graft(descendants.children, ownerBackend: backendID, ownerFrame: parent, into: tree)
-            guard found else { throw WebBrowserError.invalidCDPResponse(reason: "embedded frame owner absent from snapshot") }
+            guard found else { throw CaptureInconsistency.missingOwner }
             tree = grafted
             for id in documentFrames(frameSnapshot) { known.insert(id); routing[id] = session }
         }

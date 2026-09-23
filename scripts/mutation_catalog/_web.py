@@ -7,6 +7,62 @@ _TEST = "VerdictUIWebTests."
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="web frame coherence does not retry stale capture",
+        path=_BASE + "WebSession.swift",
+        old="for attempt in 0..<3 {",
+        new="for attempt in 0..<1 {",
+        test=_TEST
+        + "WebFrameIntegrationTests/testFrameAppearingAfterMainSnapshotMustRecaptureItsActualOwner",
+    ),
+    Mutation(
+        name="web frame coherence retries terminal errors",
+        path=_BASE + "WebSession.swift",
+        old="} catch CaptureInconsistency.missingOwner {",
+        new="} catch {",
+        test=_TEST
+        + "WebFrameIntegrationTests/testFrameCaptureRetryLimitDeadlineCancellationAndTerminalFailures",
+    ),
+    Mutation(
+        name="web frame coherence resets shared deadline",
+        path=_BASE + "WebSession.swift",
+        old="var budget = WebInlineGeometry.Budget(deadline: deadline)",
+        new="var budget = WebInlineGeometry.Budget(deadline: .now + .seconds(10))",
+        test=_TEST
+        + "WebFrameIntegrationTests/testFrameCaptureRetryLimitDeadlineCancellationAndTerminalFailures",
+    ),
+    Mutation(
+        name="web frame coherence ignores absent owners",
+        path=_BASE + "WebSession.swift",
+        old="guard found else { throw CaptureInconsistency.missingOwner }",
+        new="guard found || !found else { throw CaptureInconsistency.missingOwner }",
+        test=_TEST
+        + "WebFrameIntegrationTests/testFrameAppearingAfterMainSnapshotMustRecaptureItsActualOwner",
+    ),
+    Mutation(
+        name="web frame coherence returns partial tree after exhaustion",
+        path=_BASE + "WebSession.swift",
+        old='throw WebBrowserError.invalidCDPResponse(reason: "embedded frame owner remained absent after 3 coherent capture attempts")',
+        new='return CapturedTree(tree: SemanticNode(id: "partial", role: .container, frame: viewport), retried: true)',
+        test=_TEST
+        + "WebFrameIntegrationTests/testFrameCaptureRetryLimitDeadlineCancellationAndTerminalFailures",
+    ),
+    Mutation(
+        name="web frame coherence forgets retry provenance",
+        path=_BASE + "WebSession.swift",
+        old="retried: attempt > 0",
+        new="retried: attempt > 3",
+        test=_TEST
+        + "WebFrameIntegrationTests/testFrameAppearingAfterMainSnapshotMustRecaptureItsActualOwner",
+    ),
+    Mutation(
+        name="web frame coherence reuses prior stability confirmations",
+        path=_BASE + "WebSession.swift",
+        old="if capture.retried { previous = nil; stable = 0 }",
+        new="if capture.retried { previous = capture.tree }",
+        test=_TEST
+        + "WebFrameIntegrationTests/testRecoveredCaptureDiscardsPreRaceStabilityConfirmations",
+    ),
+    Mutation(
         name="web editable inline inventory requires pruned descendants",
         path=_BASE + "DOMSnapshotAssembly.swift",
         old='&& !tag.hasPrefix("::") && !prunedByControl[index] {',
