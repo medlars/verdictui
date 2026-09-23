@@ -9,9 +9,9 @@ Updated September 23, 2026. Implementation and release evidence are distinct;
 | Inner loop (Waves 1–3) | Implemented | Semantic kernel, public probe, headless host and settle engine |
 | Agent surface (Waves 4–7) | Implemented | Macros, scenarios, CLI, warm daemon and MCP; external consumer broker added in 1.1 |
 | Independent channels (Waves 8–9) | Implemented | Accessibility reconciliation, pixel comparison and evidence; denied OS access stays unavailable |
-| Proof and release (Wave 10) | Existing 1.0.1 CLI; 1.1 release gates in progress | Benchmarks and consumer dogfood are documented; public docs use the existing Vohux site without waiting for a new domain purchase |
-| Native/browser acting (Wave 11) | Implemented; final combined gate in progress | CLI/MCP input with observed outcomes, isolated browser ownership, secret hygiene and restart recovery |
-| Desktop workbench | Implemented; signed distribution in progress | Local web-rendered UI with motion, project checks, evidence, history and cancellation |
+| Proof and release (Wave 10) | 1.1.0 published and installed | Benchmarks and consumer dogfood are documented; public docs use the existing Vohux site without waiting for a new domain purchase |
+| Native/browser acting (Wave 11) | Released in 1.1.0 | CLI/MCP input with observed outcomes, isolated browser ownership, secret hygiene and restart recovery |
+| Desktop workbench | Released, signed and notarized in 1.1.0 | Local web-rendered UI with motion, project checks, evidence, history and cancellation |
 
 ## Continuing adoption
 
