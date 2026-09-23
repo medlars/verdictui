@@ -2,9 +2,9 @@
 
 VerdictUI is released as a git tag plus a GitHub release, installed through a
 Homebrew formula in `medlars/homebrew-tap` that BUILDS FROM SOURCE
-(`swift build -c release --product verdictui`). Nothing is deployed to a server
-and no signed bundle is distributed, so a rollback changes what the tap tells
-`brew` to fetch; it cannot reach a binary a user has already built.
+(`swift build -c release --product verdictui`). The desktop app is a separate
+signed and notarized GitHub release asset. A formula rollback changes what
+`brew` fetches; it does not replace binaries or desktop apps already installed.
 
 ## What a rollback can and cannot do
 
@@ -14,6 +14,8 @@ and no signed bundle is distributed, so a rollback changes what the tap tells
 | A binary already built on a machine | Not reachable. The user runs `brew reinstall verdictui` after the tap is fixed |
 | The tag and GitHub release | Leave them. A tag is a live ref and other consumers may already pin it |
 | Developer copy at `~/.local/bin/verdictui` | Rebuild from the good commit; `stage_installed_parity` in the PM compares it with the Homebrew copy |
+| Desktop app | Quit VerdictUI, retain the current bundle for investigation, install the last verified notarized bundle, compare its hash/version and rerun acceptance |
+| Saved workbench projects and browser profiles | Preserve Application Support state and profile directories; replacing the app must not delete user data |
 
 ## Procedure
 
@@ -30,11 +32,11 @@ and no signed bundle is distributed, so a rollback changes what the tap tells
 
 ## When there is no previous version
 
-Only v1.0.1 exists today. Rolling back the first working release means
-WITHDRAWING the formula (delete `Formula/verdictui.rb` and say so in the tap
-README), which is what was done on 2026-08-14 (`no.md` #54). A tap whose install
-fails reads as a broken tool, so a withdrawn formula with an explanation is
-better than a formula that 404s.
+If no previous verified desktop bundle exists, withdraw the defective desktop
+asset and explain the limitation in the release notes while fixing forward.
+The source-built CLI can remain available if its acceptance still passes.
+For a first defective CLI release with no valid predecessor, withdraw its
+formula and explain why in the tap README, as on 2026-08-14 (`no.md` #54).
 
 **v1.0.0 is never a rollback target.** Its tag was deleted because the commit it
 pointed at carried personal data; its tarball 404s, and `scripts/release.sh`
