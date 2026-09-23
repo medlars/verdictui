@@ -81,7 +81,12 @@ public enum DOMSnapshotAssembly {
         }
         let accessibleNames = DOMAccessibleNames.resolve(tags: tags, types: types, values: nodeValues,
                                                          attributes: nodeAttributes, parents: parents)
-        let layoutNodes = try integers(layout["nodeIndex"])
+        // Repeated DOM indices are valid, so bound rows independently of the
+        // 100,000-node budget that previously bounded unique layout indices.
+        guard case let .array(rawLayoutNodes) = layout["nodeIndex"], rawLayoutNodes.count <= 100_000 else {
+            throw malformed("missing or oversized layout index column")
+        }
+        let layoutNodes = try integers(.array(rawLayoutNodes))
         guard case let .array(bounds) = layout["bounds"], case let .array(styles) = layout["styles"],
             bounds.count == layoutNodes.count, styles.count == layoutNodes.count
         else { throw malformed("mismatched layout columns") }
@@ -91,8 +96,8 @@ public enum DOMSnapshotAssembly {
         var clientRects: [Int: Rect] = [:]
         var offsetRects: [Int: Rect] = [:]
         for (offset, index) in layoutNodes.enumerated() {
-            guard parents.indices.contains(index), geometry[index] == nil else {
-                throw malformed("invalid or duplicate layout index")
+            guard parents.indices.contains(index) else {
+                throw malformed("invalid layout index")
             }
             let frame = try rectangle(bounds[offset])
             if case let .array(rects) = layout["clientRects"], rects.indices.contains(offset), case let .array(values) = rects[offset], !values.isEmpty {
@@ -104,8 +109,21 @@ public enum DOMSnapshotAssembly {
             var style = try integers(styles[offset]).map { try string($0, in: strings) }
             if style.isEmpty && types[index] == 9 { style = ["block", "visible", "1", "auto"] }
             guard style.count == computedStyles.count else { throw malformed("missing computed styles") }
-            geometry[index] = (Rect(x: frame.x - scrollX, y: frame.y - scrollY,
-                                   width: frame.width, height: frame.height), style)
+            let shifted = Rect(x: frame.x - scrollX, y: frame.y - scrollY,
+                               width: frame.width, height: frame.height)
+            guard shifted.x.isFinite, shifted.y.isFinite, shifted.maxX.isFinite, shifted.maxY.isFinite else {
+                throw malformed("layout coordinate overflow")
+            }
+            if let (previous, previousStyle) = geometry[index] {
+                // Chromium BuildLayoutTreeNode recursively emits anonymous
+                // pseudo-element children with the same DOM index. Every row
+                // uses BuildStylesForNode(node), while its bounds may differ.
+                // https://github.com/chromium/chromium/blob/main/third_party/blink/renderer/core/inspector/inspector_dom_snapshot_agent.cc
+                guard previousStyle == style else { throw malformed("conflicting layout styles for DOM node") }
+                geometry[index] = (try union(previous, shifted), style)
+            } else {
+                geometry[index] = (shifted, style)
+            }
         }
         var textBoxes: [Int: [Rect]] = [:]
         if case let .object(boxes) = document["textBoxes"] {
@@ -165,7 +183,13 @@ public enum DOMSnapshotAssembly {
                     if role == .textField { metadata["web.value"] = .string("[REDACTED]") }
                     if role == .toggle { metadata["isOn"] = .bool(attrs["checked"] != nil || attrs["aria-checked"] == "true") }
                     let boxes = textBoxes[index] ?? []
-                    let lineCount = Set(boxes.map { Int(($0.y * 2).rounded()) }).count
+                    let lines = try boxes.map { box -> Int in
+                        guard let line = Int(exactly: (box.y * 2).rounded()) else {
+                            throw malformed("text box line coordinate out of range")
+                        }
+                        return line
+                    }
+                    let lineCount = Set(lines).count
                     let metrics = boxes.isEmpty ? nil : TextMetrics(
                         intrinsicWidth: boxes.reduce(0) { $0 + $1.width },
                         renderedLineCount: lineCount, idealLineCount: lineCount)
@@ -261,7 +285,22 @@ public enum DOMSnapshotAssembly {
             return value
         }
         guard coordinates[2] >= 0, coordinates[3] >= 0 else { throw malformed("negative rectangle extent") }
+        guard (coordinates[0] + coordinates[2]).isFinite, (coordinates[1] + coordinates[3]).isFinite else {
+            throw malformed("rectangle coordinate overflow")
+        }
         return Rect(x: coordinates[0], y: coordinates[1], width: coordinates[2], height: coordinates[3])
+    }
+
+    private static func union(_ first: Rect, _ second: Rect) throws -> Rect {
+        // Empty anonymous fragments often sit at (0,0); they must not pull a
+        // displaced visible box toward the document origin, in either order.
+        if second.isEmpty { return first }
+        if first.isEmpty { return second }
+        let x = min(first.x, second.x), y = min(first.y, second.y)
+        let width = max(first.maxX, second.maxX) - x
+        let height = max(first.maxY, second.maxY) - y
+        guard width.isFinite, height.isFinite else { throw malformed("layout fragment union overflow") }
+        return Rect(x: x, y: y, width: width, height: height)
     }
 
     private static func malformed(_ reason: String) -> WebBrowserError {
