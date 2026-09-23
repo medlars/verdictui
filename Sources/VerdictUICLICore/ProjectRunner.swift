@@ -23,7 +23,7 @@ public enum VerdictUIRunner {
     }
 
     @MainActor
-    static func withRegistry<Result>(
+    static func withRegistry<Result: Sendable>(
         _ registry: ScenarioRegistry,
         root: URL,
         operation: () async throws -> Result
