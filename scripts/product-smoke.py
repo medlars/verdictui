@@ -19,7 +19,7 @@ import subprocess
 import tempfile
 import threading
 import time
-from typing import TextIO
+from typing import IO
 from pathlib import Path
 
 
@@ -98,7 +98,7 @@ def eventually(predicate, message, timeout=10):
     raise AcceptanceError(message)
 
 
-def required_stream(stream: TextIO | None) -> TextIO:
+def required_stream(stream: IO[str] | None) -> IO[str]:
     if stream is None:
         raise AcceptanceError("subprocess omitted requested pipe")
     return stream
