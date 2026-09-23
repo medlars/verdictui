@@ -5,14 +5,18 @@ import VerdictUIKernel
 /// profile lock prevents a second daemon/session from borrowing the browser.
 public actor WebSessionManager {
     private let root: URL
+    private let invalidRootOverride: Bool
     private let environment: [String: String]
     private var sessions: [String: WebSession] = [:]
     private var opening: Set<String> = []
     private var stopping = false
 
-    public init(root: URL = ProfileRegistry.defaultRoot(),
+    public init(root: URL? = nil,
                 environment: [String: String] = ProcessInfo.processInfo.environment) {
-        self.root = root; self.environment = environment
+        let override = environment["VERDICTUI_WEB_PROFILE_ROOT"]
+        invalidRootOverride = root == nil && override != nil && !(override?.hasPrefix("/") == true)
+        self.root = root ?? override.map(URL.init(fileURLWithPath:)) ?? ProfileRegistry.defaultRoot()
+        self.environment = environment
     }
 
     public func list() async -> [WebSessionInfo] {
@@ -26,6 +30,7 @@ public actor WebSessionManager {
     /// Opening an already open identity navigates its owned warm browser. An
     /// identity held by a different manager/process is always refused by lock.
     public func open(profile: String, url: URL, width: Int = 1280, height: Int = 800) async throws -> WebSessionInfo {
+        guard !invalidRootOverride else { throw WebBrowserError.invalidWebOperation(reason: "VERDICTUI_WEB_PROFILE_ROOT must be an absolute nonempty path") }
         guard !stopping else { throw WebBrowserError.invalidWebOperation(reason: "session manager is closing") }
         guard !opening.contains(profile) else { throw WebBrowserError.invalidWebOperation(reason: "profile is opening") }
         if let session = sessions[profile] {

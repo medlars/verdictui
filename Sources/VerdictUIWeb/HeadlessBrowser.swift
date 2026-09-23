@@ -79,6 +79,7 @@ public actor HeadlessBrowser {
         }
         let process = Process()
         process.executableURL = options.browser
+        process.environment = ProcessInfo.processInfo.environment.filter { !$0.key.hasPrefix("VERDICTUI_WEB_CRED_") }
         process.arguments = Self.launchArguments(profileDirectory: options.profileDirectory)
         // Browser diagnostics may echo page URLs or console messages. No
         // browser output is retained when a session can contain credentials.

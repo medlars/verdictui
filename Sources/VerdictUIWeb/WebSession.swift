@@ -29,6 +29,8 @@ public actor WebSession {
     private let viewport: Rect
     private var currentURL: URL
     private var secrets: [String] = []
+    private var frameSessions: [String: String] = [:]
+    private var remoteSessions: [String: String] = [:]
     private var busy = false
     private var closed = false
 
@@ -76,6 +78,8 @@ public actor WebSession {
                                      credentials: WebCredentials(environment: environment),
                                      viewport: Rect(x: 0, y: 0, width: Double(width), height: Double(height)), url: url)
             _ = try await session.command("Page.enable")
+            await connection.setNetworkRootFrame(targetID, sessionID: sessionID)
+            _ = try await session.command("Network.enable")
             _ = try await session.command("Emulation.setDeviceMetricsOverride", [
                 "width": .integer(Int64(width)), "height": .integer(Int64(height)),
                 "deviceScaleFactor": .number(1), "mobile": .bool(false)])
@@ -119,13 +123,15 @@ public actor WebSession {
     }
 
     public func verify(expectText: String? = nil) async throws -> Verdict {
+        try validateExpectation(expectText)
         try begin()
         defer { busy = false }
-        do { return verdict(tree: try await settledTree(), expectText: expectText) }
+        do { return verdict(tree: try await observedTree(expectText: expectText), expectText: expectText) }
         catch { try await handle(error); throw Self.sanitized(error) }
     }
 
     public func act(_ action: WebAction, expectText: String? = nil) async throws -> Verdict {
+        try validateExpectation(expectText)
         try begin()
         defer { busy = false }
         do {
@@ -156,8 +162,14 @@ public actor WebSession {
                     try await click(button)
                 }
             }
-            let after = try await settledTree()
+            let after = try await observedTree(expectText: expectText)
             var result = verdict(tree: after, expectText: expectText)
+            if expectText == nil {
+                result = Verdict(scenario: result.scenario, findings: result.findings + [Finding(
+                    rule: "web-outcome-unasserted", severity: .warning, nodeID: after.id,
+                    message: "Input was delivered and the page was observed; no expected task outcome was asserted.",
+                    suggestion: "Provide expectText to verify the application's resulting state.")], tree: after, timing: result.timing)
+            }
             // Redact the pre-action tree too: a newly resolved credential may
             // already have been reflected by the page before this operation.
             let safeBefore = try redactTree(before)
@@ -181,8 +193,8 @@ public actor WebSession {
         busy = true
     }
 
-    private func command(_ method: String, _ params: [String: CDPValue] = [:]) async throws -> [String: CDPValue] {
-        do { return try await transport.send(method: method, params: params, timeout: .seconds(5), sessionID: pageSessionID) }
+    private func command(_ method: String, _ params: [String: CDPValue] = [:], session: String? = nil) async throws -> [String: CDPValue] {
+        do { return try await transport.send(method: method, params: params, timeout: .seconds(5), sessionID: session ?? pageSessionID) }
         catch { throw Self.sanitized(error) }
     }
 
@@ -195,11 +207,14 @@ public actor WebSession {
             let ready = try await command("Runtime.evaluate", [
                 "expression": .string("document.readyState === 'complete' && (!document.fonts || document.fonts.status === 'loaded')"),
                 "returnByValue": .bool(true)])
-            if case let .object(result) = ready["result"], result["value"] == .bool(true) {
-                let snapshot = try await command("DOMSnapshot.captureSnapshot", [
-                    "computedStyles": .array(DOMSnapshotAssembly.computedStyles.map(CDPValue.string)),
-                    "includePaintOrder": .bool(false), "includeDOMRects": .bool(true)])
-                let tree = try DOMSnapshotAssembly.assemble(snapshot, viewport: viewport, redacting: secrets)
+            let pendingNetwork = await transport.pendingNetworkRequests(sessionID: pageSessionID)
+            if case let .object(result) = ready["result"], result["value"] == .bool(true), pendingNetwork == 0 {
+                let tree = try await captureTree()
+                var networkQuiet = true
+                for session in Set(frameSessions.values) {
+                    if await transport.pendingNetworkRequests(sessionID: session) > 0 { networkQuiet = false }
+                }
+                if !networkQuiet { stable = 0; previous = nil; try await Task.sleep(for: .milliseconds(100)); continue }
                 stable = tree == previous ? stable + 1 : 0
                 if stable >= 2 {
                     let frames = try await command("Page.getFrameTree")
@@ -215,10 +230,112 @@ public actor WebSession {
         throw WebBrowserError.invalidWebOperation(reason: "page did not finish loading and settle within 10 seconds")
     }
 
+    private func snapshot(session: String) async throws -> [String: CDPValue] {
+        try await command("DOMSnapshot.captureSnapshot", [
+            "computedStyles": .array(DOMSnapshotAssembly.computedStyles.map(CDPValue.string)),
+            "includePaintOrder": .bool(false), "includeDOMRects": .bool(true)], session: session)
+    }
+
+    private func documentFrames(_ snapshot: [String: CDPValue]) -> Set<String> {
+        guard case let .array(strings) = snapshot["strings"], case let .array(documents) = snapshot["documents"] else { return [] }
+        return Set(documents.compactMap { value in
+            guard case let .object(document) = value, case let .integer(index) = document["frameId"],
+                let offset = Int(exactly: index), strings.indices.contains(offset) else { return nil }
+            return strings[offset].stringValue
+        })
+    }
+
+    private func captureTree() async throws -> SemanticNode {
+        let main = try await snapshot(session: pageSessionID)
+        var tree = try DOMSnapshotAssembly.assemble(main, viewport: viewport, redacting: secrets)
+        var known = documentFrames(main)
+        var routing = Dictionary(uniqueKeysWithValues: known.map { ($0, pageSessionID) })
+        let targets = try await transport.send(method: "Target.getTargets")
+        guard case let .array(infos) = targets["targetInfos"] else {
+            throw WebBrowserError.invalidCDPResponse(reason: "missing frame target inventory")
+        }
+        var remaining = infos.compactMap { value -> [String: CDPValue]? in
+            if case let .object(info) = value, info["type"] == .string("iframe") { return info }
+            return nil
+        }
+        var activeRemote: Set<String> = []
+        for _ in 0..<256 {
+            guard let index = remaining.firstIndex(where: {
+                known.contains($0["parentFrameId"]?.stringValue ?? "") || known.contains($0["parentId"]?.stringValue ?? "")
+            }) else { break }
+            let target = remaining.remove(at: index)
+            guard let frame = target["targetId"]?.stringValue,
+                let parent = target["parentFrameId"]?.stringValue ?? target["parentId"]?.stringValue,
+                let parentSession = routing[parent] else {
+                throw WebBrowserError.invalidCDPResponse(reason: "invalid frame target relationship")
+            }
+            let session: String
+            if let existing = remoteSessions[frame] { session = existing }
+            else {
+                let attached = try await transport.send(method: "Target.attachToTarget", params: ["targetId": .string(frame), "flatten": .bool(true)])
+                guard let attachedID = attached["sessionId"]?.stringValue else {
+                    throw WebBrowserError.invalidCDPResponse(reason: "cannot attach embedded frame")
+                }
+                session = attachedID
+                remoteSessions[frame] = session
+                _ = try await command("Page.enable", session: session)
+                await transport.setNetworkRootFrame(frame, sessionID: session)
+                _ = try await command("Network.enable", session: session)
+            }
+            activeRemote.insert(frame)
+            let frameSnapshot = try await snapshot(session: session)
+            let descendants = try DOMSnapshotAssembly.assemble(frameSnapshot, viewport: viewport, redacting: secrets)
+            let owner = try await command("DOM.getFrameOwner", ["frameId": .string(frame)], session: parentSession)
+            guard let backendID = owner["backendNodeId"]?.doubleValue else {
+                throw WebBrowserError.invalidCDPResponse(reason: "embedded frame has no owner element")
+            }
+            let (grafted, found) = WebFrameGeometry.graft(descendants.children, ownerBackend: backendID, ownerFrame: parent, into: tree)
+            guard found else { throw WebBrowserError.invalidCDPResponse(reason: "embedded frame owner absent from snapshot") }
+            tree = grafted
+            for id in documentFrames(frameSnapshot) { known.insert(id); routing[id] = session }
+        }
+        // Detach obsolete frame sessions (navigation can change renderer
+        // ownership). A detached session never becomes another frame's route.
+        for frame in Set(remoteSessions.keys).subtracting(activeRemote) {
+            remoteSessions.removeValue(forKey: frame)
+        }
+        frameSessions = routing
+        return tree.withAssignedStructuralPaths()
+    }
+
+    private func nodeSession(_ node: SemanticNode) throws -> String {
+        guard let frame = node.attributes["web.frame"]?.stringValue, let session = frameSessions[frame] else {
+            throw WebBrowserError.invalidWebOperation(reason: "target frame was detached; render again")
+        }
+        return session
+    }
+
+    private func validateExpectation(_ text: String?) throws {
+        guard let text else { return }
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, text.utf8.count <= 4096 else {
+            throw WebBrowserError.invalidWebOperation(reason: "expected text must be nonempty and at most 4096 bytes")
+        }
+    }
+
+    private func contains(_ text: String, in tree: SemanticNode) -> Bool {
+        tree.flattened().contains { $0.isVisible && ($0.text?.contains(text) == true || $0.attributes["accessibilityLabel"]?.stringValue?.contains(text) == true) }
+    }
+
+    private func observedTree(expectText: String?) async throws -> SemanticNode {
+        let deadline = ContinuousClock.now + .seconds(10)
+        var tree = try await settledTree()
+        guard let expectText else { return tree }
+        while !contains(expectText, in: tree), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(100))
+            tree = try await settledTree()
+        }
+        return tree
+    }
+
     private func verdict(tree: SemanticNode, expectText: String?) -> Verdict {
         let context = LintContext(scenario: "web/\(profile)", viewport: viewport)
         var result = RuleEngine.run(rules: RuleEngine.standardRules, on: tree, context: context, includeTree: true)
-        if let expectText, !tree.flattened().contains(where: { $0.isVisible && ($0.text?.contains(expectText) == true || $0.attributes["accessibilityLabel"]?.stringValue?.contains(expectText) == true) }) {
+        if let expectText, !contains(expectText, in: tree) {
             result = Verdict(scenario: result.scenario, findings: result.findings + [Finding(
                 rule: "web-expectation", severity: .error, nodeID: tree.id,
                 message: "The expected visible text was absent after the operation.",
@@ -228,7 +345,7 @@ public actor WebSession {
     }
 
     private func target(_ id: String, in tree: SemanticNode) throws -> SemanticNode {
-        guard let node = tree.flattened().first(where: { $0.id == id || $0.structuralPath == id }),
+        guard !id.isEmpty, let node = tree.flattened().first(where: { $0.id == id || $0.structuralPath == id }),
             node.id != tree.id, node.isVisible, node.attributes["web.enabled"] != .bool(false) else {
             throw WebBrowserError.invalidWebOperation(reason: "target is missing, hidden, or disabled; render again")
         }
@@ -236,33 +353,54 @@ public actor WebSession {
     }
 
     private func backend(_ node: SemanticNode) throws -> CDPValue {
-        guard node.id.hasPrefix("web/"), let id = Int64(node.id.dropFirst(4)), id > 0 else {
+        guard let raw = node.attributes["web.backendID"]?.numberValue, raw.isFinite,
+            raw > 0, raw <= Double(Int64.max), let id = Int64(exactly: raw) else {
             throw WebBrowserError.invalidWebOperation(reason: "target has no browser identity")
         }
         return .integer(id)
     }
 
     private func focus(_ node: SemanticNode) async throws {
-        _ = try await command("DOM.focus", ["backendNodeId": backend(node)])
+        _ = try await command("DOM.focus", ["backendNodeId": backend(node)], session: nodeSession(node))
     }
 
     private func click(_ node: SemanticNode) async throws {
         let id = try backend(node)
-        _ = try await command("DOM.scrollIntoViewIfNeeded", ["backendNodeId": id])
-        let result = try await command("DOM.getContentQuads", ["backendNodeId": id])
+        _ = try await command("DOM.scrollIntoViewIfNeeded", ["backendNodeId": id], session: nodeSession(node))
+        // Scrolling an embedded document can also scroll its parent page. Read
+        // geometry again before converting renderer-local event coordinates.
+        let latest = try await settledTree()
+        let fresh = try target(node.id.isEmpty ? node.structuralPath : node.id, in: latest)
+        let session = try nodeSession(fresh)
+        let result = try await command("DOM.getContentQuads", ["backendNodeId": id], session: session)
         guard case let .array(quads) = result["quads"], case let .array(points) = quads.first,
             points.count == 8, points.allSatisfy({ $0.doubleValue?.isFinite == true }) else {
             throw WebBrowserError.invalidWebOperation(reason: "target has no clickable geometry")
         }
         let coordinates = points.compactMap(\.doubleValue)
-        let x = stride(from: 0, to: 8, by: 2).reduce(0.0) { $0 + coordinates[$1] } / 4
-        let y = stride(from: 1, to: 8, by: 2).reduce(0.0) { $0 + coordinates[$1] } / 4
+        let localX = stride(from: 0, to: 8, by: 2).reduce(0.0) { $0 + coordinates[$1] } / 4
+        let localY = stride(from: 1, to: 8, by: 2).reduce(0.0) { $0 + coordinates[$1] } / 4
+        let inputWidth = fresh.attributes["web.inputWidth"]?.numberValue ?? fresh.frame.width
+        let inputHeight = fresh.attributes["web.inputHeight"]?.numberValue ?? fresh.frame.height
+        let scaleX = inputWidth > 0 ? fresh.frame.width / inputWidth : 1
+        let scaleY = inputHeight > 0 ? fresh.frame.height / inputHeight : 1
+        let x = fresh.frame.x + (localX - (fresh.attributes["web.inputX"]?.numberValue ?? fresh.frame.x)) * scaleX
+        let y = fresh.frame.y + (localY - (fresh.attributes["web.inputY"]?.numberValue ?? fresh.frame.y)) * scaleY
         guard x >= 0, y >= 0, x < viewport.width, y < viewport.height else {
             throw WebBrowserError.invalidWebOperation(reason: "target is outside the viewport after scrolling")
         }
-        let hit = try await command("DOM.getNodeForLocation", ["x": .integer(Int64(x)), "y": .integer(Int64(y))])
-        guard let hitID = hit["backendNodeId"], try node.flattened().contains(where: { try backend($0) == hitID }) else {
+        let hit = try await command("DOM.getNodeForLocation", ["x": .integer(Int64(localX)), "y": .integer(Int64(localY))], session: session)
+        guard let hitID = hit["backendNodeId"], try fresh.flattened().contains(where: { try backend($0) == hitID }) else {
             throw WebBrowserError.invalidWebOperation(reason: "target is covered by another element")
+        }
+        let rootHit = try await command("DOM.getNodeForLocation", ["x": .integer(Int64(x)), "y": .integer(Int64(y))])
+        guard let rootBackend = rootHit["backendNodeId"]?.doubleValue,
+            let rootFrame = rootHit["frameId"]?.stringValue,
+            let hitNode = latest.flattened().first(where: {
+                $0.attributes["web.backendID"]?.numberValue == rootBackend && $0.attributes["web.frame"]?.stringValue == rootFrame
+            }),
+            hitNode.flattened().contains(where: { $0.id == fresh.id }) || fresh.flattened().contains(where: { $0.id == hitNode.id }) else {
+            throw WebBrowserError.invalidWebOperation(reason: "target frame is covered by another element")
         }
         for type in ["mousePressed", "mouseReleased"] {
             _ = try await command("Input.dispatchMouseEvent", [

@@ -29,9 +29,17 @@ final class WebSessionIntegrationTests: XCTestCase {
             let pass = try await manager.verify(profile: "clean", expectText: "Ready to verify")
             XCTAssertEqual(pass.status, .pass, "\(pass.findings)")
             let save = try node(before, id: "save")
+            for expectation in ["", "   ", String(repeating: "x", count: 4097)] {
+                do { _ = try await manager.act(profile: "clean", action: .click(nodeID: save.id), expectText: expectation)
+                    XCTFail("invalid assertion accepted")
+                } catch { XCTAssertTrue(error is WebBrowserError) }
+            }
             let after = try await manager.act(profile: "clean", action: .click(nodeID: save.structuralPath), expectText: "Task complete")
             XCTAssertEqual(after.status, .pass, "\(after.findings)")
             XCTAssertNotNil(after.delta)
+            let name = try node(before, id: "name")
+            let unasserted = try await manager.act(profile: "clean", action: .type(nodeID: name.id, text: "example"))
+            XCTAssertTrue(unasserted.findings.contains { $0.rule == "web-outcome-unasserted" && $0.severity == .warning })
             let brokenInfo = try await manager.open(profile: "clean", url: fixture("broken"))
             XCTAssertEqual(info.pid, brokenInfo.pid, "navigation must reuse the warm browser")
             let broken = try await manager.verify(profile: "clean")

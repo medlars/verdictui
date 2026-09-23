@@ -29,6 +29,7 @@ final class DOMSnapshotAssemblyTests: XCTestCase {
         XCTAssertEqual(button.frame, Rect(x: 20, y: 20, width: 120, height: 44))
         let text = try XCTUnwrap(button.children.first)
         XCTAssertEqual(text.text, "Save")
+        XCTAssertTrue(text.isVisible)
         XCTAssertEqual(text.textMetrics, TextMetrics(intrinsicWidth: 35, renderedLineCount: 1, idealLineCount: 1))
         XCTAssertFalse(text.structuralPath.isEmpty)
         XCTAssertEqual(RuleEngine.run(rules: RuleEngine.standardRules, on: tree,
@@ -38,7 +39,7 @@ final class DOMSnapshotAssemblyTests: XCTestCase {
     func testImplicitAndAriaRolesAreMapped() {
         XCTAssertEqual(DOMSnapshotAssembly.role(tag: "input", attributes: ["type": "password"]), .textField)
         XCTAssertEqual(DOMSnapshotAssembly.role(tag: "input", attributes: ["type": "checkbox"]), .toggle)
-        XCTAssertEqual(DOMSnapshotAssembly.role(tag: "a", attributes: [:]), .button)
+        XCTAssertEqual(DOMSnapshotAssembly.role(tag: "a", attributes: ["href": "/"]), .button)
         XCTAssertEqual(DOMSnapshotAssembly.role(tag: "div", attributes: ["role": "navigation"]), .navigation)
         XCTAssertEqual(DOMSnapshotAssembly.role(tag: "div", attributes: ["role": "slider"]), .slider)
         XCTAssertEqual(DOMSnapshotAssembly.role(tag: "div", attributes: ["role": "unknown"]), .custom("web.unknown"))
@@ -78,4 +79,21 @@ final class DOMSnapshotAssemblyTests: XCTestCase {
         let tree = try DOMSnapshotAssembly.assemble(payload, viewport: viewport, redacting: [credential])
         XCTAssertFalse(String(decoding: try JSONEncoder().encode(tree), as: UTF8.self).contains(credential))
     }
+    func testOrphanedEmbeddedDocumentIsUnavailable() {
+        var payload = snapshot()
+        if case let .array(documents) = payload["documents"] { payload["documents"] = .array(documents + documents) }
+        XCTAssertThrowsError(try DOMSnapshotAssembly.assemble(payload, viewport: viewport))
+    }
+
+    func testHiddenAncestorHidesTextAndEmptyContainersDoNotCountAsEvidence() throws {
+        var payload = snapshot()
+        if case var .array(strings) = payload["strings"] {
+            strings[1] = .string("DIV"); strings[7] = .string("0"); payload["strings"] = .array(strings)
+        }
+        let tree = try DOMSnapshotAssembly.assemble(payload, viewport: viewport)
+        XCTAssertEqual(tree.children.first?.id, "")
+        XCTAssertEqual(tree.children.first?.isVisible, false)
+        XCTAssertEqual(tree.children.first?.children.first?.isVisible, false)
+    }
+
 }

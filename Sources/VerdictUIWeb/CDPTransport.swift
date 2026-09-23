@@ -98,6 +98,8 @@ public actor CDPTransport {
         }
         let id: Int?
         let method: String?
+        let sessionId: String?
+        let params: [String: CDPValue]?
         let result: [String: CDPValue]?
         let error: Failure?
     }
@@ -115,6 +117,8 @@ public actor CDPTransport {
     private var pending: [Int: Pending] = [:]
     private var receiveTask: Task<Void, Never>?
     private var terminalError: WebBrowserError?
+    private var inFlightNetwork: [String: Set<String>] = [:]
+    private var networkRootFrames: [String: String] = [:]
 
     public init(socket: any CDPSocket) {
         self.socket = socket
@@ -185,6 +189,16 @@ public actor CDPTransport {
         }
     }
 
+    public func setNetworkRootFrame(_ frameID: String, sessionID: String) {
+        networkRootFrames[sessionID] = frameID
+    }
+
+    /// Requests still loading in one flattened page session. Long-lived socket
+    /// channels are excluded; their openness is not a navigation/layout signal.
+    public func pendingNetworkRequests(sessionID: String) -> Int {
+        inFlightNetwork[sessionID]?.count ?? 0
+    }
+
     /// Idempotent. Pending requests resume before any asynchronous socket cleanup.
     public func close() async {
         fail(.cdpConnectionClosed(reason: "closed by caller"))
@@ -228,6 +242,7 @@ public actor CDPTransport {
             return
         }
         guard let id = response.id else {
+            recordNetworkEvent(response)
             if response.method == nil {
                 fail(.invalidCDPResponse(reason: "envelope has neither id nor event method"))
             }
@@ -244,6 +259,25 @@ public actor CDPTransport {
             finish(id: id, result: .failure(WebBrowserError.cdpError(code: error.code, message: error.message)))
         } else if let result = response.result {
             finish(id: id, result: .success(result))
+        }
+    }
+
+    private func recordNetworkEvent(_ response: Response) {
+        guard let sessionID = response.sessionId, let params = response.params,
+            case let .string(requestID) = params["requestId"] else { return }
+        switch response.method {
+        case "Network.requestWillBeSent":
+            // Cross-process subframe navigation starts on the parent target,
+            // then finishes on the child target. Counting that parent request
+            // forever would turn every cross-origin iframe into a timeout.
+            if params["type"] == .string("Document"), let root = networkRootFrames[sessionID],
+                let frame = params["frameId"]?.stringValue, frame != root { return }
+            if params["type"] != .string("WebSocket") && params["type"] != .string("EventSource") {
+                inFlightNetwork[sessionID, default: []].insert(requestID)
+            }
+        case "Network.loadingFinished", "Network.loadingFailed":
+            inFlightNetwork[sessionID]?.remove(requestID)
+        default: break
         }
     }
 

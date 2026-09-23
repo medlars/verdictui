@@ -7,6 +7,7 @@ private actor FakeCDPSocket: CDPSocket {
         let id: Int
         let method: String
         let params: [String: CDPValue]
+        let sessionId: String?
     }
 
     enum WriteMode: Sendable { case normal, suspended, failing }
@@ -99,6 +100,26 @@ final class CDPTransportTests: XCTestCase {
             XCTAssertTrue(error is WebBrowserError, "untyped error: \(error)", file: file, line: line)
             return error as? WebBrowserError
         }
+    }
+
+    func testPageSessionEnvelopeAndNetworkSettlingIsolation() async throws {
+        let (socket, transport) = fixture()
+        let request = Task { try await transport.send(method: "Network.enable", sessionID: "page-one") }
+        let sent = try await socket.requests(count: 1)
+        XCTAssertEqual(sent[0].sessionId, "page-one")
+        await socket.deliver("{\"sessionId\":\"page-one\",\"method\":\"Network.requestWillBeSent\",\"params\":{\"requestId\":\"req\",\"type\":\"Fetch\"}}")
+        await socket.deliver("{\"id\":\(sent[0].id),\"result\":{}}")
+        _ = try await request.value
+        let active = await transport.pendingNetworkRequests(sessionID: "page-one")
+        let other = await transport.pendingNetworkRequests(sessionID: "page-two")
+        XCTAssertEqual(active, 1); XCTAssertEqual(other, 0)
+        let check = Task { try await transport.send(method: "Page.getFrameTree", sessionID: "page-one") }
+        let checks = try await socket.requests(count: 2)
+        await socket.deliver("{\"sessionId\":\"page-one\",\"method\":\"Network.loadingFinished\",\"params\":{\"requestId\":\"req\"}}")
+        await socket.deliver("{\"id\":\(checks[1].id),\"result\":{}}")
+        _ = try await check.value
+        let finished = await transport.pendingNetworkRequests(sessionID: "page-one")
+        XCTAssertEqual(finished, 0)
     }
 
     func testOutOfOrderRepliesMatchRequestIDs() async throws {
