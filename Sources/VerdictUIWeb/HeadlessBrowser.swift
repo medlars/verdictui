@@ -31,6 +31,8 @@ public actor HeadlessBrowser {
 
     private let process: any BrowserProcessIdentity
 
+    func isRunning() -> Bool { process.isRunning }
+
     /// Internal seam for deterministic lifecycle tests. Production identities
     /// can only come from launch(), which retains the exact Foundation child.
     init(process: any BrowserProcessIdentity, endpoint: DevtoolsEndpoint, profileDirectory: URL) {

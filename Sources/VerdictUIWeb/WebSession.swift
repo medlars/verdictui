@@ -101,6 +101,20 @@ public actor WebSession {
                        url: WebRedaction.clean(WebRedaction.safeURL(currentURL), secrets: secrets))
     }
 
+    /// A dead child cannot become live again. Retire its transport and lock
+    /// before the manager exposes or reopens this profile.
+    func isAvailable() async -> Bool {
+        guard !closed else { return false }
+        guard await browser.isRunning() else {
+            closed = true
+            await transport.close()
+            lock.release()
+            secrets.removeAll()
+            return false
+        }
+        return !closed
+    }
+
     public func navigate(url: URL) async throws {
         try begin()
         defer { busy = false }
@@ -463,7 +477,8 @@ public actor WebSession {
     }
 
     private func handle(_ error: any Error) async throws {
-        if Task.isCancelled || !ProcessLiveness.isAlive(browser.pid) {
+        let available = await isAvailable()
+        if Task.isCancelled && available {
             try await close()
         }
         throw Self.sanitized(error)
