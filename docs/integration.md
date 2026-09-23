@@ -135,4 +135,7 @@ working copy.
 Consumer source scanning streams 64 KiB chunks, with a 256 MiB total-input,
 100,000-entry, and 10-second limit per scan. Exceeding a limit is unavailable.
 Generated build/cache trees (including dist, build, DerivedData, Pods and app
-bundles) are excluded; source files and resources remain content-hashed.
+bundles, Swift scratch directories named `.build-*`, and the generated `.vexp`
+index) are excluded; source files and resources remain content-hashed. The
+`.build-*` namespace is reserved for disposable build directories; a regular
+source file with that prefix is still hashed.

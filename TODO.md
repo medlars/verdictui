@@ -9,6 +9,8 @@
 
 ## P1 — High Priority
 
+- [ ] (2026-09-23) Repair measured MCP startup scan: canonical checkout includes 1.08 GB of generated `.build-codex-verify` and `.vexp` data. Preserve source/resource invalidation and bounded scans; verify real clients after repair.
+
 - [x] (P1) CEO/stage_pytest: Classified VerdictUIProjectRunner as SwiftSyntax-free; full Python suite 499 passed, 3 explicitly skipped.
 
 - [ ] (2026-09-23) Owner follow-up: reconnect installed VerdictUI MCP in Codex and Claude with a real client catalog/handshake check; repair measured transport failures.
