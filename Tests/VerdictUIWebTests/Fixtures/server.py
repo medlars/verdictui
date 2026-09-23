@@ -50,6 +50,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
             else:
                 content = '<style>#skip{position:absolute;left:-1px;top:-1px;width:1px;height:1px;clip-path:inset(50%)}#skip:focus{position:fixed;left:16px;top:16px;width:160px;height:44px;clip-path:none}</style><a id="skip" href="#main">Skip to content</a><p id="main" style="margin-top:120px">Visible content</p>'
             body = (prefix + content + "</body></html>").encode()
+        elif self.path == "/font-flow":
+            body = (
+                '<!doctype html><html><body style="margin:24px"><h1 style="font:700 96px/96px Arial;width:1000px;transform:translateY(0)">'
+                'Software that<br><span id="font-normal">thinks ahead</span></h1>'
+                '<h2 style="font:700 48px/48px Arial">First line<br><span id="font-gradient" style="background:linear-gradient(red,blue);background-clip:text;color:transparent">Gradient glyphs</span></h2>'
+                '<p style="font:32px/32px Arial"><span id="font-border" style="border:2px solid;padding:2px">Border paint</span></p>'
+                '<p style="font:32px/32px Arial"><span id="font-offset" style="position:relative;left:-10px">Offset text</span></p>'
+                '<p style="font:32px/32px Arial"><span id="font-margin" style="margin-left:-10px">Negative margin</span></p>'
+                "</body></html>"
+            ).encode()
         elif self.path in ("/inline-same", "/inline-cross"):
             host = "localhost" if self.path == "/inline-cross" else "127.0.0.1"
             body = (

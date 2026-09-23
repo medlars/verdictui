@@ -252,6 +252,32 @@ final class WebFrameIntegrationTests: XCTestCase {
         await manager.closeAll()
         try await server.stop()
     }
+    func testRealFontBoxesKeepEvidenceAndDistinguishPaintAndDisplacement() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("vui-font-flow-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let (server, port) = try await server(root: root)
+        let manager = WebSessionManager(root: root.appendingPathComponent("profiles"), environment: [:])
+        do {
+            _ = try await manager.open(profile: "font", url: XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/font-flow")))
+            let tree = try await manager.render(profile: "font")
+            for id in ["font-normal", "font-gradient"] {
+                let node = try XCTUnwrap(tree.flattened().first { $0.attributes["web.id"] == .string(id) })
+                XCTAssertEqual(node.attributes["web.fontBoxOnly"], .bool(true), id)
+                XCTAssertNotNil(node.attributes["web.inlineFormattingContext"], id)
+            }
+            for id in ["font-border", "font-offset", "font-margin"] {
+                let node = try XCTUnwrap(tree.flattened().first { $0.attributes["web.id"] == .string(id) })
+                XCTAssertNotEqual(node.attributes["web.fontBoxOnly"], .bool(true), id)
+            }
+            let normal = try XCTUnwrap(tree.flattened().first { $0.attributes["web.id"] == .string("font-normal") })
+            let first = try XCTUnwrap(tree.flattened().first { $0.role == .text && $0.text?.contains("Software that") == true })
+            XCTAssertEqual(normal.attributes["web.inlineFormattingContext"], first.attributes["web.inlineFormattingContext"])
+            XCTAssertNotNil(normal.frame.intersection(first.frame), "native font boxes really overlap across line advances")
+        } catch { await manager.closeAll(); try await server.stop(); throw error }
+        await manager.closeAll(); try await server.stop()
+    }
+
     func testWrappedInlineBorderMeasurementsAcrossFramesAndScroll() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("vui-inline-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
