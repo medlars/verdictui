@@ -433,7 +433,10 @@ class TestPytestRunner:
         for mutation in pytest_mutations:
             file_part = mutation.test.split("::")[0]
             assert (_PROJECT_ROOT / file_part).is_file(), mutation.test
-            assert mutation.test.count("::") == 2, f"not a node id: {mutation.test}"
+            # Pytest supports both module::function and module::class::method.
+            # Collection below remains the authority that each witness exists.
+            parts = mutation.test.split("::")
+            assert len(parts) in (2, 3) and all(parts), f"not a node id: {mutation.test}"
         # Shape is not existence. A wrong class name or a renamed method keeps
         # the shape, selects nothing, and scores INCONCLUSIVE forever — which
         # reads as "not proven yet" rather than "this entry is broken". Only

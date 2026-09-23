@@ -44,6 +44,34 @@ def test_cold_consumer_requires_its_actual_summary(monkeypatch, output):
     ("code", "output", "passed"),
     [
         (0, "", False),
+        (0, "cold external consumer auto-build PASS", False),
+        (1, "consumer reload PASS: same MCP/daemon PID", False),
+        (0, "consumer reload PASS: same MCP/daemon PID", True),
+    ],
+)
+def test_consumer_gate_requires_persistent_rebuild_recovery(monkeypatch, code, output, passed):
+    modes = []
+
+    def run(arguments, **kwargs):
+        assert kwargs["timeout"] > 0
+        modes.append(arguments[-1])
+        if arguments[-1] == "--cold":
+            return subprocess.CompletedProcess(
+                arguments, 0, "cold external consumer auto-build PASS", ""
+            )
+        assert arguments[-1] == "--reload"
+        return subprocess.CompletedProcess(arguments, code, output, "")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    pm = _mod.VerdictUIPM.__new__(_mod.VerdictUIPM)
+    assert pm.stage_consumer_runner()["passed"] is passed
+    assert modes == ["--cold", "--reload"]
+
+
+@pytest.mark.parametrize(
+    ("code", "output", "passed"),
+    [
+        (0, "", False),
         (0, "WORKBENCH SMOKE PASS: 0 passed, 0 failed, 2/2 browser flows complete", False),
         (0, "WORKBENCH SMOKE PASS: 4 passed, 0 failed, 1/2 browser flows complete", False),
         (0, "WORKBENCH SMOKE PASS: 4 passed, 1 failed, 2/2 browser flows complete", False),

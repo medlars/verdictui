@@ -4,6 +4,14 @@ from mutation_catalog_types import Mutation, Runner
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="PM consumer gate omits persistent rebuild recovery",
+        path="scripts/verdictui_pm_smoke.py",
+        old='            ("--reload", "consumer reload PASS: same MCP/daemon PID"),',
+        new="            # persistent recovery omitted under mutation",
+        test="Tests/test_product_pm_stages.py::test_consumer_gate_requires_persistent_rebuild_recovery",
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
         name="workbench origin check ignores scheme authority and query",
         path="Sources/VerdictUIWorkbenchCore/WorkbenchBridge.swift",
         old='guard isMainFrame, let candidate, candidate.isFileURL, candidate.query == nil, candidate.fragment == nil,\n              candidate.host == nil || candidate.host == "" || candidate.host == "localhost" else { return false }\n        return candidate.standardizedFileURL == page',
