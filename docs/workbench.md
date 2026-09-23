@@ -56,3 +56,13 @@ All three appeared in host-persisted history. Browser-engine rendering tests
 cover animation, reduced motion, keyboard input, bridge actions, evidence
 rendering, sibling geometry and narrow layouts. Synthetic bridge fixtures in
 those tests are test apparatus, not installed product coverage.
+
+
+Native packaging acceptance (2026-09-23): the signed 1.1.0 workbench opened its
+bundled page, restored saved project/check/history state after relaunch, replaced
+field content with Command-A, saved through the host, and produced a real web
+PASS. Cancelling an observed active run produced unavailable with “Cancelled
+before verification completed”; history retained PASS, FAIL and unavailable
+entries. Browser geometry/motion checks are separately recorded by the rendered
+smoke gate. These observations do not substitute for final installed-artifact
+hash and signature verification.
