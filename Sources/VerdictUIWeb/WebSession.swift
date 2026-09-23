@@ -33,6 +33,7 @@ public actor WebSession {
     private var remoteSessions: [String: String] = [:]
     private var busy = false
     private var closed = false
+    private var closingTask: Task<Void, Error>?
 
     private init(profile: String, browser: HeadlessBrowser, transport: CDPTransport,
                  pageSessionID: String, lock: ProfileLock, credentials: WebCredentials,
@@ -104,12 +105,12 @@ public actor WebSession {
     /// A dead child cannot become live again. Retire its transport and lock
     /// before the manager exposes or reopens this profile.
     func isAvailable() async -> Bool {
+        if let closingTask { _ = try? await closingTask.value }
         guard !closed else { return false }
         guard await browser.isRunning() else {
-            closed = true
-            await transport.close()
-            lock.release()
-            secrets.removeAll()
+            // A resolver may still be active while its browser dies. The same
+            // close path owns both lifetimes before profile reuse is allowed.
+            do { try await close() } catch { return false }
             return false
         }
         return !closed
@@ -193,12 +194,25 @@ public actor WebSession {
     }
 
     public func close() async throws {
+        if let closingTask { return try await closingTask.value }
         guard !closed else { return }
         closed = true
-        await transport.close()
-        do { try await browser.terminate(grace: 1); lock.release() }
-        catch { closed = false; throw Self.sanitized(error) }
-        secrets.removeAll()
+        let task = Task { [credentials, transport, browser, lock] in
+            try await credentials.close()
+            await transport.close()
+            try await browser.terminate(grace: 1)
+            lock.release()
+        }
+        closingTask = task
+        do {
+            try await task.value
+            secrets.removeAll()
+            closingTask = nil
+        } catch {
+            closed = false
+            closingTask = nil
+            throw Self.sanitized(error)
+        }
     }
 
     private func begin() throws {

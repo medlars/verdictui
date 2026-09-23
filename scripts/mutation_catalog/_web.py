@@ -285,4 +285,67 @@ MUTATIONS: list[Mutation] = [
         new="guard !profile.isEmpty else",
         test=_TEST + "WebSessionIntegrationTests/testBrowserDownIsUnavailableAndReleasesProfile",
     ),
+    Mutation(
+        name="owned process event wait returns before an exit event",
+        path=_BASE + "OwnedCommandProcess.swift",
+        old="_ = completion.wait(timeout: .now() + timeout)",
+        new="_ = timeout",
+        test=_TEST + "OwnedCommandProcessTests/testExitEventTimesOutThenObservesExitWithoutReaping",
+    ),
+    Mutation(
+        name="web resolver shutdown forgets its active owned groups",
+        path=_BASE + "WebCredentials.swift",
+        old="let pending = operations",
+        new="let pending: [UUID: Operation] = [:]",
+        test=_TEST
+        + "WebCredentialLifecycleTests/testCloseAndCancellationAwaitOwnedResolverGroupAndRefuseFallback",
+    ),
+    Mutation(
+        name="web resolver task cancellation is not forwarded",
+        path=_BASE + "WebCredentials.swift",
+        old="} onCancel: { worker.cancel() }",
+        new="} onCancel: {}",
+        test=_TEST
+        + "WebCredentialLifecycleTests/testCloseAndCancellationAwaitOwnedResolverGroupAndRefuseFallback",
+    ),
+    Mutation(
+        name="web closed resolver returns an environment fallback",
+        path=_BASE + "WebCredentials.swift",
+        old="public func resolve(_ reference: String) async throws -> String {\n        guard !closed, !Task.isCancelled else",
+        new="public func resolve(_ reference: String) async throws -> String {\n        guard !Task.isCancelled else",
+        test=_TEST
+        + "WebCredentialLifecycleTests/testClosedResolverRefusesFallbackAndOversizedOutputIsRejected",
+    ),
+    Mutation(
+        name="web resolver closing in flight falls back to another credential",
+        path=_BASE + "WebCredentials.swift",
+        old="if closed || Task.isCancelled { throw WebBrowserError.credentialUnavailable }",
+        new="if Task.isCancelled { throw WebBrowserError.credentialUnavailable }",
+        test=_TEST
+        + "WebCredentialLifecycleTests/testCloseAndCancellationAwaitOwnedResolverGroupAndRefuseFallback",
+    ),
+    Mutation(
+        name="web credential output exceeds the bounded field size",
+        path=_BASE + "WebCredentials.swift",
+        old="guard output.count + chunk.count <= 65_536 else",
+        new="guard output.count + chunk.count <= 131_072 else",
+        test=_TEST
+        + "WebCredentialLifecycleTests/testClosedResolverRefusesFallbackAndOversizedOutputIsRejected",
+    ),
+    Mutation(
+        name="web session shutdown leaves an active credential group behind",
+        path=_BASE + "WebSession.swift",
+        old="try await credentials.close()",
+        new="_ = credentials",
+        test=_TEST
+        + "WebCredentialLifecycleTests/testMCPSIGTERMAwaitsInFlightCredentialGroupBeforeExit",
+    ),
+    Mutation(
+        name="web concurrent close returns before existing shutdown completes",
+        path=_BASE + "WebSession.swift",
+        old="if let closingTask { return try await closingTask.value }",
+        new="if closingTask != nil { return }",
+        test=_TEST
+        + "WebCredentialLifecycleTests/testSessionCloseAwaitsCredentialLookupAndReleasesProfile",
+    ),
 ]
