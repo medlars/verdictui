@@ -1,9 +1,9 @@
 # VerdictUI TODO
 
 ## P0 — Blocking
-- [ ] (2026-09-23) Real-site browser regressions: valid Chrome pseudo-element layout rows share a DOM node index, and embedded frame owners can be absent from the assembled tree. Both parser repairs and genuine Chrome regressions are verified. Actual pages now render, but ordinary below-fold scrollable content is incorrectly reported as offscreen; correct web lint bounds without weakening displaced/clipped-content checks. Ship/install 1.1.2 only after actual public-page acceptance and final gates.
+- [ ] (2026-09-23) Complete CTS-E47F57A8 final release gates: real-site parser, scrolling, input and typography repairs now pass actual product-page verification. Bounded original-node overlap passes independent security/performance review and real CLI long-text/budget controls. Initial 35/35 mutation witnesses pass; finish final revised witnesses, full PM/CI, signed 1.1.2 packaging, installed/Homebrew acceptance and publication before closing.
 - [x] (2026-09-23) Desktop workbench: owner-selected web-rendered macOS app, CleanMyMac-inspired motion, real project checks and evidence, accessible UI verification and packaged installation. Delivered in v1.1.0; signed/notarized desktop and both installed CLI copies verified.
-- [x] (2026-09-23) Complete CTS-E47F57A8 / full saved plan: custom scenario runner, live-app MCP and verified input, web semantic verification and trusted input, isolated sessions, artifact smoke, truthful documentation and installed release. Plan: `docs/finalization-plan.md`. Delivered in v1.1.0; signed/notarized desktop and both installed CLI copies verified.
+- [x] (2026-09-23) Initial saved-plan delivery (subsequently reopened above): custom scenario runner, live-app MCP and verified input, web semantic verification and trusted input, isolated sessions, artifact smoke, truthful documentation and installed release. Plan: `docs/finalization-plan.md`. Delivered in v1.1.0; signed/notarized desktop and both installed CLI copies verified.
 
 ## P1 — High Priority
 - [x] (2026-09-23) ScenarioState patch released in 1.1.1: initial view-construction publications removed; strict observer/mutation coverage, unchanged timing contract, full PM Grade A, CI and both installed artifact gates passed. Subsequent real-site browser defects are tracked in the open P0 above.

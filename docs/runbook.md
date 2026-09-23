@@ -2,6 +2,11 @@
 
 ## Start / Stop
 
+For a real project, configure its [consumer runner](integration.md) or declare
+[workbench checks](workbench.md). [Browser](web.md) and [live macOS](native-acting.md)
+commands also target real products directly. The commands below smoke-test the
+stock demonstration catalog; they do not certify another application.
+
 ```bash
 # Build the CLI (swift test does NOT build executable products)
 swift build --product verdictui -Xswiftc -warnings-as-errors
@@ -61,7 +66,7 @@ surfaces cannot disagree about what `verify` means.
 
 ```bash
 printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | verdictui mcp
-# → the 7-tool catalog: list_scenarios, render, verify, focus, act, sweep, baseline_diff
+# → the scenario, pixel, browser and live-application tool catalog
 ```
 
 `isError` reports whether the tool COULD ANSWER, never what the answer was: a
@@ -124,7 +129,7 @@ printf '%s\n' \
   '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"probe","version":"1"}}}' \
   '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
   | .build/release/verdictui mcp
-# → handshake result with serverInfo, then the 7-tool catalog
+# → handshake result with serverInfo, then the current tool catalog
 ```
 
 Send the handshake **with its params**, as above. `initialize` with no `params`
