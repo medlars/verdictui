@@ -9,9 +9,9 @@ import Foundation
 /// and the SAME anchor the reader uses (``AXReader/anchor(pid:surface:)``), so a
 /// path read from the tree is the path acted on.
 ///
-/// Drag and hover are deliberately absent. Both need synthesized pointer
-/// events, which move the owner's real cursor across their screen — the
-/// distraction Wave 11 exists to remove. They are tracked rather than faked.
+/// Quartz fallback input targets only this process. It does not activate the
+/// app or post into the global event stream. Callers must observe the outcome;
+/// posting itself has no acknowledgement from the application.
 extension AXReader {
 
     /// One action on one element.
@@ -27,6 +27,14 @@ extension AXReader {
         case scrollTo(Double)
         /// Post keystrokes to the process, after focusing the element.
         case type(String)
+        /// Click the element's centre with process-targeted Quartz events.
+        case click
+        /// Send a physical key with modifiers after focusing the target.
+        case key(NativeInput.KeyChord)
+        /// Drag from the element's centre to a global display-space point.
+        case drag(to: NativeInput.Point)
+        /// Send a process-targeted mouse move to the element's centre.
+        case hover
 
         /// The CLI vocabulary. Returns `nil` for an unknown verb, a missing
         /// value, or a scroll fraction outside 0...1 — refused rather than
@@ -56,6 +64,20 @@ extension AXReader {
             case "type":
                 guard let value, !value.isEmpty else { return nil }
                 self = .type(value)
+            case "click": self = .click
+            case "hover": self = .hover
+            case "key":
+                guard let value, let chord = try? NativeInput.KeyChord(value) else { return nil }
+                self = .key(chord)
+            case "drag":
+                guard let value else { return nil }
+                let coordinates = value.split(separator: ",", omittingEmptySubsequences: false)
+                guard coordinates.count == 2,
+                    let x = Double(coordinates[0].trimmingCharacters(in: .whitespaces)),
+                    let y = Double(coordinates[1].trimmingCharacters(in: .whitespaces)),
+                    let point = try? NativeInput.Point(x: x, y: y)
+                else { return nil }
+                self = .drag(to: point)
             default:
                 return nil
             }
@@ -64,7 +86,8 @@ extension AXReader {
         /// Every verb the CLI accepts, for help text and error messages.
         public static let verbs = [
             "press", "increment", "decrement", "show-menu", "confirm", "cancel", "raise",
-            "pick", "scroll-to-visible", "focus", "set-value", "scroll-to", "type", "ax:<AXName>",
+            "pick", "scroll-to-visible", "focus", "set-value", "scroll-to", "type", "click",
+            "key", "drag", "hover", "ax:<AXName>",
         ]
 
         public var description: String {
@@ -74,6 +97,10 @@ extension AXReader {
             case .focus: "focus"
             case .scrollTo(let fraction): "scroll-to \(fraction)"
             case .type: "type"
+            case .click: "click"
+            case .key: "key"
+            case .drag: "drag"
+            case .hover: "hover"
             }
         }
     }
@@ -88,7 +115,7 @@ extension AXReader {
     public static func act(
         pid: pid_t, atPath path: String, surface: Surface = .window(0), action: Action
     ) throws {
-        guard isTrusted else { throw Failure.notTrusted }
+        guard pid > 1 else { throw NativeInput.Failure.invalidPID }
         let content = try anchor(pid: pid, surface: surface).element
         guard let target = element(at: path, from: content) else {
             throw Failure.elementNotFound
@@ -96,6 +123,10 @@ extension AXReader {
         switch action {
         case .perform(let name):
             let available = actionNames(of: target)
+            if name == kAXPressAction, !available.contains(name) {
+                try NativeInput().click(at: centre(of: target), to: pid)
+                return
+            }
             guard available.contains(name) else {
                 throw Failure.actionUnsupported(action: name, available: available)
             }
@@ -114,10 +145,17 @@ extension AXReader {
             }
             try write(bar, kAXValueAttribute, NSNumber(value: fraction))
         case .type(let text):
-            // Focus first when the element allows it; a field that refuses
-            // focus may still be the first responder already.
-            try? write(target, kAXFocusedAttribute, kCFBooleanTrue)
-            try postKeystrokes(text, to: pid)
+            try focusForInput(target)
+            try NativeInput().type(text, to: pid)
+        case .click:
+            try NativeInput().click(at: centre(of: target), to: pid)
+        case .key(let chord):
+            try focusForInput(target)
+            try NativeInput().key(chord, to: pid)
+        case .drag(let destination):
+            try NativeInput().drag(from: centre(of: target), to: destination, pid: pid)
+        case .hover:
+            try NativeInput().hover(at: centre(of: target), to: pid)
         }
     }
 
@@ -143,17 +181,15 @@ extension AXReader {
         guard result == .success else { throw Failure.actionRefused(axError: result.rawValue) }
     }
 
-    /// Unicode keystrokes posted to ONE process — never to the session, so no
-    /// other app (and no terminal the owner is typing in) receives them.
-    private static func postKeystrokes(_ text: String, to pid: pid_t) throws {
-        for scalar in text.utf16 {
-            var unit = scalar
-            for down in [true, false] {
-                guard let event = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: down)
-                else { throw Failure.actionRefused(axError: AXError.failure.rawValue) }
-                event.keyboardSetUnicodeString(stringLength: 1, unicodeString: &unit)
-                event.postToPid(pid)
-            }
+    private static func focusForInput(_ target: AXUIElement) throws {
+        if let focused = copy(target, kAXFocusedAttribute) as? Bool, focused { return }
+        try write(target, kAXFocusedAttribute, kCFBooleanTrue)
+    }
+
+    private static func centre(of target: AXUIElement) throws -> NativeInput.Point {
+        guard let box = frame(of: target), box.width > 0, box.height > 0 else {
+            throw Failure.anchorUnreadable
         }
+        return try NativeInput.Point(x: box.midX, y: box.midY)
     }
 }

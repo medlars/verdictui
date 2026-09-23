@@ -69,8 +69,8 @@ final class AXSurfaceAndActionTests: XCTestCase {
         XCTAssertNil(AXReader.Action(verb: "scroll-to", value: "1.5"))
         XCTAssertNil(AXReader.Action(verb: "scroll-to", value: "down"))
         XCTAssertNil(AXReader.Action(verb: "ax:", value: nil))
-        XCTAssertNil(AXReader.Action(verb: "drag", value: nil), "drag would move the real pointer")
-        XCTAssertNil(AXReader.Action(verb: "hover", value: nil))
+        XCTAssertNil(AXReader.Action(verb: "drag", value: nil), "drag needs destination coordinates")
+        XCTAssertEqual(AXReader.Action(verb: "hover", value: nil), .hover)
     }
 
     func testNewFailuresDescribeThemselves() {

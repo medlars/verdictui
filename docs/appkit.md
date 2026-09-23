@@ -1,4 +1,40 @@
-# Judging an AppKit product — headless, no screenshots
+# Judging and operating an AppKit product
+
+## Operate the running product
+
+The live route works with ordinary AppKit and SwiftUI applications through the
+same `AXReader` and `NativeInput` driver. It does not require a scenario catalog
+or a runner executable:
+
+```bash
+verdictui inspect --pid 12345
+verdictui inspect --pid 12345 --path 'root/button[0]' --act press
+verdictui inspect --pid 12345 --path 'root/textField[1]' --act type --value 'Hello'
+verdictui inspect --pid 12345 --path 'root/textField[1]' --act key --value 'command+a'
+verdictui inspect --pid 12345 --path 'root/button[0]' --act drag --value '600,400'
+```
+
+Use the real PID and a structural path returned by that app's current tree.
+`press` uses AXPress when advertised and falls back to a process-targeted click
+otherwise. `click` forces the click path; `hover` sends a mouse move to the
+element centre. `drag` starts at that centre and takes a destination in global
+display points (top-left origin). `key` accepts one physical ANSI key with
+distinct `command`, `control`, `option`, and `shift` modifiers; use `type` for
+layout-independent Unicode text.
+
+The driver never activates an app or posts into the global input stream. It
+addresses events to the requested PID and window; unavailable input permission,
+missing geometry, invalid coordinates, and failed focus writes produce an
+unavailable result. Input submission has no OS delivery acknowledgement, so
+read the resulting tree and assert the requested outcome before claiming an
+action succeeded. Live UI code can itself open a window or activate another app
+in response to an action; the driver cannot suppress an application's behavior.
+
+Both AppKit and SwiftUI are exercised by the same [live fixture](../examples/LiveAppFixture/README.md).
+Its tests assert changes from real event handlers, the foreground app and cursor
+remaining unchanged, and no visible fixture windows.
+
+## Judge a product without launching it
 
 This page is for an AppKit/Swift developer who wants their product judged
 **without taking snapshots, without Apple Automator, and without a running app**.
