@@ -217,6 +217,22 @@ final class DOMSnapshotAssemblyTests: XCTestCase {
         }
     }
 
+    func testMeasuredEmptyPaintClipHidesDescendantsAndFocusRestoresThem() throws {
+        for (clipPath, expected) in [("inset(50%)", false), ("none", true), ("polygon(0 0, 0 0, 0 0)", true)] {
+            var payload = snapshot()
+            guard case var .array(strings) = payload["strings"], case var .array(documents) = payload["documents"],
+                  case var .object(document) = documents[0], case var .object(layout) = document["layout"],
+                  case var .array(styles) = layout["styles"], case var .array(buttonStyle) = styles[0] else { return XCTFail("fixture") }
+            let next = strings.count; strings += [.string("absolute"), .string(clipPath)]
+            buttonStyle[4] = .integer(Int64(next)); buttonStyle[6] = .integer(Int64(next + 1)); styles[0] = .array(buttonStyle)
+            layout["styles"] = .array(styles); document["layout"] = .object(layout); documents[0] = .object(document)
+            payload["strings"] = .array(strings); payload["documents"] = .array(documents)
+            let tree = try DOMSnapshotAssembly.assemble(payload, viewport: viewport)
+            XCTAssertEqual(tree.children.first?.isVisible, expected)
+            XCTAssertEqual(tree.children.first?.children.first?.isVisible, expected)
+        }
+    }
+
     func testMeasuredPseudoElementCanHaveMultipleLayoutRows() throws {
         // Reduced from Chrome's capture of the published VerdictUI page:
         // ::before has a full-page box plus an empty anonymous layout child.

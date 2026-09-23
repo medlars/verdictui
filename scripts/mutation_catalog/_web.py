@@ -7,6 +7,49 @@ _TEST = "VerdictUIWebTests."
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="web scroll transform containing block is ignored",
+        path=_BASE + "WebLint.swift",
+        old='styles[9] != "none"',
+        new='styles[9] == "unsupported"',
+        test=_TEST + "WebLintTests/testComputedContainingBlockPropertiesHaveIndependentWitnesses",
+    ),
+    Mutation(
+        name="web scroll filter containing block is ignored",
+        path=_BASE + "WebLint.swift",
+        old='styles[10] != "none"',
+        new='styles[10] == "unsupported"',
+        test=_TEST + "WebLintTests/testComputedContainingBlockPropertiesHaveIndependentWitnesses",
+    ),
+    Mutation(
+        name="web scroll perspective containing block is ignored",
+        path=_BASE + "WebLint.swift",
+        old='styles[11] != "none"',
+        new='styles[11] == "unsupported"',
+        test=_TEST + "WebLintTests/testComputedContainingBlockPropertiesHaveIndependentWitnesses",
+    ),
+    Mutation(
+        name="web scroll contain property is ignored",
+        path=_BASE + "WebLint.swift",
+        old='!contain.isDisjoint(with: ["layout", "paint", "strict", "content"])',
+        new='!contain.isDisjoint(with: ["unsupported"])',
+        test=_TEST + "WebLintTests/testComputedContainingBlockPropertiesHaveIndependentWitnesses",
+    ),
+    Mutation(
+        name="web scroll will change containing block is ignored",
+        path=_BASE + "WebLint.swift",
+        old='!willChange.isDisjoint(with: ["transform", "filter", "perspective", "contain"])',
+        new='!willChange.isDisjoint(with: ["unsupported"])',
+        test=_TEST + "WebLintTests/testComputedContainingBlockPropertiesHaveIndependentWitnesses",
+    ),
+    Mutation(
+        name="web scroll empty paint proof is not applied",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old="&& !WebLint.emptyPaint(position: style[4], clip: style[5], clipPath: style[6], frame: frame)",
+        new='&& (!WebLint.emptyPaint(position: style[4], clip: style[5], clipPath: style[6], frame: frame) || style[0] != "none")',
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/testMeasuredEmptyPaintClipHidesDescendantsAndFocusRestoresThem",
+    ),
+    Mutation(
         name="web paint scrollable descendant inherits outer clipping axis",
         path=_BASE + "WebLint.swift",
         old="y: $0.y && !scrollY)",
@@ -110,14 +153,14 @@ MUTATIONS: list[Mutation] = [
         + "DOMSnapshotAssemblyTests/testDocumentExtentRequiredFiniteAndZeroDimensionsRemainValid",
     ),
     Mutation(
-        name="web scroll document boundary is kept as clipping ancestry",
+        name="web scroll embedded content uses parent document extent",
         path=_BASE + "WebLint.swift",
         old="if frame != scope.frame, let bounds",
         new="if false && frame != scope.frame, let bounds",
         test=_TEST + "WebLintTests/testEmbeddedDocumentDoesNotClipAtOwnerButOwnerRemainsChecked",
     ),
     Mutation(
-        name="web scroll scroll owner remains clipping ancestor",
+        name="web scroll scroll content uses outer document bounds",
         path=_BASE + "WebLint.swift",
         old='if let bounds = rect(key: "web.scrollBounds", in: source.attributes) {',
         new='if let bounds = rect(key: "web.scrollBounds", in: source.attributes), bounds.width < 0 {',

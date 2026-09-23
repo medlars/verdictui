@@ -238,6 +238,19 @@ final class WebLintTests: XCTestCase {
         XCTAssertTrue(WebLint.run(tree: document([br]), scenario: "empty breaks", viewport: viewport).findings.contains { $0.rule == "vacuous-verdict" })
     }
 
+    func testComputedContainingBlockPropertiesHaveIndependentWitnesses() {
+        let defaults = ["block", "visible", "1", "auto", "static", "auto", "none", "visible", "visible", "none", "none", "none", "none", "auto"]
+        XCTAssertFalse(WebLint.establishesFixedContainer(styles: defaults))
+        for (index, value) in [(9, "matrix(1,0,0,1,0,0)"), (10, "blur(1px)"), (11, "100px"),
+                               (12, "layout"), (12, "paint"), (12, "strict"), (12, "content"),
+                               (13, "transform"), (13, "opacity, filter"), (13, "perspective"), (13, "contain")] {
+            var styles = defaults; styles[index] = value
+            XCTAssertTrue(WebLint.establishesFixedContainer(styles: styles), "\(index): \(value)")
+        }
+        var styles = defaults; styles[13] = "opacity"
+        XCTAssertFalse(WebLint.establishesFixedContainer(styles: styles))
+    }
+
     func testEmptyClipOnlyHidesSupportedComputedFormsAndRestoresOnFocus() {
         let frame = Rect(x: -1, y: -1, width: 1, height: 1)
         XCTAssertTrue(WebLint.emptyPaint(position: "absolute", clip: "auto", clipPath: "inset(50%)", frame: frame))
