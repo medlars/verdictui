@@ -111,3 +111,47 @@ rectangle JSON files. Run `python3.14 verify_workbench.py <repository-root>`.
 Frontend verification is complete. The native shell's real engine execution,
 packaging, and end-to-end evidence remain the integration lane's responsibility;
 an injected bridge is not evidence that those native paths ran.
+
+## Durable smoke command and dependencies
+
+The checked-in `scripts/workbench-smoke.py` now owns this acceptance flow. It
+accepts a repository root (defaults to its own repository) and `--artifact-dir`.
+The only test-only dependencies are `playwright==1.61.0` and `Pillow==12.3.0`,
+using Python 3.14. Install the matching official browser runtimes with
+`python3.14 -m playwright install chromium webkit`.
+
+```bash
+python3.14 scripts/workbench-smoke.py --artifact-dir /tmp/verdictui-workbench-smoke
+python3.14 -m pytest Tests/test_workbench_smoke.py -q
+```
+
+The terminal gate is `WORKBENCH SMOKE PASS` with a positive measured assertion
+count and both browser flows complete. `verification.json` records actual
+passed assertions, failures, and completed/expected browsers separately.
+An absent browser/dependency is a failure, never a successful check. Seven fast
+Python regressions prove empty runs, absent browser assertions, runtime
+unavailability, and missing resources cannot produce the pass marker; failed
+assertions count once and retain earlier measured passes. The durable rerun
+passed 86 browser assertions, zero failures, and both complete browser flows;
+all seven Python gate regressions passed as well.
+
+The durable flow also covers inherited-property check kinds (`__proto__`,
+`constructor`, `toString`) and preserving a saved web expected-text value.
+HTTP/HTTPS requests are blocked and counted; a passing run made none.
+
+## Source review and app icon
+
+Source/asset review found one concrete availability defect: looking up
+`fields[check.kind]` without an own-property check allowed a persisted kind such
+as `__proto__` to crash rendering. The integration lane fixed all three lookups;
+the durable smoke tests reproduce those inputs. Saved web expectations and the
+unsupported scenario runner field were also corrected by the integration lane.
+Untrusted evidence uses text nodes, DOM properties, and fixed attribute names;
+there is no `innerHTML`, storage dependency, eval, or external asset request.
+The host remains responsible for validating bridge messages and running targets.
+
+The app icon is the original lens signature in `assets/workbench-icon.svg`:
+local gradients, concentric optical shells, and the VerdictUI aperture on a pearl
+rounded square. Its 1024×1024 browser render is measured; it contains no external
+references or third-party branding. Packaging may rasterize the SVG into the
+standard macOS icon sizes. No new runtime dependency is needed by the app.
