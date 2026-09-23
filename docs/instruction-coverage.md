@@ -44,10 +44,13 @@ snapshot cases that the browser parser rejected. The browser instruction
 INS-402715D8 remains partial pending installed real-site acceptance.
 CTS-E47F57A8 was reopened, then closed with verified implementation and notarized
 candidate evidence; required publication and installed upgrades continue as
-CTS-B70C5383. The 1.1.2 source candidate now verifies both
-public product-page URLs with zero errors and eight warnings; real CLI controls
-cover a 10,000-line page and explicit unavailable work-budget exhaustion. Final
-release gates remain open. INS-FAE07628 cites delivered desktop
+CTS-B70C5383. The earlier 1.1.2 candidate verified both public product-page URLs with zero
+errors and eight warnings and passed 10,000-line/work-budget controls. Further
+homepage adjudication exposed false inline-union and SVG reports plus unresolved
+presentation-layer paint, so that candidate is superseded. Measured border
+fragments and conservative paint classification are being integrated, with an
+explicit paint-unverified qualification in CLI, MCP documentation and desktop
+results. Final rebuild and installed release gates remain open. INS-FAE07628 cites delivered desktop
 evidence; INS-0105EE8B cites the real consumer surfaces. Fleet coverage remains
 scoped by [product-adoption.md](product-adoption.md).
 
