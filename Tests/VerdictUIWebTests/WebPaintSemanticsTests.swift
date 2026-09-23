@@ -353,7 +353,12 @@ final class WebPaintSemanticsTests: XCTestCase {
             var candidate = second; candidate.attributes.merge(attributes) { _, supplied in supplied }; cases.append(candidate)
         }
         var missing = second; missing.attributes.removeValue(forKey: "web.fontBoxOnly"); cases.append(missing)
-        for role in [Role.button, .image, .container] { var candidate = second; candidate.role = role; cases.append(candidate) }
+        for role in [Role.button, .image, .container] {
+            var candidate = second
+            candidate.role = role
+            candidate.frame = Rect(x: 0, y: 20, width: 200, height: 100)
+            cases.append(candidate)
+        }
         for candidate in cases {
             // Check both argument orders; one unqualified subject blocks warning.
             for pair in [[first, candidate], [candidate, first]] {
