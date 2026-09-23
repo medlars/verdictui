@@ -119,46 +119,58 @@ public enum ProjectRunner {
     static func buildIfConfigured(
         projectRoot: URL,
         timeout: TimeInterval = 300,
-        swiftExecutable: URL = URL(fileURLWithPath: "/usr/bin/env")
+        swiftExecutable: URL = URL(fileURLWithPath: "/usr/bin/env"),
+        shouldCancel: () -> Bool = { false }
     ) throws {
-        guard let build = try ProjectScenarios.buildConfiguration(projectRoot: projectRoot) else { return }
-        let process = Process()
-        process.executableURL = swiftExecutable
-        process.arguments = [
+        guard let build = try ProjectScenarios.buildConfiguration(projectRoot: projectRoot) else {
+            return
+        }
+        let arguments = [
             "swift", "build", "--package-path", projectRoot.path,
             "--product=\(build.product)", "--configuration=\(build.configuration)", "--jobs", "2",
         ]
-        process.currentDirectoryURL = projectRoot
-        process.standardInput = FileHandle.nullDevice
-        process.standardOutput = FileHandle.standardError
-        process.standardError = FileHandle.standardError
-        let event = try JSONSerialization.data(withJSONObject: [
-            "event": "project-build", "product": build.product, "configuration": build.configuration,
-        ], options: [.sortedKeys])
-        FileHandle.standardError.write(event + Data("\n".utf8))
-        try process.run()
+        let event = try JSONSerialization.data(
+            withJSONObject: [
+                "event": "project-build", "product": build.product,
+                "configuration": build.configuration,
+            ], options: [.sortedKeys])
+        FileHandle.standardError.write(event + Data([10]))
+        let process = try OwnedCommandProcess.spawn(
+            executable: swiftExecutable, arguments: arguments,
+            directory: projectRoot, environment: ProcessInfo.processInfo.environment,
+            standardOutput: STDERR_FILENO, standardError: STDERR_FILENO)
+        defer { _ = try? process.stop(grace: 0.2) }
         let deadline = ProcessInfo.processInfo.systemUptime + timeout
-        while process.isRunning, ProcessInfo.processInfo.systemUptime < deadline { Thread.sleep(forTimeInterval: 0.05) }
-        if process.isRunning {
-            process.terminate()
-            let terminationDeadline = ProcessInfo.processInfo.systemUptime + 1
-            while process.isRunning, ProcessInfo.processInfo.systemUptime < terminationDeadline { Thread.sleep(forTimeInterval: 0.05) }
-            if process.isRunning { kill(process.processIdentifier, SIGKILL) }
-            process.waitUntilExit()
-            throw Failure(description: "consumer build timed out after \(timeout) seconds")
+        while try process.status() == nil {
+            guard !shouldCancel(), ProcessInfo.processInfo.systemUptime < deadline else {
+                throw Failure(
+                    description: shouldCancel()
+                        ? "consumer build cancelled"
+                        : "consumer build timed out after \(timeout) seconds")
+            }
+            Thread.sleep(forTimeInterval: 0.025)
         }
-        process.waitUntilExit()
-        guard process.terminationReason == .exit, process.terminationStatus == 0 else {
-            throw Failure(description: "consumer build failed (status \(process.terminationStatus)); stale runner was not executed")
+        guard try process.status() == 0 else {
+            throw Failure(description: "consumer build failed; stale runner was not executed")
         }
     }
 
+    static func isStockDaemon(
+        arguments: [String], environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> Bool {
+        arguments.starts(with: ["daemon", "start"]) && environment["VERDICTUI_STOCK_DAEMON"] == "1"
+    }
+
     public static func forwardIfDeclared() throws {
+        guard !isStockDaemon(arguments: Array(CommandLine.arguments.dropFirst())) else { return }
         guard shouldForward(arguments: Array(CommandLine.arguments.dropFirst())) else { return }
         let current = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         let binary = Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0])
         guard ProcessInfo.processInfo.environment[delegationMarker] == nil else {
-            throw Failure(description: "project runner delegated back to verdictui; use VerdictUIRunner.main(registry:)")
+            throw Failure(
+                description:
+                    "project runner delegated back to verdictui; use VerdictUIRunner.main(registry:)"
+            )
         }
         if let root = ProjectScenarios.findProjectRoot(startingAt: current) {
             try buildIfConfigured(projectRoot: root)
@@ -175,7 +187,8 @@ public enum ProjectRunner {
             setenv(delegationMarker, target.projectRoot.path, 1) == 0
         else {
             throw Failure(
-                description: "could not prepare project runner: \(String(cString: strerror(errno)))")
+                description: "could not prepare project runner: \(String(cString: strerror(errno)))"
+            )
         }
         let arguments = [target.executable.path] + CommandLine.arguments.dropFirst()
         let pointers = arguments.map { strdup($0) }

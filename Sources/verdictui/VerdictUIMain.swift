@@ -19,6 +19,7 @@ import VerdictUICLICore
 struct VerdictUIBinary {
     static func main() async {
         do {
+            if try ProjectRunnerBroker.runIfDeclared() { return }
             try ProjectRunner.forwardIfDeclared()
             await VerdictUITool.main()
         } catch {

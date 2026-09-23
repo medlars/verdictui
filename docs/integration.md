@@ -46,20 +46,44 @@ SwiftPM rebuilds only changed dependencies; unchanged invocations use its cache.
 Set `configuration` to `release` and point `runner` at the release executable to
 use that build. Compiler output goes to stderr, preserving JSON and MCP stdout.
 A failed build refuses any old executable; a build exceeding 300 seconds is
-terminated and returns exit 2. The running MCP or daemon retains its compiled
-registry until restarted, so restart it after changing consumer source.
+terminated and returns exit 2. When launched through the installed tool, MCP and
+`daemon start` keep a stable broker process and run the consumer in a disposable
+child. Before each request the broker checks project sources/resources, package
+configuration and the runner build product. A changed generation stops the old
+child, rebuilds incrementally, and initializes a fresh child before answering.
+A compile failure returns structured unavailable evidence; the old executable
+is never used to answer that request. Unchanged requests reuse the warm child.
+
+If a child dies, the affected request receives unavailable evidence and the next
+request starts a new child. Actions are never automatically replayed: input may
+have reached the old process before it died. Source changes during a request
+also discard its result as unavailable. The public Unix socket/MCP process stays
+alive. `daemon stop` and `status` do not require a successful consumer build.
+Changing the runner's path requires restarting the broker.
+
+A restarted child loses its in-memory scenario state and owned web sessions.
+Previously open web profiles must be reopened; unknown sessions return explicit
+unavailable results. Persistent profile files and project baselines remain on
+disk. No dynamic library is unloaded in-process.
 
 Omit `buildProduct` for a runner built by Xcode or another build pipeline; then
 you own rebuilding it before verification. A missing, nonexecutable or malformed
 runner declaration produces exit 2. A
 runner that delegates back to the launcher is rejected instead of recursing.
-The launcher inherits stdin/stdout/stderr and uses process replacement, so MCP
-framing, exit codes and termination signals reach the actual scenario runner.
+One-shot commands use process replacement. Long-lived MCP/daemon commands use
+the broker; compiler output remains on stderr and protocol stdout stays framed.
+EOF or termination shuts down its child.
 Invocations from a subdirectory resolve the nearest ancestor manifest and run
 with that project root as the working directory. Baselines and pixel artifacts
 therefore stay with the declaring project.
 
-For MCP, configure the consumer executable directly (absolute paths are best):
+For MCP with rebuild monitoring, configure the installed executable and your
+client's working-directory setting to the project root. A client that cannot
+set a working directory can use a small project-owned wrapper that changes to
+that root and executes `verdictui mcp`.
+
+Direct consumer executable configuration is also supported, but deliberately
+bypasses the launcher broker and requires an explicit restart after rebuilding:
 
 ```json
 {"mcpServers":{"my-app":{"command":"/absolute/project/.build/debug/MyScenarios","args":["mcp"]}}}
@@ -83,3 +107,16 @@ Commands that operate on external inputs (`web`, `inspect`, `capture`, `judge`,
 on a scenario runner. With no manifest, scenario commands still expose the
 explicitly labelled demonstration catalog. Those fixtures are not coverage of
 the application in the current directory.
+
+
+Verify consumer rebuilds and crash isolation against the actual launcher:
+
+```bash
+python3.14 examples/ConsumerApp/verify-integration.py /absolute/verdictui --reload
+```
+
+The gate creates a separate package, changes real Swift code while keeping the
+same MCP and daemon process, expects a new FAIL verdict, kills only that
+broker's child, introduces a compile error to prove stale results are refused,
+and repairs the source to recover a PASS. It never mutates another project's
+working copy.
