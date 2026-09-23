@@ -97,6 +97,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 '<h1>Containing block control</h1><div id="outer"><div id="intermediary">'
                 '<button id="escaping">Escaping</button></div><button id="outside">Outside</button></div>'
             ).encode()
+        elif self.path == "/editable-inline":
+            body = (
+                "<!doctype html><style>body{margin:24px;font:16px Arial}.editor{width:320px;min-height:60px;margin:24px 0}"
+                "button{display:block;width:180px;height:44px}</style><h1>Editable control</h1>"
+                '<div class="editor" contenteditable="true" aria-label="Message"><span><em>private-editable-inline-sentinel</em></span></div>'
+                '<div class="editor" role="textbox" aria-label="Draft"><em>private-role-textbox-sentinel</em></div>'
+                '<button id="editable-action" onclick="this.textContent=&quot;Message saved&quot;">Save message</button>'
+            ).encode()
         elif self.path == "/font-flow":
             body = (
                 '<!doctype html><html><body style="margin:24px"><h1 style="font:700 96px/96px Arial;width:1000px;transform:translateY(0)">'

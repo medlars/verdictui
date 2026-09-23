@@ -7,6 +7,30 @@ _TEST = "VerdictUIWebTests."
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="web editable inline inventory requires pruned descendants",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old='&& !tag.hasPrefix("::") && !prunedByControl[index] {',
+        new='&& !tag.hasPrefix("::") {',
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/testInlineInventoryMatchesRetainedEditableEvidenceWithoutExposingValues",
+    ),
+    Mutation(
+        name="web editable inline inventory loses nested pruning",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old="prunedByControl[parent] || prunesControlDescendants[parent]",
+        new="prunesControlDescendants[parent]",
+        test=_TEST
+        + "WebFrameIntegrationTests/testEditableInlineValuesRemainRedactedWhileOutsideButtonActs",
+    ),
+    Mutation(
+        name="web editable inline inventory skips retained measurements",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old='&& !tag.hasPrefix("::") && !prunedByControl[index] {',
+        new='&& !tag.hasPrefix("::") && !prunedByControl[index] && prunedByControl[index] {',
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/testInlineInventoryMatchesRetainedEditableEvidenceWithoutExposingValues",
+    ),
+    Mutation(
         name="web containing raw DOM depth becomes semantic depth",
         path=_BASE + "DOMSnapshotAssembly.swift",
         old='metadata["web.domDepth"] = .number(Double(depths[index]))',
@@ -1129,8 +1153,8 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="web field descendants expose existing values",
         path=_BASE + "DOMSnapshotAssembly.swift",
-        old='if role == .textField || tag == "input" || tag == "textarea" { descendants = [] }',
-        new='if tag == "not-an-input" { descendants = [] }',
+        old="if prunesControlDescendants[index] { descendants = [] }",
+        new="if !prunesControlDescendants[index] { descendants = [] }",
         test=_TEST
         + "DOMSnapshotAssemblyTests/testControlNameSurvivesCompactTextAndNeverUsesValueChildren",
     ),
