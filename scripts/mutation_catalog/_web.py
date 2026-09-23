@@ -1402,9 +1402,206 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="web paint overlap uses independent SVG internals again",
         path=_BASE + "WebLint.swift",
-        old="var overlapRoots = [semantic.tree]",
-        new="var overlapRoots = [tree]",
+        old="= [(semantic.tree, nil, false)]",
+        new="= [(tree, nil, false)]",
         test=_TEST
         + "WebPaintSemanticsTests/testPassiveSVGCompositionIsAtomicButOwnerStillCollides",
+    ),
+    Mutation(
+        name="web paint followup reachable scroll scope discards hidden axes",
+        path=_BASE + "WebLint.swift",
+        old="childClip?.removing(x: scrollX, y: scrollY)",
+        new="childClip?.removing(x: scrollX || clipsX, y: scrollY || clipsY)",
+        test=_TEST
+        + "WebPaintSemanticsTests/testReachableScrollScopeRetainsHiddenAxisWithoutLosingScrollableAxis",
+    ),
+    Mutation(
+        name="web paint followup reachable scroll scope retains its scrolling-axis clips",
+        path=_BASE + "WebLint.swift",
+        old="childClip?.removing(x: scrollX, y: scrollY)",
+        new="childClip?.removing(x: !scrollX, y: !scrollY)",
+        test=_TEST
+        + "WebPaintSemanticsTests/testReachableScrollScopeRetainsAncestorClipOnItsNonScrollingAxis",
+    ),
+    Mutation(
+        name="web paint followup reachable scroll scope discards ancestor clipping",
+        path=_BASE + "WebLint.swift",
+        old="Clip.combined(fixed ? nil : inheritedClip, ownClip)",
+        new="Clip.combined(fixed ? nil : nil, ownClip)",
+        test=_TEST
+        + "WebPaintSemanticsTests/testReachableScrollScopeRetainsAncestorClipOnItsNonScrollingAxis",
+    ),
+    Mutation(
+        name="web paint followup viewport fixed scroll scope keeps ancestor clipping",
+        path=_BASE + "WebLint.swift",
+        old="Clip.combined(fixed ? nil : inheritedClip, ownClip)",
+        new="Clip.combined(fixed ? inheritedClip : inheritedClip, ownClip)",
+        test=_TEST + "WebPaintSemanticsTests/testViewportFixedScrollScopeEscapesAncestorCSSClip",
+    ),
+    Mutation(
+        name="web paint followup reachable scroll root loses fixed-container state",
+        path=_BASE + "WebLint.swift",
+        old="retainedClip, changesDocument ? false : childContained)",
+        new="retainedClip, false)",
+        test=_TEST + "WebPaintSemanticsTests/testReachableScrollScopeRetainsFixedContainerAncestry",
+    ),
+    Mutation(
+        name="web paint followup reachable scroll traversal loses fixed-container ancestry",
+        path=_BASE + "WebLint.swift",
+        old="contained: changed ? false : childContained)",
+        new="contained: changed ? false : contained)",
+        test=_TEST + "WebPaintSemanticsTests/testReachableScrollScopeRetainsFixedContainerAncestry",
+    ),
+    Mutation(
+        name="web paint followup independent document inherits outer CSS clipping",
+        path=_BASE + "WebLint.swift",
+        old="let retainedClip = changesDocument ? nil : childClip?.removing",
+        new="let retainedClip = childClip?.removing",
+        test=_TEST
+        + "WebPaintSemanticsTests/testIndependentDocumentScopeKeepsItsReachableInternalCollisions",
+    ),
+    Mutation(
+        name="web paint followup nested document scroll scope inherits outer CSS clipping",
+        path=_BASE + "WebLint.swift",
+        old="inheritedClip: changed ? nil : childClip",
+        new="inheritedClip: childClip",
+        test=_TEST
+        + "WebPaintSemanticsTests/testIndependentDocumentScopeKeepsItsReachableInternalCollisions",
+    ),
+    Mutation(
+        name="web paint followup scrolling X clears the wrong axis",
+        path=_BASE + "WebPaintSemantics.swift",
+        old="if x { result.minX = nil; result.maxX = nil }",
+        new="if !x { result.minX = nil; result.maxX = nil }",
+        test=_TEST
+        + "WebPaintSemanticsTests/testReachableScrollScopeRetainsHiddenAxisWithoutLosingScrollableAxis",
+    ),
+    Mutation(
+        name="web paint followup scrolling Y clears the wrong axis",
+        path=_BASE + "WebPaintSemantics.swift",
+        old="if y { result.minY = nil; result.maxY = nil }",
+        new="if !y { result.minY = nil; result.maxY = nil }",
+        test=_TEST
+        + "WebPaintSemanticsTests/testReachableScrollScopeRetainsHiddenAxisWithoutLosingScrollableAxis",
+    ),
+    Mutation(
+        name="web paint followup font warning accepts controls or replaced content",
+        path=_BASE + "WebPaintSemantics.swift",
+        old='node.role == .text || (node.role == .container && node.attributes["web.inlineCandidate"] == .bool(true))',
+        new="node.role != .spacer",
+        test=_TEST
+        + "WebPaintSemanticsTests/testFontWarningRequiresBothMeasurementsSameContextAndTextOnlyRoles",
+    ),
+    Mutation(
+        name="web paint followup font warning accepts an unmeasured first subject",
+        path=_BASE + "WebPaintSemantics.swift",
+        old='first.attributes["web.fontBoxOnly"] == .bool(true), second.attributes["web.fontBoxOnly"] == .bool(true)',
+        new='second.attributes["web.fontBoxOnly"] == .bool(true)',
+        test=_TEST
+        + "WebPaintSemanticsTests/testFontWarningRequiresBothMeasurementsSameContextAndTextOnlyRoles",
+    ),
+    Mutation(
+        name="web paint followup font warning accepts an unmeasured second subject",
+        path=_BASE + "WebPaintSemantics.swift",
+        old='first.attributes["web.fontBoxOnly"] == .bool(true), second.attributes["web.fontBoxOnly"] == .bool(true)',
+        new='first.attributes["web.fontBoxOnly"] == .bool(true)',
+        test=_TEST
+        + "WebPaintSemanticsTests/testFontWarningRequiresBothMeasurementsSameContextAndTextOnlyRoles",
+    ),
+    Mutation(
+        name="web paint followup font warning accepts an empty flow context",
+        path=_BASE + "WebPaintSemantics.swift",
+        old='let context = first.attributes["web.inlineFormattingContext"]?.stringValue, !context.isEmpty,',
+        new='let context = first.attributes["web.inlineFormattingContext"]?.stringValue,',
+        test=_TEST
+        + "WebPaintSemanticsTests/testFontWarningRequiresBothMeasurementsSameContextAndTextOnlyRoles",
+    ),
+    Mutation(
+        name="web paint followup font warning combines separate flow contexts",
+        path=_BASE + "WebPaintSemantics.swift",
+        old='second.attributes["web.inlineFormattingContext"] == .string(context)',
+        new='second.attributes["web.inlineFormattingContext"] != nil',
+        test=_TEST
+        + "WebPaintSemanticsTests/testFontWarningRequiresBothMeasurementsSameContextAndTextOnlyRoles",
+    ),
+    Mutation(
+        name="web paint followup font warning accepts an empty frame identity",
+        path=_BASE + "WebPaintSemantics.swift",
+        old='let frame = first.attributes["web.frame"]?.stringValue, !frame.isEmpty,',
+        new='let frame = first.attributes["web.frame"]?.stringValue,',
+        test=_TEST
+        + "WebPaintSemanticsTests/testFontWarningRequiresBothMeasurementsSameContextAndTextOnlyRoles",
+    ),
+    Mutation(
+        name="web paint followup font warning combines separate frames",
+        path=_BASE + "WebPaintSemantics.swift",
+        old='second.attributes["web.frame"] == .string(frame)',
+        new='second.attributes["web.frame"] != nil',
+        test=_TEST
+        + "WebPaintSemanticsTests/testFontWarningRequiresBothMeasurementsSameContextAndTextOnlyRoles",
+    ),
+    Mutation(
+        name="web paint followup font warning demotes same-line intersections",
+        path=_BASE + "WebPaintSemantics.swift",
+        old="abs(firstBox.y - secondBox.y) > SiblingOverlapRule.tolerance",
+        new="abs(firstBox.y - secondBox.y) >= 0",
+        test=_TEST
+        + "WebPaintSemanticsTests/testSameLineFontCollisionUsesFragmentsInsteadOfDifferentUnionOrigins",
+    ),
+    Mutation(
+        name="web paint followup font warning uses union origins instead of fragment origins",
+        path=_BASE + "WebLint.swift",
+        old="firstBox: box, secondBox: rectangles[other]",
+        new="firstBox: first.frame, secondBox: second.frame",
+        test=_TEST
+        + "WebPaintSemanticsTests/testNormalFlowFontIntersectionUsesActualFragmentsAndStaysUnverified",
+    ),
+    Mutation(
+        name="web paint followup uncertain font match short circuits later defects",
+        path=_BASE + "WebLint.swift",
+        old="if uncertain == nil, let fontMatch { uncertain = fontMatch.1 }",
+        new="if uncertain == nil, let fontMatch { uncertain = fontMatch.1; return (fontMatch.1, true) }",
+        test=_TEST
+        + "WebPaintSemanticsTests/testLaterSameLineFragmentCollisionOverridesEarlierUncertainFontOverlap",
+    ),
+    Mutation(
+        name="web paint followup later confirmed collision is demoted by prior font uncertainty",
+        path=_BASE + "WebLint.swift",
+        old="if let match { return (match.1, false) }",
+        new="if let match { return (match.1, uncertain != nil) }",
+        test=_TEST
+        + "WebPaintSemanticsTests/testLaterSameLineFragmentCollisionOverridesEarlierUncertainFontOverlap",
+    ),
+    Mutation(
+        name="web paint followup font-only sweep result loses uncertainty",
+        path=_BASE + "WebLint.swift",
+        old="return uncertain.map { ($0, true) }",
+        new="return uncertain.map { ($0, false) }",
+        test=_TEST
+        + "WebPaintSemanticsTests/testNormalFlowFontIntersectionUsesActualFragmentsAndStaysUnverified",
+    ),
+    Mutation(
+        name="web paint followup font warning is emitted as a confirmed defect",
+        path=_BASE + "WebPaintSemantics.swift",
+        old="if fontPaintUnverified {",
+        new="if fontPaintUnverified && node.role == .spacer {",
+        test=_TEST
+        + "WebPaintSemanticsTests/testNormalFlowFontIntersectionUsesActualFragmentsAndStaysUnverified",
+    ),
+    Mutation(
+        name="web paint followup sibling evidence drops font uncertainty",
+        path=_BASE + "WebLint.swift",
+        old="other: children[first], fontPaintUnverified: collision.fontPaintUnverified",
+        new="other: children[first], fontPaintUnverified: false",
+        test=_TEST
+        + "WebPaintSemanticsTests/testNormalFlowFontIntersectionUsesActualFragmentsAndStaysUnverified",
+    ),
+    Mutation(
+        name="web paint followup cross-parent evidence drops font uncertainty",
+        path=_BASE + "WebLint.swift",
+        old="other: leaves[first].node, fontPaintUnverified: collision.fontPaintUnverified",
+        new="other: leaves[first].node, fontPaintUnverified: false",
+        test=_TEST
+        + "WebPaintSemanticsTests/testQualifiedFontUncertaintySurvivesCrossParentComparison",
     ),
 ]
