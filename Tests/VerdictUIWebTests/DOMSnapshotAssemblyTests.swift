@@ -20,6 +20,88 @@ final class DOMSnapshotAssemblyTests: XCTestCase {
                     "textBoxes": .object(["layoutIndex": .array([1].map(integer)), "bounds": .array([.array([30, 30, 35, 20].map(integer))])])])])]
     }
 
+    private func snapshotWithUnlaidOwner(tag: String = "IFRAME", embedded: Bool = false) -> [String: CDPValue] {
+        var payload = snapshot()
+        guard case var .array(strings) = payload["strings"], case var .array(documents) = payload["documents"],
+            case var .object(document) = documents[0], case var .object(nodes) = document["nodes"] else {
+            preconditionFailure("invalid fixture")
+        }
+        strings += [.string(tag), .string("parent-frame"), .string("child-frame")]
+        document["frameId"] = .integer(12)
+        nodes["nodeName"] = .array([.integer(0), .integer(11), .integer(2)])
+        // The owner has no layout box, while its raw DOM identity remains present.
+        document["layout"] = .object(["nodeIndex": .array([]), "bounds": .array([]), "styles": .array([])])
+        document["textBoxes"] = .object(["layoutIndex": .array([]), "bounds": .array([])])
+        if embedded {
+            nodes["contentDocumentIndex"] = .object(["index": .array([.integer(1)]), "value": .array([.integer(1)])])
+            guard case var .object(child) = documents[0] else { preconditionFailure("invalid child fixture") }
+            child["frameId"] = .integer(13)
+            documents.append(.object(child))
+        }
+        document["nodes"] = .object(nodes); documents[0] = .object(document)
+        payload["strings"] = .array(strings); payload["documents"] = .array(documents)
+        return payload
+    }
+
+    func testUnlaidFrameOwnersPreserveIdentityWithoutInventingVisibleEvidence() throws {
+        for tag in ["IFRAME", "FRAME"] {
+            let tree = try DOMSnapshotAssembly.assemble(snapshotWithUnlaidOwner(tag: tag), viewport: viewport)
+            let owner = try XCTUnwrap(tree.children.first)
+            XCTAssertEqual(owner.attributes["web.backendID"], .number(2))
+            XCTAssertEqual(owner.attributes["web.frame"], .string("parent-frame"))
+            XCTAssertEqual(owner.attributes["web.id"], .string("save"))
+            XCTAssertEqual(owner.role, .container)
+            XCTAssertEqual(owner.id, "")
+            XCTAssertTrue(owner.frame.isEmpty)
+            XCTAssertFalse(owner.isVisible)
+            let report = RuleEngine.run(rules: RuleEngine.standardRules, on: tree, context: LintContext(viewport: viewport))
+            XCTAssertEqual(report.status, .fail)
+            XCTAssertTrue(report.findings.contains { $0.rule == "vacuous-verdict" })
+        }
+    }
+
+    func testUnlaidSameProcessFrameKeepsEmbeddedDocumentHidden() throws {
+        let tree = try DOMSnapshotAssembly.assemble(snapshotWithUnlaidOwner(embedded: true), viewport: viewport)
+        let owner = try XCTUnwrap(tree.children.first)
+        XCTAssertEqual(owner.attributes["web.documentIndex"], .number(1))
+        XCTAssertEqual(owner.children.first?.role, .button)
+        XCTAssertFalse(owner.children.isEmpty)
+        XCTAssertTrue(owner.flattened().allSatisfy { !$0.isVisible })
+    }
+
+    func testUnlaidRemoteFrameUsesExactOwnerAndNeverAcceptsUnknownOwner() throws {
+        let tree = try DOMSnapshotAssembly.assemble(snapshotWithUnlaidOwner(), viewport: viewport)
+        let child = SemanticNode(id: "child-button", role: .button, frame: Rect(x: 10, y: 20, width: 100, height: 44))
+        let (joined, found) = WebFrameGeometry.graft([child], ownerBackend: 2, ownerFrame: "parent-frame", into: tree)
+        XCTAssertTrue(found)
+        let nested = try XCTUnwrap(joined.flattened().first { $0.id == child.id })
+        XCTAssertFalse(nested.isVisible)
+        for (backend, frame) in [(3.0, "parent-frame"), (2.0, "wrong-parent")] {
+            let (unchanged, accepted) = WebFrameGeometry.graft([child], ownerBackend: backend, ownerFrame: frame, into: tree)
+            XCTAssertFalse(accepted, "a missing or mismatched raw owner must remain unavailable")
+            XCTAssertEqual(unchanged, tree)
+        }
+    }
+
+    func testGenericUnlaidContainersDoNotHideVisibleDescendants() throws {
+        var payload = snapshot()
+        guard case var .array(strings) = payload["strings"], case var .array(documents) = payload["documents"],
+            case var .object(document) = documents[0], case var .object(nodes) = document["nodes"],
+            case var .object(layout) = document["layout"] else { return XCTFail("invalid fixture") }
+        strings.append(.string("DIV"))
+        nodes["nodeName"] = .array([.integer(0), .integer(11), .integer(2)])
+        layout["nodeIndex"] = .array([.integer(2)])
+        layout["bounds"] = .array([.array([30, 30, 35, 20].map { .integer(Int64($0)) })])
+        layout["styles"] = .array([.array([5, 6, 7, 8].map { .integer(Int64($0)) })])
+        document["nodes"] = .object(nodes); document["layout"] = .object(layout)
+        document["textBoxes"] = .object(["layoutIndex": .array([]), "bounds": .array([])])
+        documents[0] = .object(document); payload["documents"] = .array(documents); payload["strings"] = .array(strings)
+        let tree = try DOMSnapshotAssembly.assemble(payload, viewport: viewport)
+        XCTAssertEqual(tree.children.count, 1)
+        XCTAssertEqual(tree.children.first?.text, "Save")
+        XCTAssertTrue(try XCTUnwrap(tree.children.first).isVisible, "display:contents does not hide rendered descendants")
+    }
+
     func testSnapshotRolesGeometryTextAndMetrics() throws {
         let tree = try DOMSnapshotAssembly.assemble(snapshot(), viewport: viewport)
         let button = try XCTUnwrap(tree.children.first)

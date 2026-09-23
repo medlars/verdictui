@@ -99,6 +99,42 @@ final class WebFrameIntegrationTests: XCTestCase {
         XCTAssertThrowsError(try fixturePython(environment: ["PATH": ""]))
     }
 
+    func testHiddenSameAndCrossOriginFramesPreserveMainPageAndBecomeActionableWhenShown() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("vui-hidden-frame-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let (server, port) = try await server(root: root)
+        defer { if server.isRunning { kill(server.processIdentifier, SIGKILL); server.waitUntilExit() } }
+        let manager = WebSessionManager(root: root.appendingPathComponent("profiles"), environment: [:])
+        do {
+            for route in ["hidden-same", "hidden-cross"] {
+                _ = try await manager.open(profile: "frames", url: XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/\(route)")))
+                let tree = try await manager.render(profile: "frames")
+                let owner = try XCTUnwrap(tree.flattened().first { $0.attributes["web.id"] == .string("child") })
+                XCTAssertFalse(owner.isVisible)
+                XCTAssertTrue(owner.frame.isEmpty)
+                XCTAssertTrue(owner.flattened().allSatisfy { !$0.isVisible })
+                let main = try await manager.verify(profile: "frames", expectText: "Main frame")
+                XCTAssertEqual(main.status, .pass, "\(route): \(main.findings)")
+                let hidden = try await manager.verify(profile: "frames", expectText: "Save task")
+                XCTAssertEqual(hidden.status, .fail, "hidden child text must not satisfy the task outcome")
+                XCTAssertTrue(hidden.findings.contains { $0.rule == "web-expectation" })
+                let show = try XCTUnwrap(tree.flattened().first { $0.attributes["web.id"] == .string("show") })
+                let shown = try await manager.act(profile: "frames", action: .click(nodeID: show.id), expectText: "Save task")
+                XCTAssertEqual(shown.status, .pass, "\(route): \(shown.findings)")
+                let updated = try await manager.render(profile: "frames")
+                let visibleOwner = try XCTUnwrap(updated.flattened().first { $0.attributes["web.id"] == .string("child") })
+                XCTAssertTrue(visibleOwner.isVisible)
+                let button = try XCTUnwrap(updated.flattened().first { $0.attributes["web.id"] == .string("save") })
+                XCTAssertTrue(button.isVisible)
+                XCTAssertEqual(button.frame.x, visibleOwner.frame.x + 3 + 24, accuracy: 0.5)
+                let complete = try await manager.act(profile: "frames", action: .click(nodeID: button.id), expectText: "Task complete")
+                XCTAssertEqual(complete.status, .pass, "\(route): \(complete.findings)")
+            }
+            await manager.closeAll()
+        } catch { await manager.closeAll(); throw error }
+    }
+
     func testSameAndCrossOriginFramesRenderAndActWithCorrectRootCoordinates() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("vui-frame-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

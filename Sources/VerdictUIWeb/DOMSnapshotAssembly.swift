@@ -146,7 +146,19 @@ public enum DOMSnapshotAssembly {
             }
             let tag = tags[index]
             var descendants = assembled[index] ?? []
-            if let (frame, style) = geometry[index], types[index] == 1 || types[index] == 3 {
+            if geometry[index] == nil && types[index] == 1 && (tag == "iframe" || tag == "frame") {
+                // CDP retains frame-owner DOM identity when display:none removes
+                // its LayoutObject. Keep an invisible anchor for document/session
+                // grafting; generic display:contents nodes may have visible children.
+                var metadata: [String: AttributeValue] = [
+                    "web.tag": .string(tag), "web.backendID": .number(Double(backend[index])),
+                    "web.frame": .string(frameID),
+                ]
+                if let embedded = embedded[index] { metadata["web.documentIndex"] = .number(Double(embedded)) }
+                if let domID = nodeAttributes[index]["id"] { metadata["web.id"] = .string(WebRedaction.clean(domID, secrets: secrets)) }
+                descendants = [SemanticNode(id: "", role: .container, frame: Rect(x: 0, y: 0, width: 0, height: 0),
+                                            attributes: metadata, isVisible: false, children: descendants.map(hidden))]
+            } else if let (frame, style) = geometry[index], types[index] == 1 || types[index] == 3 {
                 let attrs = nodeAttributes[index]
                 let rawText = types[index] == 3 ? nodeValues[index] : nil
                 let mappedRole = role(tag: tag, attributes: attrs)
