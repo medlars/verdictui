@@ -2,6 +2,7 @@
 
 import http.server
 import pathlib
+import socketserver
 import sys
 import time
 
@@ -48,6 +49,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
         pass
 
 
-server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+class LoopbackHTTPServer(http.server.ThreadingHTTPServer):
+    def server_bind(self):
+        # HTTPServer's unused reverse-DNS metadata stalls before listen() on macOS CI.
+        # https://github.com/actions/runner-images/issues/14409#issuecomment-5034633535
+        socketserver.TCPServer.server_bind(self)
+        self.server_name = "localhost"
+        self.server_port = self.server_address[1]
+
+
+server = LoopbackHTTPServer(("127.0.0.1", 0), Handler)
 port_file.write_text(str(server.server_port))
 server.serve_forever()

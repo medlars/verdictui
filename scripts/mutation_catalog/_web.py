@@ -1,11 +1,19 @@
 """Web-engine guards and their real browser / pure CDP witnesses."""
 
-from mutation_catalog_types import Mutation
+from mutation_catalog_types import Mutation, Runner
 
 _BASE = "Sources/VerdictUIWeb/"
 _TEST = "VerdictUIWebTests."
 
 MUTATIONS: list[Mutation] = [
+    Mutation(
+        name="web loopback fixture waits for reverse DNS before listening",
+        path="Tests/VerdictUIWebTests/Fixtures/server.py",
+        old="socketserver.TCPServer.server_bind(self)",
+        new="super().server_bind()",
+        test="Tests/test_web_fixture.py::test_loopback_fixture_starts_and_serves_without_reverse_dns",
+        runner=Runner.PYTEST,
+    ),
     Mutation(
         name="web fixture ignores its configured interpreter",
         path="Tests/VerdictUIWebTests/WebFrameIntegrationTests.swift",
