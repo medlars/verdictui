@@ -164,6 +164,10 @@ containing-block ownership before flattening; apply the same ancestry rule to
 clipping findings, visible paint projection and scroll reachability. Include
 fixed/transformed, omitted ancestors and iframe controls. Do not globally
 exempt positioned nodes or infer ownership from the flattened semantic tree.
+The same actual button control revealed that cross-parent overlap inspected
+only terminal label leaves, missing colliding control bounds when labels were
+separated. Use interactive controls and images as atomic web overlap subjects
+while retaining the full evidence tree and ordinary container traversal.
 
 ### Retained editable subtree inventory
 
