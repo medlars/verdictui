@@ -60,6 +60,7 @@ let package = Package(
         .library(name: "VerdictUIMacroSupport", targets: ["VerdictUIMacroSupport"]),
         // Wave 6. The binary an agent or a human runs.
         .executable(name: "verdictui", targets: ["verdictui"]),
+        .executable(name: "VerdictUIWorkbench", targets: ["VerdictUIWorkbench"]),
     ],
     dependencies: [
         // Pinned `exact`, not `from`. SwiftSyntax majors track the compiler
@@ -181,6 +182,12 @@ let package = Package(
         .executableTarget(
             name: "verdictui",
             dependencies: ["VerdictUICLICore"],
+            swiftSettings: strictSettings
+        ),
+        .executableTarget(
+            name: "VerdictUIWorkbench",
+            dependencies: ["VerdictUIWorkbenchCore"],
+            resources: [.copy("Resources")],
             swiftSettings: strictSettings
         ),
         .target(

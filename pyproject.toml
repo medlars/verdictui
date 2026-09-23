@@ -50,6 +50,10 @@ extraPaths = [
     "../shared-libs/pm-base",
     "../shared-libs/release-tools",
     "../shared-libs",
+    # Managed worktrees live one directory deeper than the canonical checkout.
+    "../../shared-libs/pm-base",
+    "../../shared-libs/release-tools",
+    "../../shared-libs",
     "Tests",
     # `scripts` for `mutation_catalog` / `mutation_catalog_types`, which
     # `mutation-check.py` imports after a `sys.path.insert` on its own

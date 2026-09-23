@@ -46,6 +46,44 @@ final class DaemonTransportTests: XCTestCase {
         return path
     }
 
+    @MainActor
+    func testStalledAndOversizedClientsCannotBlockFollowingClients() async throws {
+        let path = socketPath()
+        var transport = DaemonTransport(engine: engine(), socketPath: path)
+        transport.maximumFrameBytes = 1_024
+        transport.clientIdleSeconds = 0.4
+        transport.frameSeconds = 1
+        let server = Task { try await transport.serve() }
+        defer { server.cancel() }
+        for _ in 0..<200 {
+            if FileManager.default.fileExists(atPath: path) { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        for suffix in [Data(), Data(repeating: 120, count: 2_048), Data(repeating: 120, count: 2_048) + Data([10])] {
+            let client = socket(AF_UNIX, SOCK_STREAM, 0)
+            XCTAssertGreaterThanOrEqual(client, 0)
+            defer { close(client) }
+            var address = sockaddr_un(); address.sun_family = sa_family_t(AF_UNIX)
+            withUnsafeMutableBytes(of: &address.sun_path) { $0.copyBytes(from: Array(path.utf8)) }
+            let connected = withUnsafePointer(to: &address) { pointer in
+                pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    connect(client, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
+                }
+            }
+            XCTAssertEqual(connected, 0)
+            if !suffix.isEmpty { _ = suffix.withUnsafeBytes { write(client, $0.baseAddress, suffix.count) } }
+            let start = ContinuousClock.now
+            let replies = try await offMainActor { try Self.converse(with: path, frames: [#"{"method":"ping","id":"healthy"}"#]) }
+            XCTAssertEqual(replies.first?.ok, true)
+            XCTAssertEqual(replies.first?.id, "healthy")
+            XCTAssertLessThan(start.duration(to: .now), .seconds(3))
+            var byte: UInt8 = 0
+            XCTAssertEqual(recv(client, &byte, 1, MSG_DONTWAIT), 0, "offending connection must be closed")
+        }
+        server.cancel()
+        try await server.value
+    }
+
     // MARK: - Bind-time behaviour
 
     /// An over-long path is rejected up front, by name.
@@ -181,6 +219,8 @@ final class DaemonTransportTests: XCTestCase {
         }
         guard connected == 0 else { throw SocketClientError.connectFailed(path: path, errno: errno) }
 
+        var receiveTimeout = timeval(tv_sec: 5, tv_usec: 0)
+        _ = setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &receiveTimeout, socklen_t(MemoryLayout.size(ofValue: receiveTimeout)))
         let payload = Data(frames.map { $0 + "\n" }.joined().utf8)
         _ = payload.withUnsafeBytes { write(client, $0.baseAddress, payload.count) }
 

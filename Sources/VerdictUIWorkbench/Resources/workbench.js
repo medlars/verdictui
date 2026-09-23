@@ -101,8 +101,8 @@
     $('project-path').title = state.project || '';
   }
   const fields = {
-    scenario: [['scenario', 'Scenario name', 'Your registered scenario', true], ['runner', 'Runner executable', 'Optional custom runner path', false]],
-    web: [['url', 'Page URL', 'https://your-product.example', true]],
+    scenario: [['scenario', 'Scenario name', 'Your registered scenario', true]],
+    web: [['url', 'Page URL', 'https://your-product.example', true], ['expectText', 'Expected text', 'Optional text to verify on the page', false]],
     appkit: [['runner', 'Runner executable', '/path/to/your/runner', true], ['subject', 'Subject name', 'Your AppKit subject', true]],
     live: [['pid', 'Application PID', 'Process identifier', true], ['surface', 'Surface', 'window:0', false], ['expectText', 'Expected text', 'Optional text to verify in the current UI', false]]
   };
@@ -153,10 +153,10 @@
       const select = node('select');
       select.id = label.htmlFor;
       for (const [value, name] of Object.entries(kindNames)) { const option = node('option', '', name); option.value = value; select.append(option); }
-      select.value = fields[check.kind] ? check.kind : 'scenario';
+      select.value = Object.prototype.hasOwnProperty.call(fields, check.kind) ? check.kind : 'scenario';
       select.addEventListener('change', () => { check.kind = select.value; markDirty(); renderEditors(); $('check-' + index + '-kind').focus(); });
       type.append(label, select); grid.append(type);
-      for (const [key, title, placeholder, required] of fields[check.kind] || fields.scenario) grid.append(createField(check, index, key, title, placeholder, required, true));
+      for (const [key, title, placeholder, required] of (Object.prototype.hasOwnProperty.call(fields, check.kind) ? fields[check.kind] : fields.scenario)) grid.append(createField(check, index, key, title, placeholder, required, true));
       if (check.kind === 'live') grid.append(node('p', 'field-hint', 'Reads the selected app. Declare expected text to check an observed state.'));
       section.append(heading, grid); $('check-editors').append(section);
     });
@@ -174,7 +174,7 @@
         throw new Error('Each check needs its own name.');
       }
       names.add(name);
-      const kind = fields[check.kind] ? check.kind : 'scenario';
+      const kind = Object.prototype.hasOwnProperty.call(fields, check.kind) ? check.kind : 'scenario';
       const result = { name, kind };
       for (const [key, , , required] of fields[kind]) {
         const value = text(check[key]).trim();

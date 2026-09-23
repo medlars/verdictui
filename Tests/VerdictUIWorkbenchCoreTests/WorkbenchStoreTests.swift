@@ -12,6 +12,21 @@ final class WorkbenchStoreTests: XCTestCase {
     }
 
     @MainActor
+    func testBridgeAcceptsOnlyTheBundledLocalMainFrame() throws {
+        let root = try temporary()
+        let page = root.appendingPathComponent("index.html")
+        let bridge = WorkbenchBridge(store: WorkbenchStore(stateURL: root.appendingPathComponent("state.json")),
+                                     executable: root.appendingPathComponent("verdictui"), page: page)
+        XCTAssertTrue(bridge.allowsPage(page, isMainFrame: true))
+        XCTAssertFalse(bridge.allowsPage(page, isMainFrame: false))
+        XCTAssertFalse(bridge.allowsPage(nil, isMainFrame: true))
+        XCTAssertFalse(bridge.allowsPage(root.appendingPathComponent("other.html"), isMainFrame: true))
+        XCTAssertFalse(bridge.allowsPage(URL(string: "https://example.test" + page.path), isMainFrame: true))
+        XCTAssertFalse(bridge.allowsPage(URL(string: "file://example.test" + page.path), isMainFrame: true))
+        XCTAssertFalse(bridge.allowsPage(URL(string: page.absoluteString + "?injected=1"), isMainFrame: true))
+    }
+
+    @MainActor
     func testProjectAndChecksPersistAcrossWebViewLifetimes() throws {
         let root = try temporary()
         let file = root.appendingPathComponent("state.json")

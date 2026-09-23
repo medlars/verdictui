@@ -26,7 +26,7 @@ public final class WorkbenchBridge: NSObject, WKScriptMessageHandler, WKNavigati
     public func userContentController(_ userContentController: WKUserContentController,
                                        didReceive message: WKScriptMessage) {
         guard message.frameInfo.isMainFrame,
-              message.frameInfo.request.url?.standardizedFileURL.path == page.path,
+              allowsPage(message.frameInfo.request.url, isMainFrame: message.frameInfo.isMainFrame),
               let body = message.body as? [String: Any], let action = body["action"] as? String else {
             return
         }
@@ -102,12 +102,14 @@ public final class WorkbenchBridge: NSObject, WKScriptMessageHandler, WKNavigati
             let history: [WorkbenchStore.History]
             let version: String
         }
-        do {
-            let checks = try store.checks()?.checks ?? []
-            sendEncodable(State(projects: store.projects, selectedProject: store.selectedProject,
+        var checks: [ProjectChecks.Check] = []
+        var invalidChecks = false
+        do { checks = try store.checks()?.checks ?? [] }
+        catch { invalidChecks = true }
+        sendEncodable(State(projects: store.projects, selectedProject: store.selectedProject,
                                 checks: checks, history: store.history, version: ReleaseVersion.current), type: "state")
-            if let error = store.loadError { sendError(error) }
-        } catch { sendError("The project's checks file is invalid. Correct .verdictui/checks.json to continue.") }
+        if let error = store.loadError { sendError(error) }
+        if invalidChecks { sendError("The project's checks file is invalid. Edit its checks or choose another project.") }
     }
 
     private func sendError(_ message: String) { send(["type": "error", "message": message]) }
@@ -130,8 +132,15 @@ public final class WorkbenchBridge: NSObject, WKScriptMessageHandler, WKNavigati
         }
     }
 
+    /// Authority and scheme are part of the trust boundary, not only the path.
+    func allowsPage(_ candidate: URL?, isMainFrame: Bool) -> Bool {
+        guard isMainFrame, let candidate, candidate.isFileURL, candidate.query == nil, candidate.fragment == nil,
+              candidate.host == nil || candidate.host == "" || candidate.host == "localhost" else { return false }
+        return candidate.standardizedFileURL == page
+    }
+
     public func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
                          decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void) {
-        decisionHandler(navigationAction.request.url?.standardizedFileURL.path == page.path ? .allow : .cancel)
+        decisionHandler(allowsPage(navigationAction.request.url, isMainFrame: navigationAction.targetFrame?.isMainFrame == true) ? .allow : .cancel)
     }
 }
