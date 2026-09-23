@@ -36,8 +36,8 @@ enum ExtendedMCP {
             MCPTool(name: "web_list", description: "List this connection's owned headless browser sessions.", inputSchema: MCPSchema(properties: [:])),
             MCPTool(name: "web_open", description: "Open a real website in an invisible isolated browser; reuse this connection's named identity when already open.", inputSchema: MCPSchema(properties: fields, required: ["url"])),
             MCPTool(name: "web_render", description: "Read the rendered DOM and layout as a compact semantic tree.", inputSchema: MCPSchema(properties: fields)),
-            MCPTool(name: "web_verify", description: "Judge the real page and optional expected visible text; failing UI is a successful answered call.", inputSchema: MCPSchema(properties: fields)),
-            MCPTool(name: "web_act", description: "Send trusted browser input, settle, and return the observed verdict and change delta. Credential values stay inside the driver.", inputSchema: MCPSchema(properties: fields, required: ["action"])),
+            MCPTool(name: "web_verify", description: "Judge semantic layout and optional expected visible text. PASS means no confirmed semantic-layout errors; web-paint-unverified findings identify paint or occlusion that remains unverified. Failing UI is a successful answered call.", inputSchema: MCPSchema(properties: fields)),
+            MCPTool(name: "web_act", description: "Send trusted input and return the observed verdict and delta. PASS does not certify paint: inspect web-paint-unverified warnings. Credential values stay inside the driver.", inputSchema: MCPSchema(properties: fields, required: ["action"])),
             MCPTool(name: "web_close", description: "Close this connection's named session and release its profile lock.", inputSchema: MCPSchema(properties: fields)),
         ]
     }

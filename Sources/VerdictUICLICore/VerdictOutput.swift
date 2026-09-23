@@ -122,6 +122,7 @@ public enum VerdictOutput {
         var lines: [String] = []
         let mark = verdict.status == .pass ? "PASS" : "FAIL"
         lines.append("\(mark)  \(verdict.scenario)")
+        if let qualification = paintQualification(verdict) { lines.append(qualification) }
 
         if verdict.findings.isEmpty {
             lines.append("  no findings")
@@ -137,5 +138,10 @@ public enum VerdictOutput {
             }
         }
         return lines.joined(separator: "\n") + "\n"
+    }
+
+    static func paintQualification(_ verdict: Verdict) -> String? {
+        guard verdict.findings.contains(where: { $0.rule == "web-paint-unverified" }) else { return nil }
+        return "PAINT UNVERIFIED: Semantic layout was measured; painted overlap or occlusion remains unverified. Review the cited web-paint-unverified findings."
     }
 }

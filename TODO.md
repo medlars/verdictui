@@ -1,12 +1,13 @@
 # VerdictUI TODO
 
+
 ## P0 — Blocking
 - [x] (2026-09-23) CTS-E47F57A8 implementation and real-site repair: all technical full-PM stages, exact-source CI 35858044544, 46 current targeted mutation witnesses and the signed/notarized candidate acceptance passed. Actual public product pages PASS; 10,000-line PASS and work-budget exit 2 controls verified. Remaining release delivery is explicitly tracked as CTS-B70C5383 below; published/installed 1.1.2 is not yet claimed.
 - [x] (2026-09-23) Desktop workbench: owner-selected web-rendered macOS app, CleanMyMac-inspired motion, real project checks and evidence, accessible UI verification and packaged installation. Delivered in v1.1.0; signed/notarized desktop and both installed CLI copies verified.
 - [x] (2026-09-23) Initial saved-plan delivery (subsequently reopened above): custom scenario runner, live-app MCP and verified input, web semantic verification and trusted input, isolated sessions, artifact smoke, truthful documentation and installed release. Plan: `docs/finalization-plan.md`. Delivered in v1.1.0; signed/notarized desktop and both installed CLI copies verified.
 
 ## P1 — High Priority
-- [ ] (2026-09-23) CTS-B70C5383: publish and verify accepted 1.1.2. Run green PM/CEO readiness, publish tag/archive/checksum/formula, replace installed app and both CLI copies, run final installed native/browser/public-site/budget gates, publish website, and reconcile instruction evidence and final PM/CEO records. Continue immediately; this is required release delivery.
+- [ ] (2026-09-23) CTS-B70C5383: complete measured inline border fragments and conservative SVG/presentation handling with explicit paint-unverified qualification; rebuild and notarize the superseding 1.1.2 candidate. Run green PM/CEO readiness, publish tag/archive/checksum/formula, replace installed app and both CLI copies, run final installed native/browser/public-site/budget gates, publish website, and reconcile instruction evidence and final PM/CEO records. Continue immediately; this is required release delivery.
 - [x] (2026-09-23) CEO/stage_todo_review: completed implementation is now recorded separately from pending release delivery. The original full run remains recorded as Grade B 86.9 with only this workflow item failing; no technical stage, priority of an unresolved defect, or test requirement was weakened. Rerun the PM before release.
 - [x] (2026-09-23) ScenarioState patch released in 1.1.1: initial view-construction publications removed; strict observer/mutation coverage, unchanged timing contract, full PM Grade A, CI and both installed artifact gates passed. Subsequent real-site browser defects are tracked in the open P0 above.
 - [x] (2026-09-23) CEO/stage_installed_parity: Homebrew and unmanaged CLI upgraded to 1.1.0; both installed binaries passed real native/browser CLI/MCP artifact smoke. Desktop helper matches the signed unmanaged CLI.

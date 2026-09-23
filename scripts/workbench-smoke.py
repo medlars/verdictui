@@ -334,6 +334,52 @@ def exercise(
         browser_name + " duplicate validity clears after correction",
         page.evaluate("testMessages.at(-1).checks[0].name") == "Repaired name",
     )
+    paint_report = {
+        "status": "pass",
+        "checks": [
+            {
+                "name": "Painted page",
+                "status": "pass",
+                "verdict": {
+                    "findings": [
+                        {
+                            "rule": "web-paint-unverified",
+                            "severity": "warning",
+                            "nodeID": "web/overlay",
+                            "message": "Semantic layout was measured; painted occlusion remains unverified.",
+                        }
+                    ]
+                },
+            }
+        ],
+    }
+    receive(page, {"type": "result", "report": paint_report})
+    page.locator("[data-view=overview]").click()
+    check(
+        browser_name + " paint review is prominent",
+        "Paint unverified" in page.locator("#status-label").inner_text(),
+    )
+    check(
+        browser_name + " paint review not a clean pass",
+        page.locator("#verification-stage").get_attribute("data-status") == "unavailable",
+    )
+    check(
+        browser_name + " paint check qualified",
+        "paint unverified" in page.locator(".check-chip").inner_text(),
+    )
+    check(
+        browser_name + " paint evidence retained",
+        "web/overlay" in page.locator(".finding").inner_text(),
+    )
+    for width in (1000, 360):
+        page.set_viewport_size({"width": width, "height": 700})
+        check(
+            browser_name + f" paint review no overflow at {width}px",
+            bounds(page)["document"] == width,
+        )
+        page.screenshot(
+            path=str(artifact_dir / f"{browser_name}-paint-review-{width}.png"), full_page=True
+        )
     receive(
         page,
         {
@@ -363,11 +409,20 @@ def exercise(
                     }
                     for status in ("pass", "unavailable")
                 ],
+                {
+                    "timestamp": "2026-09-23T12:00:00Z",
+                    "project": FIXTURE_STATE["selectedProject"],
+                    "report": paint_report,
+                },
             ],
         },
     )
     page.locator("[data-view=history]").click()
-    check(browser_name + " history real reports visible", page.locator(".history-row").count() == 3)
+    check(browser_name + " history real reports visible", page.locator(".history-row").count() == 4)
+    check(
+        browser_name + " history paint review qualified",
+        page.locator(".history-row .severity").last.inner_text() == "paint review",
+    )
     for width in (1000, 360):
         page.set_viewport_size({"width": width, "height": 700})
         history_rects = page.locator(".history-row").evaluate_all(
@@ -379,7 +434,7 @@ def exercise(
         )
         check(
             browser_name + f" history status columns align at {width}px",
-            len(history_rects) == 3
+            len(history_rects) == 4
             and all(
                 len({round(row[selector][metric], 2) for row in history_rects}) == 1
                 for selector, metric in (

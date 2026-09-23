@@ -58,6 +58,55 @@ MUTATIONS: list[Mutation] = [
 
 MUTATIONS += [
     Mutation(
+        name="paint qualification ignores unverified findings",
+        path="Sources/VerdictUICLICore/VerdictOutput.swift",
+        old='$0.rule == "web-paint-unverified"',
+        new='$0.rule == "web-paint-confirmed"',
+        test="LiveCommandTests/testPaintUncertaintyRemainsVisibleWithoutCorruptingJSONOrMaskingFailure",
+    ),
+    Mutation(
+        name="paint qualification disappears from human output",
+        path="Sources/VerdictUICLICore/VerdictOutput.swift",
+        old="if let qualification = paintQualification(verdict) { lines.append(qualification) }",
+        new="// paint qualification omitted under mutation",
+        test="LiveCommandTests/testPaintUncertaintyRemainsVisibleWithoutCorruptingJSONOrMaskingFailure",
+    ),
+    Mutation(
+        name="paint qualification disappears from CLI stderr",
+        path="Sources/VerdictUICLICore/LiveCommandLine.swift",
+        old='environment.output.writeError(qualification + "\\n")',
+        new="_ = qualification",
+        test="LiveCommandTests/testPaintUncertaintyRemainsVisibleWithoutCorruptingJSONOrMaskingFailure",
+    ),
+    Mutation(
+        name="paint qualification loses project check identity",
+        path="Sources/VerdictUICLICore/ProjectChecks.swift",
+        old='return "\\(entry.name): \\(qualification)"',
+        new="return qualification",
+        test="LiveCommandTests/testPaintUncertaintyRemainsVisibleWithoutCorruptingJSONOrMaskingFailure",
+    ),
+    Mutation(
+        name="paint qualification disappears from workbench result",
+        path="Sources/VerdictUIWorkbench/Resources/workbench.js",
+        old="status === 'pass' && reportPaintUnverified(state.report)",
+        new="status === 'fail' && reportPaintUnverified(state.report)",
+        test="WorkbenchStoreTests/testPaintReviewCannotAppearAsAnUnqualifiedPassInRenderedWorkbench",
+    ),
+    Mutation(
+        name="paint qualification disappears from workbench check",
+        path="Sources/VerdictUIWorkbench/Resources/workbench.js",
+        old="const reviewPaint = status === 'pass' && paintUnverified(check);",
+        new="const reviewPaint = false;",
+        test="WorkbenchStoreTests/testPaintReviewCannotAppearAsAnUnqualifiedPassInRenderedWorkbench",
+    ),
+    Mutation(
+        name="paint qualification disappears from workbench history",
+        path="Sources/VerdictUIWorkbench/Resources/workbench.js",
+        old="const reviewPaint = status === 'pass' && reportPaintUnverified(report);",
+        new="const reviewPaint = false;",
+        test="WorkbenchStoreTests/testPaintReviewCannotAppearAsAnUnqualifiedPassInRenderedWorkbench",
+    ),
+    Mutation(
         name="workbench smoke accepts empty browser measurements",
         path="scripts/workbench-smoke.py",
         old="complete and measured and not self.failures",

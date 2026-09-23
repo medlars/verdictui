@@ -197,6 +197,8 @@
     if (status === 'pass' && checks.some(s => s !== 'pass')) return 'unavailable';
     return status;
   }
+  const paintUnverified = check => list(check && check.verdict && check.verdict.findings).some(finding => finding && finding.rule === 'web-paint-unverified');
+  const reportPaintUnverified = report => list(report && report.checks).some(paintUnverified);
   function renderStage() {
     let status = 'idle', label = 'Ready when you are', title = state.checks.length ? 'Put your UI\nto the test.' : 'Know what\nholds up.';
     let detail = 'Run your product’s checks. See what passed, what needs attention, and exactly where.';
@@ -209,6 +211,10 @@
       status = reportStatus(state.report);
       const copy = { pass: ['Checks passed', 'Your checks\nhold up.', 'All checks in this run passed. This result covers the declared checks only.'], fail: ['Needs attention', 'Something needs\na closer look.', 'This run found an issue. Review the evidence below to see what needs to change.'], unavailable: ['Verification unavailable', 'We need\nmore evidence.', text(state.report.error) || 'One or more checks could not be verified. Review the available details below.'] }[status];
       [label, title, detail] = copy;
+      if (status === 'pass' && reportPaintUnverified(state.report)) {
+        status = 'unavailable'; label = 'Layout checked · Paint unverified'; title = 'Some details\nneed a closer look.';
+        detail = 'Semantic layout checks passed. Painted overlap or occlusion remains unverified. Review the cited evidence below.';
+      }
     }
     $('verification-stage').dataset.status = status;
     $('status-label').textContent = label;
@@ -240,8 +246,9 @@
     for (const check of displayed) {
       if (!check) continue;
       const status = cleanStatus(check.status);
-      const chip = node('span', 'check-chip'); chip.dataset.status = status;
-      chip.append(icon(status === 'pass' ? 'check' : status === 'running' ? 'lens' : 'alert'), document.createTextNode(text(check.name) + ' · ' + status));
+      const reviewPaint = status === 'pass' && paintUnverified(check);
+      const chip = node('span', 'check-chip'); chip.dataset.status = reviewPaint ? 'unavailable' : status;
+      chip.append(icon(status === 'pass' && !reviewPaint ? 'check' : status === 'running' ? 'lens' : 'alert'), document.createTextNode(text(check.name) + ' · ' + (reviewPaint ? 'layout pass · paint unverified' : status)));
       $('check-results').append(chip);
     }
     for (const check of checks) {
@@ -270,7 +277,8 @@
       const row = node('article', 'history-row');
       const report = entry.report || null;
       const status = report ? reportStatus(report) : 'unavailable';
-      row.append(node('span', 'severity ' + (status === 'fail' ? 'error' : status === 'pass' ? 'info' : 'warning'), status));
+      const reviewPaint = status === 'pass' && reportPaintUnverified(report);
+      row.append(node('span', 'severity ' + (status === 'fail' ? 'error' : status === 'pass' && !reviewPaint ? 'info' : 'warning'), reviewPaint ? 'paint review' : status));
       const summary = node('div', 'history-summary');
       const rawDate = text(entry.timestamp), date = new Date(rawDate);
       summary.append(node('h3', '', Number.isNaN(date.valueOf()) ? rawDate || 'Saved run' : date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })));

@@ -57,6 +57,9 @@ enum ExternalCommandOutput {
             environment.output.writeOut(try VerdictOutput.json(tree, pretty: pretty))
             return .pass
         case .verdict(let verdict):
+            if let qualification = VerdictOutput.paintQualification(verdict) {
+                environment.output.writeError(qualification + "\n")
+            }
             environment.output.writeOut(try VerdictOutput.json(verdict, pretty: pretty))
             return verdict.status == .pass ? .pass : .verdictFailed
         case .step(let step):

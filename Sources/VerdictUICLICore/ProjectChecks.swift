@@ -96,6 +96,13 @@ public struct ProjectCheckReport: Codable, Sendable {
             ? "unavailable" : entries.contains { $0.status == "fail" } ? "fail" : "pass"
         return Self(status: status, checks: entries, error: nil)
     }
+
+    var paintQualifications: [String] {
+        checks.compactMap { entry in
+            guard let verdict = entry.verdict, let qualification = VerdictOutput.paintQualification(verdict) else { return nil }
+            return "\(entry.name): \(qualification)"
+        }
+    }
 }
 
 public enum ProjectCheckRuntime {
@@ -219,6 +226,7 @@ extension VerdictUITool {
             shutdown.cancel()
             if failures.isEmpty { try? FileManager.default.removeItem(at: temporary) }
             else { report = .init(status: "unavailable", checks: report.checks, error: "Browser cleanup incomplete") }
+            for qualification in report.paintQualifications { StandardOutput().writeError(qualification + "\n") }
             StandardOutput().writeOut(try VerdictOutput.json(report, pretty: pretty))
             try VerdictUITool.finish(report.exitCode)
         }
