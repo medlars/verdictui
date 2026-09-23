@@ -36,6 +36,7 @@ from mutation_catalog._native import MUTATIONS as _NATIVE
 from mutation_catalog._probe import MUTATIONS as _PROBE
 from mutation_catalog._scripts import MUTATIONS as _SCRIPTS
 from mutation_catalog._web import MUTATIONS as _WEB
+from mutation_catalog._workbench import MUTATIONS as _WORKBENCH
 
 __all__ = ["MUTATIONS", "Mutation", "Runner"]
 
@@ -43,5 +44,14 @@ __all__ = ["MUTATIONS", "Mutation", "Runner"]
 # than by index, so order is not load-bearing for correctness — but a stable
 # order keeps a run's output diffable against the previous one.
 MUTATIONS: list[Mutation] = (
-    _PROBE + _KERNEL + _MACROS + _CLI + _SCRIPTS + _MISC + _NATIVE + _WEB + _INTEGRATION
+    _PROBE
+    + _KERNEL
+    + _MACROS
+    + _CLI
+    + _SCRIPTS
+    + _MISC
+    + _NATIVE
+    + _WEB
+    + _INTEGRATION
+    + _WORKBENCH
 )

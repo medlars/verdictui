@@ -13,7 +13,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         let item = NSMenuItem(); let appMenu = NSMenu()
         appMenu.addItem(withTitle: "Quit VerdictUI", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        item.submenu = appMenu; menu.addItem(item); app.mainMenu = menu
+        item.submenu = appMenu; menu.addItem(item)
+        let editItem = NSMenuItem(); let editMenu = NSMenu(title: "Edit")
+        editMenu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        let redo = editMenu.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "z")
+        redo.keyEquivalentModifierMask = [.command, .shift]
+        editMenu.addItem(.separator())
+        for (title, selector, key) in [("Cut", "cut:", "x"), ("Copy", "copy:", "c"),
+                                       ("Paste", "paste:", "v"), ("Select All", "selectAll:", "a")] {
+            editMenu.addItem(withTitle: title, action: Selector(selector), keyEquivalent: key)
+        }
+        editItem.submenu = editMenu; menu.addItem(editItem); app.mainMenu = menu
 
         let resources = Bundle.module.resourceURL!.appendingPathComponent("Resources")
         let page = resources.appendingPathComponent("index.html")

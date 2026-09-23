@@ -38,6 +38,9 @@ public struct DaemonTransport: Sendable {
     /// Where the socket is bound.
     public let socketPath: String
     private let engine: VerdictEngine
+    var maximumFrameBytes = 8 * 1_024 * 1_024
+    var clientIdleSeconds: Double = 5
+    var frameSeconds: Double = 10
 
     public init(engine: VerdictEngine, socketPath: String = VerdictDaemon.defaultSocketPath) {
         self.engine = engine
@@ -264,9 +267,16 @@ public struct DaemonTransport: Sendable {
     /// Read newline-delimited requests from one client until it disconnects.
     private func serveConnection(_ descriptor: Int32) async {
         var pending = Data()
+        var frameDeadline = ContinuousClock.now + .seconds(frameSeconds)
+        var idleDeadline = ContinuousClock.now + .seconds(clientIdleSeconds)
+        var noSignal: Int32 = 1
+        var sendTimeout = timeval(tv_sec: 2, tv_usec: 0)
+        guard setsockopt(descriptor, SOL_SOCKET, SO_NOSIGPIPE, &noSignal, socklen_t(MemoryLayout.size(ofValue: noSignal))) == 0,
+              setsockopt(descriptor, SOL_SOCKET, SO_SNDTIMEO, &sendTimeout, socklen_t(MemoryLayout.size(ofValue: sendTimeout))) == 0 else { return }
 
         while !Task.isCancelled && FileManager.default.fileExists(atPath: socketPath) {
             let (buffer, count) = await Self.readOffActor(descriptor)
+            guard ContinuousClock.now < idleDeadline, ContinuousClock.now < frameDeadline else { return }
             if count == -Int(EAGAIN) { continue }
             if count < 0 { return }
             if count == 0 {
@@ -275,18 +285,20 @@ public struct DaemonTransport: Sendable {
                 // guessing at bytes that never arrived.
                 return
             }
+            idleDeadline = ContinuousClock.now + .seconds(clientIdleSeconds)
             pending.append(contentsOf: buffer[0..<count])
 
             while let newline = pending.firstIndex(of: 0x0A) {
                 let line = pending[pending.startIndex..<newline]
                 pending = pending[pending.index(after: newline)...]
+                guard line.count <= maximumFrameBytes else { return }
                 guard !line.isEmpty else { continue }
                 let reply = await Self.answer(Data(line), engine: engine)
-                var noSignal: Int32 = 1
-                guard setsockopt(descriptor, SOL_SOCKET, SO_NOSIGPIPE, &noSignal, socklen_t(MemoryLayout.size(ofValue: noSignal))) == 0 else { return }
+                let sendDeadline = ContinuousClock.now + .seconds(5)
                 var sent = 0
                 let bytes = [UInt8](reply)
                 while sent < bytes.count {
+                    guard ContinuousClock.now < sendDeadline else { return }
                     let count = bytes.withUnsafeBytes {
                         write(descriptor, $0.baseAddress!.advanced(by: sent), bytes.count - sent)
                     }
@@ -294,7 +306,10 @@ public struct DaemonTransport: Sendable {
                     guard count > 0 else { return }
                     sent += count
                 }
+                frameDeadline = ContinuousClock.now + .seconds(frameSeconds)
+                idleDeadline = ContinuousClock.now + .seconds(clientIdleSeconds)
             }
+            guard pending.count <= maximumFrameBytes else { return }
         }
     }
 

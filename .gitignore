@@ -35,3 +35,6 @@ Tests/untracked_scan_probe_*.py
 logs/pixel-renders/
 logs/pixel-diffs/
 .playwright-mcp/
+
+# Local desktop packaging output.
+/dist/
