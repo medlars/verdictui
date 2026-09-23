@@ -244,4 +244,29 @@ final class ProjectRunnerBrokerTests: XCTestCase {
         }
     }
 
+    func testGeneratedTreesAreIgnoredButResourceEditsInvalidateGeneration() throws {
+        let (root, session) = try fixture()
+        let initial = try session.fingerprint()
+        for directory in ["dist", "build", "DerivedData", "Pods", ".worktrees", "Product.app"] {
+            let output = root.appendingPathComponent(directory)
+            try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+            try Data("output".utf8).write(to: output.appendingPathComponent("generated.txt"))
+        }
+        XCTAssertEqual(try session.fingerprint(), initial)
+        let resource = root.appendingPathComponent("asset.png")
+        try Data(repeating: 1, count: 131_073).write(to: resource)
+        let withAsset = try session.fingerprint()
+        XCTAssertNotEqual(withAsset, initial)
+        try Data(repeating: 2, count: 131_073).write(to: resource)
+        XCTAssertNotEqual(try session.fingerprint(), withAsset)
+    }
+
+    func testSourceScanBudgetsRefuseExcessDataAndTime() throws {
+        let (root, session) = try fixture()
+        try Data(repeating: 1, count: 131_073).write(to: root.appendingPathComponent("asset.bin"))
+        XCTAssertThrowsError(try session.fingerprint(maximumBytes: 65_536))
+        XCTAssertThrowsError(try session.fingerprint(maximumEntries: 1))
+        XCTAssertThrowsError(try session.fingerprint(timeout: 0))
+    }
+
 }

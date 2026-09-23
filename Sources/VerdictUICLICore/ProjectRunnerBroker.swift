@@ -119,7 +119,7 @@ public enum ProjectRunnerBroker {
                 pending.removeSubrange(...newline)
                 guard !line.isEmpty else { continue }
                 if let response = session.answer(line) {
-                    do { try writeAll(response, to: output) } catch { return }
+                    do { try writeAll(response, to: output, shouldStop: { shutdown.stopped }) } catch { return }
                 }
             }
         }
@@ -231,14 +231,18 @@ public enum ProjectRunnerBroker {
             }
         }
 
-        func fingerprint(includeExecutable: Bool = true) throws -> String {
+        func fingerprint(
+            includeExecutable: Bool = true, maximumBytes: Int = 256 * 1_024 * 1_024,
+            maximumEntries: Int = 100_000, timeout: TimeInterval = 10
+        ) throws -> String {
             lock.lock()
             defer { lock.unlock() }
             var hash = SHA256()
             let root = destination.projectRoot
             let ignored: Set<String> = [
                 ".git", ".build", ".swiftpm", ".verdictui", "node_modules", ".venv", "logs",
-                ".DS_Store",
+                ".DS_Store", ".worktrees", "dist", "build", "DerivedData", "Pods", ".cache",
+                "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".next", "coverage",
             ]
             guard
                 let walker = FileManager.default.enumerator(
@@ -246,19 +250,41 @@ public enum ProjectRunnerBroker {
                     options: [])
             else { throw Failure("cannot inspect consumer sources") }
             var files: [URL] = []
+            var entries = 0
+            var bytesRead = 0
+            let deadline = ProcessInfo.processInfo.systemUptime + timeout
+            func checkBudget() throws {
+                guard !shouldStop(), entries <= maximumEntries, bytesRead <= maximumBytes,
+                    ProcessInfo.processInfo.systemUptime < deadline else {
+                    throw Failure("consumer source scan exceeds budget or was cancelled; outcome unavailable")
+                }
+            }
             for case let file as URL in walker {
-                if ignored.contains(file.lastPathComponent) {
+                entries += 1
+                try checkBudget()
+                let values = try file.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey])
+                if ignored.contains(file.lastPathComponent)
+                    || (values.isDirectory == true && ["app", "xcarchive", "xcresult"].contains(file.pathExtension)) {
                     walker.skipDescendants()
                     continue
                 }
-                if try file.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true {
+                if values.isRegularFile == true {
                     files.append(file)
                 }
             }
             files.append(root.appendingPathComponent(".verdictui/config.json"))
             for file in files.sorted(by: { $0.path < $1.path }) {
                 hash.update(data: Data(file.path.utf8))
-                hash.update(data: try Data(contentsOf: file))
+                let handle = try FileHandle(forReadingFrom: file)
+                defer { try? handle.close() }
+                while true {
+                    try checkBudget()
+                    let chunk = try handle.read(upToCount: 64 * 1_024) ?? Data()
+                    guard !chunk.isEmpty else { break }
+                    bytesRead += chunk.count
+                    try checkBudget()
+                    hash.update(data: chunk)
+                }
             }
             // Build products are excluded above; the configured executable's
             // metadata catches an external rebuild without hashing a huge binary.

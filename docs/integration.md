@@ -120,3 +120,8 @@ same MCP and daemon process, expects a new FAIL verdict, kills only that
 broker's child, introduces a compile error to prove stale results are refused,
 and repairs the source to recover a PASS. It never mutates another project's
 working copy.
+
+Consumer source scanning streams 64 KiB chunks, with a 256 MiB total-input,
+100,000-entry, and 10-second limit per scan. Exceeding a limit is unavailable.
+Generated build/cache trees (including dist, build, DerivedData, Pods and app
+bundles) are excluded; source files and resources remain content-hashed.
