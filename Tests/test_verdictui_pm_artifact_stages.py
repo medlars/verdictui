@@ -98,13 +98,25 @@ class TestStageCLISmoke:
             def wait(self, timeout=None):  # noqa: ARG002 — signature parity
                 return 0
 
+            def poll(self):
+                return 0
+
         fake_swift_runner = types.SimpleNamespace(
             swiftpm_command_lock=lambda *_a, **_k: _mod.contextlib.nullcontext()
         )
         kills = []
+        probes = []
         cleaned = []
         monkeypatch.setattr(_mod.subprocess, "Popen", lambda *_a, **_k: _FakeProc())
-        monkeypatch.setattr(_mod.os, "killpg", lambda pid, sig: kills.append((pid, sig)))
+
+        def _killpg(pid, sig):
+            if sig == 0:
+                assert kills == [(4242, signal.SIGTERM)]
+                probes.append(pid)
+                raise ProcessLookupError
+            kills.append((pid, sig))
+
+        monkeypatch.setattr(_mod.os, "killpg", _killpg)
 
         def _record_cleanup(root) -> int:
             """Record the cleaned root and report zero files removed.
@@ -125,6 +137,7 @@ class TestStageCLISmoke:
             _SW._run_locked_swift_build_product(timeout=60)
 
         assert kills == [(4242, signal.SIGTERM)]
+        assert probes == [4242], "reaping the leader must still check group absence"
         assert cleaned == [tmp_path]
 
     def test_it_is_registered_in_the_quick_pipeline(self) -> None:
