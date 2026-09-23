@@ -23,6 +23,12 @@ produce unavailable coverage. Cancellation waits for owned work to stop and
 leaves unfinished checks unverified. No synthetic result is inserted into a
 shipping project or its history.
 
+When a browser check has no confirmed layout error but contains a
+`web-paint-unverified` finding, the result says **Layout checked · Paint
+unverified**, the check badge carries the qualification, and history says
+**paint review**. Review the cited nodes before treating the page as visually
+verified. A confirmed error still produces **Needs attention**.
+
 The moving verification lens is active only while the engine reports work.
 Reduced-motion preferences replace the animation with a static indicator and
 text progress. Controls are keyboard accessible; standard macOS editing

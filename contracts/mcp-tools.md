@@ -86,9 +86,14 @@ This is the same three-valued contract the CLI spells as exit codes:
 
 | CLI exit | MCP shape | Means |
 |---|---|---|
-| 0 | `ok: true`, verdict `PASS` | the screen is right |
-| 1 | `ok: true`, verdict `FAIL` | the screen is wrong, findings cite rule + node |
+| 0 | `ok: true`, verdict `PASS` | performed checks found no confirmed errors; inspect warnings and coverage |
+| 1 | `ok: true`, verdict `FAIL` | performed checks found errors, findings cite rule + node |
 | 2 | `ok: false`, `error` set | no verdict was produced; says nothing about any UI |
+
+For browser checks, `web-paint-unverified` warns that painted overlap or
+occlusion remains unresolved. A PASS containing that warning is a semantic
+layout result, not visual certification. The original observed tree and cited
+nodes remain available; do not discard warnings when interpreting status.
 
 ## The handshake
 

@@ -27,6 +27,26 @@ final class LiveCommandTests: XCTestCase {
 
     // MARK: - target
 
+    func testPaintUncertaintyRemainsVisibleWithoutCorruptingJSONOrMaskingFailure() throws {
+        let uncertain = Finding(rule: "web-paint-unverified", severity: .warning, nodeID: "web/overlay", message: "Painted occlusion remains unverified.")
+        let defect = Finding(rule: "sibling-overlap", severity: .error, nodeID: "web/button", message: "Controls overlap.")
+        for findings in [[], [uncertain], [uncertain, defect]] {
+            let (environment, output) = environment()
+            let verdict = Verdict(scenario: "web/home", findings: findings)
+            let response = DaemonResponse(ok: true, id: nil, result: .verdict(verdict), error: nil)
+            let code = try ExternalCommandOutput.write(response, environment: environment, pretty: false)
+            XCTAssertEqual(code, findings.contains(defect) ? .verdictFailed : .pass)
+            let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(output.standardOutput.utf8)) as? [String: Any])
+            XCTAssertEqual(object["status"] as? String, findings.contains(defect) ? "FAIL" : "PASS")
+            XCTAssertEqual(output.standardError.contains("PAINT UNVERIFIED"), findings.contains(uncertain))
+            XCTAssertEqual(VerdictOutput.humanReadable(verdict).contains("PAINT UNVERIFIED"), findings.contains(uncertain))
+            let report = ProjectCheckReport.aggregate([.init(name: "Home", status: verdict.status == .pass ? "pass" : "fail", verdict: verdict, error: nil)])
+            XCTAssertEqual(report.paintQualifications.count, findings.contains(uncertain) ? 1 : 0)
+            if let qualification = report.paintQualifications.first { XCTAssertTrue(qualification.hasPrefix("Home: PAINT UNVERIFIED")) }
+            XCTAssertEqual(report.exitCode, code)
+        }
+    }
+
     func testEnvironmentPairsParseAndKeepEqualsInTheValue() throws {
         XCTAssertEqual(
             try LiveTarget.parseEnvironment(["A=1", "URL=x=y"]), ["A": "1", "URL": "x=y"])

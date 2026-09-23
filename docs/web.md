@@ -64,13 +64,33 @@ the expectation. Clicks require fresh geometry and hit testing after scrolling.
 Browser layout checks use measured document and scroll regions. The iframe owner
 is checked in its parent layout, while the embedded document is checked in its own
 coordinate context. Fixed elements use their actual containing context. Wrapped
-inline text is checked using its measured fragments, and CSS clipping is kept
+inline text and HTML elements are checked using their measured fragments, and CSS clipping is kept
 separate from ordinary visible text extending outside a line box. Findings cite
 the original returned tree; lint projections do not replace the evidence or the
 coordinates used to perform actions.
 
+Wrapped HTML inline boxes use native `Element.getClientRects()` in an isolated
+browser world, including borders, padding and replaced content. The engine
+resolves exact backend node identities, checks agreement with the snapshot, and
+bounds collection to 4,096 inline elements, 100,000 fragments and a ten-second
+capture budget. Missing, changed or excessive measurements produce unavailable.
+
+Passive compound SVG graphics are checked as a composition; their owner still
+participates in layout checks. Text, links, labelled or interactive descendants
+keep their independent checks. Presentation-only clipping or overlap, and
+uncertain internal SVG clipping, produce cited `web-paint-unverified` warnings.
+These warnings establish neither a functional defect nor harmlessness: geometry
+does not prove that composed paint leaves content visible. Real text/control
+collisions and clipping remain errors. The full original tree is retained.
+
+**PASS means no confirmed errors in the checks performed. It does not certify
+paint or occlusion.** When `web-paint-unverified` is present, the CLI prints an
+explicit notice on stderr, and the desktop result, check and history badge call
+out the unresolved paint review. Machine consumers must inspect findings as
+well as status. JSON output and the three-valued exit contract remain unchanged.
+
 Overlap inspection retains original nodes and refines candidate collisions with
-measured text fragments. A shared limit of 2,000,000 work units bounds node visits,
+measured text and inline border fragments. A shared limit of 2,000,000 work units bounds node visits,
 raw fragments, fragment events, candidate comparisons and finding insertions
 across paint scopes. Exhaustion returns
 unavailable with `web overlap inspection exceeded its bounded work budget`; it
