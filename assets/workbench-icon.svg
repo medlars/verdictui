@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="pearl" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fdfcff"/><stop offset=".5" stop-color="#eee8f8"/><stop offset="1" stop-color="#d8cbeb"/></linearGradient>
+    <linearGradient id="edge" x1=".15" y1="0" x2=".85" y2="1"><stop stop-color="#ffffff"/><stop offset=".36" stop-color="#f2edff"/><stop offset=".64" stop-color="#b2a0d7"/><stop offset="1" stop-color="#eee7fc"/></linearGradient>
+    <linearGradient id="well" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#cbbce6"/><stop offset=".47" stop-color="#ffffff"/><stop offset="1" stop-color="#ddd2f0"/></linearGradient>
+    <radialGradient id="glass" cx=".3" cy=".2" r=".95"><stop stop-color="#ffffff"/><stop offset=".5" stop-color="#e9e0f9"/><stop offset="1" stop-color="#b4a0d7"/></radialGradient>
+    <linearGradient id="iris" x1="0" y1="0" x2=".8" y2="1"><stop stop-color="#b899e7"/><stop offset=".52" stop-color="#8a65ca"/><stop offset="1" stop-color="#6748ab"/></linearGradient>
+    <linearGradient id="shine" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#ffffff"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="180%" height="180%"><feDropShadow dx="12" dy="24" stdDeviation="18" flood-color="#725794" flood-opacity=".27"/></filter>
+    <filter id="inner-shadow" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dx="2" dy="7" stdDeviation="7" flood-color="#52317f" flood-opacity=".2"/></filter>
+  </defs>
+  <rect x="24" y="24" width="976" height="976" rx="224" fill="url(#pearl)"/>
+  <rect x="26" y="26" width="972" height="972" rx="222" fill="none" stroke="#ffffff" stroke-opacity=".86" stroke-width="4"/>
+  <g filter="url(#shadow)" transform="rotate(-14 512 500)">
+    <circle cx="512" cy="500" r="335" fill="url(#edge)" stroke="#fff" stroke-width="3"/>
+    <circle cx="512" cy="500" r="313" fill="url(#well)"/>
+    <circle cx="512" cy="500" r="293" fill="url(#glass)" stroke="#ffffff" stroke-opacity=".9" stroke-width="3"/>
+    <circle cx="512" cy="500" r="260" fill="none" stroke="#ffffff" stroke-opacity=".26" stroke-width="24"/>
+    <circle cx="512" cy="500" r="246" fill="none" stroke="#ad96ce" stroke-opacity=".3" stroke-width="2"/>
+    <circle cx="512" cy="500" r="229" fill="none" stroke="#ffffff" stroke-width="3"/>
+    <circle cx="512" cy="500" r="193" fill="url(#iris)" stroke="#e2d1fa" stroke-width="3" filter="url(#inner-shadow)"/>
+    <path d="M215 403a313 313 0 0 1 390-200" fill="none" stroke="url(#shine)" stroke-width="10" stroke-linecap="round"/>
+    <circle cx="512" cy="242" r="14" fill="url(#edge)" stroke="#fff" stroke-width="2"/>
+    <circle cx="778" cy="736" r="20" fill="#ffffff" fill-opacity=".75"/>
+    <circle cx="778" cy="736" r="10" fill="#d0bce9"/>
+  </g>
+  <path d="m413 441 88 160 125-201" fill="none" stroke="#ffffff" stroke-width="43" stroke-linecap="round" stroke-linejoin="round" filter="url(#inner-shadow)"/>
+</svg>
