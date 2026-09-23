@@ -51,7 +51,7 @@ final class ProjectRunnerTests: XCTestCase {
             XCTAssertNil(
                 try ProjectRunner.destination(
                     startingAt: root, runningBinary: URL(fileURLWithPath: "/usr/bin/true"),
-                    alreadyDelegated: false))
+                    alreadyDelegated: false, catalogRoot: root))
         }
     }
 
@@ -158,7 +158,7 @@ extension ProjectRunnerTests {
                 try ProjectRunner.destination(
                     startingAt: root,
                     runningBinary: root.appendingPathComponent(".build/debug/verdictui"),
-                    alreadyDelegated: false))
+                    alreadyDelegated: false, catalogRoot: root))
         }
     }
 
@@ -167,5 +167,106 @@ extension ProjectRunnerTests {
             try ProjectRunner.destination(
                 startingAt: URL(fileURLWithPath: "/"),
                 runningBinary: URL(fileURLWithPath: "/usr/bin/true"), alreadyDelegated: false))
+    }
+}
+
+extension ProjectRunnerTests {
+    private func buildProject(
+        settings: [String: String], script: String = "exit 0",
+        _ body: (URL, URL) throws -> Void
+    ) throws {
+        try project(runner: "runner") { root in
+            var manifest = settings
+            manifest["runner"] = "runner"
+            try JSONEncoder().encode(manifest).write(to: root.appendingPathComponent(".verdictui/config.json"))
+            let executable = root.appendingPathComponent("swift-stub")
+            try Data(("#!/bin/sh\n" + script + "\n").utf8).write(to: executable)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
+            try body(root, executable)
+        }
+    }
+
+    func testBuildUsesSafeArgumentsProjectRootAndReleaseConfiguration() throws {
+        try buildProject(settings: ["buildProduct": "Consumer;echo-not-a-shell", "configuration": "release"],
+                         script: "printf '%s\\n' \"$@\" > arguments.txt\npwd > cwd.txt") { root, executable in
+            try ProjectRunner.buildIfConfigured(projectRoot: root, swiftExecutable: executable)
+            let arguments = try String(contentsOf: root.appendingPathComponent("arguments.txt"), encoding: .utf8)
+            XCTAssertTrue(arguments.contains("--product=Consumer;echo-not-a-shell\n"))
+            XCTAssertTrue(arguments.contains("--configuration=release\n"))
+            XCTAssertTrue(arguments.contains("--package-path\n\(root.path)\n"))
+            let cwd = try String(contentsOf: root.appendingPathComponent("cwd.txt"), encoding: .utf8)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let actual = try FileManager.default.attributesOfItem(atPath: cwd)
+            let expected = try FileManager.default.attributesOfItem(atPath: root.path)
+            XCTAssertEqual(actual[.systemFileNumber] as? NSNumber, expected[.systemFileNumber] as? NSNumber)
+            XCTAssertEqual(actual[.systemNumber] as? NSNumber, expected[.systemNumber] as? NSNumber)
+        }
+    }
+
+    func testBuildFailureRefusesStaleRunner() throws {
+        try buildProject(settings: ["buildProduct": "Consumer"], script: "exit 7") { root, executable in
+            XCTAssertThrowsError(try ProjectRunner.buildIfConfigured(projectRoot: root, swiftExecutable: executable)) { error in
+                XCTAssertTrue(String(describing: error).contains("stale runner was not executed"))
+            }
+        }
+    }
+
+    func testBuildTimeoutIsBounded() throws {
+        try buildProject(settings: ["buildProduct": "Consumer"], script: "exec /bin/sleep 3") { root, executable in
+            XCTAssertThrowsError(try ProjectRunner.buildIfConfigured(projectRoot: root, timeout: 0.01, swiftExecutable: executable)) { error in
+                XCTAssertTrue(String(describing: error).contains("timed out"))
+            }
+        }
+    }
+
+    func testBuildConfigurationValidationAndDefault() throws {
+        for invalid in [["buildProduct": ""], ["buildProduct": "a\0b"], ["buildProduct": "Consumer", "configuration": "--bad"], ["configuration": "release"]] {
+            try buildProject(settings: invalid) { root, _ in
+                XCTAssertThrowsError(try ProjectScenarios.buildConfiguration(projectRoot: root))
+            }
+        }
+        try buildProject(settings: ["buildProduct": "Consumer"]) { root, _ in
+            XCTAssertEqual(try ProjectScenarios.buildConfiguration(projectRoot: root)?.configuration, "debug")
+        }
+        try buildProject(settings: [:]) { root, _ in
+            XCTAssertNil(try ProjectScenarios.buildConfiguration(projectRoot: root))
+            try ProjectRunner.buildIfConfigured(projectRoot: root, swiftExecutable: root.appendingPathComponent("missing"))
+        }
+    }
+
+    func testAConsumerCannotDeclareTheStockLauncherAsItsRunner() throws {
+        try project(runner: "/usr/bin/true") { root in
+            XCTAssertThrowsError(try ProjectRunner.destination(startingAt: root,
+                runningBinary: URL(fileURLWithPath: "/usr/bin/true"), alreadyDelegated: false))
+        }
+    }
+}
+
+extension ProjectRunnerTests {
+    func testLauncherBuildsBeforeItDelegates() throws {
+        try buildProject(settings: ["buildProduct": "Consumer"], script: "echo built > built.txt") { root, executable in
+            let config = root.appendingPathComponent(".verdictui/config.json")
+            try JSONEncoder().encode(["runner": "/usr/bin/true", "buildProduct": "Consumer"])
+                .write(to: config)
+            try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("swift"), withDestinationURL: executable)
+            let sourceRoot = URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            let process = Process()
+            process.executableURL = sourceRoot.appendingPathComponent(".build/debug/verdictui")
+            process.arguments = ["list"]
+            process.currentDirectoryURL = root
+            var environment = ProcessInfo.processInfo.environment
+            environment.removeValue(forKey: ProjectRunner.delegationMarker)
+            environment["PATH"] = root.path + ":" + (environment["PATH"] ?? "/usr/bin:/bin")
+            process.environment = environment
+            let output = Pipe()
+            process.standardOutput = output
+            process.standardError = FileHandle.nullDevice
+            try process.run()
+            process.waitUntilExit()
+            XCTAssertEqual(process.terminationStatus, 0)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("built.txt").path))
+            XCTAssertEqual(output.fileHandleForReading.readDataToEndOfFile(), Data())
+        }
     }
 }

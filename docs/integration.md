@@ -10,7 +10,6 @@ boundary. Its two scenarios are independent of VerdictUI's demo catalog: one
 passes and one deliberately fails the tap-target rule.
 
 ```sh
-swift build --package-path examples/ConsumerApp --product ConsumerScenarios --jobs 2
 cd examples/ConsumerApp
 /path/to/verdictui list
 /path/to/verdictui verify consumer-settings   # exit 0
@@ -38,13 +37,21 @@ struct MyScenarios {
 Create `.verdictui/config.json` in your package root:
 
 ```json
-{"runner": ".build/debug/MyScenarios"}
+{"runner": ".build/debug/MyScenarios", "buildProduct": "MyScenarios"}
 ```
 
-Build the runner before invoking the installed CLI. Rebuild it when the views or
-scenarios change. VerdictUI does not silently rebuild or load Swift dynamic
-libraries; the executable is the version of your application being measured.
-A missing, nonexecutable or malformed runner declaration produces exit 2. A
+With `buildProduct`, the launcher runs `swift build --package-path <root>
+--product=<name> --configuration=debug --jobs 2` before each scenario invocation.
+SwiftPM rebuilds only changed dependencies; unchanged invocations use its cache.
+Set `configuration` to `release` and point `runner` at the release executable to
+use that build. Compiler output goes to stderr, preserving JSON and MCP stdout.
+A failed build refuses any old executable; a build exceeding 300 seconds is
+terminated and returns exit 2. The running MCP or daemon retains its compiled
+registry until restarted, so restart it after changing consumer source.
+
+Omit `buildProduct` for a runner built by Xcode or another build pipeline; then
+you own rebuilding it before verification. A missing, nonexecutable or malformed
+runner declaration produces exit 2. A
 runner that delegates back to the launcher is rejected instead of recursing.
 The launcher inherits stdin/stdout/stderr and uses process replacement, so MCP
 framing, exit codes and termination signals reach the actual scenario runner.

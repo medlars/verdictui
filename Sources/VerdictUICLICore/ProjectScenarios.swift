@@ -47,6 +47,19 @@ public enum ProjectScenarios {
 
     private struct Manifest: Decodable {
         let runner: String
+        let buildProduct: String?
+        let configuration: String?
+    }
+
+    public struct BuildConfiguration: Equatable, Sendable {
+        public let product: String
+        public let configuration: String
+    }
+
+    public static func buildConfiguration(projectRoot: URL) throws -> BuildConfiguration? {
+        guard let manifest = try readManifest(projectRoot: projectRoot),
+            let product = manifest.buildProduct else { return nil }
+        return BuildConfiguration(product: product, configuration: manifest.configuration ?? "debug")
     }
 
     /// The nearest ancestor of `directory` holding a `.verdictui/config.json`.
@@ -93,7 +106,7 @@ public enum ProjectScenarios {
 
     /// The runner this project declares. Throws on a manifest that exists but
     /// does not parse; returns `nil` only when there is genuinely no manifest.
-    public static func declaredRunnerStrict(projectRoot: URL) throws -> URL? {
+    private static func readManifest(projectRoot: URL) throws -> Manifest? {
         let manifestPath = projectRoot
             .appendingPathComponent(configDirectory, isDirectory: true)
             .appendingPathComponent(configFile)
@@ -118,6 +131,23 @@ public enum ProjectScenarios {
             throw MalformedManifest(path: manifestPath, underlying: "runner must be a nonempty executable path")
         }
 
+        if let product = manifest.buildProduct {
+            guard !product.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                !product.contains("\0") else {
+                throw MalformedManifest(path: manifestPath, underlying: "buildProduct must be nonempty")
+            }
+        }
+        if let configuration = manifest.configuration {
+            guard manifest.buildProduct != nil,
+                ["debug", "release"].contains(configuration) else {
+                throw MalformedManifest(path: manifestPath, underlying: "configuration needs buildProduct and must be debug or release")
+            }
+        }
+        return manifest
+    }
+
+    public static func declaredRunnerStrict(projectRoot: URL) throws -> URL? {
+        guard let manifest = try readManifest(projectRoot: projectRoot) else { return nil }
         // Resolve against the PROJECT ROOT, not the process's cwd: the CLI is
         // invoked from wherever the developer is standing, and a runner path
         // resolved against that would be found only by accident.

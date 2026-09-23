@@ -54,7 +54,8 @@ public enum ProjectRunner {
     public static func destination(
         startingAt directory: URL,
         runningBinary: URL,
-        alreadyDelegated: Bool
+        alreadyDelegated: Bool,
+        catalogRoot: URL? = nil
     ) throws -> Destination? {
         guard !alreadyDelegated else {
             throw Failure(
@@ -66,11 +67,19 @@ public enum ProjectRunner {
         else { return nil }
         let executable = runner.resolvingSymlinksInPath().standardizedFileURL
         let current = runningBinary.resolvingSymlinksInPath().standardizedFileURL
-        if executable == current { return nil }
+        let sourceRoot = catalogRoot ?? URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let ownsStockCatalog = root.resolvingSymlinksInPath() == sourceRoot.resolvingSymlinksInPath()
+        if executable == current {
+            guard ownsStockCatalog else {
+                throw Failure(description: "project runner is the stock launcher; compile a consumer using VerdictUIRunner.main(registry:)")
+            }
+            return nil
+        }
         // Debug and release builds of this same launcher use its own fixture catalog.
         // Ownership is still false: location alone never certifies a custom registry.
         let buildRoot = root.appendingPathComponent(".build").path + "/"
-        if current.path.hasPrefix(buildRoot), executable.path.hasPrefix(buildRoot),
+        if ownsStockCatalog, current.path.hasPrefix(buildRoot), executable.path.hasPrefix(buildRoot),
             current.lastPathComponent == executable.lastPathComponent
         {
             return nil
@@ -105,10 +114,53 @@ public enum ProjectRunner {
         ].contains(verb)
     }
 
+    static func buildIfConfigured(
+        projectRoot: URL,
+        timeout: TimeInterval = 300,
+        swiftExecutable: URL = URL(fileURLWithPath: "/usr/bin/env")
+    ) throws {
+        guard let build = try ProjectScenarios.buildConfiguration(projectRoot: projectRoot) else { return }
+        let process = Process()
+        process.executableURL = swiftExecutable
+        process.arguments = [
+            "swift", "build", "--package-path", projectRoot.path,
+            "--product=\(build.product)", "--configuration=\(build.configuration)", "--jobs", "2",
+        ]
+        process.currentDirectoryURL = projectRoot
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = FileHandle.standardError
+        process.standardError = FileHandle.standardError
+        let event = try JSONSerialization.data(withJSONObject: [
+            "event": "project-build", "product": build.product, "configuration": build.configuration,
+        ], options: [.sortedKeys])
+        FileHandle.standardError.write(event + Data("\n".utf8))
+        try process.run()
+        let deadline = ProcessInfo.processInfo.systemUptime + timeout
+        while process.isRunning, ProcessInfo.processInfo.systemUptime < deadline { Thread.sleep(forTimeInterval: 0.05) }
+        if process.isRunning {
+            process.terminate()
+            let terminationDeadline = ProcessInfo.processInfo.systemUptime + 1
+            while process.isRunning, ProcessInfo.processInfo.systemUptime < terminationDeadline { Thread.sleep(forTimeInterval: 0.05) }
+            if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+            process.waitUntilExit()
+            throw Failure(description: "consumer build timed out after \(timeout) seconds")
+        }
+        process.waitUntilExit()
+        guard process.terminationReason == .exit, process.terminationStatus == 0 else {
+            throw Failure(description: "consumer build failed (status \(process.terminationStatus)); stale runner was not executed")
+        }
+    }
+
     public static func forwardIfDeclared() throws {
         guard shouldForward(arguments: Array(CommandLine.arguments.dropFirst())) else { return }
         let current = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         let binary = Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0])
+        guard ProcessInfo.processInfo.environment[delegationMarker] == nil else {
+            throw Failure(description: "project runner delegated back to verdictui; use VerdictUIRunner.main(registry:)")
+        }
+        if let root = ProjectScenarios.findProjectRoot(startingAt: current) {
+            try buildIfConfigured(projectRoot: root)
+        }
         guard
             let target = try destination(
                 startingAt: current,

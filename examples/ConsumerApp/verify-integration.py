@@ -2,6 +2,7 @@
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -16,11 +17,35 @@ def check(condition: bool, message: str) -> None:
 def main() -> None:
     launcher = Path(sys.argv[1]).resolve()
     root = Path(__file__).resolve().parent
+    if "--cold" in sys.argv[2:]:
+        with tempfile.TemporaryDirectory(prefix="verdictui-cold-consumer-") as temporary:
+            copied = Path(temporary) / "ConsumerApp"
+            shutil.copytree(
+                root, copied, ignore=shutil.ignore_patterns(".build", ".swiftpm", "__pycache__")
+            )
+            package = copied / "Package.swift"
+            package.write_text(
+                package.read_text().replace(
+                    'path: "../.."', "path: " + json.dumps(str(root.parents[1]), ensure_ascii=False)
+                )
+            )
+            check(
+                not (copied / ".build/debug/ConsumerScenarios").exists(),
+                "cold runner already exists",
+            )
+            result = subprocess.run(
+                [sys.executable, str(copied / Path(__file__).name), str(launcher)],
+                cwd=copied,
+                timeout=600,
+            )
+            check(result.returncode == 0, "cold external consumer integration")
+        print("cold external consumer auto-build PASS")
+        return
     nested = root / "Sources" / "ConsumerScenarios"
 
     def run(arguments: list[str], expected: int, cwd: Path = nested) -> str:
         result = subprocess.run(
-            [str(launcher), *arguments], cwd=cwd, capture_output=True, text=True, timeout=30
+            [str(launcher), *arguments], cwd=cwd, capture_output=True, text=True, timeout=360
         )
         check(result.returncode == expected, f"{arguments}: {result.returncode}: {result.stderr}")
         check("demo-" not in result.stdout, f"borrowed demo catalog: {arguments}")
@@ -73,7 +98,7 @@ def main() -> None:
         input="".join(json.dumps(request) + "\n" for request in requests),
         capture_output=True,
         text=True,
-        timeout=30,
+        timeout=360,
     )
     check(wire.returncode == 0, wire.stderr)
     replies = {reply["id"]: reply for reply in map(json.loads, wire.stdout.splitlines())}
@@ -96,6 +121,16 @@ def main() -> None:
         check(
             (isolated / "verdict-baselines/consumer-settings.tree.json").exists(), "baseline root"
         )
+        config.write_text(
+            json.dumps(
+                {
+                    "runner": str(root / ".build/debug/ConsumerScenarios"),
+                    "buildProduct": "NoSuchProduct",
+                }
+            )
+        )
+        failed = run(["list"], 2, isolated)
+        check(failed == "", "failed build executed stale runner")
         invalid = isolated / "not-a-program"
         invalid.write_text("not an executable format")
         invalid.chmod(0o755)
