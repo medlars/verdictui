@@ -384,8 +384,8 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="web scroll iframe fixed child escapes outer scroll clip",
         path=_BASE + "WebLint.swift",
-        old="for outer in [documentClip, childScroll].compactMap({ $0 }) {",
-        new="for outer in [documentClip].compactMap({ $0 }) {",
+        old="Clip.combined(ownDocument, documentClip, childScroll, childCSS)",
+        new="Clip.combined(ownDocument, documentClip, childCSS)",
         test=_TEST + "WebLintTests/testFixedChildCannotEscapeOuterScrollPanelThroughIframe",
     ),
     Mutation(
@@ -1055,5 +1055,204 @@ MUTATIONS: list[Mutation] = [
         new="_ = owned",
         test=_TEST
         + "WebOpeningLifecycleTests/testMCPSIGTERMAwaitsBrowserStillDiscoveringItsEndpoint",
+    ),
+    Mutation(
+        name="web paint SVG composition remains independent layout shapes",
+        path=_BASE + "WebPaintSemantics.swift",
+        old='if tag == "svg", children.allSatisfy({ $0.1 }) {',
+        new='if tag == "svg", children.isEmpty {',
+        test=_TEST
+        + "WebPaintSemanticsTests/testPassiveSVGCompositionIsAtomicButOwnerStillCollides",
+    ),
+    Mutation(
+        name="web paint SVG composition ignores measured interaction",
+        path=_BASE + "WebPaintSemantics.swift",
+        old="let passiveGraphic = inert && unnamed",
+        new="let passiveGraphic = unnamed",
+        test=_TEST
+        + "WebPaintSemanticsTests/testSVGTextLinksForeignContentLabelsAndInteractionPreventAtomicity",
+    ),
+    Mutation(
+        name="web paint SVG composition erases labelled graphics",
+        path=_BASE + "WebPaintSemantics.swift",
+        old="let passiveGraphic = inert && unnamed",
+        new="let passiveGraphic = inert",
+        test=_TEST
+        + "WebPaintSemanticsTests/testSVGTextLinksForeignContentLabelsAndInteractionPreventAtomicity",
+    ),
+    Mutation(
+        name="web paint SVG composition erases semantic controls",
+        path=_BASE + "WebPaintSemantics.swift",
+        old="source.role == .container && graphicTags.contains(tag)",
+        new="graphicTags.contains(tag)",
+        test=_TEST
+        + "WebPaintSemanticsTests/testSVGTextLinksForeignContentLabelsAndInteractionPreventAtomicity",
+    ),
+    Mutation(
+        name="web paint SVG composition ignores meaningful descendants",
+        path=_BASE + "WebPaintSemantics.swift",
+        old="&& children.allSatisfy { $0.1 }",
+        new="&& children.allSatisfy { _ in true }",
+        test=_TEST
+        + "WebPaintSemanticsTests/testSVGTextLinksForeignContentLabelsAndInteractionPreventAtomicity",
+    ),
+    Mutation(
+        name="web paint SVG composition accepts foreign content",
+        path=_BASE + "WebPaintSemantics.swift",
+        old='"polyline", "polygon", "g",',
+        new='"polyline", "polygon", "g", "foreignobject",',
+        test=_TEST
+        + "WebPaintSemanticsTests/testSVGTextLinksForeignContentLabelsAndInteractionPreventAtomicity",
+    ),
+    Mutation(
+        name="web paint SVG composition assumes use references are passive",
+        path=_BASE + "WebPaintSemantics.swift",
+        old='"polyline", "polygon", "g",',
+        new='"polyline", "polygon", "g", "use",',
+        test=_TEST
+        + "WebPaintSemanticsTests/testSVGTextLinksForeignContentLabelsAndInteractionPreventAtomicity",
+    ),
+    Mutation(
+        name="web paint presentation ignores measured interaction",
+        path=_BASE + "WebPaintSemantics.swift",
+        old="let presentation = inert && unnamed",
+        new="let presentation = unnamed",
+        test=_TEST
+        + "WebPaintSemanticsTests/testMeaningfulOrUnmeasuredContentNeverBecomesPresentation",
+    ),
+    Mutation(
+        name="web paint presentation erases text and labels",
+        path=_BASE + "WebPaintSemantics.swift",
+        old="let presentation = inert && unnamed",
+        new="let presentation = inert",
+        test=_TEST
+        + "WebPaintSemanticsTests/testMeaningfulOrUnmeasuredContentNeverBecomesPresentation",
+    ),
+    Mutation(
+        name="web paint presentation erases semantic roles",
+        path=_BASE + "WebPaintSemantics.swift",
+        old="source.role == .container && presentationTags.contains(tag)",
+        new="presentationTags.contains(tag)",
+        test=_TEST
+        + "WebPaintSemanticsTests/testMeaningfulOrUnmeasuredContentNeverBecomesPresentation",
+    ),
+    Mutation(
+        name="web paint presentation accepts arbitrary paint sources",
+        path=_BASE + "WebPaintSemantics.swift",
+        old='["div", "span", "::before", "::after"]',
+        new='["div", "span", "::before", "::after", "canvas"]',
+        test=_TEST
+        + "WebPaintSemanticsTests/testMeaningfulOrUnmeasuredContentNeverBecomesPresentation",
+    ),
+    Mutation(
+        name="web paint presentation ignores retained interaction ancestors",
+        path=_BASE + "WebPaintSemantics.swift",
+        old="&& !inheritedInteraction && children.allSatisfy { $0.2 }",
+        new="&& children.allSatisfy { $0.2 }",
+        test=_TEST
+        + "WebPaintSemanticsTests/testSVGInsideControlKeepsOwnerWhileGenericInteractiveDescendantsRemainMeaningful",
+    ),
+    Mutation(
+        name="web paint presentation ignores omitted interaction ancestors",
+        path=_BASE + "WebPaintSemantics.swift",
+        old='interactiveAncestor || attributes["web.hasInteractiveAncestor"] == .bool(true)',
+        new="interactiveAncestor",
+        test=_TEST
+        + "WebPaintSemanticsTests/testSVGInsideControlKeepsOwnerWhileGenericInteractiveDescendantsRemainMeaningful",
+    ),
+    Mutation(
+        name="web paint presentation ignores meaningful descendants",
+        path=_BASE + "WebPaintSemantics.swift",
+        old="&& !inheritedInteraction && children.allSatisfy { $0.2 }",
+        new="&& !inheritedInteraction",
+        test=_TEST
+        + "WebPaintSemanticsTests/testMeaningfulOrUnmeasuredContentNeverBecomesPresentation",
+    ),
+    Mutation(
+        name="web paint presentation classification trusts incoming marker",
+        path=_BASE + "WebPaintSemantics.swift",
+        old="node.attributes.removeValue(forKey: presentationKey)",
+        new="_ = presentationKey",
+        test=_TEST
+        + "WebPaintSemanticsTests/testClassificationCannotBeForgedAndWarningsHonorSuppression",
+    ),
+    Mutation(
+        name="web paint presentation intersection is asserted as functional defect",
+        path=_BASE + "WebPaintSemantics.swift",
+        old="if isPresentation(node) || other.map(isPresentation) == true {",
+        new="if false && (isPresentation(node) || other.map(isPresentation) == true) {",
+        test=_TEST
+        + "WebPaintSemanticsTests/testPresentationClippingAndOpaquePointerInertOverlayStayUnverified",
+    ),
+    Mutation(
+        name="web paint presentation first subject is treated as content",
+        path=_BASE + "WebPaintSemantics.swift",
+        old="if isPresentation(node) || other.map(isPresentation) == true {",
+        new="if isPresentation(node) {",
+        test=_TEST
+        + "WebPaintSemanticsTests/testPresentationClippingAndOpaquePointerInertOverlayStayUnverified",
+    ),
+    Mutation(
+        name="web paint presentation warning ignores original suppression",
+        path=_BASE + "WebPaintSemantics.swift",
+        old="guard !context.isSuppressed(rule: rule, on: node) else { return nil }",
+        new="_ = rule",
+        test=_TEST
+        + "WebPaintSemanticsTests/testClassificationCannotBeForgedAndWarningsHonorSuppression",
+    ),
+    Mutation(
+        name="web paint SVG single-axis clipping loses uncertainty evidence",
+        path=_BASE + "WebPaintSemantics.swift",
+        old="if clipX || clipY {",
+        new="if clipX && clipY {",
+        test=_TEST
+        + "WebPaintSemanticsTests/testSVGInternalClipRemainsUnverifiedAndOwnerClipStillErrors",
+    ),
+    Mutation(
+        name="web paint SVG clipping ignores original suppression",
+        path=_BASE + "WebPaintSemantics.swift",
+        old="!context.isSuppressed(rule: ClippedContentRule.id, on: child),",
+        new="child.isVisible,",
+        test=_TEST
+        + "WebPaintSemanticsTests/testSVGInternalClipRemainsUnverifiedAndOwnerClipStillErrors",
+    ),
+    Mutation(
+        name="web paint CSS single-axis clipping is ignored",
+        path=_BASE + "WebLint.swift",
+        old="let ownCSS = clipsX || clipsY ? Clip(source.frame, x: clipsX, y: clipsY) : nil",
+        new="let ownCSS = clipsX && clipsY ? Clip(source.frame, x: clipsX, y: clipsY) : nil",
+        test=_TEST
+        + "WebPaintSemanticsTests/testCSSPaintClipsOnlySpecifiedAxisAndKeepsRealClippedContentError",
+    ),
+    Mutation(
+        name="web paint CSS clip hides the unclipped axis",
+        path=_BASE + "WebLint.swift",
+        old="Clip(source.frame, x: clipsX, y: clipsY)",
+        new="Clip(source.frame)",
+        test=_TEST
+        + "WebPaintSemanticsTests/testCSSPaintClipsOnlySpecifiedAxisAndKeepsRealClippedContentError",
+    ),
+    Mutation(
+        name="web paint CSS clip traps viewport fixed content",
+        path=_BASE + "WebLint.swift",
+        old="let activeCSS = fixed ? nil : cssClip",
+        new="let activeCSS = cssClip",
+        test=_TEST
+        + "WebPaintSemanticsTests/testFixedPaintEscapesOrdinaryCSSClipButNotTransformedClip",
+    ),
+    Mutation(
+        name="web paint iframe fixed content escapes outer CSS clip",
+        path=_BASE + "WebLint.swift",
+        old="Clip.combined(ownDocument, documentClip, childScroll, childCSS)",
+        new="Clip.combined(ownDocument, documentClip, childScroll)",
+        test=_TEST + "WebPaintSemanticsTests/testFixedChildCannotEscapeOuterCSSClipThroughIframe",
+    ),
+    Mutation(
+        name="web paint overlap uses independent SVG internals again",
+        path=_BASE + "WebLint.swift",
+        old="var overlapRoots = [semantic.tree]",
+        new="var overlapRoots = [tree]",
+        test=_TEST
+        + "WebPaintSemanticsTests/testPassiveSVGCompositionIsAtomicButOwnerStillCollides",
     ),
 ]
