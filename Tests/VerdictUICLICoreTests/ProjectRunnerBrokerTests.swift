@@ -269,4 +269,72 @@ final class ProjectRunnerBrokerTests: XCTestCase {
         XCTAssertThrowsError(try session.fingerprint(timeout: 0))
     }
 
+    private func assertSlowSocketCloses(_ fragment: String, file: StaticString = #filePath, line: UInt = #line) throws {
+        let (_, session) = try fixture(.daemon)
+        var pair: [Int32] = [0, 0]
+        XCTAssertEqual(socketpair(AF_UNIX, SOCK_STREAM, 0, &pair), 0)
+        let client = pair[0], server = pair[1]
+        defer { Darwin.close(client) }
+        var noSignal: Int32 = 1
+        XCTAssertEqual(setsockopt(client, SOL_SOCKET, SO_NOSIGPIPE, &noSignal, socklen_t(MemoryLayout<Int32>.size)), 0)
+        let ended = expectation(description: "bounded socket frame")
+        DispatchQueue.global().async {
+            defer { Darwin.close(server); ended.fulfill() }
+            try? ProjectRunnerBroker.serve(input: server, output: server, session: session,
+                persistent: false, frameSeconds: 0.15)
+        }
+        let started = ProcessInfo.processInfo.systemUptime
+        var disconnected = false
+        while ProcessInfo.processInfo.systemUptime - started < 1 {
+            let sent = fragment.withCString { write(client, $0, fragment.utf8.count) }
+            if sent < 0 { disconnected = true; break }
+            var ready = pollfd(fd: client, events: Int16(POLLIN), revents: 0)
+            if poll(&ready, 1, 20) > 0 {
+                var byte: UInt8 = 0
+                if read(client, &byte, 1) <= 0 { disconnected = true; break }
+            }
+        }
+        XCTAssertTrue(disconnected, "slow sender retained the serialized daemon connection", file: file, line: line)
+        shutdown(client, SHUT_RDWR)
+        wait(for: [ended], timeout: 2)
+    }
+
+    func testDrippedIncompleteSocketFrameHasAbsoluteDeadline() throws {
+        try assertSlowSocketCloses(" ")
+    }
+
+    func testEmptyLinesCannotExtendSocketFrameDeadline() throws {
+        try assertSlowSocketCloses("\n")
+    }
+
+    func testPersistentMCPRemainsUsableAfterFrameBudgetIdle() throws {
+        let (_, session) = try fixture()
+        var pair: [Int32] = [0, 0]
+        XCTAssertEqual(socketpair(AF_UNIX, SOCK_STREAM, 0, &pair), 0)
+        let client = pair[0], server = pair[1]
+        defer { Darwin.close(client) }
+        var noSignal: Int32 = 1
+        XCTAssertEqual(setsockopt(client, SOL_SOCKET, SO_NOSIGPIPE, &noSignal, socklen_t(MemoryLayout<Int32>.size)), 0)
+        let ended = expectation(description: "persistent client closed")
+        DispatchQueue.global().async {
+            defer { Darwin.close(server); ended.fulfill() }
+            try? ProjectRunnerBroker.serve(input: server, output: server, session: session,
+                persistent: true, frameSeconds: 0.01)
+        }
+        var ready = pollfd(fd: client, events: Int16(POLLIN), revents: 0)
+        XCTAssertEqual(poll(&ready, 1, 250), 0, "idle MCP was closed")
+        let request = #"{"id":1,"method":"tools/call"}"# + "\n"
+        _ = request.withCString { write(client, $0, request.utf8.count) }
+        XCTAssertGreaterThan(poll(&ready, 1, 2_000), 0)
+        var response = [UInt8](repeating: 0, count: 4096)
+        let count = read(client, &response, response.count)
+        XCTAssertGreaterThan(count, 0)
+        if count > 0 {
+            let object = try JSONSerialization.jsonObject(with: Data(response.prefix(count))) as? [String: Any]
+            XCTAssertEqual((object?["result"] as? [String: Any])?["value"] as? String, "one")
+        }
+        shutdown(client, SHUT_RDWR)
+        wait(for: [ended], timeout: 2)
+    }
+
 }
