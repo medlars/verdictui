@@ -127,3 +127,16 @@ explicit work budget. Exhaustion must return unavailable, never a truncated
 passing result. Deterministic operation counts and same-original fragment
 controls cover both runtime bounds and the self-overlap false positive observed
 on the actual product page.
+
+## Paint semantics follow-through
+
+Adjudication of the observed homepage FAIL found three confirmed wrapped inline
+element union-box false overlaps and three compound SVG shape false overlaps.
+Decorative meshes also produce geometry findings despite explicit CSS clipping
+and layering. These are not evidence of functional website defects. Complete
+measured inline border-fragment geometry with bounded collection; classify
+compound graphics and decorative paint without suppressing real controls or
+text. Preserve original tree/IDs, include deliberate collision controls, and
+separate uncertain paint diagnostics from confirmed geometry failures. Rebuild
+and notarize the final runtime after the corrections; earlier candidate hashes
+are historical, not the final release artifact.
