@@ -116,7 +116,8 @@ extension AXReader {
         pid: pid_t, atPath path: String, surface: Surface = .window(0), action: Action
     ) throws {
         guard pid > 1 else { throw NativeInput.Failure.invalidPID }
-        let content = try anchor(pid: pid, surface: surface).element
+        let resolved = try anchor(pid: pid, surface: surface)
+        let content = resolved.element
         guard let target = element(at: path, from: content) else {
             throw Failure.elementNotFound
         }
@@ -124,7 +125,7 @@ extension AXReader {
         case .perform(let name):
             let available = actionNames(of: target)
             if name == kAXPressAction, !available.contains(name) {
-                try NativeInput().click(at: centre(of: target), to: pid)
+                try pointerInput(pid: pid, window: resolved.window).click(at: centre(of: target), to: pid)
                 return
             }
             guard available.contains(name) else {
@@ -148,14 +149,14 @@ extension AXReader {
             try focusForInput(target)
             try NativeInput().type(text, to: pid)
         case .click:
-            try NativeInput().click(at: centre(of: target), to: pid)
+            try pointerInput(pid: pid, window: resolved.window).click(at: centre(of: target), to: pid)
         case .key(let chord):
             try focusForInput(target)
             try NativeInput().key(chord, to: pid)
         case .drag(let destination):
-            try NativeInput().drag(from: centre(of: target), to: destination, pid: pid)
+            try pointerInput(pid: pid, window: resolved.window).drag(from: centre(of: target), to: destination, pid: pid)
         case .hover:
-            try NativeInput().hover(at: centre(of: target), to: pid)
+            try pointerInput(pid: pid, window: resolved.window).hover(at: centre(of: target), to: pid)
         }
     }
 
@@ -191,5 +192,11 @@ extension AXReader {
             throw Failure.anchorUnreadable
         }
         return try NativeInput.Point(x: box.midX, y: box.midY)
+    }
+
+    private static func pointerInput(pid: pid_t, window: AXUIElement?) throws -> NativeInput {
+        guard let window else { return NativeInput() }
+        guard let box = frame(of: window) else { throw Failure.anchorUnreadable }
+        return try NativeInput(targetPID: pid, matchingWindowFrame: box)
     }
 }

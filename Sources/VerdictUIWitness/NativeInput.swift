@@ -28,7 +28,7 @@ public struct NativeInput {
             case .emptyText: "native input text must not be empty"
             case .permissionDenied: "macOS denied input event posting; no input was sent"
             case .eventCreationFailed: "macOS could not create the requested input event"
-            case .targetWindowUnavailable: "no target-process window contains the input coordinates"
+            case .targetWindowUnavailable: "the requested target-process window is unavailable or ambiguous"
             }
         }
     }
@@ -106,6 +106,37 @@ public struct NativeInput {
             windowAtPoint: Self.windowAtPoint,
             windowFrame: Self.windowFrame,
             post: { event, pid in event.postToPid(pid) })
+    }
+
+    /// Bind an AX-selected surface to its exact window rather than whichever
+    /// same-process window happens to cover the point. Ambiguous geometry is
+    /// refused: the public AX API does not expose a portable window-server ID.
+    init(targetPID pid: pid_t, matchingWindowFrame frame: CGRect) throws {
+        try NativeInput().validate(pid)
+        let windows = CGWindowListCopyWindowInfo(.optionAll, kCGNullWindowID) as? [[String: Any]] ?? []
+        guard let id = Self.matchingWindow(pid: pid, frame: frame, windows: windows) else {
+            throw Failure.targetWindowUnavailable
+        }
+        self.init(
+            permission: { CGPreflightPostEventAccess() },
+            isAlive: { candidate in candidate == pid && (kill(pid, 0) == 0 || errno == EPERM) },
+            windowAtPoint: { candidate, _ in candidate == pid ? id : nil },
+            windowFrame: Self.windowFrame,
+            post: { event, candidate in event.postToPid(candidate) })
+    }
+
+    static func matchingWindow(pid: pid_t, frame: CGRect, windows: [[String: Any]]) -> CGWindowID? {
+        let candidates: [CGWindowID] = windows.compactMap { window in
+            guard (window[kCGWindowOwnerPID as String] as? Int32) == pid,
+                let bounds = window[kCGWindowBounds as String] as? NSDictionary,
+                let candidate = CGRect(dictionaryRepresentation: bounds),
+                abs(candidate.minX - frame.minX) <= 0.5, abs(candidate.minY - frame.minY) <= 0.5,
+                abs(candidate.width - frame.width) <= 0.5, abs(candidate.height - frame.height) <= 0.5
+            else { return nil }
+            return window[kCGWindowNumber as String] as? CGWindowID
+        }
+        guard candidates.count == 1 else { return nil }
+        return candidates[0]
     }
 
     /// Dependency seam exercises permission denial and the exact event stream

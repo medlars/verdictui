@@ -94,4 +94,59 @@ MUTATIONS: list[Mutation] = [
         new="_ = pid > 1",
         test="AXActionTests/testInvalidPIDIsRejectedBeforeAccessibilityLookup",
     ),
+    Mutation(
+        name="AX structural paths accept negative child indices",
+        path="Sources/VerdictUIWitness/AXReader.swift",
+        old="guard let index = Int(digits), index >= 0 else { return nil }",
+        new="guard let index = Int(digits) else { return nil }",
+        test="AXReaderGuardTests/testStructuralIndexValidationHasPositiveAndNegativeControls",
+    ),
+    Mutation(
+        name="AX surfaces accept negative window indices",
+        path="Sources/VerdictUIWitness/AXReader.swift",
+        old='guard index >= 0 else { throw Failure.surfaceNotFound("window:\\(index)") }',
+        new="_ = index >= 0",
+        test="AXReaderGuardTests/testWindowIndexGuardRejectsOnlyNegativeIndices",
+    ),
+    Mutation(
+        name="AX reads accept nonpositive process identifiers",
+        path="Sources/VerdictUIWitness/AXReader.swift",
+        old='guard pid > 0 else { throw Failure.hostUnavailable("target PID must be greater than zero") }',
+        new="_ = pid > 0",
+        test="AXReaderGuardTests/testNonpositivePIDsNeverReachAccessibility",
+    ),
+    Mutation(
+        name="AX reads use advisory trust instead of actual API results",
+        path="Sources/VerdictUIWitness/AXReader.swift",
+        old="public static func readAllSurfaces(pid: pid_t) throws -> [SurfaceTree] {",
+        new="public static func readAllSurfaces(pid: pid_t) throws -> [SurfaceTree] {\n"
+        "        guard isTrusted else { throw Failure.notTrusted }",
+        test="AXReaderGuardTests/testAccessibilityPreflightFlagsDoNotReplaceActualReads",
+    ),
+    Mutation(
+        name="AX pointer routing chooses an ambiguous same-process window",
+        path="Sources/VerdictUIWitness/NativeInput.swift",
+        old="guard candidates.count == 1 else { return nil }",
+        new="guard !candidates.isEmpty else { return nil }",
+        test="NativeInputTests/testAnAXSelectedWindowIsNotReplacedByAnOverlappingWindow",
+    ),
+    Mutation(
+        name="AX pointer routing accepts a window from another process",
+        path="Sources/VerdictUIWitness/NativeInput.swift",
+        old="let candidates: [CGWindowID] = windows.compactMap { window in\n"
+        "            guard (window[kCGWindowOwnerPID as String] as? Int32) == pid,\n"
+        "                let bounds = window[kCGWindowBounds as String] as? NSDictionary,",
+        new="let candidates: [CGWindowID] = windows.compactMap { window in\n"
+        "            guard let bounds = window[kCGWindowBounds as String] as? NSDictionary,",
+        test="NativeInputTests/testAnAXSelectedWindowIsNotReplacedByAnOverlappingWindow",
+    ),
+    Mutation(
+        name="AX pointer routing substitutes a covering window with different geometry",
+        path="Sources/VerdictUIWitness/NativeInput.swift",
+        old="let candidate = CGRect(dictionaryRepresentation: bounds),\n"
+        "                abs(candidate.minX - frame.minX) <= 0.5, abs(candidate.minY - frame.minY) <= 0.5,\n"
+        "                abs(candidate.width - frame.width) <= 0.5, abs(candidate.height - frame.height) <= 0.5",
+        new="let candidate = CGRect(dictionaryRepresentation: bounds), candidate.width > 0",
+        test="NativeInputTests/testAnAXSelectedWindowIsNotReplacedByAnOverlappingWindow",
+    ),
 ]
