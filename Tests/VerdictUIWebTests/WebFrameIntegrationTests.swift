@@ -252,6 +252,41 @@ final class WebFrameIntegrationTests: XCTestCase {
         await manager.closeAll()
         try await server.stop()
     }
+    func testContainingBlocksKeepEscapingPaintAndRealClippingAcrossFrames() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("vui-containing-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let (server, port) = try await server(root: root)
+        let manager = WebSessionManager(root: root.appendingPathComponent("profiles"), environment: [:])
+        do {
+            for (route, escapes) in [("absolute-hidden-static", true), ("absolute-auto-static", true),
+                ("fixed-hidden-static", true), ("fixed-auto-static", true), ("absolute-hidden-relative", false),
+                ("fixed-hidden-transform", false), ("containing-same", true), ("containing-cross", true)] {
+                _ = try await manager.open(profile: "containing", url: XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/\(route)")))
+                let report = try await manager.verify(profile: "containing")
+                let nodes = try XCTUnwrap(report.tree).flattened()
+                let escaping = try XCTUnwrap(nodes.first { $0.attributes["web.id"] == .string("escaping") })
+                let intermediary = try XCTUnwrap(nodes.first { $0.attributes["web.id"] == .string("intermediary") })
+                let outer = try XCTUnwrap(nodes.first { $0.attributes["web.id"] == .string("outer") })
+                let expected = escapes ? outer : intermediary
+                XCTAssertEqual(escaping.attributes["web.containingBlockDepth"], expected.attributes["web.domDepth"], route)
+                XCTAssertNotNil(escaping.attributes["web.containingBlockDepth"], route)
+                let evidence = Set(escaping.flattened().map { $0.id.isEmpty ? $0.structuralPath : $0.id })
+                let clipped = report.findings.filter { $0.rule == "clipped-content" && evidence.contains($0.nodeID) }
+                XCTAssertEqual(clipped.isEmpty, escapes, "\(route): \(report.findings)")
+                if escapes { XCTAssertFalse(report.findings.contains { $0.rule == "offscreen" && evidence.contains($0.nodeID) }, "\(route)") }
+                let overlap = report.findings.contains { $0.rule == "sibling-overlap" || $0.rule == "content-overlap" }
+                XCTAssertEqual(overlap, escapes, "\(route): \(report.findings)")
+                XCTAssertEqual(report.status, .fail, "each control contains either a real paint overlap or real clipping")
+                XCTAssertEqual(escaping.children.first?.attributes["web.positioningRootDepth"], escaping.attributes["web.domDepth"], route)
+                if route.hasPrefix("containing-") {
+                    XCTAssertNotEqual(escaping.attributes["web.frame"], nodes.first { $0.text == "Main document" }?.attributes["web.frame"])
+                }
+            }
+        } catch { await manager.closeAll(); try await server.stop(); throw error }
+        await manager.closeAll(); try await server.stop()
+    }
+
     func testRealFontBoxesKeepEvidenceAndDistinguishPaintAndDisplacement() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("vui-font-flow-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

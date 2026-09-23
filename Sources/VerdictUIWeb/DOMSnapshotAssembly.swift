@@ -156,6 +156,7 @@ public enum DOMSnapshotAssembly {
                 geometry[index] = (shifted, style)
             }
         }
+        let positioning = positioningContexts(parents: parents, types: types, depths: depths, geometry: geometry)
         let flowContexts = inlineFormattingContexts(parents: parents, types: types, tags: tags,
                                                     backend: backend, geometry: geometry, frameID: frameID)
         var textBoxes: [Int: [Rect]] = [:]
@@ -198,11 +199,16 @@ public enum DOMSnapshotAssembly {
                 var metadata: [String: AttributeValue] = [
                     "web.tag": .string(tag), "web.backendID": .number(Double(backend[index])),
                     "web.frame": .string(frameID),
+                    "web.domDepth": .number(Double(depths[index])),
                     "web.isClickable": .bool(clickable.contains(index)),
                     "web.isFocusable": .bool(focusableNodes[index]),
                     "web.hasInteractiveAncestor": .bool(interactiveAncestors[index]),
                     "web.interactionMeasured": .bool(nodes["isClickable"] != nil),
                 ]
+                if let context = positioning[index] {
+                    metadata["web.positioningRootDepth"] = .number(Double(context.root))
+                    metadata["web.containingBlockDepth"] = .number(Double(context.container))
+                }
                 if let embedded = embedded[index] { metadata["web.documentIndex"] = .number(Double(embedded)) }
                 if let domID = nodeAttributes[index]["id"] { metadata["web.id"] = .string(WebRedaction.clean(domID, secrets: secrets)) }
                 descendants = [SemanticNode(id: "", role: .container, frame: Rect(x: 0, y: 0, width: 0, height: 0),
@@ -225,6 +231,11 @@ public enum DOMSnapshotAssembly {
                     var metadata: [String: AttributeValue] = ["web.tag": .string(WebRedaction.clean(tag, secrets: secrets)), "web.backendID": .number(Double(backend[index]))]
                     metadata["web.frame"] = .string(frameID)
                     metadata["web.position"] = .string(style[4])
+                    metadata["web.domDepth"] = .number(Double(depths[index]))
+                    if let context = positioning[index] {
+                        metadata["web.positioningRootDepth"] = .number(Double(context.root))
+                        metadata["web.containingBlockDepth"] = .number(Double(context.container))
+                    }
                     metadata["web.isClickable"] = .bool(clickable.contains(index))
                     metadata["web.isFocusable"] = .bool(focusableNodes[index])
                     metadata["web.hasInteractiveAncestor"] = .bool(interactiveAncestors[index])
@@ -391,6 +402,44 @@ public enum DOMSnapshotAssembly {
         case "nav": return .navigation
         default: return .container
         }
+    }
+
+    /// Overflow does not clip an out-of-flow box through ancestors between that
+    /// box and its containing block. Preserve the raw-DOM interval before body,
+    /// display:contents and text-field descendants are omitted from the tree.
+    /// Descendants inherit the interval so their own inner clips remain real.
+    /// https://www.w3.org/TR/CSS2/visufx.html#overflow-clipping
+    private static func positioningContexts(parents: [Int], types: [Int], depths: [Int],
+        geometry: [Int: (Rect, [String])]) -> [(root: Int, container: Int)?] {
+        var contexts: [(root: Int, container: Int)?] = Array(repeating: nil, count: parents.count)
+        // -1 is this document's initial containing block / viewport. -2 means
+        // an unknown measured style prevents a conservative containing-block proof.
+        var absoluteDepth = Array(repeating: -1, count: parents.count)
+        var fixedDepth = Array(repeating: -1, count: parents.count)
+        for index in parents.indices {
+            let parent = parents[index]
+            if parent >= 0 {
+                contexts[index] = contexts[parent]
+                absoluteDepth[index] = absoluteDepth[parent]
+                fixedDepth[index] = fixedDepth[parent]
+            }
+            // Text's layout style mirrors its element; it cannot establish a
+            // new positioned box. Unlaid display:contents has no containing box.
+            guard types[index] == 1, let (_, style) = geometry[index] else { continue }
+            let position = style[4]
+            guard ["static", "relative", "absolute", "fixed", "sticky"].contains(position) else {
+                absoluteDepth[index] = -2; fixedDepth[index] = -2; contexts[index] = nil
+                continue
+            }
+            if position == "absolute" || position == "fixed" {
+                let container = position == "fixed" ? fixedDepth[index] : absoluteDepth[index]
+                contexts[index] = container >= -1 ? (depths[index], container) : nil
+            }
+            let fixedContainer = WebLint.establishesFixedContainer(styles: style)
+            if position != "static" || fixedContainer { absoluteDepth[index] = depths[index] }
+            if fixedContainer { fixedDepth[index] = depths[index] }
+        }
+        return contexts
     }
 
     /// An inline formatting context is established only by a measured normal

@@ -50,6 +50,53 @@ class Handler(http.server.BaseHTTPRequestHandler):
             else:
                 content = '<style>#skip{position:absolute;left:-1px;top:-1px;width:1px;height:1px;clip-path:inset(50%)}#skip:focus{position:fixed;left:16px;top:16px;width:160px;height:44px;clip-path:none}</style><a id="skip" href="#main">Skip to content</a><p id="main" style="margin-top:120px">Visible content</p>'
             body = (prefix + content + "</body></html>").encode()
+        elif self.path in ("/containing-same", "/containing-cross"):
+            host = "localhost" if self.path == "/containing-cross" else "127.0.0.1"
+            body = (
+                '<!doctype html><body style="margin:20px"><p>Main document</p>'
+                '<iframe style="width:600px;height:400px;border:0" src="http://'
+                + host
+                + ":"
+                + str(self.server.server_port)
+                + '/absolute-hidden-static"></iframe></body>'
+            ).encode()
+        elif self.path in (
+            "/absolute-hidden-static",
+            "/absolute-auto-static",
+            "/fixed-hidden-static",
+            "/fixed-auto-static",
+            "/absolute-hidden-relative",
+            "/fixed-hidden-transform",
+        ):
+            controls = {
+                "/absolute-hidden-static": ("absolute", "hidden", "static", "position:relative"),
+                "/absolute-auto-static": ("absolute", "auto", "static", "position:relative"),
+                "/fixed-hidden-static": ("fixed", "hidden", "static", "transform:translateX(0)"),
+                "/fixed-auto-static": ("fixed", "auto", "static", "transform:translateX(0)"),
+                "/absolute-hidden-relative": (
+                    "absolute",
+                    "hidden",
+                    "relative",
+                    "position:relative",
+                ),
+                "/fixed-hidden-transform": (
+                    "fixed",
+                    "hidden",
+                    "static;transform:translateX(0)",
+                    "transform:translateX(0)",
+                ),
+            }
+            position, overflow, inner, outer = controls[self.path]
+            body = (
+                "<!doctype html><style>body{margin:20px;font:20px Arial}h1{font:700 20px Arial;margin:0 0 30px}"
+                f"#outer{{{outer};width:400px;height:150px;border:1px solid #aaa}}"
+                f"#intermediary{{position:{inner};width:100px;height:100px;overflow:{overflow};background:#ddd}}"
+                "button{width:120px;height:40px;font:16px Arial}"
+                f"#escaping{{position:{position};left:150px;top:20px;background:#b9a3f5}}"
+                "#outside{position:absolute;left:160px;top:40px;background:#c1ffa8}</style>"
+                '<h1>Containing block control</h1><div id="outer"><div id="intermediary">'
+                '<button id="escaping">Escaping</button></div><button id="outside">Outside</button></div>'
+            ).encode()
         elif self.path == "/font-flow":
             body = (
                 '<!doctype html><html><body style="margin:24px"><h1 style="font:700 96px/96px Arial;width:1000px;transform:translateY(0)">'
