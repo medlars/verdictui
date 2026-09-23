@@ -1,3 +1,14 @@
+---
+paths:
+  - "Sources/**"
+  - "Tests/**"
+  - "scripts/**"
+  - "docs/**"
+  - "contracts/**"
+  - "web/**"
+  - ".github/**"
+  - "Package.swift"
+---
 # VerdictUI — Deliberate Non-Decisions (no.md)
 
 Numbered list of things we deliberately did NOT do, so future sessions stop re-litigating them.
