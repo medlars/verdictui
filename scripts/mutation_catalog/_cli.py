@@ -8,6 +8,62 @@ from mutation_catalog_types import Mutation, Runner  # noqa: F401
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="the launcher forgets the consumer build step",
+        path="Sources/VerdictUICLICore/ProjectRunner.swift",
+        old="try buildIfConfigured(projectRoot: root)",
+        new="_ = root",
+        test="ProjectRunnerTests/testLauncherBuildsBeforeItDelegates",
+    ),
+    Mutation(
+        name="a consumer can declare the stock launcher as its runner",
+        path="Sources/VerdictUICLICore/ProjectRunner.swift",
+        old="guard ownsStockCatalog else {",
+        new="guard ownsStockCatalog || true else {",
+        test="ProjectRunnerTests/testAConsumerCannotDeclareTheStockLauncherAsItsRunner",
+    ),
+    Mutation(
+        name="failed consumer builds can execute stale runners",
+        path="Sources/VerdictUICLICore/ProjectRunner.swift",
+        old="process.terminationStatus == 0 else {",
+        new="process.terminationStatus != 0 else {",
+        test="ProjectRunnerTests/testBuildFailureRefusesStaleRunner",
+    ),
+    Mutation(
+        name="consumer build timeout is ignored",
+        path="Sources/VerdictUICLICore/ProjectRunner.swift",
+        old="if process.isRunning {\n            process.terminate()",
+        new="if process.isRunning && false {\n            process.terminate()",
+        test="ProjectRunnerTests/testBuildTimeoutIsBounded",
+    ),
+    Mutation(
+        name="empty build product is accepted",
+        path="Sources/VerdictUICLICore/ProjectScenarios.swift",
+        old="guard !product.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,",
+        new="guard true,",
+        test="ProjectRunnerTests/testBuildConfigurationValidationAndDefault",
+    ),
+    Mutation(
+        name="nul in build product is accepted",
+        path="Sources/VerdictUICLICore/ProjectScenarios.swift",
+        old='!product.contains("\\0") else {',
+        new="true else {",
+        test="ProjectRunnerTests/testBuildConfigurationValidationAndDefault",
+    ),
+    Mutation(
+        name="configuration without a build product is accepted",
+        path="Sources/VerdictUICLICore/ProjectScenarios.swift",
+        old="guard manifest.buildProduct != nil,",
+        new="guard true,",
+        test="ProjectRunnerTests/testBuildConfigurationValidationAndDefault",
+    ),
+    Mutation(
+        name="unknown build configuration is accepted",
+        path="Sources/VerdictUICLICore/ProjectScenarios.swift",
+        old='["debug", "release"].contains(configuration) else {',
+        new="!configuration.isEmpty else {",
+        test="ProjectRunnerTests/testBuildConfigurationValidationAndDefault",
+    ),
+    Mutation(
         name="custom project daemon sockets collide",
         path="Sources/VerdictUICLICore/Commands.swift",
         old="String(digest, radix: 16)",
@@ -52,8 +108,8 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="self runner identity no longer prevents exec recursion",
         path="Sources/VerdictUICLICore/ProjectRunner.swift",
-        old="if executable == current { return nil }",
-        new="if executable != current { return nil }",
+        old="if executable == current {",
+        new="if executable != current {",
         test="ProjectRunnerTests/testCurrentBinaryDoesNotExecItself",
     ),
     Mutation(
