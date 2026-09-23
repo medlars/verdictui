@@ -7,6 +7,88 @@ _TEST = "VerdictUIWebTests."
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="web overlap budget exhaustion continues to verdict",
+        path=_BASE + "WebLint.swift",
+        old='throw WebBrowserError.invalidWebOperation(reason: "web overlap inspection exceeded its bounded work budget")',
+        new="return",
+        test=_TEST + "WebLintTests/testOverlapBudgetExhaustionIsUnavailableAndNeverPartialPass",
+    ),
+    Mutation(
+        name="web overlap original candidate work is uncharged",
+        path=_BASE + "WebLint.swift",
+        old="try budget.charge(); budget.originalPairs += 1",
+        new="try budget.charge(0); budget.originalPairs += 1",
+        test=_TEST + "WebLintTests/testOverlapBudgetExhaustionIsUnavailableAndNeverPartialPass",
+    ),
+    Mutation(
+        name="web overlap raw fragments bypass work preflight",
+        path=_BASE + "WebLint.swift",
+        old="try budget.charge(count)",
+        new="try budget.charge(0)",
+        test=_TEST
+        + "WebLintTests/testClippedFragmentsConsumeRawWorkBeforeDecodingEvenWhenNoneSurvive",
+    ),
+    Mutation(
+        name="web overlap sweep events bypass work preflight",
+        path=_BASE + "WebLint.swift",
+        old="try budget.charge(rectangles.count)",
+        new="try budget.charge(0)",
+        test=_TEST + "WebLintTests/testOverlapBudgetExhaustionIsUnavailableAndNeverPartialPass",
+    ),
+    Mutation(
+        name="web overlap active comparisons bypass budget",
+        path=_BASE + "WebLint.swift",
+        old="try budget.charge(); budget.fragmentComparisons += 1",
+        new="try budget.charge(0); budget.fragmentComparisons += 1",
+        test=_TEST + "WebLintTests/testOverlapBudgetExhaustionIsUnavailableAndNeverPartialPass",
+    ),
+    Mutation(
+        name="web overlap ended fragments remain active",
+        path=_BASE + "WebLint.swift",
+        old="rectangles[ends[end]].maxY <= box.y",
+        new="rectangles[ends[end]].maxY <= box.y - 100",
+        test=_TEST + "WebLintTests/testInterleavedLongTextsUseBoundedSortedEvents",
+    ),
+    Mutation(
+        name="web overlap actual fragment collision is ignored",
+        path=_BASE + "WebLint.swift",
+        old="let intersection = box.intersection(rectangles[other]),",
+        new="let intersection = box.intersection(Rect(x: 0, y: 0, width: 0, height: 0)),",
+        test=_TEST
+        + "WebLintTests/testTextFragmentsAvoidUnionOverlapAndRetainRealCollisionEvidence",
+    ),
+    Mutation(
+        name="web overlap fragments ignore paint clipping",
+        path=_BASE + "WebLint.swift",
+        old="return measured.compactMap { $0.intersection(clip) }",
+        new="return measured.compactMap { clip.width >= 0 ? $0 : $0.intersection(clip) }",
+        test=_TEST + "WebLintTests/testFragmentPaintClipAppliesToActualBoxesNotOnlyUnion",
+    ),
+    Mutation(
+        name="web overlap merge insertions bypass budget",
+        path=_BASE + "WebLint.swift",
+        old="for finding in incoming {\n                try budget.charge()",
+        new="for finding in incoming {\n                try budget.charge(0)",
+        test=_TEST
+        + "WebLintTests/testFindingDeduplicationPreservesEveryFieldAndHasLinearChargedWork",
+    ),
+    Mutation(
+        name="web overlap deduplication loses node identity",
+        path=_BASE + "WebLint.swift",
+        old="nodeID = finding.nodeID; message = finding.message; suggestion = finding.suggestion",
+        new='nodeID = ""; message = finding.message; suggestion = finding.suggestion',
+        test=_TEST
+        + "WebLintTests/testFindingDeduplicationPreservesEveryFieldAndHasLinearChargedWork",
+    ),
+    Mutation(
+        name="web overlap duplicate findings are appended",
+        path=_BASE + "WebLint.swift",
+        old="if seen.insert(Key(finding)).inserted { values.append(finding) }",
+        new="if seen.insert(Key(finding)).inserted || !finding.rule.isEmpty { values.append(finding) }",
+        test=_TEST
+        + "WebLintTests/testFindingDeduplicationPreservesEveryFieldAndHasLinearChargedWork",
+    ),
+    Mutation(
         name="web scroll transform containing block is ignored",
         path=_BASE + "WebLint.swift",
         old='styles[9] != "none"',
@@ -80,16 +162,16 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="web paint text overlap uses union rectangle",
         path=_BASE + "WebLint.swift",
-        old="guard nested.children.isEmpty, nested.role == .text,",
-        new="guard nested.children.isEmpty, nested.role == .spacer,",
+        old="guard node.role == .text,",
+        new="guard node.role == .spacer,",
         test=_TEST
         + "WebLintTests/testTextFragmentsAvoidUnionOverlapAndRetainRealCollisionEvidence",
     ),
     Mutation(
-        name="web paint fragment citations leak synthetic identities",
+        name="web paint overlap cites the wrong original node",
         path=_BASE + "WebLint.swift",
-        old="if let original = originals[finding.nodeID] { finding.nodeID = original }",
-        new="if let original = originals[finding.nodeID] { finding.nodeID += original }",
+        old="rule: SiblingOverlapRule.id, node: children[second],",
+        new="rule: SiblingOverlapRule.id, node: children[first],",
         test=_TEST
         + "WebLintTests/testTextFragmentsAvoidUnionOverlapAndRetainRealCollisionEvidence",
     ),
@@ -183,8 +265,8 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="web scroll cross scope overlaps are unexamined",
         path=_BASE + "WebLint.swift",
-        old="rules: [SiblingOverlapRule(), ContentOverlapRule()], on: paint",
-        new="rules: [], on: paint",
+        old="try accumulated.append(overlaps, budget: &budget)",
+        new="try accumulated.append(Array(overlaps.prefix(0)), budget: &budget)",
         test=_TEST + "WebLintTests/testFixedAndFlowOverlapRemainObservableAcrossLintScopes",
     ),
     Mutation(

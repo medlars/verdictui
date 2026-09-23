@@ -226,6 +226,7 @@ final class WebLintTests: XCTestCase {
         let report = try WebLint.run(tree: broken, scenario: "collision", viewport: viewport)
         XCTAssertEqual(report.status, .fail)
         XCTAssertTrue(report.findings.contains { $0.nodeID == "wrapped" && ($0.rule == "sibling-overlap" || $0.rule == "content-overlap") })
+        XCTAssertEqual(Set(report.findings.filter { $0.rule == "sibling-overlap" || $0.rule == "content-overlap" }.map(\.nodeID)), ["wrapped"])
         XCTAssertEqual(report.tree, broken)
         XCTAssertFalse(report.findings.contains { $0.nodeID.contains("paint-fragment") || $0.message.contains("paint-fragment") })
     }
@@ -295,6 +296,11 @@ final class WebLintTests: XCTestCase {
         }
         var budget = WebLint.OverlapBudget(limit: 1)
         XCTAssertThrowsError(try WebLint.overlapFindings(tree, context: LintContext(viewport: viewport), budget: &budget))
+        var siblingsOnly = LintContext(viewport: viewport)
+        siblingsOnly.disabledRules = [ContentOverlapRule.id]
+        budget = WebLint.OverlapBudget(limit: 0)
+        let separated = document([node("first", y: 20), node("second", y: 100)])
+        XCTAssertThrowsError(try WebLint.overlapFindings(separated, context: siblingsOnly, budget: &budget))
         // Disjoint fragment events still consume work before any comparison.
         let disjoint = document([fragmentedText("a", lines: 2), fragmentedText("b", lines: 2, offset: 10)])
         budget = WebLint.OverlapBudget(limit: 1)
