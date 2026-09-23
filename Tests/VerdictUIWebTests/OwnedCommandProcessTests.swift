@@ -2,6 +2,31 @@ import XCTest
 @testable import VerdictUIWeb
 
 final class OwnedCommandProcessTests: XCTestCase {
+    func testSpawnUsesRequestedWorkingDirectoryWithoutChangingParent() throws {
+        let parentDirectory = FileManager.default.currentDirectoryPath
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try Data().write(to: directory.appendingPathComponent("owned-command-cwd-marker"))
+        let process = try OwnedCommandProcess.spawn(executable: URL(fileURLWithPath: "/bin/sh"),
+            arguments: ["-c", "test -f owned-command-cwd-marker"], directory: directory, environment: [:])
+        defer { _ = try? process.stop(grace: 0) }
+        XCTAssertTrue(process.waitForExitEvent(timeout: 3))
+        XCTAssertEqual(try process.stop(grace: 0), 0, "the child must resolve files inside its requested directory")
+        XCTAssertEqual(FileManager.default.currentDirectoryPath, parentDirectory)
+    }
+
+    func testSpawnRefusesMissingWorkingDirectory() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        XCTAssertThrowsError(try OwnedCommandProcess.spawn(executable: URL(fileURLWithPath: "/usr/bin/true"),
+            arguments: [], directory: directory, environment: [:])) { error in
+            guard case OwnedCommandProcess.Failure.system(let code) = error else {
+                return XCTFail("expected a system error, got \(error)")
+            }
+            XCTAssertEqual(code, ENOENT)
+        }
+    }
+
     func testExitEventTimesOutThenObservesExitWithoutReaping() throws {
         let process = try OwnedCommandProcess.spawn(executable: URL(fileURLWithPath: "/bin/sh"),
             arguments: ["-c", "/bin/sleep 0.2; exit 17"], directory: FileManager.default.temporaryDirectory,

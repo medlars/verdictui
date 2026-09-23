@@ -7,6 +7,14 @@ _TEST = "VerdictUIWebTests."
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="owned process ignores its requested working directory",
+        path=_BASE + "OwnedCommandProcess.swift",
+        old="try checked(addWorkingDirectory(&actions, path: directory.path))",
+        new="try checked(0)",
+        test=_TEST
+        + "OwnedCommandProcessTests/testSpawnUsesRequestedWorkingDirectoryWithoutChangingParent",
+    ),
+    Mutation(
         name="web page commands omit their flattened session identity",
         path=_BASE + "CDPTransport.swift",
         old="params: params, sessionId: sessionID)",
