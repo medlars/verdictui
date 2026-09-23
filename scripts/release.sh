@@ -57,8 +57,10 @@ sha="$(shasum -a 256 "$tarball" | cut -d' ' -f1)"
 tap_dir="$(mktemp -d -t verdictui-tap)"
 gh repo clone "$TAP" "$tap_dir" -- -q
 cd "$tap_dir"
+# Swift tools 5.10 requires Xcode 15.3; repair the original 15.0 tap floor.
 sed -i '' -e "s|archive/refs/tags/v[0-9.]*\.tar\.gz|archive/refs/tags/v$version.tar.gz|" \
-          -e "s|sha256 \"[0-9a-f]*\"|sha256 \"$sha\"|" Formula/verdictui.rb
+          -e "s|sha256 \"[0-9a-f]*\"|sha256 \"$sha\"|" \
+          -e 's|depends_on xcode: \["15.0", :build\]|depends_on xcode: ["15.3", :build]|' Formula/verdictui.rb
 git add -- Formula/verdictui.rb
 git commit -q -m "verdictui $version"
 git push -q origin HEAD:main
