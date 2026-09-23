@@ -5,7 +5,15 @@ import VerdictUIKernel
 /// fields are ignored; malformed columns fail closed instead of yielding PASS.
 public enum DOMSnapshotAssembly {
     public static let computedStyles = ["display", "visibility", "opacity", "z-index", "position", "clip", "clip-path",
-                                        "overflow-x", "overflow-y", "transform", "filter", "perspective", "contain", "will-change"]
+                                        "overflow-x", "overflow-y", "transform", "filter", "perspective", "contain", "will-change",
+                                        "float", "margin-top", "margin-right", "margin-bottom", "margin-left",
+                                        "padding-top", "padding-right", "padding-bottom", "padding-left",
+                                        "border-top-width", "border-right-width", "border-bottom-width", "border-left-width",
+                                        "outline-width", "box-shadow", "background-color", "background-image", "background-clip",
+                                        "vertical-align", "translate", "rotate", "scale", "top", "right", "bottom", "left", "outline-style"]
+    // Only the document scaffold has no CSS style object in DOMSnapshot.
+    static let fontFlowDefaults = ["none"] + Array(repeating: "0px", count: 13)
+        + ["none", "rgba(0, 0, 0, 0)", "none", "border-box", "baseline", "none", "none", "none", "auto", "auto", "auto", "auto", "none"]
 
     public static func assemble(
         _ payload: [String: CDPValue], viewport: Rect, redacting secrets: [String] = []
@@ -130,7 +138,7 @@ public enum DOMSnapshotAssembly {
                 scrollRects[index] = try rectangle(rects[offset])
             }
             var style = try integers(styles[offset]).map { try string($0, in: strings) }
-            if style.isEmpty && types[index] == 9 { style = ["block", "visible", "1", "auto", "static", "auto", "none", "visible", "visible", "none", "none", "none", "none", "auto"] }
+            if style.isEmpty && types[index] == 9 { style = ["block", "visible", "1", "auto", "static", "auto", "none", "visible", "visible", "none", "none", "none", "none", "auto"] + fontFlowDefaults }
             guard style.count == computedStyles.count else { throw malformed("missing computed styles") }
             let shifted = Rect(x: frame.x - scrollX, y: frame.y - scrollY,
                                width: frame.width, height: frame.height)
@@ -148,6 +156,8 @@ public enum DOMSnapshotAssembly {
                 geometry[index] = (shifted, style)
             }
         }
+        let flowContexts = inlineFormattingContexts(parents: parents, types: types, tags: tags,
+                                                    backend: backend, geometry: geometry, frameID: frameID)
         var textBoxes: [Int: [Rect]] = [:]
         if case let .object(boxes) = document["textBoxes"] {
             guard case let .array(rawIndices) = boxes["layoutIndex"], rawIndices.count <= 100_000 else {
@@ -219,6 +229,17 @@ public enum DOMSnapshotAssembly {
                     metadata["web.isFocusable"] = .bool(focusableNodes[index])
                     metadata["web.hasInteractiveAncestor"] = .bool(interactiveAncestors[index])
                     metadata["web.interactionMeasured"] = .bool(nodes["isClickable"] != nil)
+                    if let context = flowContexts[index] {
+                        metadata["web.inlineFormattingContext"] = .string(context)
+                        let inert = nodes["isClickable"] != nil && !clickable.contains(index)
+                            && !focusableNodes[index] && !interactiveAncestors[index]
+                        let textOnlyChildren = descendants.contains { $0.attributes["web.fontBoxOnly"] == .bool(true) } && descendants.allSatisfy {
+                            $0.role == .spacer || $0.attributes["web.fontBoxOnly"] == .bool(true)
+                        }
+                        let fontOnly = inert && (types[index] == 3 || (style[0] == "inline"
+                            && role == .container && textOnlyChildren && fontOnlyInlinePaint(style)))
+                        metadata["web.fontBoxOnly"] = .bool(fontOnly)
+                    }
                     if types[index] == 1 && style[0] == "inline" && !tag.hasPrefix("::") {
                         metadata["web.inlineCandidate"] = .bool(true)
                         if let inlineGeometry {
@@ -370,6 +391,69 @@ public enum DOMSnapshotAssembly {
         case "nav": return .navigation
         default: return .container
         }
+    }
+
+    /// An inline formatting context is established only by a measured normal
+    /// block containing inline/text children. This deliberately rejects mixed
+    /// block/inline anonymous formatting contexts rather than inventing groups.
+    private static func inlineFormattingContexts(parents: [Int], types: [Int], tags: [String], backend: [Int],
+        geometry: [Int: (Rect, [String])], frameID: String) -> [Int: String] {
+        var children: [[Int]] = Array(repeating: [], count: parents.count)
+        for (index, parent) in parents.enumerated() where parent >= 0 { children[parent].append(index) }
+        var contexts: [Int: String] = [:]
+        var transformed: [Bool] = Array(repeating: false, count: parents.count)
+        for index in parents.indices {
+            let parent = parents[index]
+            let ancestorTransform = parent >= 0 && transformed[parent]
+            guard let (_, style) = geometry[index], style.count == computedStyles.count else {
+                transformed[index] = ancestorTransform
+                continue
+            }
+            let ownTransform = types[index] == 1 && (!identityTransform(style[9]) || style[10] != "none" || style[11] != "none"
+                || style[33] != "none" || style[34] != "none" || style[35] != "none")
+            transformed[index] = ancestorTransform || ownTransform
+            guard !transformed[index] else { continue }
+            if types[index] == 3 {
+                if parent >= 0 { contexts[index] = contexts[parent] }
+                continue
+            }
+            guard types[index] == 1, style[4] == "static", style[14] == "none",
+                  style[36...39].allSatisfy({ $0 == "auto" }),
+                  style[15...18].allSatisfy({ cssPixels($0).map { $0 >= 0 } == true }) else { continue }
+            if ["block", "flow-root", "list-item"].contains(style[0]) {
+                let inlineChildren = children[index].allSatisfy { child in
+                    types[child] == 3 || types[child] == 8 || tags[child] == "br" || tags[child] == "wbr"
+                        || (types[child] == 1 && geometry[child]?.1.first == "inline")
+                }
+                if inlineChildren { contexts[index] = frameID + "/" + String(backend[index]) }
+            } else if style[0] == "inline", parent >= 0, style[32] == "baseline",
+                      style[15...18].allSatisfy({ cssPixels($0) == 0 }) {
+                contexts[index] = contexts[parent]
+            }
+        }
+        return contexts
+    }
+
+    private static func identityTransform(_ raw: String) -> Bool {
+        // A completed translate(0) transition serializes as matrix identity.
+        // No tolerance: even a small measured displacement remains excluded.
+        let value = raw.replacingOccurrences(of: " ", with: "")
+        return value == "none" || value == "matrix(1,0,0,1,0,0)"
+            || value == "matrix3d(1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1)"
+    }
+
+    private static func cssPixels(_ raw: String) -> Double? {
+        guard raw.hasSuffix("px"), let value = Double(raw.dropLast(2)), value.isFinite else { return nil }
+        return value
+    }
+
+    private static func fontOnlyInlinePaint(_ style: [String]) -> Bool {
+        guard style.count == computedStyles.count,
+              style[19...26].allSatisfy({ cssPixels($0) == 0 }),
+              (style[40] == "none" || cssPixels(style[27]) == 0), style[28] == "none" else { return false }
+        // A text-clipped gradient paints glyphs, not the inline border rectangle.
+        // All other background painting retains ordinary collision semantics.
+        return style[31] == "text" || (style[29] == "rgba(0, 0, 0, 0)" && style[30] == "none")
     }
 
     // Chromium emits an empty sparse index list for measured non-clickability.

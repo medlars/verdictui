@@ -25,7 +25,8 @@ final class DOMSnapshotAssemblyTests: XCTestCase {
     private func enrich(_ payload: inout [String: CDPValue]) {
         guard case var .array(strings) = payload["strings"], case var .array(documents) = payload["documents"] else { return }
         let extra = strings.count
-        strings += ["static", "auto", "none", "visible", "visible", "none", "none", "none", "none", "auto"].map(CDPValue.string)
+        let additions = ["static", "auto", "none", "visible", "visible", "none", "none", "none", "none", "auto"] + DOMSnapshotAssembly.fontFlowDefaults
+        strings += additions.map(CDPValue.string)
         for index in documents.indices {
             guard case var .object(document) = documents[index], case var .object(layout) = document["layout"],
                 case let .array(styles) = layout["styles"] else { continue }
@@ -33,7 +34,7 @@ final class DOMSnapshotAssemblyTests: XCTestCase {
             document["scrollOffsetX"] = .number(0); document["scrollOffsetY"] = .number(0)
             layout["styles"] = .array(styles.map { row in
                 guard case let .array(values) = row else { return row }
-                return .array(values + (extra..<(extra + 10)).map { .integer(Int64($0)) })
+                return .array(values + (extra..<(extra + additions.count)).map { .integer(Int64($0)) })
             })
             document["layout"] = .object(layout); documents[index] = .object(document)
         }
@@ -89,6 +90,87 @@ final class DOMSnapshotAssemblyTests: XCTestCase {
             document["verdictInlineFragments"] = malformed; documents[0] = .object(document); payload["documents"] = .array(documents)
             XCTAssertThrowsError(try DOMSnapshotAssembly.assemble(payload, viewport: viewport))
         }
+    }
+
+    private func fontFlowSnapshot(spanStyles: [Int: String] = [:], blockStyles: [Int: String] = [:],
+                                  clickable: Bool = false, spanTag: String = "SPAN") -> [String: CDPValue] {
+        var payload = snapshot()
+        guard case var .array(strings) = payload["strings"], case var .array(documents) = payload["documents"],
+              case var .object(document) = documents[0], case let .object(layout) = document["layout"],
+              case let .array(rows) = layout["styles"], case let .array(base) = rows[0] else { preconditionFailure("fixture") }
+        func intern(_ text: String) -> CDPValue { let index = strings.count; strings.append(.string(text)); return .integer(Int64(index)) }
+        let h1 = intern("H1"), span = intern(spanTag), inline = intern("inline")
+        var blockStyle = base, spanStyle = base; spanStyle[0] = inline
+        for (index, value) in blockStyles { blockStyle[index] = intern(value) }
+        for (index, value) in spanStyles { spanStyle[index] = intern(value) }
+        let ints: ([Int]) -> CDPValue = { .array($0.map { .integer(Int64($0)) }) }
+        document["nodes"] = .object([
+            "parentIndex": ints([-1, 0, 1, 1, 3]), "nodeType": ints([9, 1, 3, 1, 3]),
+            "nodeName": .array([.integer(0), h1, .integer(2), span, .integer(2)]),
+            "nodeValue": ints([3, 3, 4, 3, 4]), "backendNodeId": ints([1, 2, 3, 4, 5]),
+            "attributes": .array(Array(repeating: .array([]), count: 5)),
+            "isClickable": .object(["index": ints(clickable ? [3] : [])])])
+        document["layout"] = .object([
+            "nodeIndex": ints([1, 2, 3, 4]),
+            "bounds": .array([ints([20, 20, 600, 192]), ints([20, 20, 400, 110]),
+                              ints([20, 116, 400, 110]), ints([20, 116, 400, 110])]),
+            "styles": .array([.array(blockStyle), .array(blockStyle), .array(spanStyle), .array(spanStyle)])])
+        document["textBoxes"] = .object(["layoutIndex": ints([1, 3]),
+            "bounds": .array([ints([20, 20, 400, 110]), ints([20, 116, 400, 110])])])
+        documents[0] = .object(document); payload["documents"] = .array(documents); payload["strings"] = .array(strings)
+        return payload
+    }
+
+    func testFontBoxMetadataRequiresOneMeasuredNormalInlineFormattingContext() throws {
+        for spanStyles in [[Int: String](), [27: "3px", 40: "none"], [30: "linear-gradient(red, blue)", 31: "text"]] {
+            let tree = try DOMSnapshotAssembly.assemble(fontFlowSnapshot(spanStyles: spanStyles), viewport: viewport)
+            let nodes = tree.flattened().filter { [3, 4, 5].contains($0.attributes["web.backendID"]?.numberValue ?? 0) }
+            XCTAssertEqual(nodes.count, 3)
+            XCTAssertTrue(nodes.allSatisfy { $0.attributes["web.fontBoxOnly"] == .bool(true) })
+            XCTAssertEqual(Set(nodes.compactMap { $0.attributes["web.inlineFormattingContext"]?.stringValue }), ["main/2"])
+            XCTAssertEqual(nodes.first?.frame.height, 110, "font boxes remain measured evidence")
+        }
+        for identity in ["matrix(1, 0, 0, 1, 0, 0)", "matrix3d(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)"] {
+            let tree = try DOMSnapshotAssembly.assemble(fontFlowSnapshot(blockStyles: [9: identity]), viewport: viewport)
+            XCTAssertEqual(tree.flattened().filter { $0.attributes["web.fontBoxOnly"] == .bool(true) }.count, 3)
+        }
+        let mixed = try DOMSnapshotAssembly.assemble(fontFlowSnapshot(spanStyles: [0: "block"]), viewport: viewport)
+        let first = try XCTUnwrap(mixed.flattened().first { $0.attributes["web.backendID"] == .number(3) })
+        let second = try XCTUnwrap(mixed.flattened().first { $0.attributes["web.backendID"] == .number(5) })
+        XCTAssertNil(first.attributes["web.inlineFormattingContext"], "mixed block and inline runs need separate contexts")
+        XCTAssertNotEqual(first.attributes["web.inlineFormattingContext"], second.attributes["web.inlineFormattingContext"])
+    }
+
+    func testPositionFloatTransformAndOffsetsCannotClaimNormalFontFlow() throws {
+        for overrides in [[4: "relative"], [4: "absolute"], [14: "left"], [9: "matrix(1, 0, 0, 1, 10, 0)"], [9: "matrix(1, 0, 0, 1, 0, 1)"],
+                          [10: "blur(2px)"], [11: "100px"], [33: "10px"], [34: "10deg"], [35: "2"], [18: "-10px"],
+                          [18: "10px"], [32: "-10px"], [36: "5px"], [15: "unknown"]] {
+            let tree = try DOMSnapshotAssembly.assemble(fontFlowSnapshot(spanStyles: overrides), viewport: viewport)
+            let nodes = tree.flattened().filter { [4, 5].contains($0.attributes["web.backendID"]?.numberValue ?? 0) }
+            XCTAssertTrue(nodes.allSatisfy { $0.attributes["web.fontBoxOnly"] != .bool(true) }, "\(overrides)")
+            XCTAssertTrue(nodes.allSatisfy { $0.attributes["web.inlineFormattingContext"] == nil }, "\(overrides)")
+        }
+        for overrides in [[9: "matrix(1, 0, 0, 1, 10, 0)"], [15: "-5px"], [15: "infpx"]] {
+            let tree = try DOMSnapshotAssembly.assemble(fontFlowSnapshot(blockStyles: overrides), viewport: viewport)
+            XCTAssertFalse(tree.flattened().contains { $0.attributes["web.fontBoxOnly"] == .bool(true) })
+        }
+    }
+
+    func testPaintedPaddedInteractiveAndReplacedInlineBoxesRemainOrdinaryEvidence() throws {
+        for overrides in [[19: "2px"], [23: "2px"], [27: "2px", 40: "solid"], [28: "black 0px 0px 2px"],
+                          [29: "rgb(255, 0, 0)"], [30: "linear-gradient(red, blue)"], [19: "unknown"]] {
+            let tree = try DOMSnapshotAssembly.assemble(fontFlowSnapshot(spanStyles: overrides), viewport: viewport)
+            let span = try XCTUnwrap(tree.flattened().first { $0.attributes["web.backendID"] == .number(4) })
+            XCTAssertEqual(span.attributes["web.fontBoxOnly"], .bool(false), "\(overrides)")
+        }
+        for tag in ["BUTTON", "IMG", "INPUT"] {
+            let tree = try DOMSnapshotAssembly.assemble(fontFlowSnapshot(spanTag: tag), viewport: viewport)
+            let span = try XCTUnwrap(tree.flattened().first { $0.attributes["web.backendID"] == .number(4) })
+            XCTAssertNotEqual(span.attributes["web.fontBoxOnly"], .bool(true), tag)
+        }
+        let clickable = try DOMSnapshotAssembly.assemble(fontFlowSnapshot(clickable: true), viewport: viewport)
+        XCTAssertFalse(clickable.flattened().filter { [4, 5].contains($0.attributes["web.backendID"]?.numberValue ?? 0) }
+            .contains { $0.attributes["web.fontBoxOnly"] == .bool(true) })
     }
 
     func testOmittedAncestorsRetainClickAndFocusEvidenceOnDescendants() throws {

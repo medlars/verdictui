@@ -7,6 +7,158 @@ _TEST = "VerdictUIWebTests."
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="web font flow mistakes displacement for transform identity",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old='value == "matrix(1,0,0,1,0,0)"',
+        new='value == "matrix(1,0,0,1,0,1)"',
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/testPositionFloatTransformAndOffsetsCannotClaimNormalFontFlow",
+    ),
+    Mutation(
+        name="web font flow accepts transformed branches",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old="guard !transformed[index] else",
+        new="guard transformed[index] || !transformed[index] else",
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/"
+        + "testPositionFloatTransformAndOffsetsCannotClaimNormalFontFlow",
+    ),
+    Mutation(
+        name="web font flow accepts positioned nodes",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old='style[4] == "static", style[14] == "none"',
+        new='style[4] != "invalid", style[14] == "none"',
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/"
+        + "testPositionFloatTransformAndOffsetsCannotClaimNormalFontFlow",
+    ),
+    Mutation(
+        name="web font flow accepts floated nodes",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old='style[4] == "static", style[14] == "none"',
+        new='style[4] == "static", style[14] != "invalid"',
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/"
+        + "testPositionFloatTransformAndOffsetsCannotClaimNormalFontFlow",
+    ),
+    Mutation(
+        name="web font flow accepts explicit offsets",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old='style[36...39].allSatisfy({ $0 == "auto" })',
+        new="style[36...39].allSatisfy({ _ in true })",
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/"
+        + "testPositionFloatTransformAndOffsetsCannotClaimNormalFontFlow",
+    ),
+    Mutation(
+        name="web font flow accepts negative block margins",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old="cssPixels($0).map { $0 >= 0 } == true",
+        new="cssPixels($0).map { $0 >= -100 } == true",
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/"
+        + "testPositionFloatTransformAndOffsetsCannotClaimNormalFontFlow",
+    ),
+    Mutation(
+        name="web font flow accepts mixed anonymous contexts",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old="if inlineChildren { contexts[index]",
+        new="if inlineChildren || !children[index].isEmpty { contexts[index]",
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/"
+        + "testFontBoxMetadataRequiresOneMeasuredNormalInlineFormattingContext",
+    ),
+    Mutation(
+        name="web font flow accepts shifted vertical alignment",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old='style[32] == "baseline"',
+        new='style[32] != "invalid"',
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/"
+        + "testPositionFloatTransformAndOffsetsCannotClaimNormalFontFlow",
+    ),
+    Mutation(
+        name="web font flow accepts nonzero inline margins",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old="style[15...18].allSatisfy({ cssPixels($0) == 0 })",
+        new="style[15...18].allSatisfy({ cssPixels($0).map { $0 >= 0 } == true })",
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/"
+        + "testPositionFloatTransformAndOffsetsCannotClaimNormalFontFlow",
+    ),
+    Mutation(
+        name="web font flow accepts nonfinite computed lengths",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old="Double(raw.dropLast(2)), value.isFinite",
+        new="Double(raw.dropLast(2)), !value.isNaN",
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/"
+        + "testPositionFloatTransformAndOffsetsCannotClaimNormalFontFlow",
+    ),
+    Mutation(
+        name="web font paint ignores border and padding",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old="style[19...26].allSatisfy({ cssPixels($0) == 0 })",
+        new="style[19...26].allSatisfy({ _ in true })",
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/"
+        + "testPaintedPaddedInteractiveAndReplacedInlineBoxesRemainOrdinaryEvidence",
+    ),
+    Mutation(
+        name="web font paint ignores painted outlines",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old='(style[40] == "none" || cssPixels(style[27]) == 0)',
+        new='(style[40] == "none" || cssPixels(style[27]).map { $0 >= 0 } == true)',
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/"
+        + "testPaintedPaddedInteractiveAndReplacedInlineBoxesRemainOrdinaryEvidence",
+    ),
+    Mutation(
+        name="web font paint ignores box shadows",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old='style[28] == "none"',
+        new='style[28] != "invalid"',
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/"
+        + "testPaintedPaddedInteractiveAndReplacedInlineBoxesRemainOrdinaryEvidence",
+    ),
+    Mutation(
+        name="web font paint ignores background painting",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old='(style[29] == "rgba(0, 0, 0, 0)" && style[30] == "none")',
+        new="(style[29].count >= 0 && style[30].count >= 0)",
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/"
+        + "testPaintedPaddedInteractiveAndReplacedInlineBoxesRemainOrdinaryEvidence",
+    ),
+    Mutation(
+        name="web font paint ignores interaction evidence",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old="let fontOnly = inert && (",
+        new="let fontOnly = (inert || !inert) && (",
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/"
+        + "testPaintedPaddedInteractiveAndReplacedInlineBoxesRemainOrdinaryEvidence",
+    ),
+    Mutation(
+        name="web font paint qualifies replaced content",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old="&& role == .container && textOnlyChildren",
+        new='&& role != .custom("never") && textOnlyChildren',
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/"
+        + "testPaintedPaddedInteractiveAndReplacedInlineBoxesRemainOrdinaryEvidence",
+    ),
+    Mutation(
+        name="web font paint rejects measured text-only inline content",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old="textOnlyChildren && fontOnlyInlinePaint(style)",
+        new="!textOnlyChildren && fontOnlyInlinePaint(style)",
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/"
+        + "testFontBoxMetadataRequiresOneMeasuredNormalInlineFormattingContext",
+    ),
+    Mutation(
         name="web inline cancellation prevents remote object cleanup",
         path=_BASE + "WebInlineGeometry.swift",
         old='_ = try await Task.detached {\n            try await command("Runtime.releaseObjectGroup", ["objectGroup": .string(group)], .seconds(1))\n        }.value',
