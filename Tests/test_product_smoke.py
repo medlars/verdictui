@@ -108,6 +108,8 @@ class ProductSmokeAssertions(unittest.TestCase):
             "children": [{"id": "label", "role": "text", "text": "Save"}],
         }
         self.assertEqual(smoke.target(tree, "Save", actionable=True)["id"], "button")
+        tree["text"] = "Save"
+        self.assertEqual(smoke.target(tree, "Save", actionable=True)["id"], "button")
         with self.assertRaises(smoke.AcceptanceError):
             smoke.target({"id": "text", "role": "text", "text": "Save"}, "Save", actionable=True)
 
