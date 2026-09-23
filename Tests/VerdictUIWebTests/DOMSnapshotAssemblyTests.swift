@@ -92,6 +92,83 @@ final class DOMSnapshotAssemblyTests: XCTestCase {
         }
     }
 
+    private func containingBlockSnapshot(position: String = "absolute", middlePosition: String = "static",
+        outerTag: String = "DIV", outerTransform: String = "none", middleTransform: String = "none",
+        unlaidMiddle: Bool = false) -> [String: CDPValue] {
+        var payload = snapshot()
+        guard case var .array(strings) = payload["strings"], case var .array(documents) = payload["documents"],
+              case var .object(document) = documents[0], case let .object(layout) = document["layout"],
+              case let .array(rows) = layout["styles"], case let .array(base) = rows[0] else { preconditionFailure("fixture") }
+        func intern(_ text: String) -> CDPValue { let index = strings.count; strings.append(.string(text)); return .integer(Int64(index)) }
+        let outer = intern(outerTag), middle = intern("DIV"), button = intern("BUTTON")
+        var outerStyle = base, middleStyle = base, positionedStyle = base
+        outerStyle[4] = intern("relative"); outerStyle[9] = intern(outerTransform)
+        middleStyle[4] = intern(middlePosition); middleStyle[9] = intern(middleTransform)
+        middleStyle[7] = intern("hidden"); middleStyle[8] = intern("hidden")
+        positionedStyle[4] = intern(position)
+        let ints: ([Int]) -> CDPValue = { .array($0.map { .integer(Int64($0)) }) }
+        document["nodes"] = .object([
+            "parentIndex": ints([-1, 0, 1, 2, 3]), "nodeType": ints([9, 1, 1, 1, 3]),
+            "nodeName": .array([.integer(0), outer, middle, button, .integer(2)]),
+            "nodeValue": ints([3, 3, 3, 3, 4]), "backendNodeId": ints([1, 2, 3, 4, 5]),
+            "attributes": .array(Array(repeating: .array([]), count: 5))])
+        let boxes = [ints([20, 20, 500, 300]), ints([20, 20, 100, 60]), ints([200, 20, 120, 44]), ints([210, 30, 35, 20])]
+        let nodeRows = unlaidMiddle ? [1, 3, 4] : [1, 2, 3, 4]
+        let styleRows = [outerStyle, middleStyle, positionedStyle, positionedStyle]
+        document["layout"] = .object(["nodeIndex": ints(nodeRows),
+            "bounds": .array(nodeRows.map { boxes[$0 - 1] }), "styles": .array(nodeRows.map { .array(styleRows[$0 - 1]) })])
+        document["textBoxes"] = .object(["layoutIndex": ints([]), "bounds": .array([])])
+        documents[0] = .object(document); payload["documents"] = .array(documents); payload["strings"] = .array(strings)
+        return payload
+    }
+
+    func testContainingBlockDepthUsesRawDOMAndPropagatesToText() throws {
+        for (outerTag, unlaid) in [("DIV", false), ("BODY", false), ("DIV", true)] {
+            let tree = try DOMSnapshotAssembly.assemble(containingBlockSnapshot(outerTag: outerTag, unlaidMiddle: unlaid), viewport: viewport)
+            let button = try XCTUnwrap(tree.flattened().first { $0.attributes["web.backendID"] == .number(4) })
+            let text = try XCTUnwrap(tree.flattened().first { $0.attributes["web.backendID"] == .number(5) })
+            XCTAssertEqual(button.attributes["web.domDepth"], .number(3))
+            XCTAssertEqual(text.attributes["web.domDepth"], .number(4))
+            for node in [button, text] {
+                XCTAssertEqual(node.attributes["web.positioningRootDepth"], .number(3))
+                XCTAssertEqual(node.attributes["web.containingBlockDepth"], .number(1))
+            }
+        }
+    }
+
+    func testContainingBlockDepthDistinguishesPositionAndTransformForAbsoluteAndFixed() throws {
+        for (position, middle, outerTransform, middleTransform, expected) in [
+            ("absolute", "relative", "none", "none", 2),
+            ("absolute", "sticky", "none", "none", 2),
+            ("absolute", "absolute", "none", "none", 2),
+            ("absolute", "fixed", "none", "none", 2),
+            ("absolute", "static", "none", "matrix(1, 0, 0, 1, 0, 0)", 2),
+            ("fixed", "relative", "matrix(1, 0, 0, 1, 0, 0)", "none", 1),
+            ("fixed", "relative", "none", "none", -1),
+            ("fixed", "static", "none", "matrix(1, 0, 0, 1, 0, 0)", 2),
+        ] {
+            let tree = try DOMSnapshotAssembly.assemble(containingBlockSnapshot(position: position, middlePosition: middle,
+                outerTransform: outerTransform, middleTransform: middleTransform), viewport: viewport)
+            let button = try XCTUnwrap(tree.flattened().first { $0.attributes["web.backendID"] == .number(4) })
+            XCTAssertEqual(button.attributes["web.containingBlockDepth"], .number(Double(expected)), "\(position)/\(middle)/\(outerTransform)/\(middleTransform)")
+            let text = try XCTUnwrap(button.children.first)
+            XCTAssertEqual(text.attributes["web.positioningRootDepth"], .number(3), "text must inherit, not create a positioned box from its inherited style")
+        }
+    }
+
+    func testUnlaidContainingBoxesAndUnknownPositionsCannotInventEscapeProof() throws {
+        let unlaid = try DOMSnapshotAssembly.assemble(containingBlockSnapshot(middlePosition: "relative", unlaidMiddle: true), viewport: viewport)
+        let button = try XCTUnwrap(unlaid.flattened().first { $0.attributes["web.backendID"] == .number(4) })
+        XCTAssertEqual(button.attributes["web.containingBlockDepth"], .number(1), "display:contents cannot establish a containing box")
+        for position in ["absolute", "fixed"] {
+            let unknown = try DOMSnapshotAssembly.assemble(containingBlockSnapshot(position: position, middlePosition: "unknown"), viewport: viewport)
+            for node in unknown.flattened() where [4, 5].contains(node.attributes["web.backendID"]?.numberValue ?? 0) {
+                XCTAssertNil(node.attributes["web.containingBlockDepth"], "unknown ancestry preserves ordinary clipping")
+                XCTAssertNil(node.attributes["web.positioningRootDepth"])
+            }
+        }
+    }
+
     private func fontFlowSnapshot(spanStyles: [Int: String] = [:], blockStyles: [Int: String] = [:],
                                   clickable: Bool = false, spanTag: String = "SPAN") -> [String: CDPValue] {
         var payload = snapshot()

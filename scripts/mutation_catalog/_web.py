@@ -7,6 +7,86 @@ _TEST = "VerdictUIWebTests."
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="web containing raw DOM depth becomes semantic depth",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old='metadata["web.domDepth"] = .number(Double(depths[index]))',
+        new='metadata["web.domDepth"] = .number(Double(depths[index] - 1))',
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/testContainingBlockDepthUsesRawDOMAndPropagatesToText",
+    ),
+    Mutation(
+        name="web containing interval is not inherited by text",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old="contexts[index] = contexts[parent]\n                absoluteDepth[index]",
+        new="contexts[index] = nil\n                absoluteDepth[index]",
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/testContainingBlockDepthUsesRawDOMAndPropagatesToText",
+    ),
+    Mutation(
+        name="web containing text styles establish positioned boxes",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old="guard types[index] == 1, let (_, style) = geometry[index] else { continue }",
+        new="guard types[index] == 1 || types[index] == 3, let (_, style) = geometry[index] else { continue }",
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/testContainingBlockDepthDistinguishesPositionAndTransformForAbsoluteAndFixed",
+    ),
+    Mutation(
+        name="web containing unlaid ancestors establish boxes",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old="let (_, style) = geometry[index] else { continue }",
+        new="let (_, style) = geometry[index] ?? geometry[parent] else { continue }",
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/testUnlaidContainingBoxesAndUnknownPositionsCannotInventEscapeProof",
+    ),
+    Mutation(
+        name="web containing unknown positions claim valid ancestry",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old='["static", "relative", "absolute", "fixed", "sticky"].contains(position)',
+        new='["static", "relative", "absolute", "fixed", "sticky", "unknown"].contains(position)',
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/testUnlaidContainingBoxesAndUnknownPositionsCannotInventEscapeProof",
+    ),
+    Mutation(
+        name="web containing fixed boxes use absolute containing block",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old='position == "fixed" ? fixedDepth[index] : absoluteDepth[index]',
+        new='position == "fixed" ? absoluteDepth[index] : absoluteDepth[index]',
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/testContainingBlockDepthDistinguishesPositionAndTransformForAbsoluteAndFixed",
+    ),
+    Mutation(
+        name="web containing unknown block permits escape proof",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old="container >= -1 ? (depths[index], container) : nil",
+        new="container >= -2 ? (depths[index], container) : nil",
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/testUnlaidContainingBoxesAndUnknownPositionsCannotInventEscapeProof",
+    ),
+    Mutation(
+        name="web containing transforms cannot establish blocks",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old="let fixedContainer = WebLint.establishesFixedContainer(styles: style)",
+        new="let fixedContainer = WebLint.establishesFixedContainer(styles: style) && false",
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/testContainingBlockDepthDistinguishesPositionAndTransformForAbsoluteAndFixed",
+    ),
+    Mutation(
+        name="web containing relative boxes fail absolute ancestry",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old='if position != "static" || fixedContainer { absoluteDepth[index]',
+        new='if position == "absolute" || fixedContainer { absoluteDepth[index]',
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/testContainingBlockDepthDistinguishesPositionAndTransformForAbsoluteAndFixed",
+    ),
+    Mutation(
+        name="web containing relative boxes establish fixed ancestry",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old="if fixedContainer { fixedDepth[index]",
+        new='if fixedContainer || position != "static" { fixedDepth[index]',
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/testContainingBlockDepthDistinguishesPositionAndTransformForAbsoluteAndFixed",
+    ),
+    Mutation(
         name="web font flow mistakes displacement for transform identity",
         path=_BASE + "DOMSnapshotAssembly.swift",
         old='value == "matrix(1,0,0,1,0,0)"',
