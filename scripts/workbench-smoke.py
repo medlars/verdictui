@@ -344,13 +344,61 @@ def exercise(
                     "project": FIXTURE_STATE["selectedProject"],
                     "status": "fail",
                     "report": report,
-                }
+                },
+                *[
+                    {
+                        "timestamp": "2026-09-23T12:00:00Z",
+                        "project": FIXTURE_STATE["selectedProject"],
+                        "status": status,
+                        "report": {
+                            "status": status,
+                            "checks": [
+                                {
+                                    "name": "Saved check",
+                                    "status": status,
+                                    "verdict": {"findings": []} if status == "pass" else None,
+                                }
+                            ],
+                        },
+                    }
+                    for status in ("pass", "unavailable")
+                ],
             ],
         },
     )
     page.locator("[data-view=history]").click()
-    check(browser_name + " history real report visible", page.locator(".history-row").count() == 1)
-    page.locator(".history-row button").click()
+    check(browser_name + " history real reports visible", page.locator(".history-row").count() == 3)
+    for width in (1000, 360):
+        page.set_viewport_size({"width": width, "height": 700})
+        history_rects = page.locator(".history-row").evaluate_all(
+            """rows=>rows.map(row=>Object.fromEntries(
+            ['.severity','.history-summary','button'].map(selector=>{
+                const element=row.querySelector(selector), rect=element.getBoundingClientRect();
+                return [selector,{x:rect.x,width:rect.width,text:element.textContent}];
+            })))"""
+        )
+        check(
+            browser_name + f" history status columns align at {width}px",
+            len(history_rects) == 3
+            and all(
+                len({round(row[selector][metric], 2) for row in history_rects}) == 1
+                for selector, metric in (
+                    (".severity", "width"),
+                    (".history-summary", "x"),
+                    ("button", "x"),
+                )
+            ),
+        )
+        check(
+            browser_name + f" history no overflow at {width}px",
+            page.evaluate("document.documentElement.scrollWidth") == width,
+        )
+        (artifact_dir / f"{browser_name}-history-{width}-rects.json").write_text(
+            json.dumps(history_rects, indent=2) + "\n"
+        )
+        page.screenshot(path=str(artifact_dir / f"{browser_name}-history-{width}.png"))
+    page.set_viewport_size({"width": 1000, "height": 700})
+    page.locator(".history-row button").first.click()
     check(browser_name + " history opens report", page.locator(".finding").count() == 2)
     malicious = '<img src=x onerror="window.injected=true">'
     receive(
