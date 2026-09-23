@@ -77,6 +77,8 @@ _SWIFTSYNTAX_FREE_TARGETS = frozenset(
         "VerdictUICLICore",
         "VerdictUICLICoreTests",
         "verdictui",
+        # The project self-test host executes a registry; it never expands macros.
+        "VerdictUIProjectRunner",
         # Wave 8's cross-validation channel. SwiftSyntax-free for the same
         # reason the CLI is, and Accessibility-bearing besides: the witness
         # depends on the kernel alone, so neither ApplicationServices nor the

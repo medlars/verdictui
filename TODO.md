@@ -9,6 +9,8 @@
 
 ## P1 — High Priority
 
+- [x] (P1) CEO/stage_pytest: Classified VerdictUIProjectRunner as SwiftSyntax-free; full Python suite 499 passed, 3 explicitly skipped.
+
 - [ ] (2026-09-23) Owner follow-up: reconnect installed VerdictUI MCP in Codex and Claude with a real client catalog/handshake check; repair measured transport failures.
 - [ ] (2026-09-23) Owner follow-up: prevent loss of original instruction sources, preserve clause-level completion evidence, and enforce honest adoption/rendering coverage across registered projects through shared existing governance mechanisms.
 - [ ] (2026-09-23) Owner follow-up: recover the notification repair context and verify its actual outcome; preserve unknown context as unresolved rather than substituting an unrelated fix.
