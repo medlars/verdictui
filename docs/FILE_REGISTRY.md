@@ -294,6 +294,8 @@
 | `Sources/VerdictUIWeb/DOMSnapshotAssembly.swift` | DOMSnapshotAssembly: real-product verification integration | Active | 2026-09-23 |
 | `Sources/VerdictUIWeb/WebInlineGeometry.swift` | Bounded isolated-world measurements of native inline border fragments | Active | 2026-09-23 |
 | `Tests/VerdictUIWebTests/WebInlineGeometryTests.swift` | Inline capture budgets, cleanup, identity, concurrency and cancellation controls | Active | 2026-09-23 |
+| `Sources/VerdictUIWeb/WebPaintSemantics.swift` | Conservative SVG and presentation paint classification with per-axis clipping | Active | 2026-09-23 |
+| `Tests/VerdictUIWebTests/WebPaintSemanticsTests.swift` | Positive and negative controls for browser paint uncertainty and clipping | Active | 2026-09-23 |
 | `Sources/VerdictUIWeb/WebLint.swift` | Browser document/scroll paint projections, bounded CSS clipping and original-tree verdict evidence | Active | 2026-09-23 |
 | `Tests/VerdictUIWebTests/WebLintTests.swift` | Scroll reachability, overlap, fixed containing blocks, clipping and finite bounds controls | Active | 2026-09-23 |
 | `Sources/VerdictUIWeb/WebCredentials.swift` | WebCredentials: real-product verification integration | Active | 2026-09-23 |

@@ -140,3 +140,15 @@ text. Preserve original tree/IDs, include deliberate collision controls, and
 separate uncertain paint diagnostics from confirmed geometry failures. Rebuild
 and notarize the final runtime after the corrections; earlier candidate hashes
 are historical, not the final release artifact.
+
+### Normal text line flow adjudication
+
+A read-only live browser inspection confirmed the homepage hero glyphs are
+separated, although its 121px font rectangles advance by 100.796875px and overlap
+by 20.203125px. Treat narrowly measured, paint-free text from the same normal
+inline formatting context as unresolved glyph paint when fragments intersect
+across different lines. Positioned, transformed, floating, interactive, bordered
+or padded boxes and same-line collisions remain subject to confirmed-error
+checks. A first uncertain fragment must never mask a later confirmed collision;
+the existing bounded sweep still accounts for every comparison. Retain original
+nodes and surface web-paint-unverified in every interface.
