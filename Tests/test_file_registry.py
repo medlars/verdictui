@@ -14,6 +14,7 @@ real.
 """
 
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -121,13 +122,16 @@ def _tracked() -> set[str]:
     Honouring `.gitignore` (`--exclude-standard`) keeps build products out, so
     the set still means "files this repo is responsible for".
     """
-    listed = subprocess.run(
+    git = shutil.which("git")
+    assert git is not None, "git is not on PATH; the registry cannot be compared to the tree"
+    # B603 false positive: resolved git plus fixed flags; no shell, no external input.
+    listed = subprocess.run(  # nosec B603
         # `-z` because the newline form quotes and octal-escapes any path holding
         # a non-ASCII byte, a quote, a backslash or a newline: `Tests/café.py`
         # comes back as `"Tests/caf\303\251.py"` (measured), which matches no
         # registry row, so the guard would report a file missing that is sitting
         # right there. Spaces alone are not quoted; the rest are.
-        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+        [git, "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
         cwd=_PROJECT_ROOT,
         capture_output=True,
         text=True,

@@ -22,6 +22,7 @@ and a check that flags it would be ignored within a day.
 from __future__ import annotations
 
 import argparse
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -40,8 +41,13 @@ def _git(args: list[str], cwd: Path) -> str:
     the caller treats an unanswerable path as not-suspicious rather than
     guessing — a false accusation here would send someone hunting a phantom.
     """
-    result = subprocess.run(  # noqa: S603 — fixed argv, no shell
-        ["git", *args],
+    git = shutil.which("git")
+    if git is None:
+        return ""
+    # B603 false positive: the resolved git binary plus this module's own fixed
+    # subcommands; no shell and no externally supplied argv.
+    result = subprocess.run(  # noqa: S603  # nosec B603
+        [git, *args],
         cwd=cwd,
         capture_output=True,
         text=True,

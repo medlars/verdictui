@@ -26,12 +26,14 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 class TestPyrightResolvesTestSources:
     def test_pyright_resolves_every_import_in_the_test_sources(self) -> None:
-        if shutil.which("pyright") is None:
+        pyright = shutil.which("pyright")
+        if pyright is None:
             pytest.skip("pyright not installed")
         test_sources = sorted(str(p) for p in (_PROJECT_ROOT / "Tests").glob("test_*.py"))
         assert test_sources, "no test sources found -- the guard is aimed at nothing"
-        proc = subprocess.run(
-            ["pyright", "--outputjson", *test_sources],
+        # B603 false positive: resolved pyright over this repo's own test files; no shell.
+        proc = subprocess.run(  # nosec B603
+            [pyright, "--outputjson", *test_sources],
             capture_output=True,
             text=True,
             cwd=_PROJECT_ROOT,
