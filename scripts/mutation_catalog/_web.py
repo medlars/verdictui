@@ -7,6 +7,46 @@ _TEST = "VerdictUIWebTests."
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="web fixture ignores its configured interpreter",
+        path="Tests/VerdictUIWebTests/WebFrameIntegrationTests.swift",
+        old='if let configured = environment["VERDICTUI_TEST_PYTHON"]',
+        new='if let configured = environment["VERDICTUI_IGNORED_PYTHON"]',
+        test=_TEST
+        + "WebFrameIntegrationTests/testConfiguredFixtureInterpreterReportsExitAndBoundedOutput",
+    ),
+    Mutation(
+        name="web fixture accepts an invalid configured interpreter",
+        path="Tests/VerdictUIWebTests/WebFrameIntegrationTests.swift",
+        old='guard configured.hasPrefix("/"), FileManager.default.isExecutableFile(atPath: configured) else',
+        new="guard true else",
+        test=_TEST
+        + "WebFrameIntegrationTests/testFixtureInterpreterUsesPATHAndRefusesInvalidConfiguration",
+    ),
+    Mutation(
+        name="web fixture selects a missing PATH interpreter",
+        path="Tests/VerdictUIWebTests/WebFrameIntegrationTests.swift",
+        old="if FileManager.default.isExecutableFile(atPath: candidate.path) { return candidate }",
+        new="if true { return candidate }",
+        test=_TEST
+        + "WebFrameIntegrationTests/testFixtureInterpreterUsesPATHAndRefusesInvalidConfiguration",
+    ),
+    Mutation(
+        name="web fixture emits unbounded startup diagnostics",
+        path="Tests/VerdictUIWebTests/WebFrameIntegrationTests.swift",
+        old="reader.read(upToCount: 4096)",
+        new="reader.readToEnd()",
+        test=_TEST
+        + "WebFrameIntegrationTests/testConfiguredFixtureInterpreterReportsExitAndBoundedOutput",
+    ),
+    Mutation(
+        name="web fixture stops the server after handing it to its caller",
+        path="Tests/VerdictUIWebTests/WebFrameIntegrationTests.swift",
+        old="if !handedOff {",
+        new="if handedOff {",
+        test=_TEST
+        + "WebFrameIntegrationTests/testSameAndCrossOriginFramesRenderAndActWithCorrectRootCoordinates",
+    ),
+    Mutation(
         name="owned process ignores its requested working directory",
         path=_BASE + "OwnedCommandProcess.swift",
         old="try checked(addWorkingDirectory(&actions, path: directory.path))",

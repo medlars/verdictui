@@ -25,6 +25,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # The web-frame test starts a Python HTTP fixture during the Swift suite.
+      - name: Set up fixture Python
+        id: fixture_python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.14'
+
       - name: Swift version
         run: swift --version
 
@@ -34,6 +41,8 @@ jobs:
 
       - name: Test (zero-warning)
         id: tests
+        env:
+          VERDICTUI_TEST_PYTHON: ${{ steps.fixture_python.outputs.python-path }}
         run: swift test -Xswiftc -warnings-as-errors
 
       # DemoReportTests exercises the executable's body in-process; this catches
@@ -60,11 +69,6 @@ jobs:
       # financeflow-pro run 31458757494; swept fleet-wide, 24 repos affected.
       # CIS-04F12B01: runs the identity-contract harness against the workflow
       # text itself, so the verifier cannot silently weaken.
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: '3.14'
-
       - name: Verify CI evidence identity contract
         run: python "$GITHUB_WORKSPACE/scripts/test_ci_evidence_identity.py"
 

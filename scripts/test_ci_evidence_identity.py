@@ -466,6 +466,18 @@ class TestWiring(unittest.TestCase):
     def setUp(self):
         self.verifier = extract_step(WORKFLOW_TEXT, VERIFIER_NAME)
 
+    def test_fixture_python_is_configured_before_swift_tests(self):
+        setup = extract_step(WORKFLOW_TEXT, "Set up fixture Python")
+        tests = extract_step(WORKFLOW_TEXT, "Test (zero-warning)")
+        self.assertIn("id: fixture_python", setup)
+        self.assertIn("python-version: '3.14'", setup)
+        self.assertRegex(setup, r"uses: actions/setup-python@[a-f0-9]{40}")
+        self.assertLess(WORKFLOW_TEXT.index(setup), WORKFLOW_TEXT.index(tests))
+        self.assertIn(
+            identity_env_line("VERDICTUI_TEST_PYTHON", "steps.fixture_python.outputs.python-path"),
+            tests,
+        )
+
     def test_step_ids_unique(self):
         self.assertEqual(WORKFLOW_TEXT.count("id: runv2_emit"), 1)
         self.assertEqual(WORKFLOW_TEXT.count("id: runv2_verify"), 1)
