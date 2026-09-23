@@ -29,9 +29,13 @@ public actor HeadlessBrowser {
     /// The user-data-dir this session's browser uses.
     public let profileDirectory: URL
 
-    /// Full initializer — test composition and later tasks' session assembly.
-    public init(pid: pid_t, endpoint: DevtoolsEndpoint, profileDirectory: URL) {
-        self.pid = pid
+    private let process: any BrowserProcessIdentity
+
+    /// Internal seam for deterministic lifecycle tests. Production identities
+    /// can only come from launch(), which retains the exact Foundation child.
+    init(process: any BrowserProcessIdentity, endpoint: DevtoolsEndpoint, profileDirectory: URL) {
+        self.process = process
+        pid = process.pid
         self.endpoint = endpoint
         self.profileDirectory = profileDirectory
     }
@@ -44,9 +48,6 @@ public actor HeadlessBrowser {
         public let profileDirectory: URL
         /// How long to wait for DevToolsActivePort before giving up.
         public let discoveryTimeout: TimeInterval
-        /// The stderr log file, inside the profile dir; readable as the
-        /// launch-failure reason.
-        static let stderrName = "launch-stderr.log"
 
         public init(
             browser: URL,
@@ -92,9 +93,9 @@ public actor HeadlessBrowser {
             throw WebBrowserError.launchFailed(
                 reason: "spawn failed: \(error)")
         }
-        let pid = process.processIdentifier
+        let owned = LaunchedBrowserProcess(process: process)
         var handedOff = false
-        defer { if !handedOff { kill(pid, SIGKILL) } }
+        defer { if !handedOff { owned.signal(SIGKILL) } }
         let deadline = ContinuousClock.now
             + .seconds(options.discoveryTimeout)
         while true {
@@ -102,16 +103,16 @@ public actor HeadlessBrowser {
             if let endpoint = DevtoolsEndpoint.read(in: options.profileDirectory) {
                 handedOff = true
                 return HeadlessBrowser(
-                    pid: pid,
+                    process: owned,
                     endpoint: endpoint,
                     profileDirectory: options.profileDirectory)
             }
-            guard ProcessLiveness.isAlive(pid) else {
+            guard owned.isRunning else {
                 throw WebBrowserError.launchFailed(
                     reason: "browser died before publishing its endpoint")
             }
             guard ContinuousClock.now < deadline else {
-                kill(pid, SIGKILL)
+                owned.signal(SIGKILL)
                 throw WebBrowserError.devtoolsNotDiscovered(
                     profileDirectory: options.profileDirectory.path,
                     within: options.discoveryTimeout)
@@ -120,7 +121,6 @@ public actor HeadlessBrowser {
         }
     }
 
-    /// The argv handed to the browser. Every flag is measured, not guessed:
     /// The argv handed to the browser. Every flag is measured, not guessed:
     ///
     /// - `--headless=new`: the mode whose CGWindowList entries are never
@@ -207,22 +207,32 @@ public actor HeadlessBrowser {
         return !ProcessLiveness.isAlive(pid)
     }
 
-    /// Graceful-then-kill, verified by pid liveness — never by exit code.
-    ///
-    /// Measured: SIGTERM alone terminates Chrome in ~5.1 s, so the grace is
-    /// real waiting, not a formality. A browser that survives both signals
-    /// refuses the claim with a typed error rather than reporting success.
+    /// Graceful-then-kill, tied to the original Process object. A later process
+    /// that reuses its PID never becomes this session's child.
     public func terminate(grace: TimeInterval = 10) async throws {
-        guard ProcessLiveness.isAlive(pid) else { return }
-        kill(pid, SIGTERM)
-        if await Self.awaitDeath(pid: pid, within: grace) { return }
-        kill(pid, SIGKILL)
-        if await Self.awaitDeath(pid: pid, within: 5) { return }
+        guard process.isRunning else { return }
+        process.signal(SIGTERM)
+        if await awaitOwnedDeath(within: grace) { return }
+        process.signal(SIGKILL)
+        if await awaitOwnedDeath(within: 5) { return }
         throw WebBrowserError.processRefusedToDie(pid: pid)
     }
 
-    /// Leak guard: a deallocated session must not leave a browser running.
+    private func awaitOwnedDeath(within grace: TimeInterval) async -> Bool {
+        let deadline = ContinuousClock.now + .seconds(grace)
+        while ContinuousClock.now < deadline {
+            if !process.isRunning { return true }
+            // Cleanup must continue under caller cancellation. A cancelled
+            // Task.sleep would return immediately and spin until the deadline.
+            await withCheckedContinuation { continuation in
+                DispatchQueue.global().asyncAfter(deadline: .now() + 0.05) { continuation.resume() }
+            }
+        }
+        return !process.isRunning
+    }
+
+    /// A dead child's retained identity stays dead even when its pid is reused.
     deinit {
-        kill(pid, SIGKILL)
+        if process.isRunning { process.signal(SIGKILL) }
     }
 }

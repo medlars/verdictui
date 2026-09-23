@@ -186,4 +186,67 @@ MUTATIONS: list[Mutation] = [
         new="role = .custom(raw)",
         test=_TEST + "DOMSnapshotAssemblyTests/testCredentialReflectedIntoCustomRoleIsRedacted",
     ),
+    Mutation(
+        name="web dead owned process signals a recycled live pid on terminate",
+        path=_BASE + "HeadlessBrowser.swift",
+        old="guard process.isRunning else { return }",
+        new="guard pid > 0 else { return }",
+        test=_TEST
+        + "BrowserProcessIdentityTests/testReusedLivePIDDoesNotAuthorizeTerminatingADeadChild",
+    ),
+    Mutation(
+        name="web dead owned process signals a recycled live pid on deinit",
+        path=_BASE + "HeadlessBrowser.swift",
+        old="if process.isRunning { process.signal(SIGKILL) }",
+        new="if pid > 0 { process.signal(SIGKILL) }",
+        test=_TEST
+        + "BrowserProcessIdentityTests/testReusedLivePIDDoesNotAuthorizeTerminatingADeadChild",
+    ),
+    Mutation(
+        name="web compact tree drops control accessible names",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old="} ?? accessibleName,",
+        new="},",
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/testControlNameSurvivesCompactTextAndNeverUsesValueChildren",
+    ),
+    Mutation(
+        name="web field descendants expose existing values",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old='if role == .textField || tag == "input" || tag == "textarea" { descendants = [] }',
+        new='if tag == "not-an-input" { descendants = [] }',
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/testControlNameSurvivesCompactTextAndNeverUsesValueChildren",
+    ),
+    Mutation(
+        name="web aria labelledby loses naming priority",
+        path=_BASE + "DOMAccessibleNames.swift",
+        old='if let references = attrs["aria-labelledby"]',
+        new='if let references = attrs["not-aria-labelledby"]',
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/testAssociatedLabelsAndAriaNamesHaveDeterministicPriority",
+    ),
+    Mutation(
+        name="web explicit labels lose control association",
+        path=_BASE + "DOMAccessibleNames.swift",
+        old='if let target = attributes[index]["for"]',
+        new='if let target = attributes[index]["not-for"]',
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/testAssociatedLabelsAndAriaNamesHaveDeterministicPriority",
+    ),
+    Mutation(
+        name="web wrapping labels lose control association",
+        path=_BASE + "DOMAccessibleNames.swift",
+        old='if tags[ancestor] == "label",',
+        new='if tags[ancestor] == "not-label",',
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/testAssociatedLabelsAndAriaNamesHaveDeterministicPriority",
+    ),
+    Mutation(
+        name="web field values become parent label content",
+        path=_BASE + "DOMAccessibleNames.swift",
+        old='contents[index] = ""',
+        new='contents[index] += ""',
+        test=_TEST + "DOMSnapshotAssemblyTests/testAccessibleLabelsExcludeEditableValues",
+    ),
 ]

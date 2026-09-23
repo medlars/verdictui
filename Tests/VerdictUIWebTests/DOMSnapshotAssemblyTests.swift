@@ -96,6 +96,63 @@ final class DOMSnapshotAssemblyTests: XCTestCase {
         XCTAssertEqual(tree.children.first?.children.first?.isVisible, false)
     }
 
+    func testControlNameSurvivesCompactTextAndNeverUsesValueChildren() throws {
+        var payload = snapshot()
+        guard case var .array(strings) = payload["strings"], case var .array(documents) = payload["documents"],
+            case var .object(document) = documents[0], case var .object(nodes) = document["nodes"],
+            case var .array(attributes) = nodes["attributes"] else { return XCTFail("invalid fixture") }
+        strings[1] = .string("INPUT"); strings[4] = .string("private-existing-field-value")
+        strings += [.string("aria-label"), .string("Password")]
+        attributes[1] = .array([.integer(11), .integer(12)])
+        nodes["attributes"] = .array(attributes); document["nodes"] = .object(nodes)
+        documents[0] = .object(document); payload["documents"] = .array(documents); payload["strings"] = .array(strings)
+        let tree = try DOMSnapshotAssembly.assemble(payload, viewport: viewport)
+        let field = try XCTUnwrap(tree.children.first)
+        XCTAssertEqual(field.role, .textField)
+        XCTAssertEqual(field.text, "Password", "compact outputs preserve text but omit custom attributes")
+        XCTAssertEqual(field.attributes["accessibilityLabel"], .string("Password"))
+        XCTAssertTrue(field.children.isEmpty)
+        XCTAssertFalse(String(decoding: try JSONEncoder().encode(tree), as: UTF8.self).contains("private-existing-field-value"))
+    }
+
+    func testEmptyBooleanAttributeUsesCDPAbsentStringSentinel() throws {
+        var payload = snapshot()
+        guard case var .array(strings) = payload["strings"], case var .array(documents) = payload["documents"],
+            case var .object(document) = documents[0], case var .object(nodes) = document["nodes"],
+            case var .array(attributes) = nodes["attributes"] else { return XCTFail("invalid fixture") }
+        strings += [.string("disabled")]
+        attributes[1] = .array([.integer(11), .integer(-1)])
+        nodes["attributes"] = .array(attributes); document["nodes"] = .object(nodes)
+        documents[0] = .object(document); payload["documents"] = .array(documents); payload["strings"] = .array(strings)
+        let tree = try DOMSnapshotAssembly.assemble(payload, viewport: viewport)
+        XCTAssertEqual(tree.children.first?.attributes["web.enabled"], .bool(false))
+    }
+
+    func testAccessibleLabelsExcludeEditableValues() {
+        let names = DOMAccessibleNames.resolve(tags: ["label", "#text", "textarea", "#text"],
+            types: [1, 3, 1, 3], values: ["", "Private notes", "", "private-existing-value"],
+            attributes: [[:], [:], [:], [:]], parents: [-1, 0, 0, 2])
+        XCTAssertEqual(names[2], "Private notes")
+        XCTAssertFalse(names.compactMap { $0 }.joined().contains("private-existing-value"))
+    }
+
+    func testAssociatedLabelsAndAriaNamesHaveDeterministicPriority() {
+        let tags = ["#document", "label", "#text", "input", "label", "#text", "input", "span", "#text", "input", "input", "input"]
+        let parents = [-1, 0, 1, 0, 0, 4, 4, 0, 7, 0, 0, 0]
+        let attrs: [[String: String]] = [[:], ["for": "username"], [:], ["id": "username", "value": "private"],
+            [:], [:], ["placeholder": "lower priority"], ["id": "name"], [:],
+            ["aria-labelledby": "name", "aria-label": "lower priority"], ["aria-label": "Password", "placeholder": "lower priority"],
+            ["placeholder": "Search"]]
+        let names = DOMAccessibleNames.resolve(tags: tags, types: tags.map { $0 == "#text" ? 3 : 1 },
+            values: ["", "", " User name ", "", "", " Wrapped label ", "", "", " Referenced name ", "", "", ""],
+            attributes: attrs, parents: parents)
+        XCTAssertEqual(names[3], "User name")
+        XCTAssertEqual(names[6], "Wrapped label")
+        XCTAssertEqual(names[9], "Referenced name")
+        XCTAssertEqual(names[10], "Password")
+        XCTAssertEqual(names[11], "Search")
+    }
+
     func testCredentialReflectedIntoCustomRoleIsRedacted() throws {
         let secret = UUID().uuidString
         var payload = snapshot()
