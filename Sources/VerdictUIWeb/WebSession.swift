@@ -317,7 +317,7 @@ public actor WebSession {
             guard let backendID = owner["backendNodeId"]?.doubleValue else {
                 throw WebBrowserError.invalidCDPResponse(reason: "embedded frame has no owner element")
             }
-            let (grafted, found) = WebFrameGeometry.graft(descendants.children, ownerBackend: backendID, ownerFrame: parent, into: tree)
+            let (grafted, found) = try WebFrameGeometry.graft(descendants.children, ownerBackend: backendID, ownerFrame: parent, into: tree)
             guard found else { throw WebBrowserError.invalidCDPResponse(reason: "embedded frame owner absent from snapshot") }
             tree = grafted
             for id in documentFrames(frameSnapshot) { known.insert(id); routing[id] = session }
@@ -361,8 +361,7 @@ public actor WebSession {
     }
 
     private func verdict(tree: SemanticNode, expectText: String?) -> Verdict {
-        let context = LintContext(scenario: "web/\(profile)", viewport: viewport)
-        var result = RuleEngine.run(rules: RuleEngine.standardRules, on: tree, context: context, includeTree: true)
+        var result = WebLint.run(tree: tree, scenario: "web/\(profile)", viewport: viewport)
         if let expectText, !contains(expectText, in: tree) {
             result = Verdict(scenario: result.scenario, findings: result.findings + [Finding(
                 rule: "web-expectation", severity: .error, nodeID: tree.id,
@@ -417,11 +416,11 @@ public actor WebSession {
         guard x >= 0, y >= 0, x < viewport.width, y < viewport.height else {
             throw WebBrowserError.invalidWebOperation(reason: "target is outside the viewport after scrolling")
         }
-        let hit = try await command("DOM.getNodeForLocation", ["x": .integer(Int64(localX)), "y": .integer(Int64(localY))], session: session)
+        let hit = try await command("DOM.getNodeForLocation", WebFrameGeometry.hitPoint(x: localX, y: localY, attributes: fresh.attributes), session: session)
         guard let hitID = hit["backendNodeId"], try fresh.flattened().contains(where: { try backend($0) == hitID }) else {
             throw WebBrowserError.invalidWebOperation(reason: "target is covered by another element")
         }
-        let rootHit = try await command("DOM.getNodeForLocation", ["x": .integer(Int64(x)), "y": .integer(Int64(y))])
+        let rootHit = try await command("DOM.getNodeForLocation", WebFrameGeometry.hitPoint(x: x, y: y, attributes: latest.attributes))
         guard let rootBackend = rootHit["backendNodeId"]?.doubleValue,
             let rootFrame = rootHit["frameId"]?.stringValue,
             let hitNode = latest.flattened().first(where: {
