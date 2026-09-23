@@ -287,6 +287,31 @@ final class WebFrameIntegrationTests: XCTestCase {
         await manager.closeAll(); try await server.stop()
     }
 
+    func testEditableInlineValuesRemainRedactedWhileOutsideButtonActs() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("vui-editable-inline-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let (server, port) = try await server(root: root)
+        let manager = WebSessionManager(root: root.appendingPathComponent("profiles"), environment: [:])
+        do {
+            _ = try await manager.open(profile: "editable", url: XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/editable-inline")))
+            let report = try await manager.verify(profile: "editable", expectText: "Save message")
+            XCTAssertEqual(report.status, .pass, "\(report.findings)")
+            let nodes = try XCTUnwrap(report.tree).flattened()
+            let editors = nodes.filter { $0.role == .textField }
+            XCTAssertEqual(editors.count, 2)
+            XCTAssertTrue(editors.allSatisfy { $0.children.isEmpty && $0.attributes["web.value"] == .string("[REDACTED]") })
+            let serialized = String(decoding: try JSONEncoder().encode(report), as: UTF8.self)
+            for secret in ["private-editable-inline-sentinel", "private-role-textbox-sentinel"] {
+                XCTAssertFalse(serialized.contains(secret), "editable value must not be serialized")
+            }
+            let action = try XCTUnwrap(nodes.first { $0.attributes["web.id"] == .string("editable-action") })
+            let after = try await manager.act(profile: "editable", action: .click(nodeID: action.id), expectText: "Message saved")
+            XCTAssertEqual(after.status, .pass, "\(after.findings)")
+        } catch { await manager.closeAll(); try await server.stop(); throw error }
+        await manager.closeAll(); try await server.stop()
+    }
+
     func testRealFontBoxesKeepEvidenceAndDistinguishPaintAndDisplacement() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("vui-font-flow-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

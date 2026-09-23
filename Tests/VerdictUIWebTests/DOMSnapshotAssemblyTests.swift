@@ -198,6 +198,35 @@ final class DOMSnapshotAssemblyTests: XCTestCase {
         return payload
     }
 
+    func testInlineInventoryMatchesRetainedEditableEvidenceWithoutExposingValues() throws {
+        for (attribute, value, childTag) in [("contenteditable", "true", "SPAN"), ("role", "textbox", "EM")] {
+            var payload = fontFlowSnapshot(spanTag: childTag)
+            guard case var .array(strings) = payload["strings"], case var .array(documents) = payload["documents"],
+                  case var .object(document) = documents[0], case var .object(nodes) = document["nodes"],
+                  case var .array(attributes) = nodes["attributes"] else { return XCTFail("fixture") }
+            let secret = "private-editable-inline-sentinel"
+            strings[4] = .string(secret)
+            func intern(_ text: String) -> CDPValue { let index = strings.count; strings.append(.string(text)); return .integer(Int64(index)) }
+            attributes[1] = .array([intern(attribute), intern(value), intern("aria-label"), intern("Message")])
+            nodes["attributes"] = .array(attributes); document["nodes"] = .object(nodes)
+            document["verdictInlineFragments"] = .object([:])
+            documents[0] = .object(document); payload["documents"] = .array(documents); payload["strings"] = .array(strings)
+            let tree = try DOMSnapshotAssembly.assemble(payload, viewport: viewport)
+            let editor = try XCTUnwrap(tree.flattened().first { $0.role == .textField })
+            XCTAssertEqual(editor.text, "Message")
+            XCTAssertEqual(editor.attributes["web.value"], .string("[REDACTED]"))
+            XCTAssertTrue(editor.children.isEmpty)
+            XCTAssertFalse(String(decoding: try JSONEncoder().encode(tree), as: UTF8.self).contains(secret))
+            document["verdictInlineFragments"] = .object(["4": .null])
+            documents[0] = .object(document); payload["documents"] = .array(documents)
+            XCTAssertThrowsError(try DOMSnapshotAssembly.assemble(payload, viewport: viewport), "pruned identities are not accepted as measured evidence")
+        }
+        var ordinary = fontFlowSnapshot()
+        guard case var .array(documents) = ordinary["documents"], case var .object(document) = documents[0] else { return XCTFail("fixture") }
+        document["verdictInlineFragments"] = .object([:]); documents[0] = .object(document); ordinary["documents"] = .array(documents)
+        XCTAssertThrowsError(try DOMSnapshotAssembly.assemble(ordinary, viewport: viewport), "retained inline content must still have complete measurements")
+    }
+
     func testFontBoxMetadataRequiresOneMeasuredNormalInlineFormattingContext() throws {
         for spanStyles in [[Int: String](), [27: "3px", 40: "none"], [30: "linear-gradient(red, blue)", 31: "text"]] {
             let tree = try DOMSnapshotAssembly.assemble(fontFlowSnapshot(spanStyles: spanStyles), viewport: viewport)

@@ -156,6 +156,17 @@ public enum DOMSnapshotAssembly {
                 geometry[index] = (shifted, style)
             }
         }
+        // Both the initial candidate inventory and enriched assembly must use
+        // the same retained tree. Editable/control values are deliberately
+        // pruned; collecting their inline descendants is neither needed nor safe.
+        let prunesControlDescendants = parents.indices.map { index in
+            types[index] == 1 && geometry[index] != nil && (role(tag: tags[index], attributes: nodeAttributes[index]) == .textField
+                || tags[index] == "input" || tags[index] == "textarea")
+        }
+        var prunedByControl: [Bool] = []
+        for parent in parents {
+            prunedByControl.append(parent >= 0 && (prunedByControl[parent] || prunesControlDescendants[parent]))
+        }
         let positioning = positioningContexts(parents: parents, types: types, depths: depths, geometry: geometry)
         let flowContexts = inlineFormattingContexts(parents: parents, types: types, tags: tags,
                                                     backend: backend, geometry: geometry, frameID: frameID)
@@ -220,7 +231,7 @@ public enum DOMSnapshotAssembly {
                 let role: Role
                 if case let .custom(raw) = mappedRole { role = .custom(WebRedaction.clean(raw, secrets: secrets)) }
                 else { role = mappedRole }
-                if role == .textField || tag == "input" || tag == "textarea" { descendants = [] }
+                if prunesControlDescendants[index] { descendants = [] }
                 let accessibleName = accessibleNames[index].map { WebRedaction.clean($0, secrets: secrets) }
                 let visible = style[0] != "none" && style[1] != "hidden" && style[1] != "collapse"
                     && (Double(style[2]) ?? 1) > 0 && !WebLint.emptyPaint(position: style[4], clip: style[5], clipPath: style[6], frame: frame)
@@ -251,7 +262,7 @@ public enum DOMSnapshotAssembly {
                             && role == .container && textOnlyChildren && fontOnlyInlinePaint(style)))
                         metadata["web.fontBoxOnly"] = .bool(fontOnly)
                     }
-                    if types[index] == 1 && style[0] == "inline" && !tag.hasPrefix("::") {
+                    if types[index] == 1 && style[0] == "inline" && !tag.hasPrefix("::") && !prunedByControl[index] {
                         metadata["web.inlineCandidate"] = .bool(true)
                         if let inlineGeometry {
                             let key = String(backend[index])
