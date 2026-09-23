@@ -184,3 +184,14 @@ class TestGitTimeoutIsConfiguredNotHardcoded:
         _mod._git(["log", "-1"], tmp_path)
 
         assert captured["timeout"] == _mod.GIT_TIMEOUT_S
+
+
+def test_git_absent_from_path_is_unanswerable_not_an_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """git is resolved once through PATH (bandit B607). With no git at all the
+    question cannot be answered, which _git already reports as "" — the same
+    not-suspicious answer a failing git call gives — rather than raising."""
+    module = _load()
+    monkeypatch.setattr(module.shutil, "which", lambda _name: None)
+    assert module._git(["status"], tmp_path) == ""

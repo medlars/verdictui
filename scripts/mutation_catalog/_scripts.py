@@ -202,6 +202,17 @@ MUTATIONS: list[Mutation] = [
         runner=Runner.PYTEST,
     ),
     Mutation(
+        # git resolved through PATH (bandit B607): with no git the question is
+        # unanswerable and _git must say "" rather than raise. Dropping the
+        # guard hands None to subprocess.run and the caller crashes instead.
+        name="the stale-buffer detector stops treating an absent git as unanswerable",
+        path="scripts/stale-buffer-check.py",
+        old='    if git is None:\n        return ""\n',
+        new="",
+        test="Tests/test_stale_buffer_check.py::test_git_absent_from_path_is_unanswerable_not_an_error",
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
         # The guard's whole value is telling a CONTENDED red apart from a real
         # one. Reporting False unconditionally keeps every binding live and
         # still type-checks; it simply reinstates the state that produced ten
