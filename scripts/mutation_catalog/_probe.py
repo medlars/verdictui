@@ -8,6 +8,48 @@ from mutation_catalog_types import Mutation, Runner  # noqa: F401
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="scenario initial bool seed publishes during rendering",
+        path="Sources/VerdictUIProbe/Scenario.swift",
+        old="            bools[id] = defaultValue",
+        new="            objectWillChange.send()\n            bools[id] = defaultValue",
+        test="ScenarioTests/testInitialBindingSeedsDoNotPublishChanges",
+    ),
+    Mutation(
+        name="scenario initial bool registration publishes during rendering",
+        path="Sources/VerdictUIProbe/Scenario.swift",
+        old="                bools[id] = binding.wrappedValue",
+        new="                objectWillChange.send()\n                bools[id] = binding.wrappedValue",
+        test="ScenarioTests/testInitialProbeRegistrationsDoNotPublishChanges",
+    ),
+    Mutation(
+        name="scenario initial text seed publishes during rendering",
+        path="Sources/VerdictUIProbe/Scenario.swift",
+        old="            strings[id] = defaultValue",
+        new="            objectWillChange.send()\n            strings[id] = defaultValue",
+        test="ScenarioTests/testInitialBindingSeedsDoNotPublishChanges",
+    ),
+    Mutation(
+        name="scenario initial text registration publishes during rendering",
+        path="Sources/VerdictUIProbe/Scenario.swift",
+        old="                strings[id] = binding.wrappedValue",
+        new="                objectWillChange.send()\n                strings[id] = binding.wrappedValue",
+        test="ScenarioTests/testInitialProbeRegistrationsDoNotPublishChanges",
+    ),
+    Mutation(
+        name="scenario initial slider seed publishes during rendering",
+        path="Sources/VerdictUIProbe/Scenario.swift",
+        old="            doubles[id] = defaultValue",
+        new="            objectWillChange.send()\n            doubles[id] = defaultValue",
+        test="ScenarioTests/testInitialBindingSeedsDoNotPublishChanges",
+    ),
+    Mutation(
+        name="scenario initial slider registration publishes during rendering",
+        path="Sources/VerdictUIProbe/Scenario.swift",
+        old="                doubles[id] = binding.wrappedValue",
+        new="                objectWillChange.send()\n                doubles[id] = binding.wrappedValue",
+        test="ScenarioTests/testInitialProbeRegistrationsDoNotPublishChanges",
+    ),
+    Mutation(
         name="hard line breaks other than \\n stop withholding TextMetrics",
         path="Sources/VerdictUIProbe/TreeAssembly.swift",
         old="!text.contains(where: \\.isNewline)",

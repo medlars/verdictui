@@ -32,6 +32,10 @@ public final class ScenarioState: ObservableObject {
 
     // MARK: - Binding factories
 
+    // Initial values and action registrations are established during body(state:).
+    // The current evaluation already reads them; publishing here invalidates a
+    // view while it is rendering. Only subsequent writes publish changes.
+
     /// A bool binding keyed by probe id. The first call seeds `default`; later
     /// calls reuse the stored value so a re-render does not reset user/actions.
     public func boolBinding(
@@ -39,7 +43,6 @@ public final class ScenarioState: ObservableObject {
         default defaultValue: Bool = false
     ) -> Binding<Bool> {
         if bools[id] == nil {
-            objectWillChange.send()
             bools[id] = defaultValue
         }
         return Binding(
@@ -57,7 +60,6 @@ public final class ScenarioState: ObservableObject {
         default defaultValue: String = ""
     ) -> Binding<String> {
         if strings[id] == nil {
-            objectWillChange.send()
             strings[id] = defaultValue
         }
         return Binding(
@@ -75,7 +77,6 @@ public final class ScenarioState: ObservableObject {
         default defaultValue: Double = 0
     ) -> Binding<Double> {
         if doubles[id] == nil {
-            objectWillChange.send()
             doubles[id] = defaultValue
         }
         return Binding(
@@ -101,17 +102,14 @@ public final class ScenarioState: ObservableObject {
         switch action {
         case .bool(let binding):
             if bools[id] == nil {
-                objectWillChange.send()
                 bools[id] = binding.wrappedValue
             }
         case .text(let binding):
             if strings[id] == nil {
-                objectWillChange.send()
                 strings[id] = binding.wrappedValue
             }
         case .slider(let binding):
             if doubles[id] == nil {
-                objectWillChange.send()
                 doubles[id] = binding.wrappedValue
             }
         case .tap(let handler):
