@@ -60,6 +60,7 @@ let package = Package(
         .library(name: "VerdictUIMacroSupport", targets: ["VerdictUIMacroSupport"]),
         // Wave 6. The binary an agent or a human runs.
         .executable(name: "verdictui", targets: ["verdictui"]),
+        .executable(name: "VerdictUIProjectRunner", targets: ["VerdictUIProjectRunner"]),
         .executable(name: "VerdictUIWorkbench", targets: ["VerdictUIWorkbench"]),
     ],
     dependencies: [
@@ -182,6 +183,11 @@ let package = Package(
         .executableTarget(
             name: "verdictui",
             dependencies: ["VerdictUICLICore"],
+            swiftSettings: strictSettings
+        ),
+        .executableTarget(
+            name: "VerdictUIProjectRunner",
+            dependencies: ["VerdictUICLICore", "VerdictUIDemoScenarios"],
             swiftSettings: strictSettings
         ),
         .executableTarget(

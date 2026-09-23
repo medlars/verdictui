@@ -213,3 +213,13 @@ name already owned, without treating an unapproved new domain purchase as a
 software blocker. A later dedicated-domain redirect is optional. This implements
 the owner's instruction to complete the product and improve its design where
 warranted; it does not authorize a purchase or retire the recorded domain wish.
+
+
+## Original-source recovery (September 23, 2026)
+
+The [founding Cursor conversation](http://127.0.0.1:17624/notes/mtno22ylun9rzhx6bqn)
+has been recovered as a complete displayed-message export. Its market questions
+and assistant recommendations are distinguishable from owner-selected decisions.
+This document remains a synthesis, not a verbatim transcript. Private retained
+exports carry source IDs, page totals and SHA-256 receipts; missing original
+interactive tool answers are explicitly unverified rather than invented.
