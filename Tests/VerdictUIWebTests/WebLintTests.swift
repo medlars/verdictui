@@ -53,7 +53,7 @@ final class WebLintTests: XCTestCase {
         WebLint.store(Rect(x: 10, y: 100, width: 500, height: 300), key: "web.documentViewport", in: &child.attributes)
         var owner = SemanticNode(id: "owner", role: .container, frame: Rect(x: 10, y: 100, width: 500, height: 300),
                                  attributes: ["web.frame": .string("main")], children: [child])
-        let tree = document([owner])
+        let tree = document([owner], height: 600)
         XCTAssertEqual(WebLint.run(tree: tree, scenario: "frame", viewport: viewport).status, .pass)
         owner.frame.x = -600
         let broken = WebLint.run(tree: document([owner]), scenario: "owner", viewport: viewport)
@@ -69,8 +69,8 @@ final class WebLintTests: XCTestCase {
         var owner = SemanticNode(id: "panel", role: .container, frame: Rect(x: 10, y: 100, width: 500, height: 300),
                                  attributes: ["web.frame": .string("main")], children: [node("bottom", y: 1400)])
         WebLint.store(Rect(x: 10, y: 100, width: 500, height: 2000), key: "web.scrollBounds", in: &owner.attributes)
-        XCTAssertEqual(WebLint.run(tree: document([owner]), scenario: "panel", viewport: viewport).status, .pass)
-        owner.attributes = ["web.frame": .string("main")]
+        XCTAssertEqual(WebLint.run(tree: document([owner], height: 600), scenario: "panel", viewport: viewport).status, .pass)
+        owner.attributes = ["web.frame": .string("main"), "web.overflowY": .string("hidden")]
         let clipped = WebLint.run(tree: document([owner]), scenario: "card", viewport: viewport)
         XCTAssertTrue(clipped.findings.contains { $0.rule == "clipped-content" && $0.nodeID == "bottom" })
     }
@@ -175,6 +175,67 @@ final class WebLintTests: XCTestCase {
         let embedded = try WebFrameGeometry.embedding(child, in: owner)
         XCTAssertEqual(WebLint.rect(key: "web.documentViewport", in: embedded.attributes), Rect(x: 106, y: 206, width: 1000, height: 600))
         XCTAssertEqual(WebLint.rect(key: "web.documentBounds", in: embedded.attributes), Rect(x: 106, y: -994, width: 1000, height: 4000))
+    }
+
+    func testVisibleFontInkIsNotClippedButHiddenAxisStillFails() {
+        let ink = SemanticNode(id: "heading-text", role: .text, frame: Rect(x: 20, y: 99, width: 200, height: 38), text: "Heading")
+        var heading = SemanticNode(id: "heading", role: .container, frame: Rect(x: 20, y: 100, width: 250, height: 36),
+                                   attributes: ["web.frame": .string("main"), "web.overflowX": .string("visible"), "web.overflowY": .string("visible")], children: [ink])
+        heading.children[0].attributes["web.frame"] = .string("main")
+        XCTAssertEqual(WebLint.run(tree: document([heading]), scenario: "ink", viewport: viewport).status, .pass)
+        heading.attributes["web.overflowY"] = .string("hidden")
+        let clipped = WebLint.run(tree: document([heading]), scenario: "clip", viewport: viewport)
+        XCTAssertTrue(clipped.findings.contains { $0.rule == "clipped-content" && $0.nodeID == "heading-text" })
+        heading.attributes["web.overflowY"] = .string("visible")
+        heading.attributes["web.overflowX"] = .string("clip")
+        XCTAssertEqual(WebLint.run(tree: document([heading]), scenario: "independent axes", viewport: viewport).status, .pass)
+    }
+
+    func testScrollPanelInsideHiddenCardDoesNotClipReachableContent() {
+        var panel = SemanticNode(id: "panel", role: .container, frame: Rect(x: 20, y: 120, width: 400, height: 200),
+            attributes: ["web.frame": .string("main"), "web.overflowX": .string("auto"), "web.overflowY": .string("auto")],
+            children: [node("reachable", y: 1400)])
+        WebLint.store(Rect(x: 20, y: 120, width: 400, height: 2000), key: "web.scrollBounds", in: &panel.attributes)
+        WebLint.store(panel.frame, key: "web.scrollViewport", in: &panel.attributes)
+        var card = SemanticNode(id: "card", role: .container, frame: Rect(x: 10, y: 100, width: 500, height: 300),
+            attributes: ["web.frame": .string("main"), "web.overflowX": .string("hidden"), "web.overflowY": .string("hidden")], children: [panel])
+        let report = WebLint.run(tree: document([card], height: 600), scenario: "card panel", viewport: viewport)
+        XCTAssertEqual(report.status, .pass, "\(report.findings)")
+        card.children[0].frame.x = -50
+        XCTAssertTrue(WebLint.run(tree: document([card]), scenario: "clipped owner", viewport: viewport).findings.contains {
+            $0.rule == "clipped-content" && $0.nodeID == "panel"
+        })
+    }
+
+    func testTextFragmentsAvoidUnionOverlapAndRetainRealCollisionEvidence() {
+        func text(_ id: String, _ frame: Rect) -> SemanticNode {
+            SemanticNode(id: id, role: .text, frame: frame, text: id, attributes: ["web.frame": .string("main")])
+        }
+        let first = text("first", Rect(x: 20, y: 20, width: 100, height: 20))
+        let codeText = text("code-text", Rect(x: 120, y: 20, width: 80, height: 20))
+        let code = SemanticNode(id: "code", role: .container, frame: codeText.frame,
+                                attributes: ["web.frame": .string("main")], children: [codeText])
+        var wrapped = text("wrapped", Rect(x: 20, y: 20, width: 280, height: 50))
+        wrapped.attributes["web.textFragmentCount"] = .number(2)
+        WebLint.store(Rect(x: 200, y: 20, width: 100, height: 20), key: "web.textFragment0", in: &wrapped.attributes)
+        WebLint.store(Rect(x: 20, y: 50, width: 140, height: 20), key: "web.textFragment1", in: &wrapped.attributes)
+        let clean = document([first, code, wrapped])
+        XCTAssertEqual(WebLint.run(tree: clean, scenario: "inline", viewport: viewport).status, .pass)
+        WebLint.store(Rect(x: 150, y: 20, width: 150, height: 20), key: "web.textFragment0", in: &wrapped.attributes)
+        let broken = document([first, code, wrapped])
+        let report = WebLint.run(tree: broken, scenario: "collision", viewport: viewport)
+        XCTAssertEqual(report.status, .fail)
+        XCTAssertTrue(report.findings.contains { $0.nodeID == "wrapped" && ($0.rule == "sibling-overlap" || $0.rule == "content-overlap") })
+        XCTAssertEqual(report.tree, broken)
+        XCTAssertFalse(report.findings.contains { $0.nodeID.contains("paint-fragment") || $0.message.contains("paint-fragment") })
+    }
+
+    func testLineBreakIsLayoutOnlyAndCannotFabricateEvidence() {
+        let br = SemanticNode(id: "br", role: .spacer, frame: Rect(x: 20, y: 20, width: 0, height: 75))
+        let report = WebLint.run(tree: document([br, node("button", y: 100)]), scenario: "line break", viewport: viewport)
+        XCTAssertEqual(report.status, .pass)
+        XCTAssertFalse(report.findings.contains { $0.rule == "zero-size" })
+        XCTAssertTrue(WebLint.run(tree: document([br]), scenario: "empty breaks", viewport: viewport).findings.contains { $0.rule == "vacuous-verdict" })
     }
 
     func testEmptyClipOnlyHidesSupportedComputedFormsAndRestoresOnFocus() {

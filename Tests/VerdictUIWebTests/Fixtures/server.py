@@ -50,6 +50,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
             else:
                 content = '<style>#skip{position:absolute;left:-1px;top:-1px;width:1px;height:1px;clip-path:inset(50%)}#skip:focus{position:fixed;left:16px;top:16px;width:160px;height:44px;clip-path:none}</style><a id="skip" href="#main">Skip to content</a><p id="main" style="margin-top:120px">Visible content</p>'
             body = (prefix + content + "</body></html>").encode()
+        elif self.path in ("/typography", "/typography-overlap"):
+            if self.path == "/typography":
+                content = '<h2 style="font-size:32px;line-height:36px">Typography complete</h2><p>First line<br>Second line</p><p style="width:300px;line-height:24px">Install through <code>Homebrew</code>, then run the command from any project folder to check the interface.</p>'
+            else:
+                content = '<p><span id="first" style="display:inline-block;width:160px">First text</span><span id="collision" style="display:inline-block;transform:translateX(-100px)">Colliding text</span></p>'
+            body = (
+                '<!doctype html><html><body style="margin:24px;font:16px sans-serif">'
+                + content
+                + "</body></html>"
+            ).encode()
         elif self.path in ("/same", "/cross"):
             host = "localhost" if self.path == "/cross" else "127.0.0.1"
             body = (

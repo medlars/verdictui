@@ -142,7 +142,10 @@ public enum DOMSnapshotAssembly {
         }
         var textBoxes: [Int: [Rect]] = [:]
         if case let .object(boxes) = document["textBoxes"] {
-            let indices = try integers(boxes["layoutIndex"])
+            guard case let .array(rawIndices) = boxes["layoutIndex"], rawIndices.count <= 100_000 else {
+                throw malformed("missing or oversized text box index column")
+            }
+            let indices = try integers(.array(rawIndices))
             guard case let .array(boxBounds) = boxes["bounds"], indices.count == boxBounds.count else {
                 throw malformed("mismatched text boxes")
             }
@@ -191,6 +194,8 @@ public enum DOMSnapshotAssembly {
                     var metadata: [String: AttributeValue] = ["web.tag": .string(WebRedaction.clean(tag, secrets: secrets)), "web.backendID": .number(Double(backend[index]))]
                     metadata["web.frame"] = .string(frameID)
                     metadata["web.position"] = .string(style[4])
+                    metadata["web.overflowX"] = .string(style[7])
+                    metadata["web.overflowY"] = .string(style[8])
                     metadata["web.scrollX"] = .number(scrollX)
                     metadata["web.scrollY"] = .number(scrollY)
                     // Only measured containing-block properties qualify; a fixed
@@ -230,6 +235,14 @@ public enum DOMSnapshotAssembly {
                     if role == .textField { metadata["web.value"] = .string("[REDACTED]") }
                     if role == .toggle { metadata["isOn"] = .bool(attrs["checked"] != nil || attrs["aria-checked"] == "true") }
                     let boxes = textBoxes[index] ?? []
+                    if !boxes.isEmpty {
+                        metadata["web.textFragmentCount"] = .number(Double(boxes.count))
+                        for (part, box) in boxes.enumerated() {
+                            let shifted = try WebLint.checkedRect(x: box.x - scrollX, y: box.y - scrollY,
+                                                                 width: box.width, height: box.height)
+                            WebLint.store(shifted, key: "web.textFragment\(part)", in: &metadata)
+                        }
+                    }
                     let lines = try boxes.map { box -> Int in
                         guard let line = Int(exactly: (box.y * 2).rounded()) else {
                             throw malformed("text box line coordinate out of range")
@@ -280,6 +293,7 @@ public enum DOMSnapshotAssembly {
         if let editable = attributes["contenteditable"], editable != "false" { return .textField }
         switch tag {
         case "#text": return .text
+        case "br", "wbr": return .spacer
         case "button", "summary": return .button
         case "a": return attributes["href"] == nil ? .container : .button
         case "textarea": return .textField

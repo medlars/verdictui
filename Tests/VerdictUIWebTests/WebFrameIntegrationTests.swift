@@ -213,6 +213,20 @@ final class WebFrameIntegrationTests: XCTestCase {
             XCTAssertTrue(try XCTUnwrap(revealed.tree?.flattened().first { $0.id == skip.id }).isVisible)
             let clicked = try await manager.act(profile: "scroll", action: .click(nodeID: skip.id), expectText: "Visible content")
             XCTAssertEqual(clicked.status, .pass, "\(clicked.findings)")
+            for route in ["typography", "typography-overlap"] {
+                phase = route + " verify"
+                _ = try await manager.open(profile: "scroll", url: XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/\(route)")))
+                let report = try await manager.verify(profile: "scroll")
+                if route == "typography" {
+                    XCTAssertEqual(report.status, .pass, "\(report.findings)")
+                } else {
+                    XCTAssertEqual(report.status, .fail)
+                    XCTAssertTrue(report.findings.contains { $0.rule == "sibling-overlap" || $0.rule == "content-overlap" })
+                    let evidence = Set(try XCTUnwrap(report.tree).flattened().map { $0.id.isEmpty ? $0.structuralPath : $0.id })
+                    XCTAssertTrue(report.findings.allSatisfy { evidence.contains($0.nodeID) })
+                    XCTAssertFalse(report.findings.contains { $0.message.contains("paint-fragment") })
+                }
+            }
             await manager.closeAll()
         } catch { await manager.closeAll(); XCTFail("\(phase): \(error)") }
     }

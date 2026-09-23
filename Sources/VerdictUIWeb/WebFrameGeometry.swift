@@ -54,7 +54,11 @@ enum WebFrameGeometry {
         // CSS visibility is independent of current scroll position. CDP scrolls
         // a reachable target before input; clipping here made that impossible.
         node.isVisible = visible && source.isVisible
-        for key in ["web.documentBounds", "web.documentViewport", "web.scrollBounds", "web.scrollViewport"] {
+        var rectangleKeys = ["web.documentBounds", "web.documentViewport", "web.scrollBounds", "web.scrollViewport"]
+        if let count = node.attributes["web.textFragmentCount"]?.numberValue.flatMap(Int.init(exactly:)), (0...100_000).contains(count) {
+            rectangleKeys += (0..<count).map { "web.textFragment\($0)" }
+        }
+        for key in rectangleKeys {
             if let rect = WebLint.rect(key: key, in: node.attributes) {
                 let shifted = try WebLint.checkedRect(x: x + rect.x * scaleX, y: y + rect.y * scaleY,
                                                       width: rect.width * scaleX, height: rect.height * scaleY)
