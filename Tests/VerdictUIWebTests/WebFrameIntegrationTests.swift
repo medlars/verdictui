@@ -227,6 +227,18 @@ final class WebFrameIntegrationTests: XCTestCase {
                     XCTAssertFalse(report.findings.contains { $0.message.contains("paint-fragment") })
                 }
             }
+            phase = "long text verify"
+            _ = try await manager.open(profile: "scroll", url: XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/long-text")))
+            let longText = try await manager.verify(profile: "scroll", expectText: "Measured line 9999")
+            XCTAssertEqual(longText.status, .pass, "\(longText.findings)")
+            phase = "overlap budget refusal"
+            _ = try await manager.open(profile: "scroll", url: XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/overlap-budget")))
+            do {
+                _ = try await manager.verify(profile: "scroll")
+                XCTFail("exhausted overlap inspection must not return a partial verdict")
+            } catch {
+                XCTAssertTrue(String(describing: error).contains("bounded work budget"), "\(error)")
+            }
             await manager.closeAll()
         } catch { await manager.closeAll(); XCTFail("\(phase): \(error)") }
     }
