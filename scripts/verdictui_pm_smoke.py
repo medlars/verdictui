@@ -486,6 +486,10 @@ class VerdictUISmokeMixin:
                     # cooperating checks would each mask the other's removal.
                     if not line.startswith(" ") or not line.strip():
                         break
+                    # Wrapped descriptions align beyond the two-space command
+                    # column; their first words are not executable verbs.
+                    if line.startswith("   "):
+                        continue
                     tok = line.strip().split(" ", 1)[0]
                     if tok and tok.isidentifier():
                         names.add(tok)

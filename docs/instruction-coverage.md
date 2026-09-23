@@ -14,7 +14,7 @@ source ledger stays outside this public repository.
 | Owner requirement | Recorded previously? | Finalization work and required evidence |
 | --- | --- | --- |
 | Check LaunchGate and other real products, not only demonstrations | Yes, but the installed entrypoint still used a fixed demo registry | Public consumer runner, automatic incremental build, external-package CLI/MCP checks with deliberate passing and failing controls |
-| Installed tool, on demand and automatically after edits | Partly; a hook existed but used the inherited working directory and only detected SwiftUI | Explicit project checks and corrected Swift/AppKit/web hook; no demo substitution |
+| Installed tool, on demand and automatically after edits | Registered as INS-63190DA7; the old hook used the inherited working directory and only detected SwiftUI | Explicit project checks and corrected Swift/AppKit/web hook; no demo substitution |
 | CLI, API and MCP access to the developer's own Swift/AppKit UI | Yes | Shared engine, custom runner and live native routes; actual subprocess acceptance |
 | Both rendered scenarios and real running applications | Yes, explicitly confirmed in September | Keep both paths and test each independently |
 | Invisible real browser login and task execution | Yes; Wave 11 was saved but only lifecycle/transport foundations existed | Trusted input, accessible names, expected outcomes, isolated persistent profiles, no screenshot dependency |
@@ -25,7 +25,7 @@ source ledger stays outside this public repository.
 | Full installed SagaMail settings/account-aware testing and all-product adoption | Recorded in other project conversations; fixtures were not equivalent | Preserve a separate adoption census and consumer acceptance scope. A framework test does not certify every consumer screen or setting |
 | Browser-quality feedback without screenshots | Registered as INS-402715D8 | Structured discover/act/observe feedback, multi-frame handling, named controls and outcome findings |
 | Better designs and architecture where warranted | Current owner instruction | Reconsider mechanisms against the requirements; keep observed results as the acceptance boundary |
-| CleanMyMac-inspired desktop UI with rich process motion, rendered with web technology | Added and explicitly selected in this session | Bundled macOS workbench, real progress, editable checks and evidence; rendered and native bridge verification |
+| CleanMyMac-inspired desktop UI with rich process motion, rendered with web technology | Added and explicitly selected in this session; registered as INS-FAE07628 | Bundled macOS workbench, real progress, editable checks and evidence; rendered and native bridge verification |
 
 The principal failure was implementation and closure drift, not a lack of a
 written broad vision. Several requirements existed in plans or registrations
