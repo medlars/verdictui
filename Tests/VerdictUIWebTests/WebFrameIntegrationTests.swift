@@ -223,6 +223,7 @@ final class WebFrameIntegrationTests: XCTestCase {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let (server, port) = try await server(root: root)
+        XCTAssertNil(server.exitStatus, "fixture must remain alive when startup hands ownership to its caller")
         let manager = WebSessionManager(root: root.appendingPathComponent("profiles"), environment: [:])
         do {
             for route in ["same", "cross"] {
