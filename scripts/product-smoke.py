@@ -19,6 +19,7 @@ import subprocess
 import tempfile
 import threading
 import time
+from typing import TextIO
 from pathlib import Path
 
 
@@ -97,6 +98,12 @@ def eventually(predicate, message, timeout=10):
     raise AcceptanceError(message)
 
 
+def required_stream(stream: TextIO | None) -> TextIO:
+    if stream is None:
+        raise AcceptanceError("subprocess omitted requested pipe")
+    return stream
+
+
 class MCP:
     def __init__(self, binary, directory, environment):
         self.stderr = tempfile.TemporaryFile()
@@ -110,6 +117,8 @@ class MCP:
             text=True,
             bufsize=1,
         )
+        self.input = required_stream(self.proc.stdin)
+        self.output = required_stream(self.proc.stdout)
         self.lines = queue.Queue()
         self.reader = threading.Thread(target=self._read, daemon=True)
         self.reader.start()
@@ -124,10 +133,10 @@ class MCP:
                 },
             )
             require("protocolVersion" in initialized, "MCP initialize missing result")
-            self.proc.stdin.write(
+            self.input.write(
                 json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}) + "\n"
             )
-            self.proc.stdin.flush()
+            self.input.flush()
             self.schemas = {
                 tool["name"]: tool["inputSchema"] for tool in self.rpc("tools/list")["tools"]
             }
@@ -136,19 +145,19 @@ class MCP:
             raise
 
     def _read(self):
-        for line in self.proc.stdout:
+        for line in self.output:
             self.lines.put(line)
         self.lines.put(None)
 
     def rpc(self, method, params=None):
         self.sequence += 1
-        self.proc.stdin.write(
+        self.input.write(
             json.dumps(
                 {"jsonrpc": "2.0", "id": self.sequence, "method": method, "params": params or {}}
             )
             + "\n"
         )
-        self.proc.stdin.flush()
+        self.input.flush()
         try:
             line = self.lines.get(timeout=40)
         except queue.Empty as error:
@@ -191,13 +200,13 @@ class MCP:
             if terminate:
                 self.proc.send_signal(signal.SIGTERM)
             else:
-                self.proc.stdin.close()
+                self.input.close()
             try:
                 self.proc.wait(timeout=15)
-            except subprocess.TimeoutExpired:
+            except subprocess.TimeoutExpired as error:
                 self.proc.kill()
                 self.proc.wait()
-                raise AcceptanceError("MCP cleanup did not complete")
+                raise AcceptanceError("MCP cleanup did not complete") from error
         self.stderr.close()
 
 
@@ -380,7 +389,7 @@ class Smoke:
                 timeout=10,
             )
 
-            def state():
+            def state(state_file=state_file):
                 try:
                     return json.loads(state_file.read_text())
                 except OSError, ValueError:
@@ -464,7 +473,7 @@ class Smoke:
             finally:
                 if alive(pid):
                     os.kill(pid, signal.SIGTERM)
-                eventually(lambda: not alive(pid), "native fixture did not exit")
+                eventually(lambda pid=pid: not alive(pid), "native fixture did not exit")
             self.checks.append(
                 "installed-native-" + mode + "-act-observe-0-1-2-no-focus-or-cursor-change"
             )
