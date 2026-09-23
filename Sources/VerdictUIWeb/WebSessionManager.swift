@@ -9,6 +9,7 @@ public actor WebSessionManager {
     private let environment: [String: String]
     private var sessions: [String: WebSession] = [:]
     private var opening: Set<String> = []
+    private var launches: [String: Task<WebSession, Error>] = [:]
     private var stopping = false
 
     public init(root: URL? = nil,
@@ -45,8 +46,15 @@ public actor WebSessionManager {
             }
             if sessions[profile] === session { sessions.removeValue(forKey: profile) }
         }
-        let session = try await WebSession.open(profile: profile, url: url, registry: ProfileRegistry(root: root),
-                                                environment: environment, width: width, height: height)
+        let launch = Task { [root, environment] in
+            try await WebSession.open(profile: profile, url: url, registry: ProfileRegistry(root: root),
+                                      environment: environment, width: width, height: height)
+        }
+        launches[profile] = launch
+        defer { launches.removeValue(forKey: profile) }
+        let session = try await withTaskCancellationHandler {
+            try await launch.value
+        } onCancel: { launch.cancel() }
         guard !stopping else {
             try await session.close()
             throw WebBrowserError.invalidWebOperation(reason: "session manager closed while opening")
@@ -74,6 +82,16 @@ public actor WebSessionManager {
     public func closeAll() async -> [WebBrowserError] {
         stopping = true
         var failures: [WebBrowserError] = []
+        // Opening browsers are owned before they publish an endpoint. Await
+        // cancellation cleanup before a signal handler may exit the daemon.
+        let pending = launches
+        pending.values.forEach { $0.cancel() }
+        for launch in pending.values {
+            do { try await launch.value.close() }
+            catch let error as WebBrowserError {
+                if case .processRefusedToDie = error { failures.append(error) }
+            } catch { /* A cancelled launch has already awaited child cleanup. */ }
+        }
         for profile in Array(sessions.keys) {
             do { try await close(profile: profile) }
             catch { failures.append(WebSession.sanitized(error)) }
