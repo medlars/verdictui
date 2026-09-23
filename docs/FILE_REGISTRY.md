@@ -328,6 +328,11 @@
 | `Tests/test_product_pm_stages.py` | test_product_pm_stages: real-product verification and regression evidence | Active | 2026-09-23 |
 | `Tests/test_product_smoke.py` | test_product_smoke: real-product verification and regression evidence | Active | 2026-09-23 |
 | `scripts/product-smoke.py` | product-smoke: real-product verification and regression evidence | Active | 2026-09-23 |
+| `Sources/VerdictUICLICore/ProjectRunnerBroker.swift` | Consumer rebuild broker and regression evidence | Active | 2026-09-23 |
+| `Tests/VerdictUICLICoreTests/ProjectRunnerBrokerTests.swift` | Consumer rebuild broker and regression evidence | Active | 2026-09-23 |
+| `scripts/mutation_catalog/_broker.py` | Consumer rebuild broker and regression evidence | Active | 2026-09-23 |
+| `scripts/workbench-smoke.py` | Workbench rendering and affirmative measurement gate | Active | 2026-09-23 |
+| `Tests/test_workbench_smoke.py` | Workbench rendering and affirmative measurement gate | Active | 2026-09-23 |
 | `Sources/VerdictUIWeb/BrowserProcessIdentity.swift` | BrowserProcessIdentity: product UI, packaging or regression evidence | Active | 2026-09-23 |
 | `Sources/VerdictUIWeb/DOMAccessibleNames.swift` | DOMAccessibleNames: product UI, packaging or regression evidence | Active | 2026-09-23 |
 | `Tests/VerdictUIWebTests/BrowserProcessIdentityTests.swift` | BrowserProcessIdentityTests: product UI, packaging or regression evidence | Active | 2026-09-23 |

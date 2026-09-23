@@ -1,6 +1,24 @@
 # Changelog
 
-## [Unreleased]
+## [1.1.0] — 2026-09-23
+
+- Added a bundled macOS workbench with animated verification, project check editing,
+  cited evidence, cancellation and local history.
+- Exported the consumer runner API and connected real custom registries to CLI,
+  daemon and MCP. Warm sessions rebuild disposable hosts after source changes;
+  compiler failures cannot certify stale code.
+- Completed browser DOM verification, accessible control discovery, trusted input,
+  expected outcomes, isolated persistent profiles, credential references and
+  crash recovery.
+- Added atomic live AppKit/SwiftUI act-and-observe routes through CLI and MCP,
+  with exact-window input and independent foreground/pointer invariants.
+- Added explicit project checks and real built-binary acceptance for browser,
+  native and external consumer paths. Unconfigured coverage remains unavailable.
+- Reconciled recovered original instructions with implementation and documented
+  consumer adoption gaps separately from framework capabilities.
+
+Earlier work incorporated into this release:
+
 
 **Added**
 
@@ -18,8 +36,8 @@
   `ax:<AXAction>`. `judge --pid/--app` gives a verdict with no scenario.
   `--app X.app --launch-arg … --launch-env K=V` launches a fresh instance (for
   fixture flags that select empty/error states), and `sweep --app` relaunches per
-  locale x appearance cell. Drag and hover are deliberately absent (they would
-  move the real pointer).
+  locale x appearance cell. The newer live action path also supports PID/window-targeted drag and hover
+  without warping the global pointer.
 
 - **Three tests pinning `refresh_macro_expansions`, whose failures are silent.**
   The helper had exactly one test, deliberately aimed at its CALLER — the defect

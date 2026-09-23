@@ -1,176 +1,131 @@
 # VerdictUI
 
-**Stop screenshotting your SwiftUI app to find out whether it's right.**
+**UI verification for your own SwiftUI, AppKit and web products.**
 
-VerdictUI makes SwiftUI testify about itself. Instead of the
-screenshot–wait–click–confirm cycle, it emits a ground-truth semantic tree
-during the layout pass and turns it into a machine-readable verdict with cited
-evidence — in about 48 ms, with no window server, no permissions, and no sleeps.
+VerdictUI turns measured UI state into PASS or FAIL findings with node IDs and
+rule names. A target that cannot be inspected is **unavailable**, never a pass.
+Use the macOS workbench, CLI, Swift API or MCP server.
 
-```console
-$ verdictui verify demo-undersized-tap-target
-{
-  "status": "FAIL",
-  "findings": [{
-    "rule": "tap-target",
-    "nodeID": "dismiss-button",
-    "severity": "error",
-    "message": "'dismiss-button' is 6 x 6 pt, below the 12 x 12 pt minimum hit size",
-    "suggestion": "grow the control or add .frame(minWidth: 12, minHeight: 12)"
-  }],
-  "schemaVersion": "1.1"
-}
-```
-
-383 bytes. A screenshot of the same screen costs an agent
-[1 365–2 117 vision tokens](docs/benchmarks.md#token-cost) — and yields a
-picture it still has to interpret.
-
-## Why
-
-AI agents and developers verify SwiftUI work by screenshotting, sleeping,
-clicking, and screenshotting again. It is slow, flaky, permission-gated, and
-blind between frames. XCUITest's idle-wait is documented-broken; SwiftUI has no
-`pumpAndSettle`.
-
-So the loop is not "look at the screen and guess". It is **act, settle, and get
-a verdict that names the node and the rule.**
+The workbench is a native macOS app with a bundled web interface: choose a
+project, declare its checks, watch actual progress and inspect the evidence.
+Process animation follows the engine's work; history is stored locally by the
+host. No remote web service or account is required.
 
 ## Install
 
-```bash
-brew install medlars/tap/verdictui        # once the tap is published
-# or
-git clone https://github.com/medlars/verdictui && cd verdictui
+```sh
+brew install medlars/tap/verdictui
+# Build the CLI from source:
 swift build -c release --product verdictui
+# Build the desktop app with its matching CLI:
+bash scripts/build-workbench.sh release
+open dist/VerdictUI.app
 ```
 
-Add the engine to a package:
+Download published desktop builds from [GitHub releases](https://github.com/medlars/verdictui/releases).
+macOS 13 or later is required. Browser checks use an installed compatible Chrome
+or Chromium browser. Live native checks depend on the target's Accessibility
+support and the operating system's permissions.
 
-```swift
-.package(url: "https://github.com/medlars/verdictui", from: "1.0.0")
-// then depend on "VerdictUIProbe", and "VerdictUIMacroSupport" for @Verifiable
-```
+## Verify a real project
 
-## Use it from an agent
-
-VerdictUI ships an MCP server, which is the point of the whole thing — an agent
-asks for a verdict instead of a screenshot.
+Create `.verdictui/checks.json` in that project's folder, or edit checks in the
+workbench. This example checks a page and its expected visible text:
 
 ```json
-{ "mcpServers": { "verdictui": { "command": "/path/to/verdictui", "args": ["mcp"] } } }
+{"checks":[{"name":"Dashboard","kind":"web","url":"http://127.0.0.1:3000","expectText":"Dashboard"}]}
 ```
 
-Seven tools: `list_scenarios`, `render`, `verify`, `act`, `focus`, `sweep`,
-`baseline_diff`. Warm round trip ≈ 11 ms.
-
-## Use it from Swift
-
-```swift
-import VerdictUIMacroSupport
-
-@Verifiable
-struct SettingsRow: View {
-    @State private var enabled = true
-
-    var body: some View {
-        HStack {
-            Text("Notifications")
-            Spacer()
-            Toggle("", isOn: $enabled)
-        }
-    }
-}
+```sh
+verdictui check --project /path/to/your/project --pretty
+# 0: all declared checks passed; 1: a measured failure; 2: unavailable coverage
 ```
 
-That is the whole adoption cost. The macro probes the view's elements; the
-kernel does the rest. Manual probes (`.verdictProbe(id:)`) are available where
-you want control, and the two compose — see [docs/adoption.md](docs/adoption.md).
+Checks can name custom SwiftUI scenarios, AppKit runner subjects, web pages or
+running macOS application PIDs. An absent or empty declaration cannot certify a
+project. A passing run covers its declared checks; it does not imply that every
+screen, account or setting has been tested.
 
-## How it works
+For SwiftUI, compile your views into a small runner using the public
+`VerdictUICLICore` and `VerdictUIProbe` products. Declare that executable and its
+build product in `.verdictui/config.json`. The launcher builds it and serves its
+registry through the existing CLI, daemon and MCP protocol. Long-running
+consumer sessions rebuild and restart their disposable host when source changes;
+a compiler error refuses stale results. Follow the [integration guide](docs/integration.md)
+and the separate [consumer package](examples/ConsumerApp).
 
-Three concentric loops, fast to slow, each keeping the one above it honest:
+Without a consumer manifest, `verdictui list` exposes explicitly named demo
+scenarios. **Those demos are examples, not coverage of your application.**
 
-| Loop | Mechanism | Speed | Answers |
-|---|---|---|---|
-| **Inner** (every edit) | In-process Layout-protocol probes + virtual-clock settling | ~48 ms | Is the layout right? |
-| **Middle** (per scenario) | Accessibility tree + real events + windowless pixel diff, reconciled against the inner tree | ~1 s | Is the fast channel lying? |
-| **Outer** (release) | Thin orchestrated XCUITest | minutes | Does it launch? Do permissions work? |
+## Observe and act
 
-**Divergence between the loops is itself the bug detector.** When the
-in-process tree and the AX witness disagree, that disagreement is reported
-rather than resolved in favour of whichever is convenient.
+```sh
+verdictui web open https://example.com --profile research
+verdictui web render --profile research
+verdictui web verify --profile research --expect-text 'Example Domain'
+verdictui web close --profile research
 
-## What it does not do
-
-An honest list, because a verification tool that oversells is worse than none:
-
-- **It cannot tell you the app launched.** The inner loop renders windowlessly
-  and never starts a process. That is XCUITest's job and VerdictUI keeps it.
-- **It cannot judge aesthetics.** It reports `truncated-text` on `title-label`;
-  it has no opinion about your kerning.
-- **It requires instrumentation.** A screenshot works on any app on screen.
-  VerdictUI needs the view to be reachable, and trades that generality for
-  evidence.
-
-Full numbers, including the columns where the other approaches win, are in
-[docs/benchmarks.md](docs/benchmarks.md).
-
-## Verify your own app
-
-```bash
-verdictui list                            # scenarios discovered
-verdictui verify <scenario>               # exit 0 pass, 1 fail, 2 no verdict possible
-verdictui verify <scenario> --cross-validate   # reconcile against the AX witness
-verdictui sweep <scenario>                # locales x type sizes x colour schemes
-verdictui baseline <scenario> --accept    # record what "correct" looks like
+verdictui live inspect --pid 12345
+verdictui live verify --pid 12345 --expect-text 'Settings'
 ```
 
-Exit codes are three-valued on purpose: a tool that reports "not passing" for
-both a broken layout and an unreadable scenario forces callers to treat
-infrastructure faults as product defects.
+Use node IDs from `web render` or paths from `live inspect` for actions. Browser
+sessions own separate persistent profiles. Native input targets a specific
+process/window without moving the global pointer. Expected text verifies the
+observed outcome; posting an input alone is not proof that the intended task
+succeeded. See [browser operation](docs/web.md), [native input](docs/native-acting.md)
+and the [MCP contract](contracts/mcp-tools.md).
 
-## Project health
+## Connect an agent
 
-```bash
-bash scripts/dev.sh                          # setup + build + test
-swift test -Xswiftc -warnings-as-errors      # the suite as CI runs it
-python3.14 scripts/verdictui-pm.py --quick   # Grade A expected
+```json
+{"mcpServers":{"verdictui":{"command":"/absolute/path/to/verdictui","args":["mcp"]}}}
 ```
 
-784 Swift + 270 Python tests, zero warnings under `-warnings-as-errors`,
-115 mutation guards, 4 SLOs gated in the pipeline.
+The server provides scenario discovery/render/verify/actions, layout sweeps,
+baselines and capture, plus `live_inspect`, `live_verify`, `live_act` and
+`web_list`, `web_open`, `web_render`, `web_verify`, `web_act`, `web_close`.
+Set the client's working directory to your consumer project to use its custom
+registry. [The integration guide](docs/integration.md) covers explicit project
+routing and warm rebuilds.
 
-## Layout
+## Architecture and evidence
 
-- `Sources/VerdictUIKernel` — semantic tree, 12 rules, verdict schema
-  (platform-pure: no SwiftUI, no AppKit, no CoreGraphics)
-- `Sources/VerdictUIProbe` — instrumentation runtime, oracle host, harness,
-  sweeps, pixel channel
-- `Sources/VerdictUIMacros` — `@Verifiable`, `#VerdictScenario`
-- `Sources/VerdictUIWitness` — the AX cross-validation channel
-- `Sources/VerdictUICLICore` — CLI, JSON-RPC daemon, MCP server
+| Path | What it measures | What it needs |
+| --- | --- | --- |
+| In-process SwiftUI | Probed layout, text metrics, semantic state, variant sweeps | Consumer scenario runner and probes or `@Verifiable` |
+| AppKit runner | An app's own view hierarchy and declared subjects | Consumer runner linked to `VerdictUIAppKit` |
+| Live macOS | Actual Accessibility tree and observed input outcomes | Running or launched app and available OS access |
+| Headless browser | Rendered DOM/layout, accessible controls and trusted input outcomes | Owned Chrome session |
+| Cross-validation | Disagreement between instrumented and external evidence | A corresponding witness; demo witness cannot certify custom views |
+
+`VerdictUIKernel` remains platform-pure. It imports no SwiftUI, AppKit or
+CoreGraphics. Every verification adapter converges on the same verdict schema.
+Semantic rules detect declared problems; they do not judge aesthetic quality or
+promise universal XCUITest equivalence. Pixels remain an optional evidence path.
+Historical timing measurements are scoped in [benchmarks](docs/benchmarks.md);
+there is no universal latency claim across these different paths.
+
+## Develop and verify
+
+```sh
+bash scripts/dev.sh
+swift test -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete
+python3.14 scripts/verdictui-pm.py --full
+python3.14 scripts/product-smoke.py --help
+```
+
+The full PM includes separate-package consumer and real built-binary product
+checks. Mutation witnesses deliberately break guards and require a named test
+to notice. Browser and native fixtures assert their actual observed state;
+environment-dependent skips remain unmeasured.
 
 ## Documentation
 
-| | |
-|---|---|
-| [Adoption guide](docs/adoption.md) | Three tiers, migration, macro limitations |
-| [Benchmarks](docs/benchmarks.md) | Measured numbers, with the loss column |
-| [SLOs](docs/slo.md) | The four gated service levels |
-| [Runbook](docs/runbook.md) | Operating the CLI, daemon and MCP server |
-| [`no.md`](no.md) | What we deliberately did *not* do, and what was measured |
-| [`.decisions/`](.decisions/INDEX.md) | Architecture decision records |
+- [Desktop workbench](docs/workbench.md) and [visual design](docs/workbench-design.md)
+- [Consumer integration](docs/integration.md), [probe adoption](docs/adoption.md) and [AppKit](docs/appkit.md)
+- [Original instruction coverage](docs/instruction-coverage.md) and [consumer adoption census](docs/product-adoption.md)
+- [Runbook](docs/runbook.md), [SLOs](docs/slo.md), [signing](docs/signing.md) and [rollback](docs/rollback.md)
+- [Architecture decisions](.decisions/INDEX.md) and [measured exclusions](no.md)
 
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md). The short version: thresholds are
-measured rather than chosen, every guard carries a mutation row, and a green
-test suite is not evidence about the shipped artifact — run the binary.
-
-## Licence
-
-MIT — see [LICENSE](LICENSE). Everything that runs on one developer's machine is
-open, permanently; see [ADR 2026-021](.decisions/2026-021-the-open-core-boundary-is-the-machine-not-the-feature.md)
-for where the line falls and why it is drawn on the machine rather than the
-feature.
+MIT. See [LICENSE](LICENSE) and [the machine-boundary decision](.decisions/2026-021-the-open-core-boundary-is-the-machine-not-the-feature.md).

@@ -14,6 +14,16 @@ verdictui inspect --pid 12345 --path 'root/textField[1]' --act key --value 'comm
 verdictui inspect --pid 12345 --path 'root/button[0]' --act drag --value '600,400'
 ```
 
+For an atomic action plus observed verdict, use the shared live route:
+
+```sh
+verdictui live act --pid 12345 --path 'root/button[0]' --action press --expect-text 'Saved'
+verdictui live verify --pid 12345 --expect-text 'Settings'
+```
+
+The same operations are `live_act` and `live_verify` in MCP. See
+[native-acting.md](native-acting.md) for deadlines and 0/1/2 outcomes.
+
 Use the real PID and a structural path returned by that app's current tree.
 `press` uses AXPress when advertised and falls back to a process-targeted click
 otherwise. `click` forces the click path; `hover` sends a mouse move to the

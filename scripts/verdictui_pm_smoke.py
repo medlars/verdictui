@@ -407,6 +407,34 @@ class VerdictUISmokeMixin:
             else "real product acceptance failed: " + (result.stderr or result.stdout)[-700:],
         }
 
+    def stage_workbench(self) -> dict:
+        """Require complete measured flows in both desktop rendering engines."""
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(S.PROJECT_ROOT / "scripts/workbench-smoke.py"),
+                str(S.PROJECT_ROOT),
+                "--artifact-dir",
+                str(S.PROJECT_ROOT / "logs/workbench-smoke"),
+            ],
+            cwd=S.PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+        measured = re.search(
+            r"^WORKBENCH SMOKE PASS: ([1-9][0-9]*) passed, 0 failed, 2/2 browser flows complete$",
+            result.stdout,
+            re.MULTILINE,
+        )
+        passed = result.returncode == 0 and measured is not None
+        return {
+            "passed": passed,
+            "detail": measured.group(0)
+            if passed and measured
+            else "workbench acceptance failed: " + (result.stderr or result.stdout)[-700:],
+        }
+
     def stage_installed_parity(self) -> dict:
         """The binary a developer/agent invokes must not lag the repo's surface.
 

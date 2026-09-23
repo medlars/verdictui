@@ -866,6 +866,10 @@ progress::-webkit-progress-value {
   background:#fff9;
   min-width:0
 }
+.history-row .severity {
+  flex:0 0 70px;
+  max-width:70px
+}
 .history-summary {
   flex:1;
   min-width:0

@@ -46,7 +46,7 @@ _SOURCE_SUFFIXES = frozenset(
 # tracked deliberately — the manifest pins swift-syntax exactly, and committing
 # the resolution is what makes a CI build reproduce the local one rather than
 # re-resolve into something else.
-_NON_SOURCE_SUFFIXES = frozenset({".md", ".yml", ".example", ".resolved"})
+_NON_SOURCE_SUFFIXES = frozenset({".md", ".yml", ".example", ".resolved", ".svg", ".icns"})
 
 # Extensionless files are classified by name, not by an empty suffix: `""` would
 # put a future `Makefile` or `Dockerfile` in the same bucket as `.gitignore` and

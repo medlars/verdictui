@@ -1,6 +1,7 @@
 # VerdictUI — Implementation Plan (Opus 5 Execution Spec)
 
-> **Status**: Waves 0–2 complete (2026-08-04). Current wave: **Wave 3 — settle engine**.
+> **Historical wave specification.** Current measured position is `docs/wave-status.md`.
+> The 2026-09-23 completion integrates consumer runners, live/browser operation and the desktop workbench; see `docs/finalization-plan.md`.
 > **How to execute**: one wave per Opus 5 session (`/verdictui` at session start). A wave is
 > DONE only when every item in its **Exit gate** passes with runner-sourced evidence
 > (`swift test` output, PM Grade A, benchmark numbers). Do not begin wave N+1 with wave N

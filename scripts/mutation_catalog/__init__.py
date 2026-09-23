@@ -27,6 +27,7 @@ where it is written.
 
 from mutation_catalog_types import Mutation, Runner
 
+from mutation_catalog._broker import MUTATIONS as _BROKER
 from mutation_catalog._cli import MUTATIONS as _CLI
 from mutation_catalog._integration import MUTATIONS as _INTEGRATION
 from mutation_catalog._kernel import MUTATIONS as _KERNEL
@@ -54,4 +55,5 @@ MUTATIONS: list[Mutation] = (
     + _WEB
     + _INTEGRATION
     + _WORKBENCH
+    + _BROKER
 )

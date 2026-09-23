@@ -26,6 +26,25 @@ python3.14 scripts/verdictui-pm.py --quick # health check
 3. Start working without asking what to do — announce in one line what is being resumed.
 4. **Before the session ends**: update `docs/wave-status.md` (tasks done, precise next action, session-log line), commit, push. Leaving it stale breaks the next session's resume.
 
+## Product completion contract (2026-09-23)
+
+- The installed CLI must reach the consumer's own registry via a compiled runner.
+  Demo catalog success is never evidence about the current project's UI.
+- Support both in-process scenarios and live AppKit/SwiftUI/browser observation
+  and acting through the shared CLI/API/MCP dispatch. Input delivery alone does
+  not prove its intended outcome; assert observed state.
+- Automatic UI-edit checks use explicit per-project checks.json coverage and
+  report missing declarations as unavailable. Never substitute demonstrations.
+- Consumer MCP/daemon sessions rebuild disposable hosts after source changes;
+  failed builds cannot serve stale passing results.
+- The owner selected a desktop app with a web-rendered UI, with CleanMyMac-inspired
+  visual polish and process motion. AppKit/WKWebView hosts bundled assets; progress
+  and history come from the real engine. Respect reduced motion.
+- Original instruction audit and remaining consumer-specific coverage live in
+  `docs/instruction-coverage.md` and `docs/product-adoption.md`. These are distinct
+  from framework acceptance. Missing founding transcripts are not reconstructed
+  from assistant summaries as if they were original user messages.
+
 ## Architecture
 
 Three concentric verification loops (see `docs/implementation-plan.md` for the full wave plan):
