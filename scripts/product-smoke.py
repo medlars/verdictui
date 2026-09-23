@@ -66,13 +66,17 @@ def nodes(tree, parent=None):
 def target(tree, text, actionable=False):
     observed = list(nodes(tree))
     found = [node for node in observed if node.get("text") == text]
-    require(len(found) == 1, f"expected exactly one observed target {text!r}, found {len(found)}")
-    selected = found[0]
     by_id = {node["id"]: node for node in observed}
-    while actionable and selected.get("role") not in {"button", "textField", "link"}:
-        require(selected.get("_parent") in by_id, f"no actionable ancestor for {text!r}")
-        selected = by_id[selected["_parent"]]
-    return selected
+    targets = {}
+    for selected in found:
+        while actionable and selected.get("role") not in {"button", "textField", "link"}:
+            require(selected.get("_parent") in by_id, f"no actionable ancestor for {text!r}")
+            selected = by_id[selected["_parent"]]
+        targets[selected["id"]] = selected
+    require(
+        len(targets) == 1, f"expected exactly one observed target {text!r}, found {len(targets)}"
+    )
+    return next(iter(targets.values()))
 
 
 def alive(pid):
