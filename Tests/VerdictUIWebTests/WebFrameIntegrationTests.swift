@@ -252,6 +252,115 @@ final class WebFrameIntegrationTests: XCTestCase {
         await manager.closeAll()
         try await server.stop()
     }
+    private actor CaptureSteps {
+        private(set) var count = 0
+        func next() -> Int { count += 1; return count }
+    }
+
+    func testFrameAppearingAfterMainSnapshotMustRecaptureItsActualOwner() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("vui-frame-race-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let (server, port) = try await server(root: root)
+        let session: WebSession
+        do {
+            session = try await WebSession.open(profile: "race", url: XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/late-frame")),
+                registry: ProfileRegistry(root: root.appendingPathComponent("profiles")), environment: [:], width: 800, height: 600)
+        } catch { try await server.stop(); throw error }
+        do {
+            let steps = CaptureSteps()
+            let capture = try await session.captureTree(afterMainSnapshot: { transport, pageSession in
+                if await steps.next() == 1 {
+                    _ = try await transport.send(method: "Runtime.evaluate", params: ["expression": .string("appendMeasuredFrame()"),
+                        "awaitPromise": .bool(true)], sessionID: pageSession)
+                }
+            })
+            XCTAssertTrue(capture.retried)
+            let tree = capture.tree
+            let owner = try XCTUnwrap(tree.flattened().first { $0.attributes["web.id"] == .string("late-frame-1") })
+            XCTAssertFalse(owner.isVisible)
+            XCTAssertGreaterThan(try XCTUnwrap(owner.attributes["web.backendID"]?.numberValue), 0)
+            let count = await steps.count
+            XCTAssertEqual(count, 2, "one stale capture followed by a fresh coherent snapshot")
+            // Chrome need not lay out text in a display:none remote document.
+            // Reveal the actual owner, then require fresh remote evidence/routing.
+            _ = try await session.transport.send(method: "Runtime.evaluate", params: [
+                "expression": .string("document.getElementById('late-frame-1').style.display='block'")], sessionID: session.pageSessionID)
+            let shown = try await session.render()
+            XCTAssertTrue(shown.flattened().contains { $0.text == "Remote frame evidence" && $0.isVisible })
+            let action = try XCTUnwrap(tree.flattened().first { $0.attributes["web.id"] == .string("late-action") })
+            let report = try await session.act(.click(nodeID: action.id), expectText: "Frame task complete")
+            XCTAssertEqual(report.status, .pass, "\(report.findings)")
+        } catch { try await session.close(); try await server.stop(); throw error }
+        try await session.close(); try await server.stop()
+    }
+
+    func testFrameCaptureRetryLimitDeadlineCancellationAndTerminalFailures() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("vui-frame-bounds-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let (server, port) = try await server(root: root)
+        let session: WebSession
+        do {
+            session = try await WebSession.open(profile: "race", url: XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/late-frame")),
+                registry: ProfileRegistry(root: root.appendingPathComponent("profiles")), environment: [:], width: 800, height: 600)
+        } catch { try await server.stop(); throw error }
+        do {
+            let permanent = CaptureSteps()
+            do {
+                _ = try await session.captureTree(afterMainSnapshot: { transport, pageSession in
+                    _ = await permanent.next()
+                    _ = try await transport.send(method: "Runtime.evaluate", params: ["expression": .string("appendMeasuredFrame()"),
+                        "awaitPromise": .bool(true)], sessionID: pageSession)
+                })
+                XCTFail("permanent incoherence must never return a partial tree")
+            } catch {
+                XCTAssertEqual(error as? WebBrowserError, .invalidCDPResponse(reason: "embedded frame owner remained absent after 3 coherent capture attempts"))
+            }
+            let attempts = await permanent.count
+            XCTAssertEqual(attempts, 3)
+            let expired = CaptureSteps()
+            do {
+                _ = try await session.captureTree(deadline: .now - .seconds(1), afterMainSnapshot: { _, _ in _ = await expired.next() })
+                XCTFail("an expired capture deadline must not start a fresh deadline")
+            } catch { XCTAssertTrue(String(describing: error).contains("capture deadline exceeded")) }
+            let expiredAttempts = await expired.count
+            XCTAssertEqual(expiredAttempts, 0)
+            for terminal in [WebBrowserError.cdpConnectionClosed(reason: "injected terminal transport"),
+                             .invalidWebOperation(reason: "inline element limit exceeded"), .cdpRequestCancelled(method: "DOMSnapshot.captureSnapshot")] {
+                let steps = CaptureSteps()
+                do {
+                    _ = try await session.captureTree(afterMainSnapshot: { _, _ in _ = await steps.next(); throw terminal })
+                    XCTFail("terminal errors must propagate without retry")
+                } catch { XCTAssertEqual(error as? WebBrowserError, terminal) }
+                let count = await steps.count
+                XCTAssertEqual(count, 1)
+            }
+            let cancelledSteps = CaptureSteps()
+            do {
+                _ = try await session.captureTree(afterMainSnapshot: { _, _ in _ = await cancelledSteps.next(); throw CancellationError() })
+                XCTFail("cancellation must propagate without retry")
+            } catch { XCTAssertTrue(error is CancellationError) }
+            let cancelledCount = await cancelledSteps.count
+            XCTAssertEqual(cancelledCount, 1)
+            let recovered = try await session.captureTree()
+            XCTAssertFalse(recovered.retried)
+            XCTAssertEqual(recovered.tree.flattened().filter { $0.attributes["web.tag"] == .string("iframe") }.count, 3)
+        } catch { try await session.close(); try await server.stop(); throw error }
+        try await session.close(); try await server.stop()
+    }
+
+    func testRecoveredCaptureDiscardsPreRaceStabilityConfirmations() {
+        let tree = SemanticNode(id: "stable", role: .button, frame: Rect(x: 0, y: 0, width: 100, height: 44))
+        var stability = WebSession.CaptureStability()
+        let normal = WebSession.CapturedTree(tree: tree, retried: false)
+        XCTAssertFalse(stability.observe(normal))
+        XCTAssertFalse(stability.observe(normal))
+        XCTAssertFalse(stability.observe(WebSession.CapturedTree(tree: tree, retried: true)))
+        XCTAssertFalse(stability.observe(normal))
+        XCTAssertTrue(stability.observe(normal))
+    }
+
     func testContainingBlocksKeepEscapingPaintAndRealClippingAcrossFrames() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("vui-containing-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
