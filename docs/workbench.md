@@ -81,3 +81,12 @@ before verification completed”; history retained PASS, FAIL and unavailable
 entries. Browser geometry/motion checks are separately recorded by the rendered
 smoke gate. These observations do not substitute for final installed-artifact
 hash and signature verification.
+
+Final 1.1.2 acceptance: the publicly downloaded archive matched SHA-256
+`d959e4ac3450a500ac81ac47400720a047a30991b6138f30fea7ab8d1062d32c`.
+Its installed bundle passed strict signature, notarization-ticket and Gatekeeper
+checks. The actual WKWebView window showed **Engine connected 1.1.2**, and saved
+state was byte-identical before installation and after launch. Both its bundled
+engine and the independently built Homebrew CLI passed the real native/browser
+CLI/MCP artifact gate. Installed real-site, positioned-clipping, rich-editor and
+resource-budget controls also passed; paint warnings remain explicit.
