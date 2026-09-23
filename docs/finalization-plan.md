@@ -152,3 +152,15 @@ or padded boxes and same-line collisions remain subject to confirmed-error
 checks. A first uncertain fragment must never mask a later confirmed collision;
 the existing bounded sweep still accounts for every comparison. Retain original
 nodes and surface web-paint-unverified in every interface.
+
+### Containing-block clipping correction
+
+An actual Chromium control shows that an absolutely positioned button can
+escape an intermediate static overflow-hidden ancestor when its containing
+block is outside that ancestor. The identical positioned overflow parent
+genuinely clips it. The current adapter incorrectly clips both, removing a
+real button overlap from analysis. Preserve measured original DOM depth and
+containing-block ownership before flattening; apply the same ancestry rule to
+clipping findings, visible paint projection and scroll reachability. Include
+fixed/transformed, omitted ancestors and iframe controls. Do not globally
+exempt positioned nodes or infer ownership from the flattened semantic tree.
