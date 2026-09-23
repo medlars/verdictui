@@ -81,10 +81,13 @@ enum WebLint {
         var node = source
         let fixed = source.attributes["web.position"] == .string("fixed") && !contained
         let activeScroll = fixed ? nil : scrollClip
+        var paintClip: Rect?
         for clip in [documentClip, activeScroll].compactMap({ $0 }) {
+            paintClip = paintClip.map { $0.intersection(clip) ?? Rect(x: 0, y: 0, width: 0, height: 0) } ?? clip
             if let visible = node.frame.intersection(clip) { node.frame = visible }
             else { node.isVisible = false }
         }
+        if let paintClip { store(paintClip, key: "web.paintClip", in: &node.attributes) }
         let ownScroll = rect(key: "web.scrollViewport", in: source.attributes)
         let childScroll = ownScroll.flatMap { own in activeScroll.map { own.intersection($0) ?? Rect(x: 0, y: 0, width: 0, height: 0) } ?? own } ?? activeScroll
         node.children = source.children.map { child in
@@ -105,25 +108,149 @@ enum WebLint {
         return node
     }
 
-    private static func fragmentProjection(_ source: SemanticNode, originals: inout [String: String]) -> SemanticNode {
-        var node = source
-        node.children = source.children.flatMap { child -> [SemanticNode] in
-            let nested = fragmentProjection(child, originals: &originals)
-            guard nested.children.isEmpty, nested.role == .text,
-                  let count = nested.attributes["web.textFragmentCount"]?.numberValue.flatMap(Int.init(exactly:)),
-                  (1...100_000).contains(count) else { return [nested] }
-            let boxes = (0..<count).compactMap { rect(key: "web.textFragment\($0)", in: nested.attributes) }
-            guard boxes.count == count else { return [nested] }
-            return boxes.enumerated().map { index, box in
-                var fragment = nested
-                fragment.id = nested.id + "/paint-fragment/\(index)"
-                fragment.structuralPath = nested.structuralPath + "/paint-fragment/\(index)"
-                fragment.frame = box
-                originals[fragment.id] = (nested.id.isEmpty ? nested.structuralPath : nested.id)
-                return fragment
+    struct OverlapBudget {
+        private(set) var remaining: Int
+        private(set) var consumed = 0
+        var originalPairs = 0
+        var fragmentEvents = 0
+        var fragmentComparisons = 0
+
+        init(limit: Int = 2_000_000) { remaining = limit }
+        mutating func charge(_ amount: Int = 1) throws {
+            guard amount >= 0, remaining >= amount else {
+                throw WebBrowserError.invalidWebOperation(reason: "web overlap inspection exceeded its bounded work budget")
+            }
+            remaining -= amount; consumed += amount
+        }
+    }
+
+    /// Preserve Finding equality and order without a linear scan of all earlier
+    /// results for every overlap. Insertion attempts share the overlap budget.
+    struct FindingAccumulator {
+        private struct Key: Hashable {
+            let rule: String
+            let severity: String
+            let nodeID: String
+            let message: String
+            let suggestion: String?
+            init(_ finding: Finding) {
+                rule = finding.rule; severity = finding.severity.rawValue
+                nodeID = finding.nodeID; message = finding.message; suggestion = finding.suggestion
             }
         }
-        return node
+        private var seen: Set<Key>
+        private(set) var values: [Finding]
+        init(_ initial: [Finding] = []) {
+            values = initial; seen = Set(initial.map(Key.init))
+        }
+        mutating func append(_ incoming: [Finding], budget: inout OverlapBudget) throws {
+            for finding in incoming {
+                try budget.charge()
+                if seen.insert(Key(finding)).inserted { values.append(finding) }
+            }
+        }
+    }
+
+    /// Original DOM nodes remain the subjects. A long text is never expanded
+    /// into sibling nodes, so fragments of the same text are never compared.
+    /// Only distinct original-node candidates enter the bounded fragment sweep.
+    static func overlapFindings(_ root: SemanticNode, context: LintContext, budget: inout OverlapBudget) throws -> [Finding] {
+        func label(_ node: SemanticNode) -> String { node.id.isEmpty ? node.structuralPath : node.id }
+        func boxes(_ node: SemanticNode, budget: inout OverlapBudget) throws -> [Rect] {
+            guard node.role == .text,
+                  let count = node.attributes["web.textFragmentCount"]?.numberValue.flatMap(Int.init(exactly:)),
+                  (1...100_000).contains(count) else { return [node.frame] }
+            // Charge the raw measurements before decoding or clipping them.
+            // A tiny visible slice must not hide repeated scans of a long text.
+            try budget.charge(count)
+            let measured = (0..<count).compactMap { rect(key: "web.textFragment\($0)", in: node.attributes) }
+            guard measured.count == count else { return [node.frame] }
+            if let clip = rect(key: "web.paintClip", in: node.attributes) {
+                return measured.compactMap { $0.intersection(clip) }
+            }
+            return measured
+        }
+        func overlap(_ first: SemanticNode, _ second: SemanticNode, budget: inout OverlapBudget) throws -> Rect? {
+            try budget.charge(); budget.originalPairs += 1
+            guard first.frame.intersects(second.frame) else { return nil }
+            let firstBoxes = try boxes(first, budget: &budget), secondBoxes = try boxes(second, budget: &budget)
+            guard !firstBoxes.isEmpty, !secondBoxes.isEmpty else { return nil }
+            let rectangles = firstBoxes + secondBoxes
+            // Preflight the whole event set before allocating/sorting its index
+            // arrays. No truncated candidate list can turn exhaustion into PASS.
+            try budget.charge(rectangles.count)
+            let starts = rectangles.indices.sorted { rectangles[$0].y == rectangles[$1].y ? $0 < $1 : rectangles[$0].y < rectangles[$1].y }
+            let ends = rectangles.indices.sorted { rectangles[$0].maxY == rectangles[$1].maxY ? $0 < $1 : rectangles[$0].maxY < rectangles[$1].maxY }
+            var firstActive: Set<Int> = [], secondActive: Set<Int> = []
+            var end = 0
+            for index in starts {
+                budget.fragmentEvents += 1
+                let box = rectangles[index]
+                while end < ends.count, rectangles[ends[end]].maxY <= box.y {
+                    firstActive.remove(ends[end]); secondActive.remove(ends[end]); end += 1
+                }
+                let isFirst = index < firstBoxes.count
+                let opposite = isFirst ? secondActive : firstActive
+                var match: (Int, Rect)?
+                for other in opposite {
+                    try budget.charge(); budget.fragmentComparisons += 1
+                    if let intersection = box.intersection(rectangles[other]),
+                       intersection.width > SiblingOverlapRule.tolerance, intersection.height > SiblingOverlapRule.tolerance,
+                       match.map({ other < $0.0 }) ?? true {
+                        match = (other, intersection)
+                    }
+                }
+                // Choose a stable fragment order without sorting an active set
+                // on every event; set iteration cannot change evidence metrics.
+                if let match { return match.1 }
+                if isFirst { firstActive.insert(index) } else { secondActive.insert(index) }
+            }
+            return nil
+        }
+        var findings: [Finding] = []
+        if !context.disabledRules.contains(SiblingOverlapRule.id) {
+            for parent in root.flattened() where parent.role.identifier.lowercased() != "zstack" {
+                let children = parent.children.filter { $0.isVisible && !$0.frame.isEmpty && $0.zIndex == nil }
+                for first in children.indices {
+                    for second in children.indices where second > first {
+                        if let collision = try overlap(children[first], children[second], budget: &budget),
+                           let finding = context.makeFinding(rule: SiblingOverlapRule.id, node: children[second],
+                            message: "'\(label(children[second]))' overlaps sibling '\(label(children[first]))' by \(collision.width) x \(collision.height) pt",
+                            suggestion: "Give the siblings disjoint painted bounds or declare intentional layering.", defaultSeverity: .error) {
+                            findings.append(finding)
+                        }
+                    }
+                }
+            }
+        }
+        if !context.disabledRules.contains(ContentOverlapRule.id) {
+            var leaves: [(node: SemanticNode, parent: String)] = []
+            func collect(_ node: SemanticNode, parent: String, layered: Bool) {
+                let layered = layered || node.zIndex != nil || node.role.identifier.lowercased() == "zstack"
+                if node.children.isEmpty {
+                    if node.isVisible, !node.frame.isEmpty, node.role != .spacer, !layered { leaves.append((node, parent)) }
+                } else {
+                    for child in node.children { collect(child, parent: node.structuralPath, layered: layered) }
+                }
+            }
+            collect(root, parent: "", layered: false)
+            for first in leaves.indices {
+                for second in leaves.indices where second > first {
+                    // Direct siblings belong to the sibling rule. Charge their
+                    // visit too so a large sibling set cannot make this scan
+                    // unbounded while every candidate is rejected as related.
+                    try budget.charge()
+                    guard leaves[first].parent != leaves[second].parent else { continue }
+                    if let collision = try overlap(leaves[first].node, leaves[second].node, budget: &budget),
+                       let finding = context.makeFinding(rule: ContentOverlapRule.id, node: leaves[second].node,
+                        message: "'\(label(leaves[second].node))' overlaps '\(label(leaves[first].node))' by \(collision.width) x \(collision.height) pt across different parents",
+                        suggestion: "Keep content from separate branches from colliding, or declare intentional layering.", defaultSeverity: .error) {
+                        findings.append(finding)
+                    }
+                }
+            }
+        }
+        return findings
     }
 
     /// CSS overflow:visible is allowed to paint outside its layout box (font ink
@@ -187,7 +314,8 @@ enum WebLint {
         var roots: [SemanticNode] = []
     }
 
-    static func run(tree: SemanticNode, scenario: String, viewport: Rect) -> Verdict {
+    static func run(tree: SemanticNode, scenario: String, viewport: Rect, overlapLimit: Int = 2_000_000) throws -> Verdict {
+        let started = ContinuousClock.now
         // Run the non-optional no-evidence guard once on the original tree.
         let boundaryRules: [any LintRule] = [OffscreenRule()]
         var sharedRules = RuleEngine.standardRules.filter { type(of: $0).id != OffscreenRule.id && type(of: $0).id != ClippedContentRule.id
@@ -245,8 +373,8 @@ enum WebLint {
             let view = rect(key: "web.documentViewport", in: child.attributes) ?? viewport
             add(child, scope: Scope(key: "document/" + frame, frame: frame, bounds: bounds, viewport: view), contained: false)
         }
-        var findings = result.findings
-        var elapsed = (evidence.timing.evaluateMs ?? 0) + (result.timing.evaluateMs ?? 0)
+        var accumulated = FindingAccumulator(result.findings)
+        var budget = OverlapBudget(limit: overlapLimit)
         // Reachable content in another scroll scope must not appear to paint
         // over the surrounding document. Judge each scope internally, then its
         // visible paint contribution in the enclosing hierarchy. This preserves
@@ -261,33 +389,22 @@ enum WebLint {
             }
         }
         for root in overlapRoots {
-            var originals: [String: String] = [:]
-            let fragmented = fragmentProjection(root, originals: &originals)
-            let paint = paintProjection(fragmented)
-            let report = RuleEngine.run(rules: [SiblingOverlapRule(), ContentOverlapRule()], on: paint,
-                context: LintContext(scenario: scenario, viewport: viewport, requiresProbedNodes: false))
-            for source in report.findings {
-                var finding = source
-                if let original = originals[finding.nodeID] { finding.nodeID = original }
-                func remap(_ message: String) -> String {
-                    message.split(separator: "'", omittingEmptySubsequences: false).enumerated().map { index, part in
-                        index.isMultiple(of: 2) ? String(part) : (originals[String(part)] ?? String(part))
-                    }.joined(separator: "'")
-                }
-                finding.message = remap(finding.message)
-                finding.suggestion = finding.suggestion.map(remap)
-                if !findings.contains(finding) { findings.append(finding) }
-            }
-            elapsed += report.timing.evaluateMs ?? 0
+            let paint = paintProjection(root)
+            let overlaps = try overlapFindings(paint,
+                context: LintContext(scenario: scenario, viewport: viewport, requiresProbedNodes: false), budget: &budget)
+            try accumulated.append(overlaps, budget: &budget)
         }
+        var findings = accumulated.values
         for scope in scopes {
             let projection = SemanticNode(id: tree.id, role: .container, frame: scope.bounds, children: scope.roots)
             let context = LintContext(scenario: scenario, viewport: scope.bounds, requiresProbedNodes: false)
             let report = RuleEngine.run(rules: boundaryRules, on: projection, context: context)
-            findings += report.findings; elapsed += report.timing.evaluateMs ?? 0
+            findings += report.findings
         }
         // Positive out-of-flow boxes can enlarge browser scroll extents. This
         // adapter measures reachability, not author intent about that placement.
+        let duration = started.duration(to: .now).components
+        let elapsed = Double(duration.seconds) * 1000 + Double(duration.attoseconds) / 1e15
         result = Verdict(scenario: scenario, findings: findings, tree: tree, timing: .init(evaluateMs: elapsed))
         return result
     }

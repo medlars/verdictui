@@ -50,6 +50,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
             else:
                 content = '<style>#skip{position:absolute;left:-1px;top:-1px;width:1px;height:1px;clip-path:inset(50%)}#skip:focus{position:fixed;left:16px;top:16px;width:160px;height:44px;clip-path:none}</style><a id="skip" href="#main">Skip to content</a><p id="main" style="margin-top:120px">Visible content</p>'
             body = (prefix + content + "</body></html>").encode()
+        elif self.path == "/long-text":
+            body = (
+                '<!doctype html><html><body><pre style="font:16px/20px monospace">'
+                + "\n".join(f"Measured line {i}" for i in range(10000))
+                + "</pre></body></html>"
+            ).encode()
+        elif self.path == "/overlap-budget":
+            body = (
+                "<!doctype html><html><body><main>"
+                + "".join(
+                    f'<button style="display:block;width:160px;height:44px;margin:4px">Control {i}</button>'
+                    for i in range(1500)
+                )
+                + "</main></body></html>"
+            ).encode()
         elif self.path in ("/typography", "/typography-overlap"):
             if self.path == "/typography":
                 content = '<h2 style="font-size:32px;line-height:36px">Typography complete</h2><p>First line<br>Second line</p><p style="width:300px;line-height:24px">Install through <code>Homebrew</code>, then run the command from any project folder to check the interface.</p>'

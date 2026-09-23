@@ -141,7 +141,7 @@ public actor WebSession {
         try validateExpectation(expectText)
         try begin()
         defer { busy = false }
-        do { return verdict(tree: try await observedTree(expectText: expectText), expectText: expectText) }
+        do { return try verdict(tree: try await observedTree(expectText: expectText), expectText: expectText) }
         catch { try await handle(error); throw Self.sanitized(error) }
     }
 
@@ -178,7 +178,7 @@ public actor WebSession {
                 }
             }
             let after = try await observedTree(expectText: expectText)
-            var result = verdict(tree: after, expectText: expectText)
+            var result = try verdict(tree: after, expectText: expectText)
             if expectText == nil {
                 result = Verdict(scenario: result.scenario, findings: result.findings + [Finding(
                     rule: "web-outcome-unasserted", severity: .warning, nodeID: after.id,
@@ -360,8 +360,8 @@ public actor WebSession {
         return tree
     }
 
-    private func verdict(tree: SemanticNode, expectText: String?) -> Verdict {
-        var result = WebLint.run(tree: tree, scenario: "web/\(profile)", viewport: viewport)
+    private func verdict(tree: SemanticNode, expectText: String?) throws -> Verdict {
+        var result = try WebLint.run(tree: tree, scenario: "web/\(profile)", viewport: viewport)
         if let expectText, !contains(expectText, in: tree) {
             result = Verdict(scenario: result.scenario, findings: result.findings + [Finding(
                 rule: "web-expectation", severity: .error, nodeID: tree.id,

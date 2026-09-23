@@ -189,7 +189,7 @@ final class DOMSnapshotAssemblyTests: XCTestCase {
         documents[0] = .object(document); payload["documents"] = .array(documents)
         let tree = try DOMSnapshotAssembly.assemble(payload, viewport: viewport)
         XCTAssertTrue(tree.children.isEmpty)
-        XCTAssertEqual(WebLint.run(tree: tree, scenario: "empty", viewport: viewport).findings.map(\.rule), ["vacuous-verdict"])
+        XCTAssertEqual(try WebLint.run(tree: tree, scenario: "empty", viewport: viewport).findings.map(\.rule), ["vacuous-verdict"])
     }
 
     func testTextFragmentGeometryTracksScrollAndFrameTransforms() throws {
@@ -205,7 +205,7 @@ final class DOMSnapshotAssemblyTests: XCTestCase {
         XCTAssertEqual(WebLint.rect(key: "web.textFragment1", in: embedded.attributes), Rect(x: 120, y: 260, width: 50, height: 20))
     }
 
-    func testTextBoxBudgetAndLineBreakRoles() {
+    func testTextBoxBudgetAndLineBreakRoles() throws {
         XCTAssertEqual(DOMSnapshotAssembly.role(tag: "br", attributes: [:]), .spacer)
         XCTAssertEqual(DOMSnapshotAssembly.role(tag: "wbr", attributes: [:]), .spacer)
         var payload = fragmentedSnapshot([[30, 40, 35, 20]])
@@ -283,7 +283,7 @@ final class DOMSnapshotAssemblyTests: XCTestCase {
         XCTAssertEqual(emptyTree.children.first?.frame, Rect(x: 60, y: 70, width: 0, height: 0))
     }
 
-    func testDuplicateLayoutRowsStillValidateEveryRectangleAndStyle() {
+    func testDuplicateLayoutRowsStillValidateEveryRectangleAndStyle() throws {
         for invalid in [[Double.nan, 0, 0, 0], [0, 0, -1, 0], [0, 0, 1]] {
             XCTAssertThrowsError(try DOMSnapshotAssembly.assemble(
                 fragmentedSnapshot([[10, 20, 30, 40], invalid]), viewport: viewport
@@ -305,14 +305,14 @@ final class DOMSnapshotAssemblyTests: XCTestCase {
         }
     }
 
-    func testLayoutRowBudgetStillAppliesWhenDOMIndicesRepeat() {
+    func testLayoutRowBudgetStillAppliesWhenDOMIndicesRepeat() throws {
         let payload = fragmentedSnapshot(Array(repeating: [10, 20, 30, 40], count: 100_001))
         XCTAssertThrowsError(try DOMSnapshotAssembly.assemble(payload, viewport: viewport)) { error in
             XCTAssertTrue(String(describing: error).contains("oversized layout index column"))
         }
     }
 
-    func testFiniteRectangleInputsCannotOverflowDerivedGeometry() {
+    func testFiniteRectangleInputsCannotOverflowDerivedGeometry() throws {
         let large = Double.greatestFiniteMagnitude
         for frames in [
             [[-large, 0, 1, 1], [large, 0, 1, 1]],
@@ -332,7 +332,7 @@ final class DOMSnapshotAssemblyTests: XCTestCase {
         }
     }
 
-    func testTextBoxLineCoordinatesOutsideIntegerRangeFailWithoutTrapping() {
+    func testTextBoxLineCoordinatesOutsideIntegerRangeFailWithoutTrapping() throws {
         for y in [1e20, 1e308, -1e20, -1e308] {
             let payload = fragmentedSnapshot([[0, y, 1, 1]], textBoxRows: [0])
             XCTAssertThrowsError(try DOMSnapshotAssembly.assemble(payload, viewport: viewport)) { error in
@@ -341,7 +341,7 @@ final class DOMSnapshotAssemblyTests: XCTestCase {
         }
     }
 
-    func testImplicitAndAriaRolesAreMapped() {
+    func testImplicitAndAriaRolesAreMapped() throws {
         XCTAssertEqual(DOMSnapshotAssembly.role(tag: "input", attributes: ["type": "password"]), .textField)
         XCTAssertEqual(DOMSnapshotAssembly.role(tag: "input", attributes: ["type": "checkbox"]), .toggle)
         XCTAssertEqual(DOMSnapshotAssembly.role(tag: "a", attributes: ["href": "/"]), .button)
@@ -350,7 +350,7 @@ final class DOMSnapshotAssemblyTests: XCTestCase {
         XCTAssertEqual(DOMSnapshotAssembly.role(tag: "div", attributes: ["role": "unknown"]), .custom("web.unknown"))
     }
 
-    func testMalformedColumnsAndInvalidTopologyFailClosed() {
+    func testMalformedColumnsAndInvalidTopologyFailClosed() throws {
         var payload = snapshot()
         payload["strings"] = .array([.integer(1)])
         XCTAssertThrowsError(try DOMSnapshotAssembly.assemble(payload, viewport: viewport))
@@ -384,7 +384,7 @@ final class DOMSnapshotAssemblyTests: XCTestCase {
         let tree = try DOMSnapshotAssembly.assemble(payload, viewport: viewport, redacting: [credential])
         XCTAssertFalse(String(decoding: try JSONEncoder().encode(tree), as: UTF8.self).contains(credential))
     }
-    func testOrphanedEmbeddedDocumentIsUnavailable() {
+    func testOrphanedEmbeddedDocumentIsUnavailable() throws {
         var payload = snapshot()
         if case let .array(documents) = payload["documents"] { payload["documents"] = .array(documents + documents) }
         XCTAssertThrowsError(try DOMSnapshotAssembly.assemble(payload, viewport: viewport))
@@ -435,7 +435,7 @@ final class DOMSnapshotAssemblyTests: XCTestCase {
         XCTAssertEqual(tree.children.first?.attributes["web.enabled"], .bool(false))
     }
 
-    func testAccessibleLabelsExcludeEditableValues() {
+    func testAccessibleLabelsExcludeEditableValues() throws {
         let names = DOMAccessibleNames.resolve(tags: ["label", "#text", "textarea", "#text"],
             types: [1, 3, 1, 3], values: ["", "Private notes", "", "private-existing-value"],
             attributes: [[:], [:], [:], [:]], parents: [-1, 0, 0, 2])
@@ -443,7 +443,7 @@ final class DOMSnapshotAssemblyTests: XCTestCase {
         XCTAssertFalse(names.compactMap { $0 }.joined().contains("private-existing-value"))
     }
 
-    func testAssociatedLabelsAndAriaNamesHaveDeterministicPriority() {
+    func testAssociatedLabelsAndAriaNamesHaveDeterministicPriority() throws {
         let tags = ["#document", "label", "#text", "input", "label", "#text", "input", "span", "#text", "input", "input", "input"]
         let parents = [-1, 0, 1, 0, 0, 4, 4, 0, 7, 0, 0, 0]
         let attrs: [[String: String]] = [[:], ["for": "username"], [:], ["id": "username", "value": "private"],
