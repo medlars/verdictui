@@ -80,8 +80,14 @@ participates in layout checks. Text, links, labelled or interactive descendants
 keep their independent checks. Presentation-only clipping or overlap, and
 uncertain internal SVG clipping, produce cited `web-paint-unverified` warnings.
 These warnings establish neither a functional defect nor harmlessness: geometry
-does not prove that composed paint leaves content visible. Real text/control
-collisions and clipping remain errors. The full original tree is retained.
+does not prove that composed paint leaves content visible. Normal-flow text
+from the same measured inline formatting context can also have intersecting
+font rectangles on different lines without colliding glyphs; those cases carry
+the same explicit paint warning. Positioned, bordered, padded and interactive
+boxes do not receive that qualification. Same-line and separate-context
+collisions, and meaningful content clipping, remain errors. A later confirmed
+collision takes priority over an earlier uncertain fragment. The full original
+tree is retained.
 
 **PASS means no confirmed errors in the checks performed. It does not certify
 paint or occlusion.** When `web-paint-unverified` is present, the CLI prints an
