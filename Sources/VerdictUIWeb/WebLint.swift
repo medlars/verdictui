@@ -76,33 +76,37 @@ enum WebLint {
         return false
     }
 
-    private static func paintProjection(_ source: SemanticNode, documentClip: Rect? = nil,
-                                        scrollClip: Rect? = nil, contained: Bool = false) -> SemanticNode {
+    private static func paintProjection(_ source: SemanticNode, documentClip: WebPaintSemantics.Clip? = nil,
+                                        scrollClip: WebPaintSemantics.Clip? = nil, cssClip: WebPaintSemantics.Clip? = nil,
+                                        contained: Bool = false) -> SemanticNode {
+        typealias Clip = WebPaintSemantics.Clip
         var node = source
         let fixed = source.attributes["web.position"] == .string("fixed") && !contained
         let activeScroll = fixed ? nil : scrollClip
-        var paintClip: Rect?
-        for clip in [documentClip, activeScroll].compactMap({ $0 }) {
-            paintClip = paintClip.map { $0.intersection(clip) ?? Rect(x: 0, y: 0, width: 0, height: 0) } ?? clip
-            if let visible = node.frame.intersection(clip) { node.frame = visible }
+        let activeCSS = fixed ? nil : cssClip
+        if let clip = Clip.combined(documentClip, activeScroll, activeCSS) {
+            let visible = clip.applying(to: source.frame)
+            if let visible { node.frame = visible }
             else { node.isVisible = false }
+            // Fragment rectangles are bounded by the original union, so this
+            // finite intersection also represents an independently clipped axis.
+            store(visible ?? Rect(x: 0, y: 0, width: 0, height: 0), key: "web.paintClip", in: &node.attributes)
         }
-        if let paintClip { store(paintClip, key: "web.paintClip", in: &node.attributes) }
-        let ownScroll = rect(key: "web.scrollViewport", in: source.attributes)
-        let childScroll = ownScroll.flatMap { own in activeScroll.map { own.intersection($0) ?? Rect(x: 0, y: 0, width: 0, height: 0) } ?? own } ?? activeScroll
+        let ownScroll = rect(key: "web.scrollViewport", in: source.attributes).map { Clip($0) }
+        let childScroll = Clip.combined(activeScroll, ownScroll)
+        let clipsX = WebPaintSemantics.clips(source.attributes["web.overflowX"]?.stringValue)
+        let clipsY = WebPaintSemantics.clips(source.attributes["web.overflowY"]?.stringValue)
+        let ownCSS = clipsX || clipsY ? Clip(source.frame, x: clipsX, y: clipsY) : nil
+        let childCSS = Clip.combined(activeCSS, ownCSS)
         node.children = source.children.map { child in
             let changedDocument = child.attributes["web.frame"] != source.attributes["web.frame"]
                 && source.attributes["web.frame"] != nil
-            let ownDocument = changedDocument ? rect(key: "web.documentViewport", in: child.attributes) : nil
-            var childDocument = ownDocument ?? documentClip
-            if changedDocument {
-                // A fixed element can escape its own document's scroll panels,
-                // never the outer document's clip around the iframe itself.
-                for outer in [documentClip, childScroll].compactMap({ $0 }) {
-                    childDocument = childDocument.map { $0.intersection(outer) ?? Rect(x: 0, y: 0, width: 0, height: 0) } ?? outer
-                }
-            }
+            let ownDocument = changedDocument ? rect(key: "web.documentViewport", in: child.attributes).map { Clip($0) } : nil
+            // A fixed element can escape its own document's CSS/scroll clips,
+            // never the outer document's clipping around the iframe itself.
+            let childDocument = changedDocument ? Clip.combined(ownDocument, documentClip, childScroll, childCSS) : documentClip
             return paintProjection(child, documentClip: childDocument, scrollClip: changedDocument ? nil : childScroll,
+                cssClip: changedDocument ? nil : childCSS,
                 contained: changedDocument ? false : (contained || source.attributes["web.fixedContainer"] == .bool(true)))
         }
         return node
@@ -222,9 +226,9 @@ enum WebLint {
                 for first in children.indices {
                     for second in children.indices where second > first {
                         if let collision = try overlap(children[first], children[second], budget: &budget),
-                           let finding = context.makeFinding(rule: SiblingOverlapRule.id, node: children[second],
+                           let finding = WebPaintSemantics.finding(rule: SiblingOverlapRule.id, node: children[second], other: children[first],
                             message: "'\(label(children[second]))' overlaps sibling '\(label(children[first]))' by \(collision.width) x \(collision.height) pt",
-                            suggestion: "Give the siblings disjoint painted bounds or declare intentional layering.", defaultSeverity: .error) {
+                            suggestion: "Give the siblings disjoint painted bounds or declare intentional layering.", context: context) {
                             findings.append(finding)
                         }
                     }
@@ -250,9 +254,9 @@ enum WebLint {
                     try budget.charge()
                     guard leaves[first].parent != leaves[second].parent else { continue }
                     if let collision = try overlap(leaves[first].node, leaves[second].node, budget: &budget),
-                       let finding = context.makeFinding(rule: ContentOverlapRule.id, node: leaves[second].node,
+                       let finding = WebPaintSemantics.finding(rule: ContentOverlapRule.id, node: leaves[second].node, other: leaves[first].node,
                         message: "'\(label(leaves[second].node))' overlaps '\(label(leaves[first].node))' by \(collision.width) x \(collision.height) pt across different parents",
-                        suggestion: "Keep content from separate branches from colliding, or declare intentional layering.", defaultSeverity: .error) {
+                        suggestion: "Keep content from separate branches from colliding, or declare intentional layering.", context: context) {
                         findings.append(finding)
                     }
                 }
@@ -283,9 +287,9 @@ enum WebLint {
                         let dy = yClips ? max(ancestor.frame.y - node.frame.y, node.frame.maxY - ancestor.frame.maxY) : 0
                         let amount = max(dx, dy)
                         if amount > ClippedContentRule.tolerance {
-                            if let finding = context.makeFinding(rule: Self.id, node: node,
+                            if let finding = WebPaintSemantics.finding(rule: Self.id, node: node,
                                 message: "'\((node.id.isEmpty ? node.structuralPath : node.id))' extends \(amount) pt outside the CSS clipping bounds of '\((ancestor.id.isEmpty ? ancestor.structuralPath : ancestor.id))'",
-                                suggestion: "Keep the content inside the clipped axis or make that axis scrollable.", defaultSeverity: .error) {
+                                suggestion: "Keep the content inside the clipped axis or make that axis scrollable.", context: context) {
                                 findings.append(finding)
                             }
                             break
@@ -337,9 +341,10 @@ enum WebLint {
         }
         let evidence = RuleEngine.run(rules: [], on: visibleEvidence(tree),
                                       context: LintContext(scenario: scenario, viewport: viewport))
-        var result = RuleEngine.run(rules: sharedRules, on: tree,
+        let semantic = WebPaintSemantics.project(tree, context: LintContext(scenario: scenario, viewport: viewport, requiresProbedNodes: false))
+        var result = RuleEngine.run(rules: sharedRules, on: semantic.tree,
             context: LintContext(scenario: scenario, viewport: viewport, requiresProbedNodes: false), includeTree: true)
-        result = Verdict(scenario: scenario, findings: evidence.findings + result.findings, tree: tree, timing: result.timing)
+        result = Verdict(scenario: scenario, findings: evidence.findings + semantic.findings + result.findings, tree: tree, timing: result.timing)
         var scopes: [Scope] = []
         var indices: [String: Int] = [:]
         func add(_ source: SemanticNode, scope: Scope, contained: Bool) {
@@ -375,7 +380,7 @@ enum WebLint {
             }
             return node
         }
-        for child in tree.children {
+        for child in semantic.tree.children {
             let frame = child.attributes["web.frame"]?.stringValue ?? "main"
             let bounds = rect(key: "web.documentBounds", in: child.attributes) ?? viewport
             let view = rect(key: "web.documentViewport", in: child.attributes) ?? viewport
@@ -388,8 +393,8 @@ enum WebLint {
         // visible paint contribution in the enclosing hierarchy. This preserves
         // fixed/flow overlap without comparing an iframe's unpainted below-fold
         // content to unrelated content outside the iframe.
-        var overlapRoots = [tree]
-        for node in tree.flattened() where !node.children.isEmpty && node.attributes["web.frame"] != nil {
+        var overlapRoots = [semantic.tree]
+        for node in semantic.tree.flattened() where !node.children.isEmpty && node.attributes["web.frame"] != nil {
             if rect(key: "web.scrollBounds", in: node.attributes) != nil || node.children.contains(where: {
                 $0.attributes["web.frame"] != node.attributes["web.frame"]
             }) {
