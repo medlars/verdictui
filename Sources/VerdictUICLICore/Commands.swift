@@ -29,6 +29,10 @@ public struct CommandEnvironment: Sendable {
     public let projectRoot: URL?
 
     public var daemonSocketPath: String {
+        Self.daemonSocketPath(projectRoot: projectRoot)
+    }
+
+    public static func daemonSocketPath(projectRoot: URL?) -> String {
         guard let projectRoot else { return VerdictDaemon.defaultSocketPath }
         let digest = projectRoot.resolvingSymlinksInPath().path.utf8.reduce(UInt64(14695981039346656037)) {
             ($0 ^ UInt64($1)) &* 1099511628211
