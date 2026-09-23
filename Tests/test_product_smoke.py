@@ -9,6 +9,7 @@ from unittest.mock import Mock, patch
 SPEC = importlib.util.spec_from_file_location(
     "product_smoke", Path(__file__).resolve().parents[1] / "scripts/product-smoke.py"
 )
+assert SPEC is not None and SPEC.loader is not None
 smoke = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(smoke)
 
