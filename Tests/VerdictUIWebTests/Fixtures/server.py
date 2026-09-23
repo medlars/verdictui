@@ -25,6 +25,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 + str(self.server.server_port)
                 + '/clean.html"></iframe></body></html>'
             ).encode()
+        elif self.path in ("/hidden-same", "/hidden-cross"):
+            host = "localhost" if self.path == "/hidden-cross" else "127.0.0.1"
+            body = (
+                "<html><head><style>body{margin:24px;font:16px sans-serif}"
+                "button{width:160px;height:44px}iframe{border:3px solid black;"
+                "width:500px;height:350px}</style></head><body><p>Main frame</p>"
+                '<button id="show" onclick="document.getElementById(\'child\')'
+                ".style.display='block'\">Show frame</button>"
+                '<iframe id="child" style="display:none" src="http://'
+                + host
+                + ":"
+                + str(self.server.server_port)
+                + '/clean.html"></iframe></body></html>'
+            ).encode()
         elif self.path == "/network":
             body = (
                 '<html><body style="margin:24px"><p id="status">Waiting</p>'

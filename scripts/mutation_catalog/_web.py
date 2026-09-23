@@ -7,6 +7,38 @@ _TEST = "VerdictUIWebTests."
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="web unlaid frame owners are discarded",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old='if geometry[index] == nil && types[index] == 1 && (tag == "iframe" || tag == "frame") {',
+        new='if false && geometry[index] == nil && types[index] == 1 && (tag == "iframe" || tag == "frame") {',
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/testUnlaidFrameOwnersPreserveIdentityWithoutInventingVisibleEvidence",
+    ),
+    Mutation(
+        name="web unlaid generic containers hide their visible descendants",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old='if geometry[index] == nil && types[index] == 1 && (tag == "iframe" || tag == "frame") {',
+        new="if geometry[index] == nil && types[index] == 1 {",
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/testGenericUnlaidContainersDoNotHideVisibleDescendants",
+    ),
+    Mutation(
+        name="web unlaid frame owner is reported visible",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old="attributes: metadata, isVisible: false, children: descendants.map(hidden)",
+        new="attributes: metadata, isVisible: true, children: descendants.map(hidden)",
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/testUnlaidFrameOwnersPreserveIdentityWithoutInventingVisibleEvidence",
+    ),
+    Mutation(
+        name="web unlaid frame scaffold becomes fabricated probe evidence",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old='descendants = [SemanticNode(id: "", role: .container, frame: Rect(x: 0, y: 0, width: 0, height: 0),',
+        new='descendants = [SemanticNode(id: "fabricated-probe", role: .container, frame: Rect(x: 0, y: 0, width: 0, height: 0),',
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/testUnlaidFrameOwnersPreserveIdentityWithoutInventingVisibleEvidence",
+    ),
+    Mutation(
         name="web fragmented layout duplicates are rejected again",
         path=_BASE + "DOMSnapshotAssembly.swift",
         old="guard parents.indices.contains(index) else {",
