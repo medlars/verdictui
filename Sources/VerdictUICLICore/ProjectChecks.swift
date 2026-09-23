@@ -27,14 +27,45 @@ public struct ProjectChecks: Codable, Sendable {
     public static func decode(_ data: Data) throws -> Self {
         guard data.count <= 1_024 * 1_024 else { throw LiveRuntime.Failure.invalidRequest("check manifest too large") }
         let manifest = try JSONDecoder().decode(Self.self, from: data)
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              Set(object.keys) == ["checks"], let declarations = object["checks"] as? [[String: Any]] else {
+            throw LiveRuntime.Failure.invalidRequest("check manifest contains unsupported fields")
+        }
         guard !manifest.checks.isEmpty, manifest.checks.count <= 100,
               Set(manifest.checks.map(\.name)).count == manifest.checks.count else {
             throw LiveRuntime.Failure.invalidRequest("checks must contain 1...100 uniquely named targets")
         }
-        for check in manifest.checks {
-            guard !check.name.isEmpty, ["scenario", "web", "appkit", "live"].contains(check.kind),
-                  check.expectText?.isEmpty != true else {
-                throw LiveRuntime.Failure.invalidRequest("invalid check declaration")
+        let allowed: [String: Set<String>] = [
+            "scenario": ["name", "kind", "scenario"],
+            "web": ["name", "kind", "url", "expectText"],
+            "appkit": ["name", "kind", "runner", "subject"],
+            "live": ["name", "kind", "pid", "surface", "expectText"],
+        ]
+        func validText(_ value: String?, maximum: Int = 4096) -> Bool {
+            guard let value else { return false }
+            return !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && value.utf8.count <= maximum && !value.contains("\0")
+        }
+        for (check, declaration) in zip(manifest.checks, declarations) {
+            guard let fields = allowed[check.kind], Set(declaration.keys).isSubset(of: fields),
+                  validText(check.name, maximum: 200),
+                  check.expectText == nil || validText(check.expectText) else {
+                throw LiveRuntime.Failure.invalidRequest("check fields are incompatible with their kind or exceed limits")
+            }
+            switch check.kind {
+            case "scenario":
+                guard validText(check.scenario) else { throw LiveRuntime.Failure.invalidRequest("scenario check requires scenario") }
+            case "appkit":
+                guard validText(check.runner), validText(check.subject) else { throw LiveRuntime.Failure.invalidRequest("appkit check requires runner and subject") }
+            case "web":
+                guard validText(check.url, maximum: 8192), let raw = check.url, let url = URL(string: raw),
+                      ["http", "https", "file"].contains(url.scheme?.lowercased() ?? ""), url.user == nil, url.password == nil else {
+                    throw LiveRuntime.Failure.invalidRequest("web check requires an http, https or file URL without credentials")
+                }
+            case "live":
+                guard let pid = check.pid, pid > 1 else { throw LiveRuntime.Failure.invalidRequest("live check requires a process ID greater than one") }
+                _ = try LiveRequest(pid: pid, surface: check.surface ?? "window:0").validatedTarget()
+            default: throw LiveRuntime.Failure.invalidRequest("unknown check kind")
             }
         }
         return manifest
@@ -85,7 +116,7 @@ public enum ProjectCheckRuntime {
         var entries: [ProjectCheckReport.Entry] = []
         for (index, check) in manifest.checks.enumerated() {
             if Task.isCancelled {
-                entries.append(.init(name: check.name, status: "unavailable", verdict: nil, error: "Check cancelled"))
+                entries.append(.init(name: check.name, status: "unavailable", verdict: nil, error: "Cancelled before verification completed"))
                 progress?(.init(name: check.name, index: index, total: manifest.checks.count, status: "unavailable"))
                 continue
             }
@@ -96,7 +127,9 @@ public enum ProjectCheckRuntime {
                 entries.append(.init(name: check.name, status: verdict.status == .pass ? "pass" : "fail", verdict: verdict, error: nil))
             } catch {
                 entries.append(.init(name: check.name, status: "unavailable", verdict: nil,
-                                     error: "Declared target could not be verified; validate its configuration and availability."))
+                                     error: Task.isCancelled || error is CancellationError
+                                        ? "Cancelled before verification completed"
+                                        : "Declared target could not be verified; validate its configuration and availability."))
             }
             progress?(.init(name: check.name, index: index, total: manifest.checks.count,
                             status: entries.last?.status ?? "unavailable"))
@@ -139,7 +172,6 @@ public enum ProjectCheckRuntime {
                                                       arguments: ["verify", scenario], root: root)
             guard result.code == 0 || result.code == 1 else { throw LiveRuntime.Failure.unavailable }
             let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601
             let verdict = try decoder.decode(Verdict.self, from: result.output)
             guard verdict.scenario == scenario, (verdict.status == .pass) == (result.code == 0) else {
                 throw LiveRuntime.Failure.unavailable
@@ -172,10 +204,18 @@ extension VerdictUITool {
             // Checks use disposable browser profiles and do not change a user's warm session.
             let temporary = FileManager.default.temporaryDirectory.appendingPathComponent("verdictui-check-\(UUID().uuidString)")
             let sessions = WebSessionManager(root: temporary)
-            let shutdown = RuntimeShutdown(sessions: sessions)
-            var report = await ProjectCheckRuntime.run(root: root,
-                executable: URL(fileURLWithPath: CommandLine.arguments[0]).standardizedFileURL, sessions: sessions)
+            let operation = Task {
+                await ProjectCheckRuntime.run(root: root,
+                    executable: URL(fileURLWithPath: CommandLine.arguments[0]).standardizedFileURL, sessions: sessions)
+            }
+            let shutdown = RuntimeShutdown(sessions: sessions, beforeExit: {
+                operation.cancel()
+                _ = await operation.value
+            })
+            var report = await operation.value
+            await shutdown.waitForPendingShutdown()
             let failures = await sessions.closeAll()
+            await shutdown.waitForPendingShutdown()
             shutdown.cancel()
             if failures.isEmpty { try? FileManager.default.removeItem(at: temporary) }
             else { report = .init(status: "unavailable", checks: report.checks, error: "Browser cleanup incomplete") }
