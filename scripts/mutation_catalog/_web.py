@@ -684,7 +684,7 @@ MUTATIONS: list[Mutation] = [
         name="web scroll fixed content uses document extent",
         path=_BASE + "WebLint.swift",
         old='if source.attributes["web.position"] == .string("fixed"), viewportFixed, !scope.fixed {',
-        new='if source.attributes["web.position"] == .string("fixed"), !contained, !scope.fixed, scope.bounds.width < 0 {',
+        new='if source.attributes["web.position"] == .string("fixed"), viewportFixed, !scope.fixed, scope.bounds.width < 0 {',
         test=_TEST + "WebLintTests/testNegativeAndFixedDisplacementStillFailWithOriginalIDs",
     ),
     Mutation(
