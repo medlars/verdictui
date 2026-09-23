@@ -2,10 +2,14 @@
 
 import json
 import os
+import selectors
 import shutil
+import signal
+import socket
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 
@@ -14,9 +18,158 @@ def check(condition: bool, message: str) -> None:
         raise AssertionError(message)
 
 
+def reload_proof(launcher: Path, root: Path) -> None:
+    """A real separate package changes code while transport PID remains stable."""
+    with tempfile.TemporaryDirectory(prefix="vui-reload-", dir="/tmp") as temporary:
+        copied = Path(temporary) / "ConsumerApp"
+        shutil.copytree(
+            root, copied, ignore=shutil.ignore_patterns(".build", ".swiftpm", "__pycache__")
+        )
+        package = copied / "Package.swift"
+        package.write_text(
+            package.read_text().replace(
+                'path: "../.."', "path: " + json.dumps(str(root.parents[1]))
+            )
+        )
+        source = copied / "Sources/ConsumerScenarios/ConsumerMain.swift"
+        original = source.read_text()
+        fault = original.replace("faulty ? 6 : 96", "faulty ? 6 : 6").replace(
+            "faulty ? 6 : 32", "faulty ? 6 : 6"
+        )
+        check(original != fault, "source change control absent")
+        built = subprocess.run(
+            [str(launcher), "list"], cwd=copied, capture_output=True, text=True, timeout=600
+        )
+        check(built.returncode == 0 and "consumer-settings" in built.stdout, built.stderr)
+
+        def child_of(pid):
+            found = subprocess.run(["pgrep", "-P", str(pid)], capture_output=True, text=True)
+            ids = found.stdout.split()
+            check(len(ids) == 1, "broker must own exactly one consumer host")
+            return int(ids[0])
+
+        for mode in ("mcp", "daemon"):
+            source.write_text(original)
+            public_socket = str(Path(temporary) / "broker.sock")
+            args = ["mcp"] if mode == "mcp" else ["daemon", "start", "--socket", public_socket]
+            with tempfile.TemporaryFile() as log:
+                broker = subprocess.Popen(
+                    [str(launcher), *args],
+                    cwd=copied,
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=log,
+                    text=True,
+                    bufsize=1,
+                )
+
+                def rpc(request, mode=mode, broker=broker, public_socket=public_socket):
+                    payload = json.dumps(request) + "\n"
+                    if mode == "mcp":
+                        incoming, outgoing = broker.stdin, broker.stdout
+                        if incoming is None or outgoing is None:
+                            raise AssertionError("broker protocol pipes unavailable")
+                        incoming.write(payload)
+                        incoming.flush()
+                        with selectors.DefaultSelector() as selector:
+                            selector.register(outgoing, selectors.EVENT_READ)
+                            check(bool(selector.select(timeout=120)), "broker response timed out")
+                        line = outgoing.readline()
+                    else:
+                        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+                            client.settimeout(120)
+                            client.connect(public_socket)
+                            client.sendall(payload.encode())
+                            line = client.makefile("rb").readline().decode()
+                    check(bool(line), "broker closed without structured response")
+                    return json.loads(line)
+
+                def verify(mode=mode, rpc=rpc):
+                    if mode == "mcp":
+                        response = rpc(
+                            {
+                                "jsonrpc": "2.0",
+                                "id": 2,
+                                "method": "tools/call",
+                                "params": {
+                                    "name": "verify",
+                                    "arguments": {"scenario": "consumer-settings"},
+                                },
+                            }
+                        )["result"]
+                        return (
+                            None
+                            if response["isError"]
+                            else json.loads(response["content"][0]["text"])["status"]
+                        )
+                    response = rpc({"id": "2", "method": "verify", "scenario": "consumer-settings"})
+                    return response["result"]["verdict"]["status"] if response["ok"] else None
+
+                try:
+                    if mode == "mcp":
+                        rpc(
+                            {
+                                "jsonrpc": "2.0",
+                                "id": 1,
+                                "method": "initialize",
+                                "params": {
+                                    "protocolVersion": "2024-11-05",
+                                    "capabilities": {},
+                                    "clientInfo": {"name": "reload-proof", "version": "1"},
+                                },
+                            }
+                        )
+                    else:
+                        deadline = time.monotonic() + 60
+                        while (
+                            not Path(public_socket).exists()
+                            and broker.poll() is None
+                            and time.monotonic() < deadline
+                        ):
+                            time.sleep(0.05)
+                        check(Path(public_socket).exists(), "broker daemon not ready")
+                    check(verify() == "PASS", f"{mode} initial consumer")
+                    first_child = child_of(broker.pid)
+                    source.write_text(fault)
+                    check(verify() == "FAIL", f"{mode} did not rebuild changed source")
+                    check(
+                        child_of(broker.pid) != first_child and broker.poll() is None,
+                        "transport did not remain alive",
+                    )
+                    os.kill(child_of(broker.pid), signal.SIGKILL)
+                    time.sleep(0.1)
+                    check(verify() is None, "dead child masqueraded as available")
+                    check(verify() == "FAIL", "next request did not recover")
+                    source.write_text(original + "\nthis is invalid Swift !!!\n")
+                    check(
+                        verify() is None and broker.poll() is None,
+                        "failed compile served stale verdict or killed broker",
+                    )
+                    source.write_text(original)
+                    check(verify() == "PASS", "fixed source failed to recover")
+                finally:
+                    if broker.poll() is None:
+                        broker.terminate()
+                        try:
+                            broker.wait(timeout=15)
+                        except subprocess.TimeoutExpired:
+                            broker.kill()
+                            broker.wait()
+                            raise
+                    if broker.returncode not in (0, -signal.SIGTERM):
+                        log.seek(0)
+                        print(log.read().decode(), file=sys.stderr)
+        print(
+            "consumer reload PASS: same MCP/daemon PID, rebuilt state, child kill recovery, failed-build refusal"
+        )
+
+
 def main() -> None:
     launcher = Path(sys.argv[1]).resolve()
     root = Path(__file__).resolve().parent
+    if "--reload" in sys.argv[2:]:
+        reload_proof(launcher, root)
+        return
     if "--cold" in sys.argv[2:]:
         with tempfile.TemporaryDirectory(prefix="verdictui-cold-consumer-") as temporary:
             copied = Path(temporary) / "ConsumerApp"
