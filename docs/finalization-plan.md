@@ -90,3 +90,40 @@ new version/formula. Adapter and runner support are additive; existing scenario
 and AppKit products remain compatible. Profiles retain browser state and are not
 deleted during rollback. Verify the previous release's CLI and MCP smoke before
 replacing the new installation. Owner: current implementing session.
+
+## Actual-site browser acceptance — release 1.1.2
+
+Public Vohux pages exposed valid CDP cases absent from the original fixtures:
+repeated pseudo-element layout rows and iframe owners with no layout boxes.
+Both parser repairs now have genuine Chrome and mutation evidence. The restored
+verdicts also exposed ordinary scroll content being compared with the wrong
+viewport. The browser adapter must supply per-document scroll bounds and retain
+CSS visibility for below-fold controls before the shared rules can be useful.
+
+Use a web-only lint projection while preserving the complete actionable tree as
+evidence. Separate parent and embedded document layout, retain owner boxes,
+validate all measured extents and transformed coordinates, and keep actual input
+coordinates tied to the real viewport. Test ordinary document and panel scrolling,
+same/cross-origin frames, fixed controls and transformed containing blocks,
+accessibility skip-link clipping/reveal, and genuinely displaced or clipped
+negative controls. No global rule disable or fixture-only bypass is acceptable.
+The permanent installed-artifact fixture now includes a pseudo overlay, hidden
+frame and below-fold content and reproduces the missing semantics before repair.
+
+The first real scrolling control also found mismatched CDP hit-test coordinates:
+`getContentQuads` returns viewport coordinates, but `getNodeForLocation` requires
+document coordinates. Add renderer scroll offsets only to the hit test; keep
+actual mouse input and viewport bounds in viewport coordinates. Independent
+review additionally confirmed three geometry false positives on the published
+product page: BR line breaks, multiline text union boxes, and font ink extending
+slightly beyond overflow-visible line boxes. Correct these from measured CSS and
+text fragments, with actual overlap/clipping negative controls and original-node
+citations. Preserve the vacuity guard across visible/hidden iframe-only pages.
+
+Pre-push review identified quadratic pair growth when one long text node was
+expanded into thousands of sibling fragments. Retain original node subjects,
+refine candidate intersections with measured fragment sweeps, and enforce an
+explicit work budget. Exhaustion must return unavailable, never a truncated
+passing result. Deterministic operation counts and same-original fragment
+controls cover both runtime bounds and the self-overlap false positive observed
+on the actual product page.

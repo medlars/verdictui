@@ -55,6 +55,27 @@ Pass `--expect-text` to assert a visible, nonsecret application outcome. It must
 
 An action with no expectation includes a `web-outcome-unasserted` warning: posted input and an observed tree do not establish task success. An unmet expectation produces a cited `web-expectation` error and a FAIL verdict. Empty or generic-only pages fail the kernel's vacuity guard.
 
+The returned tree preserves CSS-visible content below the current viewport so an
+agent can discover a control and ask VerdictUI to scroll to it. An expected text
+match refers to that rendered document content; it does not assert that the text
+is inside the current viewport. Hidden frames and recognized empty CSS `clip`/`clip-path` regions cannot satisfy
+the expectation. Clicks require fresh geometry and hit testing after scrolling.
+
+Browser layout checks use measured document and scroll regions. The iframe owner
+is checked in its parent layout, while the embedded document is checked in its own
+coordinate context. Fixed elements use their actual containing context. Wrapped
+inline text is checked using its measured fragments, and CSS clipping is kept
+separate from ordinary visible text extending outside a line box. Findings cite
+the original returned tree; lint projections do not replace the evidence or the
+coordinates used to perform actions.
+
+Overlap inspection retains original nodes and refines candidate collisions with
+measured text fragments. A shared limit of 2,000,000 work units bounds node visits,
+raw fragments, fragment events, candidate comparisons and finding insertions
+across paint scopes. Exhaustion returns
+unavailable with `web overlap inspection exceeded its bounded work budget`; it
+does not return a partial or passing verdict.
+
 CLI exit codes are `0` for an answered PASS/success, `1` for an answered FAIL, and `2` when verification could not be performed. Browser absence, process loss, invalid targets, profile contention and protocol failures are unavailable errors, not passing verdicts. Error messages do not echo expected text or resolved credentials.
 
 ## MCP

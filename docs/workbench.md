@@ -34,10 +34,10 @@ projects and history live in
 permissions. WKWebView localStorage is not used. History can contain observed
 UI labels and findings; it stays on this machine.
 
-## Install 1.1.0
+## Install 1.1.2
 
-Download the [signed and notarized Apple Silicon app](https://github.com/medlars/verdictui/releases/download/v1.1.0/VerdictUI-1.1.0-macos-arm64.zip)
-from the [release](https://github.com/medlars/verdictui/releases/tag/v1.1.0).
+Download the [signed and notarized Apple Silicon app](https://github.com/medlars/verdictui/releases/download/v1.1.2/VerdictUI-1.1.2-macos-arm64.zip)
+from the [release](https://github.com/medlars/verdictui/releases/tag/v1.1.2).
 The app targets macOS 13 or later. Its bundled engine needs no separate CLI
 installation. Browser checks require Chrome or Chromium.
 

@@ -42,7 +42,10 @@ updated Homebrew CLI. Both installed binaries passed the controlled native/brows
 CLI/MCP artifact gate. Additional public-site checks then exposed valid Chrome
 snapshot cases that the browser parser rejected. The browser instruction
 INS-402715D8 and saved-plan task CTS-E47F57A8 were reopened as partial pending
-repair and installed real-site acceptance. INS-FAE07628 cites delivered desktop
+installed real-site acceptance. The 1.1.2 source candidate now verifies both
+public product-page URLs with zero errors and eight warnings; real CLI controls
+cover a 10,000-line page and explicit unavailable work-budget exhaustion. Final
+release gates remain open. INS-FAE07628 cites delivered desktop
 evidence; INS-0105EE8B cites the real consumer surfaces. Fleet coverage remains
 scoped by [product-adoption.md](product-adoption.md).
 
