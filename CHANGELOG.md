@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.1.2] — 2026-09-23
+
+- Fixed real-browser snapshots for repeated layout records, hidden frame owners,
+  scrolling, wrapped inline borders and rich-text editor descendants.
+- Corrected positioned clipping and overlap checks across containing blocks,
+  scroll scopes and individual CSS transforms while retaining original evidence.
+- Bounded geometry collection and overlap evaluation; exhausted measurement
+  budgets remain unavailable and never produce a passing verdict.
+- Added bounded retries for frames inserted during capture. Persistent snapshot
+  inconsistency remains unavailable, and retried captures restart settling.
+- Qualified uncertain browser paint in CLI output, MCP documentation and the
+  desktop workbench as **Layout checked · Paint unverified**. Confirmed errors
+  remain failures.
+- Repaired test-fixture shutdown and owned process-group cleanup in validation.
+
+## [1.1.1] — 2026-09-23
+
+- Preserved scenario-state publications made during initial view construction.
+- Published the signed, notarized desktop app and matching Homebrew CLI, with
+  installed browser/native CLI and MCP acceptance.
+
 ## [1.1.0] — 2026-09-23
 
 - Added a bundled macOS workbench with animated verification, project check editing,
