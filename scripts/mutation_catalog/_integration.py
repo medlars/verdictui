@@ -4,6 +4,14 @@ from mutation_catalog_types import Mutation, Runner
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="CI web fixture loses its configured Python interpreter",
+        path=".github/workflows/ci.yml",
+        old="VERDICTUI_TEST_PYTHON: ${{ steps.fixture_python.outputs.python-path }}",
+        new="VERDICTUI_TEST_PYTHON: /usr/bin/python3",
+        test="scripts/test_ci_evidence_identity.py::TestWiring::test_fixture_python_is_configured_before_swift_tests",
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
         name="live requests allow non-finite or unbounded observation deadlines",
         path="Sources/VerdictUICLICore/LiveRuntime.swift",
         old="guard timeout.isFinite, timeout > 0, timeout <= 60 else {",
