@@ -80,7 +80,8 @@ MUTATIONS: list[Mutation] = [
         name="web fragmented layout text line overflow is accepted",
         path=_BASE + "DOMSnapshotAssembly.swift",
         old='throw malformed("text box line coordinate out of range")',
-        new="return 0",
+        # Preserve a throwing path so the map's try still compiles under strict Swift.
+        new='if box.y == 0 { throw malformed("mutant control") }; return 0',
         test=_TEST
         + "DOMSnapshotAssemblyTests/testTextBoxLineCoordinatesOutsideIntegerRangeFailWithoutTrapping",
     ),
