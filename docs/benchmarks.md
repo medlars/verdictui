@@ -226,3 +226,19 @@ python3.14 scripts/verdictui-pm.py --quick         # gates SLO 1 + SLO 3 + SLO 4
 bash docs/bench/mcp-batch.sh                       # warm MCP batch
 bash docs/bench/flake-100.sh                       # both flake directions
 ```
+
+
+## Real-product routes added in 1.1.0
+
+| Route | Functional acceptance | Latency status |
+| --- | --- | --- |
+| External Swift consumer CLI/MCP | Cold build, custom PASS/FAIL, same-session source reload and compiler-failure refusal measured | No general latency SLO claimed; compile time depends on consumer |
+| Headless browser CLI/MCP | Login/task positive and negative controls, separate profiles, persistence, crash/EOF/TERM cleanup measured | Browser startup and outcome waits are separate from inner-loop timings above |
+| Live AppKit/SwiftUI CLI/MCP | Hidden real fixtures, observed actions, failure/unavailable controls, unchanged foreground and pointer measured | Bounded observation deadline; no universal sub-millisecond claim |
+| Desktop workbench | Actual WKWebView project/save/run/history, PASS/FAIL/cancel measured; Chromium+WebKit rendered geometry and motion checked | Real check counts drive progress; animation is not a measurement of throughput |
+
+Concurrency matrix: two MCP clients on distinct profiles both complete their own
+login/task; a second owner of the same profile is refused; EOF and TERM release
+only the owning client's browser; a crashed browser is retired and its profile
+can reopen. The installed-artifact gate reproduces this matrix. These acceptance
+fixtures establish engine behavior, not all-product or account-specific coverage.

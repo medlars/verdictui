@@ -99,6 +99,10 @@ _SWIFTSYNTAX_FREE_TARGETS = frozenset(
         # is the change that would ADD the kernel dependency.
         "VerdictUIWeb",
         "VerdictUIWebTests",
+        # The packaged desktop uses the runtime engine and WebKit, never macros.
+        "VerdictUIWorkbench",
+        "VerdictUIWorkbenchCore",
+        "VerdictUIWorkbenchCoreTests",
     }
 )
 

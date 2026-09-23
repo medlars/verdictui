@@ -3,8 +3,8 @@
 # Usage: scripts/release.sh <X.Y.Z> [--dry-run]
 #
 # VerdictUI ships a SOURCE-BUILT Homebrew formula (the tap runs `swift build`),
-# so there is no signed bundle to notarize and no server to deploy to. This
-# script is the whole release: every check runs before the first mutation, and
+# so this script publishes the CLI source release and formula. The optional
+# desktop archive is signed/notarized separately per docs/signing.md. Here, every check runs before the first mutation, and
 # --dry-run stops after the checks.
 set -euo pipefail
 

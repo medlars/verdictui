@@ -174,6 +174,7 @@ class VerdictUIPM(VerdictUIStagesMixin, VerdictUISmokeMixin, PmBase):
                 [
                     ("stage_consumer_runner", self.stage_consumer_runner),
                     ("stage_real_products", self.stage_real_products),
+                    ("stage_workbench", self.stage_workbench),
                 ]
             )
         # WatchTools fleet-wide stages — ImportError means not installed, skip gracefully

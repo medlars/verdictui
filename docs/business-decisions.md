@@ -188,3 +188,18 @@ curl -sSL -o /dev/null -w '%{http_code}\n' https://rdap.verisign.com/com/v1/doma
 
 **Goal (stated without the mechanism):** a public marketing surface for VerdictUI
 is reachable at a name we own.
+
+
+## Owner decisions recovered and reconfirmed, 2026-09-23
+
+The owner requested completion of the full saved plan, including custom product
+verification and real browser/native automation. They explicitly allowed better
+architecture and algorithms beyond the partial implementation. They added a
+CleanMyMac-inspired interface with process animation and selected a desktop app
+with a web-rendered UI. The implementation uses a bundled AppKit/WKWebView shell
+and the same verification engine as CLI/MCP, with actual progress and local
+history. It does not claim or depend on CleanMyMac's implementation technology.
+
+The audit across recovered Claude sessions found that most broad requirements
+were already registered; the major gap was implementation and closure evidence.
+See `instruction-coverage.md` for the matrix and missing-archive qualification.

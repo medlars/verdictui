@@ -17,6 +17,7 @@ app="$stage/VerdictUI.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Helpers" "$app/Contents/Resources"
 cp "$bin/VerdictUIWorkbench" "$app/Contents/MacOS/VerdictUIWorkbench"
 cp "$bin/verdictui" "$app/Contents/Helpers/verdictui"
+cp assets/workbench-icon.icns "$app/Contents/Resources/Workbench.icns"
 ditto "$bin/VerdictUI_VerdictUIWorkbench.bundle" "$app/Contents/Resources/VerdictUI_VerdictUIWorkbench.bundle"
 cat > "$app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -27,6 +28,7 @@ cat > "$app/Contents/Info.plist" <<PLIST
 <key>CFBundleDisplayName</key><string>VerdictUI</string>
 <key>CFBundleExecutable</key><string>VerdictUIWorkbench</string>
 <key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleIconFile</key><string>Workbench</string>
 <key>CFBundleShortVersionString</key><string>$version</string>
 <key>CFBundleVersion</key><string>$version</string>
 <key>LSMinimumSystemVersion</key><string>13.0</string>

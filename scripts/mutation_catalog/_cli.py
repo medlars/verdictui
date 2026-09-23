@@ -24,15 +24,15 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="failed consumer builds can execute stale runners",
         path="Sources/VerdictUICLICore/ProjectRunner.swift",
-        old="process.terminationStatus == 0 else {",
-        new="process.terminationStatus != 0 else {",
+        old="process.status() == 0 else {",
+        new="process.status() != 0 else {",
         test="ProjectRunnerTests/testBuildFailureRefusesStaleRunner",
     ),
     Mutation(
         name="consumer build timeout is ignored",
         path="Sources/VerdictUICLICore/ProjectRunner.swift",
-        old="if process.isRunning {\n            process.terminate()",
-        new="if process.isRunning && false {\n            process.terminate()",
+        old="ProcessInfo.processInfo.systemUptime < deadline else {",
+        new="ProcessInfo.processInfo.systemUptime > deadline else {",
         test="ProjectRunnerTests/testBuildTimeoutIsBounded",
     ),
     Mutation(

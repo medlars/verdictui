@@ -1,6 +1,6 @@
 """Workbench trust boundary and daemon resource-limit witnesses."""
 
-from mutation_catalog_types import Mutation
+from mutation_catalog_types import Mutation, Runner
 
 MUTATIONS: list[Mutation] = [
     Mutation(
@@ -37,5 +37,40 @@ MUTATIONS: list[Mutation] = [
         old="guard line.count <= maximumFrameBytes else { return }",
         new="guard true else { return }",
         test="DaemonTransportTests/testStalledAndOversizedClientsCannotBlockFollowingClients",
+    ),
+]
+
+MUTATIONS += [
+    Mutation(
+        name="workbench smoke accepts empty browser measurements",
+        path="scripts/workbench-smoke.py",
+        old="complete and measured and not self.failures",
+        new="complete and not self.failures",
+        test="Tests/test_workbench_smoke.py::test_both_browsers_must_run_assertions_not_just_start",
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
+        name="workbench smoke accepts partial browser flows",
+        path="scripts/workbench-smoke.py",
+        old="complete and measured and not self.failures",
+        new="measured and not self.failures",
+        test="Tests/test_workbench_smoke.py::test_partial_browser_flow_is_not_complete_even_with_measured_assertions",
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
+        name="workbench smoke ignores a measured failure",
+        path="scripts/workbench-smoke.py",
+        old="complete and measured and not self.failures",
+        new="complete and measured",
+        test="Tests/test_workbench_smoke.py::test_a_failed_assertion_is_counted_once_and_preserves_passes",
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
+        name="PM workbench accepts missing measurement summary",
+        path="scripts/verdictui_pm_smoke.py",
+        old="result.returncode == 0 and measured is not None",
+        new="result.returncode == 0",
+        test="Tests/test_product_pm_stages.py::test_workbench_stage_requires_complete_measured_flows",
+        runner=Runner.PYTEST,
     ),
 ]
