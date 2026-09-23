@@ -37,7 +37,7 @@ public struct VerdictUITool: AsyncParsableCommand {
         subcommands: [
             List.self, Render.self, Actions.self, Verify.self, Judge.self, Baseline.self,
             SweepRun.self,
-            Inspect.self, Capture.self, AppKit.self, Daemon.self, MCP.self,
+            Inspect.self, Capture.self, AppKit.self, Live.self, Web.self, Check.self, Daemon.self, MCP.self,
         ],
         defaultSubcommand: List.self
     )
@@ -125,8 +125,8 @@ public struct VerdictUITool: AsyncParsableCommand {
 
                 Act verbs: press, increment, decrement, show-menu, confirm, cancel,
                 raise, pick, scroll-to-visible, focus, set-value, scroll-to (0...1),
-                type, or ax:<AXActionName>. Drag and hover are not offered: they
-                would move the real pointer.
+                type, click, key, drag, hover, or ax:<AXActionName>. Use `live act`
+                for atomic action, observation and an expected-outcome verdict.
                 """
         )
         public init() {}

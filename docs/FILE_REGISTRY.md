@@ -277,6 +277,57 @@
 | `docs/dogfood/sagamail/Tests/SagaMailDogfoodTests/NotificationsSettingsVerdictTests.swift` | The dogfood verdicts, expectations owned by the CONSUMER's test target, with a cramped-viewport control                       | Active | 2026-08-14 |
 | `docs/audit-2026-08-26.md`                                           | Wave 10 Task 3 hardening audit — 10 phases + SD1–SD6, the fuzz negative control, and the fresh-clone PII scan that cleared the public repo               | Active | 2026-08-26 |
 | `evidence/run-v2.json`                                               | Governance-V2 S20 typed run-v2 record, committed by CI so the evidence outlives the run that produced it (an uploaded artifact expires; the committed record does not) | Active | 2026-08-29 |
+| `Sources/VerdictUICLICore/BoundedCommand.swift` | BoundedCommand: real-product verification integration | Active | 2026-09-23 |
+| `Sources/VerdictUICLICore/DaemonClient.swift` | DaemonClient: real-product verification integration | Active | 2026-09-23 |
+| `Sources/VerdictUICLICore/ExtendedMCP.swift` | ExtendedMCP: real-product verification integration | Active | 2026-09-23 |
+| `Sources/VerdictUICLICore/LiveCommandLine.swift` | LiveCommandLine: real-product verification integration | Active | 2026-09-23 |
+| `Sources/VerdictUICLICore/LiveRuntime.swift` | LiveRuntime: real-product verification integration | Active | 2026-09-23 |
+| `Sources/VerdictUICLICore/ProjectChecks.swift` | ProjectChecks: real-product verification integration | Active | 2026-09-23 |
+| `Sources/VerdictUICLICore/ProjectRunner.swift` | ProjectRunner: real-product verification integration | Active | 2026-09-23 |
+| `Sources/VerdictUICLICore/RuntimeShutdown.swift` | RuntimeShutdown: real-product verification integration | Active | 2026-09-23 |
+| `Sources/VerdictUICLICore/WebCommandLine.swift` | WebCommandLine: real-product verification integration | Active | 2026-09-23 |
+| `Sources/VerdictUICLICore/WebRuntime.swift` | WebRuntime: real-product verification integration | Active | 2026-09-23 |
+| `Sources/VerdictUIWeb/DOMSnapshotAssembly.swift` | DOMSnapshotAssembly: real-product verification integration | Active | 2026-09-23 |
+| `Sources/VerdictUIWeb/WebCredentials.swift` | WebCredentials: real-product verification integration | Active | 2026-09-23 |
+| `Sources/VerdictUIWeb/WebFrameGeometry.swift` | WebFrameGeometry: real-product verification integration | Active | 2026-09-23 |
+| `Sources/VerdictUIWeb/WebRedaction.swift` | WebRedaction: real-product verification integration | Active | 2026-09-23 |
+| `Sources/VerdictUIWeb/WebSession.swift` | WebSession: real-product verification integration | Active | 2026-09-23 |
+| `Sources/VerdictUIWeb/WebSessionManager.swift` | WebSessionManager: real-product verification integration | Active | 2026-09-23 |
+| `Sources/VerdictUIWitness/NativeInput.swift` | NativeInput: real-product verification integration | Active | 2026-09-23 |
+| `Tests/VerdictUICLICoreTests/DaemonClientTests.swift` | DaemonClientTests: behavioral and refusal regression coverage | Active | 2026-09-23 |
+| `Tests/VerdictUICLICoreTests/LiveRuntimeTests.swift` | LiveRuntimeTests: behavioral and refusal regression coverage | Active | 2026-09-23 |
+| `Tests/VerdictUICLICoreTests/ProjectChecksTests.swift` | ProjectChecksTests: behavioral and refusal regression coverage | Active | 2026-09-23 |
+| `Tests/VerdictUICLICoreTests/ProjectRunnerTests.swift` | ProjectRunnerTests: behavioral and refusal regression coverage | Active | 2026-09-23 |
+| `Tests/VerdictUICLICoreTests/WebRuntimeTests.swift` | WebRuntimeTests: behavioral and refusal regression coverage | Active | 2026-09-23 |
+| `Tests/VerdictUIWebTests/DOMSnapshotAssemblyTests.swift` | DOMSnapshotAssemblyTests: behavioral and refusal regression coverage | Active | 2026-09-23 |
+| `Tests/VerdictUIWebTests/Fixtures/server.py` | server: behavioral and refusal regression coverage | Active | 2026-09-23 |
+| `Tests/VerdictUIWebTests/WebCredentialsTests.swift` | WebCredentialsTests: behavioral and refusal regression coverage | Active | 2026-09-23 |
+| `Tests/VerdictUIWebTests/WebFrameIntegrationTests.swift` | WebFrameIntegrationTests: behavioral and refusal regression coverage | Active | 2026-09-23 |
+| `Tests/VerdictUIWebTests/WebSessionIntegrationTests.swift` | WebSessionIntegrationTests: behavioral and refusal regression coverage | Active | 2026-09-23 |
+| `Tests/VerdictUIWitnessTests/AXActionTests.swift` | AXActionTests: behavioral and refusal regression coverage | Active | 2026-09-23 |
+| `Tests/VerdictUIWitnessTests/NativeInputIntegrationTests.swift` | NativeInputIntegrationTests: behavioral and refusal regression coverage | Active | 2026-09-23 |
+| `Tests/VerdictUIWitnessTests/NativeInputTests.swift` | NativeInputTests: behavioral and refusal regression coverage | Active | 2026-09-23 |
+| `examples/ConsumerApp/.verdictui/config.json` | config: external consumer acceptance fixture | Active | 2026-09-23 |
+| `examples/ConsumerApp/Package.swift` | Package: external consumer acceptance fixture | Active | 2026-09-23 |
+| `examples/ConsumerApp/Sources/ConsumerScenarios/ConsumerMain.swift` | ConsumerMain: external consumer acceptance fixture | Active | 2026-09-23 |
+| `examples/ConsumerApp/verify-integration.py` | verify-integration: external consumer acceptance fixture | Active | 2026-09-23 |
+| `examples/LiveAppFixture/Fixture.swift` | Fixture: external consumer acceptance fixture | Active | 2026-09-23 |
+| `scripts/mutation_catalog/_native.py` | _native: guard mutation witnesses | Active | 2026-09-23 |
+| `scripts/mutation_catalog/_web.py` | _web: guard mutation witnesses | Active | 2026-09-23 |
+| `Tests/VerdictUIWebTests/Fixtures/broken.html` | broken: real-product verification and regression evidence | Active | 2026-09-23 |
+| `Tests/VerdictUIWebTests/Fixtures/clean.html` | clean: real-product verification and regression evidence | Active | 2026-09-23 |
+| `Tests/VerdictUIWebTests/Fixtures/empty.html` | empty: real-product verification and regression evidence | Active | 2026-09-23 |
+| `Tests/VerdictUIWebTests/Fixtures/frames.html` | frames: real-product verification and regression evidence | Active | 2026-09-23 |
+| `Tests/VerdictUIWebTests/Fixtures/login.html` | login: real-product verification and regression evidence | Active | 2026-09-23 |
+| `Tests/VerdictUIWitnessTests/AXReaderGuardTests.swift` | AXReaderGuardTests: real-product verification and regression evidence | Active | 2026-09-23 |
+| `scripts/mutation_catalog/_integration.py` | _integration: real-product verification and regression evidence | Active | 2026-09-23 |
+| `Sources/VerdictUIWorkbench/main.swift` | main: real-product verification and regression evidence | Active | 2026-09-23 |
+| `Sources/VerdictUIWorkbenchCore/WorkbenchBridge.swift` | WorkbenchBridge: real-product verification and regression evidence | Active | 2026-09-23 |
+| `Sources/VerdictUIWorkbenchCore/WorkbenchStore.swift` | WorkbenchStore: real-product verification and regression evidence | Active | 2026-09-23 |
+| `Tests/VerdictUIWorkbenchCoreTests/WorkbenchStoreTests.swift` | WorkbenchStoreTests: real-product verification and regression evidence | Active | 2026-09-23 |
+| `Tests/test_product_pm_stages.py` | test_product_pm_stages: real-product verification and regression evidence | Active | 2026-09-23 |
+| `Tests/test_product_smoke.py` | test_product_smoke: real-product verification and regression evidence | Active | 2026-09-23 |
+| `scripts/product-smoke.py` | product-smoke: real-product verification and regression evidence | Active | 2026-09-23 |
 
 ## Archived / Removed
 

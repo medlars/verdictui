@@ -8,6 +8,7 @@ import Foundation
 import VerdictUIKernel
 import VerdictUIProbe
 import VerdictUIWitness
+import VerdictUIWeb
 
 /// Runs scenarios and produces verdicts, trees, sweeps and baseline decisions.
 ///
@@ -20,10 +21,18 @@ public struct VerdictEngine: Sendable {
     public let registry: ScenarioRegistry
     /// Where baselines live.
     public let baselines: BaselineStore
+    public let allowsExternalWitness: Bool
+    public let webSessions: WebSessionManager
 
-    public init(registry: ScenarioRegistry, baselines: BaselineStore) {
+    public init(
+        registry: ScenarioRegistry, baselines: BaselineStore,
+        allowsExternalWitness: Bool = true,
+        webSessions: WebSessionManager = WebSessionManager()
+    ) {
         self.registry = registry
         self.baselines = baselines
+        self.allowsExternalWitness = allowsExternalWitness
+        self.webSessions = webSessions
     }
 
     /// Why a request could not be answered.
@@ -163,6 +172,12 @@ public struct VerdictEngine: Sendable {
         includeTree: Bool = false,
         crossValidate: Bool = false
     ) async throws -> Verdict {
+        guard !crossValidate || allowsExternalWitness else {
+            throw EngineError.renderFailed(
+                scenario: name,
+                reason: "custom scenario has no external witness host; cross-validation is unavailable"
+            )
+        }
         let tree = try await render(scenario: name, viewport: viewport, deadline: deadline)
         let context = LintContext.macOS(viewport: tree.frame, scenario: name)
         var verdict = RuleEngine.run(

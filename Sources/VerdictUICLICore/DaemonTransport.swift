@@ -101,11 +101,11 @@ public struct DaemonTransport: Sendable {
             try? FileManager.default.removeItem(atPath: socketPath)
         }
 
-        while shouldContinue() {
+        while shouldContinue() && !Task.isCancelled && FileManager.default.fileExists(atPath: socketPath) {
             let connection = await Self.acceptOffActor(listener)
             guard connection >= 0 else {
                 // EINTR is a signal arriving mid-accept, not a fault: retry.
-                if connection == -Int32(EINTR) { continue }
+                if connection == -Int32(EINTR) || connection == -Int32(EAGAIN) { continue }
                 throw TransportError.systemCall(
                     name: "accept",
                     errno: -connection,
@@ -125,6 +125,11 @@ public struct DaemonTransport: Sendable {
     private static func acceptOffActor(_ listener: Int32) async -> Int32 {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
+                var descriptor = pollfd(fd: listener, events: Int16(POLLIN), revents: 0)
+                guard poll(&descriptor, 1, 200) > 0 else {
+                    continuation.resume(returning: -Int32(EAGAIN))
+                    return
+                }
                 let connection = accept(listener, nil, nil)
                 continuation.resume(returning: connection >= 0 ? connection : -errno)
             }
@@ -138,6 +143,11 @@ public struct DaemonTransport: Sendable {
     private static func readOffActor(_ descriptor: Int32) async -> (bytes: [UInt8], count: Int) {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
+                var ready = pollfd(fd: descriptor, events: Int16(POLLIN), revents: 0)
+                guard poll(&ready, 1, 200) > 0 else {
+                    continuation.resume(returning: ([], -Int(EAGAIN)))
+                    return
+                }
                 var buffer = [UInt8](repeating: 0, count: 4096)
                 let count = read(descriptor, &buffer, buffer.count)
                 continuation.resume(returning: (buffer, count))
@@ -255,8 +265,9 @@ public struct DaemonTransport: Sendable {
     private func serveConnection(_ descriptor: Int32) async {
         var pending = Data()
 
-        while true {
+        while !Task.isCancelled && FileManager.default.fileExists(atPath: socketPath) {
             let (buffer, count) = await Self.readOffActor(descriptor)
+            if count == -Int(EAGAIN) { continue }
             if count < 0 { return }
             if count == 0 {
                 // Client closed. A trailing frame with no newline is a
@@ -271,7 +282,18 @@ public struct DaemonTransport: Sendable {
                 pending = pending[pending.index(after: newline)...]
                 guard !line.isEmpty else { continue }
                 let reply = await Self.answer(Data(line), engine: engine)
-                guard write(descriptor, [UInt8](reply), reply.count) >= 0 else { return }
+                var noSignal: Int32 = 1
+                guard setsockopt(descriptor, SOL_SOCKET, SO_NOSIGPIPE, &noSignal, socklen_t(MemoryLayout.size(ofValue: noSignal))) == 0 else { return }
+                var sent = 0
+                let bytes = [UInt8](reply)
+                while sent < bytes.count {
+                    let count = bytes.withUnsafeBytes {
+                        write(descriptor, $0.baseAddress!.advanced(by: sent), bytes.count - sent)
+                    }
+                    if count < 0 && errno == EINTR { continue }
+                    guard count > 0 else { return }
+                    sent += count
+                }
             }
         }
     }

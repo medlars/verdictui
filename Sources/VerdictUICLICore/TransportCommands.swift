@@ -35,7 +35,7 @@ public struct DaemonCommand: Sendable {
 
     @MainActor
     public func run(_ environment: CommandEnvironment) async -> ExitCode {
-        let path = socketPath ?? VerdictDaemon.defaultSocketPath
+        let path = socketPath ?? environment.daemonSocketPath
 
         switch action {
         case .status:
@@ -95,14 +95,23 @@ public struct DaemonCommand: Sendable {
     @MainActor
     private func start(_ environment: CommandEnvironment, path: String) async -> ExitCode {
         let transport = DaemonTransport(engine: environment.engine, socketPath: path)
+        let shutdown = RuntimeShutdown(sessions: environment.engine.webSessions, socketPath: path)
+        defer { shutdown.cancel() }
         do {
             environment.output.writeError("verdictui: daemon listening on \(path)\n")
             try await transport.serve()
+            let failures = await environment.engine.webSessions.closeAll()
+            if !failures.isEmpty {
+                environment.output.writeError("verdictui: browser shutdown incomplete\n")
+                return .couldNotVerify
+            }
             return .pass
         } catch let error as DaemonTransport.TransportError {
+            _ = await environment.engine.webSessions.closeAll()
             environment.output.writeError("verdictui: \(error.description)\n")
             return .couldNotVerify
         } catch {
+            _ = await environment.engine.webSessions.closeAll()
             environment.output.writeError("verdictui: daemon failed: \(error)\n")
             return .couldNotVerify
         }
@@ -131,10 +140,13 @@ public struct MCPCommand: Sendable {
     @MainActor
     public func run(_ environment: CommandEnvironment) async -> ExitCode {
         let transport = MCPTransport(engine: environment.engine)
+        let shutdown = RuntimeShutdown(sessions: environment.engine.webSessions)
+        defer { shutdown.cancel() }
         await transport.serve(
             input: FileHandle.standardInput,
             output: FileHandle.standardOutput
         )
-        return .pass
+        let failures = await environment.engine.webSessions.closeAll()
+        return failures.isEmpty ? .pass : .couldNotVerify
     }
 }

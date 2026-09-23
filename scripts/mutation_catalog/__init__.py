@@ -28,15 +28,20 @@ where it is written.
 from mutation_catalog_types import Mutation, Runner
 
 from mutation_catalog._cli import MUTATIONS as _CLI
+from mutation_catalog._integration import MUTATIONS as _INTEGRATION
 from mutation_catalog._kernel import MUTATIONS as _KERNEL
 from mutation_catalog._macros import MUTATIONS as _MACROS
 from mutation_catalog._misc import MUTATIONS as _MISC
+from mutation_catalog._native import MUTATIONS as _NATIVE
 from mutation_catalog._probe import MUTATIONS as _PROBE
 from mutation_catalog._scripts import MUTATIONS as _SCRIPTS
+from mutation_catalog._web import MUTATIONS as _WEB
 
 __all__ = ["MUTATIONS", "Mutation", "Runner"]
 
 # Concatenated in a FIXED order. mutation-check.py reports rows by name rather
 # than by index, so order is not load-bearing for correctness — but a stable
 # order keeps a run's output diffable against the previous one.
-MUTATIONS: list[Mutation] = _PROBE + _KERNEL + _MACROS + _CLI + _SCRIPTS + _MISC
+MUTATIONS: list[Mutation] = (
+    _PROBE + _KERNEL + _MACROS + _CLI + _SCRIPTS + _MISC + _NATIVE + _WEB + _INTEGRATION
+)

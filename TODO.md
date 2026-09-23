@@ -1,7 +1,8 @@
 # VerdictUI TODO
 
 ## P0 — Blocking
-<!-- none -->
+- [ ] (2026-09-23) Desktop workbench: owner-selected web-rendered macOS app, CleanMyMac-inspired motion, real project checks and evidence, accessible UI verification and packaged installation.
+- [ ] (2026-09-23) Complete CTS-E47F57A8 / full saved plan: custom scenario runner, live-app MCP and verified input, web semantic verification and trusted input, isolated sessions, artifact smoke, truthful documentation and installed release. Plan: `docs/finalization-plan.md`.
 
 ## P1 — High Priority
 - [x] (2026-08-16) (P1) PM/repair-latency-lane: non-reproduced on the current tree. Evidence: focused `MCPLatencyTests` passed with p50 46.56 ms recorded, not asserted, because the host has unwritable SwiftPM user caches; `python3.14 scripts/verdictui-pm.py --quick` passed Grade A (100.0) with `stage_test` 792 tests PASS (17 skipped/unverified), `stage_runtime_bench` p50 147.18 ms recorded in constrained timing, `stage_mcp_latency` p50 83.66 ms recorded in constrained timing, and all hygiene stages green. No code change was justified by the current tree.

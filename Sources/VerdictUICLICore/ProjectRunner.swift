@@ -29,7 +29,9 @@ public enum VerdictUIRunner {
         operation: () async throws -> Result
     ) async rethrows -> Result {
         let environment = CommandEnvironment(
-            engine: VerdictEngine(registry: registry, baselines: .standard(root: root)),
+            engine: VerdictEngine(
+                registry: registry, baselines: .standard(root: root), allowsExternalWitness: false
+            ),
             output: StandardOutput(),
             pixelArtifactRoot: root.appendingPathComponent(PixelArtifact.directory, isDirectory: true),
             projectRoot: root

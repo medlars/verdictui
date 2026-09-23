@@ -1,5 +1,65 @@
 # VerdictUI MCP tools — contract
 
+### `web_list()`
+
+Lists the browser sessions owned by this MCP connection. An empty list is a
+measured absence of sessions; it is not a UI verdict.
+
+### `web_open(url, profile?)`
+
+Opens a real HTTP, HTTPS or local file page in an invisible browser. A named
+profile isolates storage and cookies from other profiles and has one owner at
+a time. Reopening the same profile on this connection navigates its warm browser.
+Credentials in URLs are refused.
+
+### `web_render(profile?)`
+
+Returns the rendered DOM and layout as a semantic tree. Node IDs are the targets
+for subsequent actions. Input values are masked.
+
+### `web_verify(profile?, expect_text?)`
+
+Judges the current page and optional required visible text. A failed assertion
+is an answered call with a FAIL verdict, not an MCP error.
+
+### `web_act(profile?, action, node?, text?, credential?, key?, modifiers?, expect_text?)`
+
+Sends trusted click, type, key or submit input, then observes the resulting page
+and returns a verdict and change delta. `credential` is an action whose value
+is a credential name or `op://` reference. Resolved values stay inside the driver;
+password fields reject literal `text`. Key modifiers are comma separated.
+Nodes come from `web_render`; invalid or unavailable targets return
+`isError:true` with a `web-unavailable` finding and no passing verdict.
+
+### `web_close(profile?)`
+
+Closes the owned browser and releases the profile lock. MCP EOF and orderly
+termination close all its owned browsers. The CLI shares sessions through its
+daemon; `verdictui daemon stop` closes those sessions.
+
+### `live_inspect(pid | app, surface?)`
+
+Reads a real macOS application through Accessibility. Select `pid` for an
+existing process or `app` for a fixture bundle to launch and terminate. It returns
+a compact semantic tree; no scenario registration is required.
+
+### `live_verify(pid | app, surface?, expect_text?)`
+
+Judges the real application's tree and optional required text. A failed layout
+or missing expected text is an answered call (`isError:false`, verdict FAIL).
+
+### `live_act(pid | app, path, action, value?, expect_text?, timeout?)`
+
+Reads the before-tree, targets one app, acts and observes until stable or the
+deadline. Returns the existing step schema with delta, findings and after-tree.
+Actions include press/click/type/set-value/key/drag/hover; `value` holds text,
+key chords such as `command+a`, or a drag destination `x,y`. Paths come from
+`live_inspect`. `timeout` is positive and at most 60 seconds. Without
+`expect_text`, the result explicitly warns that no intended outcome was asserted.
+Denied input or unreadable UI returns `isError:true` with a `live-unavailable`
+warning and no verdict. PID-targeted input does not activate the user's app or
+move the global pointer. Permission availability is measured by the driver.
+
 > **STATUS: SERVABLE.** `verdictui mcp` speaks this protocol over stdio, and
 > `stage_transport_smoke` drives the built binary to prove it — a library test
 > cannot see a process that refuses to start, and for a whole wave this catalog

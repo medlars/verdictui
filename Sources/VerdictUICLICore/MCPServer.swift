@@ -68,7 +68,7 @@ public enum MCPServer {
         return [
             MCPTool(
                 name: "list_scenarios",
-                description: "Every scenario that can be rendered and verified.",
+                description: "Every registered scenario. The stock catalog contains demo fixtures; configure a project runner for your own scenarios. Live and web tools target real products directly.",
                 inputSchema: MCPSchema(properties: [:])
             ),
             MCPTool(
@@ -243,7 +243,7 @@ public enum MCPServer {
                     + "baseline. Writes nothing.",
                 inputSchema: MCPSchema(properties: ["scenario": scenario], required: ["scenario"])
             ),
-        ]
+        ] + ExtendedMCP.tools
     }
 
     /// Map an MCP tool name onto the daemon method that serves it.
@@ -263,6 +263,8 @@ public enum MCPServer {
         case "sweep": return "sweep"
         case "baseline_diff": return "baseline_diff"
         case "judge_appkit": return "judge_appkit"
+        case "live_inspect", "live_verify", "live_act": return tool
+        case "web_list", "web_open", "web_render", "web_verify", "web_act", "web_close": return tool
         default: return nil
         }
     }

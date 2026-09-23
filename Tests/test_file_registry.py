@@ -33,7 +33,9 @@ _ARCHIVED_HEADING = "## Archived / Removed"
 # `.cjs` is CI glue that RUNS on a schedule — the first one arrived as a
 # workflow step referencing a file nobody had written, which failed every
 # scheduled run for as long as the pins were stale. Source, so it takes a row.
-_SOURCE_SUFFIXES = frozenset({".swift", ".py", ".sh", ".json", ".toml", ".cjs"})
+_SOURCE_SUFFIXES = frozenset(
+    {".swift", ".py", ".sh", ".json", ".toml", ".cjs", ".html", ".css", ".js"}
+)
 
 # Everything tracked that is deliberately not source. Declared rather than
 # inferred so that a file type nobody has classified fails the run instead of

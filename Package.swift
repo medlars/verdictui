@@ -164,6 +164,7 @@ let package = Package(
         .target(
             name: "VerdictUICLICore",
             dependencies: [
+                "VerdictUIWeb",
                 "VerdictUIKernel",
                 "VerdictUIProbe",
                 "VerdictUIDemoScenarios",
@@ -180,6 +181,16 @@ let package = Package(
         .executableTarget(
             name: "verdictui",
             dependencies: ["VerdictUICLICore"],
+            swiftSettings: strictSettings
+        ),
+        .target(
+            name: "VerdictUIWorkbenchCore",
+            dependencies: ["VerdictUICLICore", "VerdictUIWeb"],
+            swiftSettings: strictSettings
+        ),
+        .testTarget(
+            name: "VerdictUIWorkbenchCoreTests",
+            dependencies: ["VerdictUIWorkbenchCore", "VerdictUICLICore"],
             swiftSettings: strictSettings
         ),
         // The windowed half of the cross-validation channel, and a separate

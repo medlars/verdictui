@@ -169,6 +169,13 @@ class VerdictUIPM(VerdictUIStagesMixin, VerdictUISmokeMixin, PmBase):
             ("stage_capabilitywatch", self.stage_capabilitywatch),
             ("stage_cis_health", self.stage_cis_health),
         ]
+        if mode == "full":
+            stages.extend(
+                [
+                    ("stage_consumer_runner", self.stage_consumer_runner),
+                    ("stage_real_products", self.stage_real_products),
+                ]
+            )
         # WatchTools fleet-wide stages — ImportError means not installed, skip gracefully
         try:
             from pm_base_pm_stages import (  # type: ignore  # noqa: PLC0415 — deferred shared-libs import (skip sentinel pattern)

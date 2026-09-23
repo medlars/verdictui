@@ -11,6 +11,7 @@
 import Foundation
 import VerdictUIKernel
 import VerdictUIProbe
+import VerdictUIWeb
 
 /// An act, in the form a client can put on a wire.
 ///
@@ -145,6 +146,10 @@ public struct DaemonRequest: Codable, Sendable, Equatable {
     /// Caller-supplied correlation id, echoed back untouched.
     public let id: String?
 
+    /// A live application request, independent of the scenario catalog.
+    public let live: LiveRequest?
+    public let web: WebRequest?
+
     public init(
         method: String,
         scenario: String? = nil,
@@ -156,7 +161,9 @@ public struct DaemonRequest: Codable, Sendable, Equatable {
         pixels: Bool? = nil,
         runner: String? = nil,
         subject: String? = nil,
-        id: String? = nil
+        id: String? = nil,
+        live: LiveRequest? = nil,
+        web: WebRequest? = nil
     ) {
         self.runner = runner
         self.subject = subject
@@ -169,6 +176,8 @@ public struct DaemonRequest: Codable, Sendable, Equatable {
         self.crossValidate = crossValidate
         self.pixels = pixels
         self.id = id
+        self.live = live
+        self.web = web
     }
 }
 
@@ -189,12 +198,15 @@ public struct DaemonResponse: Codable, Sendable {
     public let result: DaemonResult?
     /// Why the request could not be answered.
     public let error: String?
+    /// An unavailable observation is a warning, never a passing UI verdict.
+    public let findings: [Finding]?
 
-    public init(ok: Bool, id: String?, result: DaemonResult?, error: String?) {
+    public init(ok: Bool, id: String?, result: DaemonResult?, error: String?, findings: [Finding]? = nil) {
         self.ok = ok
         self.id = id
         self.result = result
         self.error = error
+        self.findings = findings
     }
 }
 
@@ -224,10 +236,11 @@ public enum DaemonResult: Codable, Sendable {
     case pong(String)
     /// Probe id -> the ``ProbeAction`` verbs that probe accepts.
     case actions([String: [String]])
+    case webSessions([WebSessionInfo])
 
     private enum CodingKeys: String, CodingKey, CaseIterable {
         case scenarios, verdict, tree, step, sweep, findings, pixelRender, pong
-        case actions
+        case actions, webSessions
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -242,6 +255,7 @@ public enum DaemonResult: Codable, Sendable {
         case .pixelRender(let value): try container.encode(value, forKey: .pixelRender)
         case .pong(let value): try container.encode(value, forKey: .pong)
         case .actions(let value): try container.encode(value, forKey: .actions)
+        case .webSessions(let value): try container.encode(value, forKey: .webSessions)
         }
     }
 
@@ -251,7 +265,9 @@ public enum DaemonResult: Codable, Sendable {
         // each case has a distinct key: exactly one is present, so the first
         // match IS the answer. A payload with none of them is a malformed
         // result, reported as such rather than defaulted to an empty case.
-        if let value = try container.decodeIfPresent([String].self, forKey: .scenarios) {
+        if let value = try container.decodeIfPresent([WebSessionInfo].self, forKey: .webSessions) {
+            self = .webSessions(value)
+        } else if let value = try container.decodeIfPresent([String].self, forKey: .scenarios) {
             self = .scenarios(value)
         } else if let value = try container.decodeIfPresent(Verdict.self, forKey: .verdict) {
             self = .verdict(value)
@@ -362,6 +378,38 @@ public actor VerdictDaemon {
         }
         func success(_ result: DaemonResult) -> DaemonResponse {
             DaemonResponse(ok: true, id: request.id, result: result, error: nil)
+        }
+
+        if ["web_list", "web_open", "web_render", "web_verify", "web_act", "web_close"].contains(request.method) {
+            guard let web = request.web else { return failure("web operation requires arguments") }
+            do {
+                return success(try await WebRuntime.handle(web, method: request.method, sessions: engine.webSessions))
+            } catch {
+                return DaemonResponse(
+                    ok: false, id: request.id, result: nil, error: "web-unavailable: \(error)",
+                    findings: [Finding(rule: "web-unavailable", severity: .warning,
+                        nodeID: web.node ?? "web-root",
+                        message: "Browser observation or input could not be completed; no UI verdict was produced.")]
+                )
+            }
+        }
+
+        if ["live_inspect", "live_verify", "live_act"].contains(request.method) {
+            guard let live = request.live else {
+                return failure("live operation requires a target")
+            }
+            do {
+                return success(try await LiveRuntime.handle(live, method: request.method))
+            } catch {
+                return DaemonResponse(
+                    ok: false, id: request.id, result: nil, error: "live-unavailable: \(error)",
+                    findings: [Finding(
+                        rule: "live-unavailable", severity: .warning,
+                        nodeID: live.path ?? "live-root",
+                        message: "Native input or observation could not be completed; no UI verdict was produced."
+                    )]
+                )
+            }
         }
 
         // `judge_appkit` is handled BEFORE the scenario guard because it needs
