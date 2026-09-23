@@ -16,6 +16,7 @@ source ledger stays outside this public repository.
 | Check LaunchGate and other real products, not only demonstrations | Yes, but the installed entrypoint still used a fixed demo registry | Public consumer runner, automatic incremental build, external-package CLI/MCP checks with deliberate passing and failing controls |
 | Installed tool, on demand and automatically after edits | Registered as INS-63190DA7; the old hook used the inherited working directory and only detected SwiftUI | Explicit project checks and corrected Swift/AppKit/web hook; no demo substitution |
 | CLI, API and MCP access to the developer's own Swift/AppKit UI | Yes | Shared engine, custom runner and live native routes; actual subprocess acceptance |
+| Notification-system repair combined with the virtual-rendering request | INS-2B146691 was marked implemented using documentation references | Rendering is now verified independently. The separate notification clause has no recovered specific defect or repair evidence; the combined record is corrected to partial rather than assuming it was fixed. |
 | Both rendered scenarios and real running applications | Yes, explicitly confirmed in September | Keep both paths and test each independently |
 | Invisible real browser login and task execution | Yes; Wave 11 was saved but only lifecycle/transport foundations existed | Trusted input, accessible names, expected outcomes, isolated persistent profiles, no screenshot dependency |
 | Concurrent sessions without identity confusion or secret exposure | Yes | Profile ownership, actual multi-client checks, credential resolution and output/argv scans |
@@ -32,3 +33,15 @@ written broad vision. Several requirements existed in plans or registrations
 while demo success, partial probes, or the presence of a hook stood in for
 end-to-end product evidence. Release evidence must distinguish supported
 capability, observed scenario coverage, and unavailable measurement.
+
+Release reconciliation: v1.1.0 is published with a notarized desktop archive and
+updated Homebrew CLI. Both installed binaries passed real native/browser
+CLI/MCP artifact acceptance. INS-FAE07628 and INS-402715D8 now cite delivered
+desktop/web evidence; INS-0105EE8B cites the real consumer surfaces. Fleet
+coverage remains scoped by [product-adoption.md](product-adoption.md).
+
+The installed background wrapper was also checked, not only the hook script:
+17 supported file-extension edit cases reached an actual configured web check;
+passing, failing and unavailable controls preserved the CLI result. This proves
+dispatch and configured-target execution, not automatic discovery of all Swift
+or AppKit views. INS-63190DA7 remains partial for unconfigured product coverage.

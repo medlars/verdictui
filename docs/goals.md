@@ -14,9 +14,10 @@ live macOS subjects and isolated browser sessions through CLI/MCP. The desktop
 workbench bundles the same engine behind a local web-rendered interface with
 editable project checks, measured results, history and cancellation.
 
-Release acceptance: complete the full PM, external consumer rebuild/recovery,
-real native/browser artifact smoke, two-engine rendered workbench checks,
-notarized app publication and installed CLI/app parity. See
+Release 1.1.0 is published with a notarized desktop archive and Homebrew CLI.
+External consumer rebuild/recovery, native/browser artifact smoke, two-engine
+rendered workbench checks and installed CLI/app parity are the acceptance
+checks. The full PM remains the final supervision gate. See
 [wave-status.md](wave-status.md) for current measured completion and
 [instruction-coverage.md](instruction-coverage.md) for the recovered owner scope.
 
