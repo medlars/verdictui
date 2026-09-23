@@ -1,0 +1,22 @@
+<!doctype html><html><head><meta charset="utf-8"><style>body{margin:24px;font:16px sans-serif}main,form,section{display:flex;flex-direction:column;gap:24px;width:400px}input,button{box-sizing:border-box;width:240px;height:44px}p{margin:0}[hidden]{display:none}</style></head><body><main><form id="login"><input id="username" aria-label="Username" autocomplete="username"><input id="password" type="password" aria-label="Password" autocomplete="current-password"><button id="sign-in" type="submit">Sign in</button></form><p id="status">Sign in to continue</p><section id="task" hidden><button id="finish">Complete task</button></section></main><script>
+let trusted = true;
+document.addEventListener('input', event => { trusted = trusted && event.isTrusted; });
+document.getElementById('login').addEventListener('submit', async event => {
+  event.preventDefault();
+  const bytes = new TextEncoder().encode(document.getElementById('password').value);
+  const digest = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))).map(v => v.toString(16).padStart(2, '0')).join('');
+  const valid = digest === new URL(location.href).searchParams.get('hash');
+  const accepted = valid && trusted && event.isTrusted;
+  document.getElementById('status').textContent = accepted ? 'Welcome' : 'Login rejected';
+  if (accepted) { document.getElementById('login').hidden = true; document.getElementById('task').hidden = false; }
+});
+document.getElementById('finish').addEventListener('click', event => {
+  document.getElementById('status').textContent = event.isTrusted ? 'Task complete' : 'Untrusted input';
+  if (event.isTrusted) localStorage.setItem('task-complete', 'yes');
+});
+if (localStorage.getItem('task-complete') === 'yes') {
+  document.getElementById('login').hidden = true;
+  document.getElementById('task').hidden = false;
+  document.getElementById('status').textContent = 'Task complete';
+}
+</script></body></html>

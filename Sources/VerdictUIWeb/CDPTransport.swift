@@ -88,6 +88,7 @@ public actor CDPTransport {
         let id: Int
         let method: String
         let params: [String: CDPValue]
+        let sessionId: String?
     }
 
     private struct Response: Decodable {
@@ -136,7 +137,8 @@ public actor CDPTransport {
     public func send(
         method: String,
         params: [String: CDPValue] = [:],
-        timeout: Duration = .seconds(10)
+        timeout: Duration = .seconds(10),
+        sessionID: String? = nil
     ) async throws -> [String: CDPValue] {
         if let terminalError { throw terminalError }
         guard timeout > .zero, !method.isEmpty, nextID < Int.max else {
@@ -149,7 +151,7 @@ public actor CDPTransport {
         let text: String
         do {
             text = String(decoding: try JSONEncoder().encode(
-                Request(id: id, method: method, params: params)), as: UTF8.self)
+                Request(id: id, method: method, params: params, sessionId: sessionID)), as: UTF8.self)
         } catch {
             // Do not include parameter contents: later callers may send credentials.
             throw WebBrowserError.invalidCDPRequest(reason: "parameters are not valid JSON")

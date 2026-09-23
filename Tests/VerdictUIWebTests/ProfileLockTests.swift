@@ -31,7 +31,8 @@ final class ProfileLockTests: XCTestCase {
     func testASecondAcquireOnOneProfileRefuses() throws {
         let registry = tempRegistry()
         defer { try? FileManager.default.removeItem(at: registry.root) }
-        _ = try ProfileLock.acquire(profile: "work", registry: registry)
+        let held = try ProfileLock.acquire(profile: "work", registry: registry)
+        defer { held.release() }
         XCTAssertThrowsError(
             try ProfileLock.acquire(profile: "work", registry: registry)
         ) { error in
@@ -102,4 +103,17 @@ final class ProfileLockTests: XCTestCase {
         XCTAssertEqual(
             content.trimmingCharacters(in: .whitespacesAndNewlines), "99999")
     }
+    func testKernelLockRejectsEvenAnEmptyPidfileAndReleaseIsIdempotent() throws {
+        let registry = tempRegistry()
+        defer { try? FileManager.default.removeItem(at: registry.root) }
+        let first = try ProfileLock.acquire(profile: "race", registry: registry)
+        try Data().write(to: registry.lockPath(for: "race"))
+        XCTAssertThrowsError(try ProfileLock.acquire(profile: "race", registry: registry))
+        first.release()
+        let next = try ProfileLock.acquire(profile: "race", registry: registry)
+        first.release()
+        XCTAssertThrowsError(try ProfileLock.acquire(profile: "race", registry: registry))
+        next.release()
+    }
+
 }

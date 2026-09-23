@@ -71,17 +71,20 @@ public actor HeadlessBrowser {
         }
         try FileManager.default.createDirectory(
             at: options.profileDirectory, withIntermediateDirectories: true)
-        let stderrLog = options.profileDirectory
-            .appendingPathComponent(Options.stderrName)
-        let errHandle = FileHandle(forWritingAtPath: stderrLog.path)
-        guard let errHandle else {
-            throw WebBrowserError.launchFailed(
-                reason: "could not open \(stderrLog.path) for writing")
+        // A persisted DevToolsActivePort names the previous browser. Reading it
+        // on a relaunch can attach to an unrelated process that reused its port.
+        let activePort = options.profileDirectory.appendingPathComponent("DevToolsActivePort")
+        if FileManager.default.fileExists(atPath: activePort.path) {
+            try FileManager.default.removeItem(at: activePort)
         }
         let process = Process()
         process.executableURL = options.browser
         process.arguments = Self.launchArguments(profileDirectory: options.profileDirectory)
-        process.standardError = errHandle
+        // Browser diagnostics may echo page URLs or console messages. No
+        // browser output is retained when a session can contain credentials.
+        process.standardError = FileHandle.nullDevice
+        process.standardOutput = FileHandle.nullDevice
+        process.standardInput = FileHandle.nullDevice
         do {
             try process.run()
         } catch {
@@ -89,10 +92,14 @@ public actor HeadlessBrowser {
                 reason: "spawn failed: \(error)")
         }
         let pid = process.processIdentifier
+        var handedOff = false
+        defer { if !handedOff { kill(pid, SIGKILL) } }
         let deadline = ContinuousClock.now
             + .seconds(options.discoveryTimeout)
         while true {
+            try Task.checkCancellation()
             if let endpoint = DevtoolsEndpoint.read(in: options.profileDirectory) {
+                handedOff = true
                 return HeadlessBrowser(
                     pid: pid,
                     endpoint: endpoint,
@@ -100,7 +107,7 @@ public actor HeadlessBrowser {
             }
             guard ProcessLiveness.isAlive(pid) else {
                 throw WebBrowserError.launchFailed(
-                    reason: Self.stderrExcerpt(profileDirectory: options.profileDirectory))
+                    reason: "browser died before publishing its endpoint")
             }
             guard ContinuousClock.now < deadline else {
                 kill(pid, SIGKILL)
@@ -131,16 +138,6 @@ public actor HeadlessBrowser {
             "--window-position=-32000,-32000",
             "about:blank",
         ]
-    }
-
-    /// The last lines of the launch stderr log, for the failure reason.
-    private static func stderrExcerpt(profileDirectory: URL) -> String {
-        let log = profileDirectory.appendingPathComponent(Options.stderrName)
-        guard let data = try? Data(contentsOf: log), !data.isEmpty else {
-            return "browser died before publishing its endpoint; stderr empty"
-        }
-        let text = String(decoding: data.suffix(2000), as: UTF8.self)
-        return "browser died; stderr: \(text.trimmingCharacters(in: .whitespacesAndNewlines).suffix(400))"
     }
 
     /// What the health probe observed, as evidence rather than a bare bool.
