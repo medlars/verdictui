@@ -12,11 +12,18 @@
 // cleanly, passes every library test, and then fails at RUN time with
 // "Asynchronous root command needs availability annotation". Measured: the CLI
 // suite was 8/8 green against a binary that could not execute a single command.
+import Foundation
 import VerdictUICLICore
 
 @main
 struct VerdictUIBinary {
     static func main() async {
-        await VerdictUITool.main()
+        do {
+            try ProjectRunner.forwardIfDeclared()
+            await VerdictUITool.main()
+        } catch {
+            FileHandle.standardError.write(Data("verdictui: \(error)\n".utf8))
+            exit(2)
+        }
     }
 }
