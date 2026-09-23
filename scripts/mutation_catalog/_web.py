@@ -7,6 +7,182 @@ _TEST = "VerdictUIWebTests."
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="web inline cancellation prevents remote object cleanup",
+        path=_BASE + "WebInlineGeometry.swift",
+        old='_ = try await Task.detached {\n            try await command("Runtime.releaseObjectGroup", ["objectGroup": .string(group)], .seconds(1))\n        }.value',
+        new='try Task.checkCancellation()\n        _ = try await command("Runtime.releaseObjectGroup", ["objectGroup": .string(group)], .seconds(1))',
+        test=_TEST
+        + "WebInlineGeometryTests/testResolutionBatchesAreBoundedAndCancellationStillReleasesObjects",
+    ),
+    Mutation(
+        name="web absent clickability column fabricates measured interaction",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old='metadata["web.interactionMeasured"] = .bool(nodes["isClickable"] != nil)',
+        new='metadata["web.interactionMeasured"] = .bool(true)',
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/testClickableIndicesAndConservativeFocusableEvidenceAreValidated",
+    ),
+    Mutation(
+        name="web omitted interactive ancestors lose conservative evidence",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old='metadata["web.hasInteractiveAncestor"] = .bool(interactiveAncestors[index])',
+        new='metadata["web.hasInteractiveAncestor"] = .bool(false)',
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/testOmittedAncestorsRetainClickAndFocusEvidenceOnDescendants",
+    ),
+    Mutation(
+        name="web inline candidate limit is bypassed",
+        path=_BASE + "WebInlineGeometry.swift",
+        old="count <= candidates",
+        new="count <= Int.max",
+        test=_TEST
+        + "WebInlineGeometryTests/testNonHTMLIsExplicitAndBudgetsAreGlobalAndDeadlineBounded",
+    ),
+    Mutation(
+        name="web inline fragment limit is bypassed",
+        path=_BASE + "WebInlineGeometry.swift",
+        old="count <= fragments",
+        new="count <= Int.max",
+        test=_TEST
+        + "WebInlineGeometryTests/testNonHTMLIsExplicitAndBudgetsAreGlobalAndDeadlineBounded",
+    ),
+    Mutation(
+        name="web inline deadline is ignored",
+        path=_BASE + "WebInlineGeometry.swift",
+        old="remaining > .zero",
+        new="remaining > .seconds(-2)",
+        test=_TEST
+        + "WebInlineGeometryTests/testNonHTMLIsExplicitAndBudgetsAreGlobalAndDeadlineBounded",
+    ),
+    Mutation(
+        name="web inline isolated context identity is not checked",
+        path=_BASE + "WebInlineGeometry.swift",
+        old="context > 0",
+        new="context >= -1",
+        test=_TEST
+        + "WebInlineGeometryTests/testInvalidRemoteContextNodeAndScriptExceptionRemainUnavailable",
+    ),
+    Mutation(
+        name="web inline remote object identity is empty",
+        path=_BASE + "WebInlineGeometry.swift",
+        old="!objectID.isEmpty",
+        new="objectID.count >= 0",
+        test=_TEST
+        + "WebInlineGeometryTests/testInvalidRemoteContextNodeAndScriptExceptionRemainUnavailable",
+    ),
+    Mutation(
+        name="web inline script exceptions are accepted",
+        path=_BASE + "WebInlineGeometry.swift",
+        old='response["exceptionDetails"] == nil',
+        new='response["exceptionDetails"] == response["exceptionDetails"]',
+        test=_TEST
+        + "WebInlineGeometryTests/testInvalidRemoteContextNodeAndScriptExceptionRemainUnavailable",
+    ),
+    Mutation(
+        name="web inline missing rows yield partial measurements",
+        path=_BASE + "WebInlineGeometry.swift",
+        old="rows.count == batch.count",
+        new="rows.count <= batch.count",
+        test=_TEST
+        + "WebInlineGeometryTests/testIncompleteAndOversizedMeasurementsFailWithoutPartialRecords",
+    ),
+    Mutation(
+        name="web inline empty fragments are accepted",
+        path=_BASE + "WebInlineGeometry.swift",
+        old="case let .array(rects) = row, !rects.isEmpty",
+        new="case let .array(rects) = row, rects.count >= 0",
+        test=_TEST
+        + "WebInlineGeometryTests/testIncompleteAndOversizedMeasurementsFailWithoutPartialRecords",
+    ),
+    Mutation(
+        name="web inline remote objects are not released after failure",
+        path=_BASE + "WebInlineGeometry.swift",
+        old="        } catch {\n            try await release(group, command: command)",
+        new="        } catch {\n            // Deliberate leak for the ownership witness.",
+        test=_TEST
+        + "WebInlineGeometryTests/testCollectionUsesExactNodesAndReleasesObjectsOnSuccessAndEveryFailure",
+    ),
+    Mutation(
+        name="web inline remote objects are not released after success",
+        path=_BASE + "WebInlineGeometry.swift",
+        old="        try await release(group, command: command)\n        return records",
+        new="        return records",
+        test=_TEST
+        + "WebInlineGeometryTests/testCollectionUsesExactNodesAndReleasesObjectsOnSuccessAndEveryFailure",
+    ),
+    Mutation(
+        name="web inline border union consistency is ignored",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old="abs(measuredUnion.height - frame.height) <= 0.1",
+        new="abs(measuredUnion.height - frame.height) <= 1000",
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/testInlineBorderFragmentsPreserveUnionAndRejectIncompleteOrChangedGeometry",
+    ),
+    Mutation(
+        name="web inline missing border geometry becomes union fallback",
+        path=_BASE + "WebLint.swift",
+        old='if inline { throw WebBrowserError.invalidCDPResponse(reason: "missing inline border geometry") }',
+        new="if inline { return [node.frame] }",
+        test=_TEST
+        + "WebLintTests/testInlineBorderFragmentsAvoidUnionOverlapAndRetainPaddingCollisions",
+    ),
+    Mutation(
+        name="web inline overlap ignores measured border fragments",
+        path=_BASE + "WebLint.swift",
+        old='let key = inline ? "web.inlineFragment" : "web.textFragment"',
+        new='let key = inline ? "web.textFragment" : "web.textFragment"',
+        test=_TEST
+        + "WebLintTests/testInlineBorderFragmentsAvoidUnionOverlapAndRetainPaddingCollisions",
+    ),
+    Mutation(
+        name="web inline frame transforms lose border fragment coordinates",
+        path=_BASE + "WebFrameGeometry.swift",
+        old='rectangleKeys += (0..<count).map { "web.inlineFragment\\($0)" }',
+        new='rectangleKeys += (0..<count).map { "web.ignoredInlineFragment\\($0)" }',
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/testInlineBorderFragmentsPreserveUnionAndRejectIncompleteOrChangedGeometry",
+    ),
+    Mutation(
+        name="web inline reader replaces border fragments with union",
+        path=_BASE + "WebInlineGeometry.swift",
+        old="const read = Element.prototype.getClientRects;",
+        new="const read = function() { return [Element.prototype.getBoundingClientRect.call(this)]; };",
+        test=_TEST
+        + "WebFrameIntegrationTests/testWrappedInlineBorderMeasurementsAcrossFramesAndScroll",
+    ),
+    Mutation(
+        name="web measured clickable duplicate indices are accepted",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old="indices.count <= count, Set(indices).count == indices.count",
+        new="indices.count <= count, Set(indices).count <= indices.count",
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/testClickableIndicesAndConservativeFocusableEvidenceAreValidated",
+    ),
+    Mutation(
+        name="web measured clickable index bounds are ignored",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old="indices.allSatisfy({ (0..<count).contains($0) })",
+        new="indices.allSatisfy({ _ in true })",
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/testClickableIndicesAndConservativeFocusableEvidenceAreValidated",
+    ),
+    Mutation(
+        name="web measured clickability is discarded",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old='metadata["web.isClickable"] = .bool(clickable.contains(index))',
+        new='metadata["web.isClickable"] = .bool(clickable.contains(index) && false)',
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/testClickableIndicesAndConservativeFocusableEvidenceAreValidated",
+    ),
+    Mutation(
+        name="web measured explicit tabindex is ignored",
+        path=_BASE + "DOMSnapshotAssembly.swift",
+        old='if attributes["tabindex"] != nil { return true }',
+        new='if attributes["tabindex"] != nil { return false }',
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/testFocusabilityUsesExplicitDOMEvidenceConservatively",
+    ),
+    Mutation(
         name="web overlap budget exhaustion continues to verdict",
         path=_BASE + "WebLint.swift",
         old='throw WebBrowserError.invalidWebOperation(reason: "web overlap inspection exceeded its bounded work budget")',
@@ -162,8 +338,8 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="web paint text overlap uses union rectangle",
         path=_BASE + "WebLint.swift",
-        old="guard node.role == .text,",
-        new="guard node.role == .spacer,",
+        old="guard inline || node.role == .text else",
+        new="guard inline || node.role == .spacer else",
         test=_TEST
         + "WebLintTests/testTextFragmentsAvoidUnionOverlapAndRetainRealCollisionEvidence",
     ),
