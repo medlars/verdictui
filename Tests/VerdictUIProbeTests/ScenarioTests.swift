@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import Observation
 import SwiftUI
 import VerdictUIKernel
@@ -9,11 +10,8 @@ import XCTest
 /// ``OracleHost``, get a tree back — and never touch the sink, the coordinate
 /// space, or the environment.
 ///
-/// The state half of the protocol is deliberately tested for what
-/// ``ScenarioState`` *is* in Wave 2 rather than for what Wave 3 will make it. It
-/// is an empty, harness-owned box, so the only observable claims are that a body
-/// receives one and that each host owns its own — and those are precisely the
-/// claims Wave 3's action bindings will rest on.
+/// State belongs to one host across renders. Initial binding registration is
+/// silent during body evaluation; later writes and actions notify observers.
 final class ScenarioTests: XCTestCase {
     /// Every test here builds an AppKit view hierarchy, and `swift test` has no
     /// window-server run loop to drain the autorelease pool between tests. Without
@@ -62,6 +60,98 @@ final class ScenarioTests: XCTestCase {
     }
 
     // MARK: - ScenarioState
+
+    /// Factories run inside body(state:); seeding a value must not invalidate
+    /// the view whose first evaluation is already reading that value.
+    @MainActor
+    func testInitialBindingSeedsDoNotPublishChanges() {
+        let state = ScenarioState()
+        var notifications = 0
+        let subscription = state.objectWillChange.sink { notifications += 1 }
+        defer { subscription.cancel() }
+
+        XCTAssertTrue(state.boolBinding("bool", default: true).wrappedValue)
+        XCTAssertEqual(notifications, 0, "initial bool seed published during rendering")
+        XCTAssertEqual(state.stringBinding("text", default: "seed").wrappedValue, "seed")
+        XCTAssertEqual(notifications, 0, "initial text seed published during rendering")
+        XCTAssertEqual(state.doubleBinding("slider", default: 0.25).wrappedValue, 0.25)
+        XCTAssertEqual(notifications, 0, "initial slider seed published during rendering")
+
+        XCTAssertTrue(state.boolBinding("bool", default: false).wrappedValue)
+        XCTAssertEqual(state.stringBinding("text", default: "replacement").wrappedValue, "seed")
+        XCTAssertEqual(state.doubleBinding("slider", default: 0.75).wrappedValue, 0.25)
+        XCTAssertEqual(notifications, 0, "reading existing bindings must not publish or reseed")
+    }
+
+    @MainActor
+    func testInitialProbeRegistrationsDoNotPublishChanges() {
+        let state = ScenarioState()
+        var notifications = 0
+        let subscription = state.objectWillChange.sink { notifications += 1 }
+        defer { subscription.cancel() }
+
+        state.register(probeID: "bool", action: .bool(.constant(true)))
+        XCTAssertEqual(notifications, 0, "initial bool registration published during rendering")
+        state.register(probeID: "text", action: .text(.constant("seed")))
+        XCTAssertEqual(notifications, 0, "initial text registration published during rendering")
+        state.register(probeID: "slider", action: .slider(.constant(0.25)))
+        XCTAssertEqual(notifications, 0, "initial slider registration published during rendering")
+
+        state.register(probeID: "bool", action: .bool(.constant(false)))
+        state.register(probeID: "text", action: .text(.constant("replacement")))
+        state.register(probeID: "slider", action: .slider(.constant(0.75)))
+        XCTAssertTrue(state.boolBinding("bool").wrappedValue)
+        XCTAssertEqual(state.stringBinding("text").wrappedValue, "seed")
+        XCTAssertEqual(state.doubleBinding("slider").wrappedValue, 0.25)
+        XCTAssertEqual(notifications, 0, "re-registering must preserve the existing values")
+    }
+
+    @MainActor
+    func testBindingWritesStillPublishChanges() {
+        let state = ScenarioState()
+        let bool = state.boolBinding("bool")
+        let text = state.stringBinding("text")
+        let slider = state.doubleBinding("slider")
+        var notifications = 0
+        let subscription = state.objectWillChange.sink { notifications += 1 }
+        defer { subscription.cancel() }
+
+        bool.wrappedValue = true
+        XCTAssertEqual(notifications, 1)
+        XCTAssertTrue(bool.wrappedValue)
+        text.wrappedValue = "changed"
+        XCTAssertEqual(notifications, 2)
+        XCTAssertEqual(text.wrappedValue, "changed")
+        slider.wrappedValue = 0.75
+        XCTAssertEqual(notifications, 3)
+        XCTAssertEqual(slider.wrappedValue, 0.75)
+    }
+
+    @MainActor
+    func testProbeActionMutationsStillPublishChanges() throws {
+        let state = ScenarioState()
+        state.register(probeID: "bool", action: .bool(.constant(false)))
+        state.register(probeID: "text", action: .text(.constant("seed")))
+        state.register(probeID: "slider", action: .slider(.constant(0.25)))
+        var tapCount = 0
+        state.registerTap("button") { tapCount += 1 }
+        var notifications = 0
+        let subscription = state.objectWillChange.sink { notifications += 1 }
+        defer { subscription.cancel() }
+
+        try ProbeAction.toggle("bool").apply(to: state)
+        XCTAssertEqual(notifications, 1)
+        XCTAssertTrue(state.boolBinding("bool").wrappedValue)
+        try ProbeAction.setText("text", "changed").apply(to: state)
+        XCTAssertEqual(notifications, 2)
+        XCTAssertEqual(state.stringBinding("text").wrappedValue, "changed")
+        try ProbeAction.setSlider("slider", 0.75).apply(to: state)
+        XCTAssertEqual(notifications, 3)
+        XCTAssertEqual(state.doubleBinding("slider").wrappedValue, 0.75)
+        try ProbeAction.tap("button").apply(to: state)
+        XCTAssertEqual(notifications, 4)
+        XCTAssertEqual(tapCount, 1)
+    }
 
     /// The body is handed a state, the tree it produces varies on that state, and
     /// each host owns its own instance.
