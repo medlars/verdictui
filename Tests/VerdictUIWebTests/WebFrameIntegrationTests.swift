@@ -164,4 +164,57 @@ final class WebFrameIntegrationTests: XCTestCase {
             await manager.closeAll()
         } catch { await manager.closeAll(); throw error }
     }
+    func testLongDocumentsNestedPanelsAndFramesRemainScrollableAndActionable() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("vui-scroll-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let (server, port) = try await server(root: root)
+        defer { if server.isRunning { kill(server.processIdentifier, SIGKILL); server.waitUntilExit() } }
+        let manager = WebSessionManager(root: root.appendingPathComponent("profiles"), environment: [:])
+        var phase = "starting"
+        do {
+            for route in ["long", "nested", "transformed", "long-same", "long-cross"] {
+                phase = route + " open"
+                _ = try await manager.open(profile: "scroll", url: XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/\(route)")))
+                phase = route + " verify"
+                let report = try await manager.verify(profile: "scroll", expectText: "Run task")
+                XCTAssertEqual(report.status, .pass, "\(route) before: \(report.findings)")
+                let tree = try XCTUnwrap(report.tree)
+                let bottom = try XCTUnwrap(tree.flattened().first { $0.attributes["web.id"] == .string("bottom") })
+                XCTAssertTrue(bottom.isVisible)
+                XCTAssertGreaterThan(bottom.frame.y, tree.frame.height)
+                phase = route + " click"
+                let complete = try await manager.act(profile: "scroll", action: .click(nodeID: bottom.id), expectText: "Completed")
+                XCTAssertEqual(complete.status, .pass, "\(route) after: \(complete.findings)")
+                let updated = try XCTUnwrap(complete.tree?.flattened().first { $0.id == bottom.id })
+                XCTAssertLessThan(updated.frame.y, tree.frame.height, "trusted click must actually scroll before dispatch")
+                XCTAssertEqual(complete.tree?.frame, tree.frame)
+                let again = try await manager.verify(profile: "scroll", expectText: "Completed")
+                XCTAssertEqual(again.status, .pass, "\(route) after nonzero scroll: \(again.findings)")
+            }
+            for (route, rule, domIDs) in [("displaced", "offscreen", ["negative", "fixed"]), ("clipped", "clipped-content", ["clipped"])] {
+                phase = route + " open"
+                _ = try await manager.open(profile: "scroll", url: XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/\(route)")))
+                phase = route + " verify"
+                let report = try await manager.verify(profile: "scroll")
+                XCTAssertEqual(report.status, .fail)
+                for domID in domIDs {
+                    let node = try XCTUnwrap(report.tree?.flattened().first { $0.attributes["web.id"] == .string(domID) })
+                    XCTAssertTrue(report.findings.contains { $0.rule == rule && $0.nodeID == node.id }, "\(route)/\(domID): \(report.findings)")
+                }
+            }
+            _ = try await manager.open(profile: "scroll", url: XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/skip")))
+            let hidden = try await manager.verify(profile: "scroll")
+            XCTAssertEqual(hidden.status, .pass, "\(hidden.findings)")
+            let skip = try XCTUnwrap(hidden.tree?.flattened().first { $0.attributes["web.id"] == .string("skip") })
+            XCTAssertTrue(skip.flattened().allSatisfy { !$0.isVisible })
+            let revealed = try await manager.act(profile: "scroll", action: .key(nodeID: nil, key: "Tab", modifiers: []), expectText: "Skip to content")
+            XCTAssertEqual(revealed.status, .pass, "\(revealed.findings)")
+            XCTAssertTrue(try XCTUnwrap(revealed.tree?.flattened().first { $0.id == skip.id }).isVisible)
+            let clicked = try await manager.act(profile: "scroll", action: .click(nodeID: skip.id), expectText: "Visible content")
+            XCTAssertEqual(clicked.status, .pass, "\(clicked.findings)")
+            await manager.closeAll()
+        } catch { await manager.closeAll(); XCTFail("\(phase): \(error)") }
+    }
+
 }

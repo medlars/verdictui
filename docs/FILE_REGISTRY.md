@@ -348,6 +348,9 @@
 | `scripts/build-workbench.sh` | build-workbench: product UI, packaging or regression evidence | Active | 2026-09-23 |
 | `scripts/mutation_catalog/_workbench.py` | _workbench: product UI, packaging or regression evidence | Active | 2026-09-23 |
 
+| `Sources/VerdictUIWeb/WebLint.swift` | Browser document/scroll paint projections, bounded CSS clipping and original-tree verdict evidence | Active | 2026-09-23 |
+| `Tests/VerdictUIWebTests/WebLintTests.swift` | Scroll reachability, overlap, fixed containing blocks, clipping and finite bounds controls | Active | 2026-09-23 |
+
 ## Archived / Removed
 
 | File                                                    | Reason                                                                                    | Removed    |

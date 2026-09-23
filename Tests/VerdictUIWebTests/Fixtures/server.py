@@ -14,7 +14,43 @@ class Handler(http.server.BaseHTTPRequestHandler):
     server: http.server.HTTPServer
 
     def do_GET(self):
-        if self.path in ("/same", "/cross"):
+        if self.path in ("/long-same", "/long-cross"):
+            host = "localhost" if self.path == "/long-cross" else "127.0.0.1"
+            body = (
+                '<html><body style="margin:24px;font:16px sans-serif"><p>Main frame</p>'
+                '<iframe id="child" style="margin-top:1000px;border:3px solid;width:500px;height:300px" src="http://'
+                + host
+                + ":"
+                + str(self.server.server_port)
+                + '/long"></iframe></body></html>'
+            ).encode()
+        elif self.path in ("/long", "/nested", "/transformed", "/displaced", "/clipped", "/skip"):
+            prefix = "<html><head><style>body{margin:24px;font:16px sans-serif}button{width:160px;height:44px}</style></head><body>"
+            button = (
+                '<button id="bottom" onclick="this.textContent=\'Completed\'">Run task</button>'
+            )
+            if self.path == "/long":
+                content = '<p>Top content</p><div style="margin-top:1600px">' + button + "</div>"
+            elif self.path == "/nested":
+                content = (
+                    '<p>Nested scroll</p><div id="panel" style="overflow:auto;width:500px;height:200px"><div style="padding-top:1400px">'
+                    + button
+                    + "</div></div>"
+                )
+            elif self.path == "/transformed":
+                content = (
+                    '<p>Top content</p><div style="transform:translateX(0);margin-top:1200px;width:500px;height:200px"><div style="position:fixed;top:20px;left:20px">'
+                    + button
+                    + "</div></div>"
+                )
+            elif self.path == "/displaced":
+                content = '<p>Visible control</p><button id="negative" style="position:absolute;left:-300px;top:100px">Negative</button><button id="fixed" style="position:fixed;top:1200px">Fixed</button><p style="margin-top:1600px">Bottom content</p>'
+            elif self.path == "/clipped":
+                content = '<p>Visible control</p><div style="overflow:hidden;width:200px;height:100px"><button id="clipped" style="margin-left:300px">Clipped</button></div>'
+            else:
+                content = '<style>#skip{position:absolute;left:-1px;top:-1px;width:1px;height:1px;clip-path:inset(50%)}#skip:focus{position:fixed;left:16px;top:16px;width:160px;height:44px;clip-path:none}</style><a id="skip" href="#main">Skip to content</a><p id="main" style="margin-top:120px">Visible content</p>'
+            body = (prefix + content + "</body></html>").encode()
+        elif self.path in ("/same", "/cross"):
             host = "localhost" if self.path == "/cross" else "127.0.0.1"
             body = (
                 "<html><head><style>body{margin:24px;font:16px sans-serif}"

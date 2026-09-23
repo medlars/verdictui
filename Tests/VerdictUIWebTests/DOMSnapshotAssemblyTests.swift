@@ -7,7 +7,7 @@ final class DOMSnapshotAssemblyTests: XCTestCase {
 
     func snapshot() -> [String: CDPValue] {
         let integer: (Int) -> CDPValue = { .integer(Int64($0)) }
-        return ["strings": .array(["#document", "BUTTON", "#text", "", "Save", "block", "visible", "1", "auto", "id", "save"].map(CDPValue.string)),
+        var payload: [String: CDPValue] = ["strings": .array(["#document", "BUTTON", "#text", "", "Save", "block", "visible", "1", "auto", "id", "save"].map(CDPValue.string)),
                 "documents": .array([.object([
                     "nodes": .object([
                         "parentIndex": .array([-1, 0, 1].map(integer)), "nodeType": .array([9, 1, 3].map(integer)),
@@ -18,6 +18,26 @@ final class DOMSnapshotAssemblyTests: XCTestCase {
                                        "bounds": .array([.array([20, 20, 120, 44].map(integer)), .array([30, 30, 35, 20].map(integer))]),
                                        "styles": .array([.array([5, 6, 7, 8].map(integer)), .array([5, 6, 7, 8].map(integer))])]),
                     "textBoxes": .object(["layoutIndex": .array([1].map(integer)), "bounds": .array([.array([30, 30, 35, 20].map(integer))])])])])]
+        enrich(&payload)
+        return payload
+    }
+
+    private func enrich(_ payload: inout [String: CDPValue]) {
+        guard case var .array(strings) = payload["strings"], case var .array(documents) = payload["documents"] else { return }
+        let extra = strings.count
+        strings += ["static", "auto", "none", "visible", "visible", "none", "none", "none", "none", "auto"].map(CDPValue.string)
+        for index in documents.indices {
+            guard case var .object(document) = documents[index], case var .object(layout) = document["layout"],
+                case let .array(styles) = layout["styles"] else { continue }
+            document["contentWidth"] = .number(800); document["contentHeight"] = .number(600)
+            document["scrollOffsetX"] = .number(0); document["scrollOffsetY"] = .number(0)
+            layout["styles"] = .array(styles.map { row in
+                guard case let .array(values) = row else { return row }
+                return .array(values + (extra..<(extra + 10)).map { .integer(Int64($0)) })
+            })
+            document["layout"] = .object(layout); documents[index] = .object(document)
+        }
+        payload["strings"] = .array(strings); payload["documents"] = .array(documents)
     }
 
     private func snapshotWithUnlaidOwner(tag: String = "IFRAME", embedded: Bool = false) -> [String: CDPValue] {
@@ -26,16 +46,17 @@ final class DOMSnapshotAssemblyTests: XCTestCase {
             case var .object(document) = documents[0], case var .object(nodes) = document["nodes"] else {
             preconditionFailure("invalid fixture")
         }
+        let extra = strings.count
         strings += [.string(tag), .string("parent-frame"), .string("child-frame")]
-        document["frameId"] = .integer(12)
-        nodes["nodeName"] = .array([.integer(0), .integer(11), .integer(2)])
+        document["frameId"] = .integer(Int64(extra + 1))
+        nodes["nodeName"] = .array([.integer(0), .integer(Int64(extra)), .integer(2)])
         // The owner has no layout box, while its raw DOM identity remains present.
         document["layout"] = .object(["nodeIndex": .array([]), "bounds": .array([]), "styles": .array([])])
         document["textBoxes"] = .object(["layoutIndex": .array([]), "bounds": .array([])])
         if embedded {
             nodes["contentDocumentIndex"] = .object(["index": .array([.integer(1)]), "value": .array([.integer(1)])])
             guard case var .object(child) = documents[0] else { preconditionFailure("invalid child fixture") }
-            child["frameId"] = .integer(13)
+            child["frameId"] = .integer(Int64(extra + 2))
             documents.append(.object(child))
         }
         document["nodes"] = .object(nodes); documents[0] = .object(document)
@@ -72,12 +93,12 @@ final class DOMSnapshotAssemblyTests: XCTestCase {
     func testUnlaidRemoteFrameUsesExactOwnerAndNeverAcceptsUnknownOwner() throws {
         let tree = try DOMSnapshotAssembly.assemble(snapshotWithUnlaidOwner(), viewport: viewport)
         let child = SemanticNode(id: "child-button", role: .button, frame: Rect(x: 10, y: 20, width: 100, height: 44))
-        let (joined, found) = WebFrameGeometry.graft([child], ownerBackend: 2, ownerFrame: "parent-frame", into: tree)
+        let (joined, found) = try WebFrameGeometry.graft([child], ownerBackend: 2, ownerFrame: "parent-frame", into: tree)
         XCTAssertTrue(found)
         let nested = try XCTUnwrap(joined.flattened().first { $0.id == child.id })
         XCTAssertFalse(nested.isVisible)
         for (backend, frame) in [(3.0, "parent-frame"), (2.0, "wrong-parent")] {
-            let (unchanged, accepted) = WebFrameGeometry.graft([child], ownerBackend: backend, ownerFrame: frame, into: tree)
+            let (unchanged, accepted) = try WebFrameGeometry.graft([child], ownerBackend: backend, ownerFrame: frame, into: tree)
             XCTAssertFalse(accepted, "a missing or mismatched raw owner must remain unavailable")
             XCTAssertEqual(unchanged, tree)
         }
@@ -88,11 +109,11 @@ final class DOMSnapshotAssemblyTests: XCTestCase {
         guard case var .array(strings) = payload["strings"], case var .array(documents) = payload["documents"],
             case var .object(document) = documents[0], case var .object(nodes) = document["nodes"],
             case var .object(layout) = document["layout"] else { return XCTFail("invalid fixture") }
-        strings.append(.string("DIV"))
-        nodes["nodeName"] = .array([.integer(0), .integer(11), .integer(2)])
+        strings[1] = .string("DIV")
+        nodes["nodeName"] = .array([.integer(0), .integer(1), .integer(2)])
         layout["nodeIndex"] = .array([.integer(2)])
         layout["bounds"] = .array([.array([30, 30, 35, 20].map { .integer(Int64($0)) })])
-        layout["styles"] = .array([.array([5, 6, 7, 8].map { .integer(Int64($0)) })])
+        if case let .array(styles) = layout["styles"] { layout["styles"] = .array([styles[0]]) }
         document["nodes"] = .object(nodes); document["layout"] = .object(layout)
         document["textBoxes"] = .object(["layoutIndex": .array([]), "bounds": .array([])])
         documents[0] = .object(document); payload["documents"] = .array(documents); payload["strings"] = .array(strings)
@@ -124,7 +145,7 @@ final class DOMSnapshotAssemblyTests: XCTestCase {
     ) -> [String: CDPValue] {
         let integers: ([Int]) -> CDPValue = { .array($0.map { .integer(Int64($0)) }) }
         let rectangles: ([[Double]]) -> CDPValue = { .array($0.map { .array($0.map(CDPValue.number)) }) }
-        return [
+        var payload: [String: CDPValue] = [
             "strings": .array(["#document", tag, "", "Save", "block", "visible", opacity, zIndex].map(CDPValue.string)),
             "documents": .array([.object([
                 "nodes": .object([
@@ -143,6 +164,32 @@ final class DOMSnapshotAssemblyTests: XCTestCase {
                 ]),
             ])]),
         ]
+        enrich(&payload)
+        return payload
+    }
+
+    func testDocumentExtentRequiredFiniteAndZeroDimensionsRemainValid() throws {
+        for key in ["contentWidth", "contentHeight", "scrollOffsetX", "scrollOffsetY"] {
+            for value in [CDPValue.number(.nan), .number(.infinity), .string("bad")] {
+                var payload = snapshot()
+                guard case var .array(documents) = payload["documents"], case var .object(document) = documents[0] else { return XCTFail("fixture") }
+                document[key] = value; documents[0] = .object(document); payload["documents"] = .array(documents)
+                XCTAssertThrowsError(try DOMSnapshotAssembly.assemble(payload, viewport: viewport), key)
+            }
+            var payload = snapshot()
+            guard case var .array(documents) = payload["documents"], case var .object(document) = documents[0] else { return XCTFail("fixture") }
+            document.removeValue(forKey: key); documents[0] = .object(document); payload["documents"] = .array(documents)
+            XCTAssertThrowsError(try DOMSnapshotAssembly.assemble(payload, viewport: viewport), key)
+        }
+        var payload = snapshot()
+        guard case var .array(documents) = payload["documents"], case var .object(document) = documents[0] else { return XCTFail("fixture") }
+        document["contentWidth"] = .number(0); document["contentHeight"] = .number(0)
+        document["layout"] = .object(["nodeIndex": .array([]), "bounds": .array([]), "styles": .array([])])
+        document["textBoxes"] = .object(["layoutIndex": .array([]), "bounds": .array([])])
+        documents[0] = .object(document); payload["documents"] = .array(documents)
+        let tree = try DOMSnapshotAssembly.assemble(payload, viewport: viewport)
+        XCTAssertTrue(tree.children.isEmpty)
+        XCTAssertEqual(WebLint.run(tree: tree, scenario: "empty", viewport: viewport).findings.map(\.rule), ["vacuous-verdict"])
     }
 
     func testMeasuredPseudoElementCanHaveMultipleLayoutRows() throws {
@@ -207,7 +254,10 @@ final class DOMSnapshotAssemblyTests: XCTestCase {
             guard case var .array(documents) = payload["documents"],
                 case var .object(document) = documents[0], case var .object(layout) = document["layout"],
                 case var .array(styles) = layout["styles"] else { return XCTFail("invalid fixture") }
-            styles[1] = style; layout["styles"] = .array(styles)
+            if case let .array(row) = style, row.count == 4, case let .array(valid) = styles[0] {
+                styles[1] = .array(row + valid.dropFirst(4))
+            } else { styles[1] = style }
+            layout["styles"] = .array(styles)
             document["layout"] = .object(layout); documents[0] = .object(document)
             payload["documents"] = .array(documents)
             XCTAssertThrowsError(try DOMSnapshotAssembly.assemble(payload, viewport: viewport))
@@ -316,8 +366,9 @@ final class DOMSnapshotAssemblyTests: XCTestCase {
             case var .object(document) = documents[0], case var .object(nodes) = document["nodes"],
             case var .array(attributes) = nodes["attributes"] else { return XCTFail("invalid fixture") }
         strings[1] = .string("INPUT"); strings[4] = .string("private-existing-field-value")
+        let extra = strings.count
         strings += [.string("aria-label"), .string("Password")]
-        attributes[1] = .array([.integer(11), .integer(12)])
+        attributes[1] = .array([.integer(Int64(extra)), .integer(Int64(extra + 1))])
         nodes["attributes"] = .array(attributes); document["nodes"] = .object(nodes)
         documents[0] = .object(document); payload["documents"] = .array(documents); payload["strings"] = .array(strings)
         let tree = try DOMSnapshotAssembly.assemble(payload, viewport: viewport)
@@ -334,8 +385,9 @@ final class DOMSnapshotAssemblyTests: XCTestCase {
         guard case var .array(strings) = payload["strings"], case var .array(documents) = payload["documents"],
             case var .object(document) = documents[0], case var .object(nodes) = document["nodes"],
             case var .array(attributes) = nodes["attributes"] else { return XCTFail("invalid fixture") }
+        let extra = strings.count
         strings += [.string("disabled")]
-        attributes[1] = .array([.integer(11), .integer(-1)])
+        attributes[1] = .array([.integer(Int64(extra)), .integer(-1)])
         nodes["attributes"] = .array(attributes); document["nodes"] = .object(nodes)
         documents[0] = .object(document); payload["documents"] = .array(documents); payload["strings"] = .array(strings)
         let tree = try DOMSnapshotAssembly.assemble(payload, viewport: viewport)
@@ -373,8 +425,9 @@ final class DOMSnapshotAssemblyTests: XCTestCase {
         guard case var .array(strings) = payload["strings"], case var .array(documents) = payload["documents"],
             case var .object(document) = documents[0], case var .object(nodes) = document["nodes"],
             case var .array(attributes) = nodes["attributes"] else { return XCTFail("invalid fixture") }
+        let extra = strings.count
         strings += [.string("role"), .string(secret)]
-        attributes[1] = .array([.integer(11), .integer(12)])
+        attributes[1] = .array([.integer(Int64(extra)), .integer(Int64(extra + 1))])
         nodes["attributes"] = .array(attributes); document["nodes"] = .object(nodes)
         documents[0] = .object(document); payload["documents"] = .array(documents); payload["strings"] = .array(strings)
         let tree = try DOMSnapshotAssembly.assemble(payload, viewport: viewport, redacting: [secret])

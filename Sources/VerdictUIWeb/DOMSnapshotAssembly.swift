@@ -4,7 +4,8 @@ import VerdictUIKernel
 /// The fields consumed from CDP's columnar DOMSnapshot format. Unknown browser
 /// fields are ignored; malformed columns fail closed instead of yielding PASS.
 public enum DOMSnapshotAssembly {
-    public static let computedStyles = ["display", "visibility", "opacity", "z-index"]
+    public static let computedStyles = ["display", "visibility", "opacity", "z-index", "position", "clip", "clip-path",
+                                        "overflow-x", "overflow-y", "transform", "filter", "perspective", "contain", "will-change"]
 
     public static func assemble(
         _ payload: [String: CDPValue], viewport: Rect, redacting secrets: [String] = []
@@ -19,7 +20,7 @@ public enum DOMSnapshotAssembly {
         guard documents.count <= 256 else { throw malformed("too many documents") }
         let trees = try documents.map { document -> [SemanticNode] in
             guard case let .object(fields) = document else { throw malformed("invalid document") }
-            return try buildDocument(fields, strings: strings, secrets: secrets)
+            return try buildDocument(fields, strings: strings, secrets: secrets, viewport: viewport)
         }
         var visited: Set<Int> = [0]
         func embed(_ source: SemanticNode, chain: Set<Int>) throws -> SemanticNode {
@@ -30,18 +31,22 @@ public enum DOMSnapshotAssembly {
                     throw malformed("invalid embedded document graph")
                 }
                 let descendants = try trees[index].map { try embed($0, chain: chain.union([index])) }
-                node.children += descendants.map { WebFrameGeometry.embedding($0, in: node) }
+                node.children += try descendants.map { try WebFrameGeometry.embedding($0, in: node) }
             }
             return node
         }
         let children = try trees[0].map { try embed($0, chain: [0]) }
         guard visited.count == trees.count else { throw malformed("orphaned embedded document") }
-        return SemanticNode(id: "web/root", role: .container, frame: viewport, children: children.map(WebFrameGeometry.markInputCoordinates))
+        guard case let .object(main) = documents[0], let scrollX = main["scrollOffsetX"]?.doubleValue,
+              let scrollY = main["scrollOffsetY"]?.doubleValue else { throw malformed("missing root scroll coordinates") }
+        let input: [String: AttributeValue] = ["web.inputScrollX": .number(scrollX), "web.inputScrollY": .number(scrollY)]
+        return SemanticNode(id: "web/root", role: .container, frame: viewport, attributes: input,
+                            children: children.map { WebFrameGeometry.markInputCoordinates($0, scrollX: scrollX, scrollY: scrollY) })
             .withAssignedStructuralPaths()
     }
 
     private static func buildDocument(
-        _ document: [String: CDPValue], strings: [String], secrets: [String]
+        _ document: [String: CDPValue], strings: [String], secrets: [String], viewport: Rect
     ) throws -> [SemanticNode] {
         guard case let .object(nodes) = document["nodes"],
             case let .object(layout) = document["layout"] else { throw malformed("missing node/layout tables") }
@@ -90,11 +95,18 @@ public enum DOMSnapshotAssembly {
         guard case let .array(bounds) = layout["bounds"], case let .array(styles) = layout["styles"],
             bounds.count == layoutNodes.count, styles.count == layoutNodes.count
         else { throw malformed("mismatched layout columns") }
-        let scrollX = document["scrollOffsetX"]?.doubleValue ?? 0
-        let scrollY = document["scrollOffsetY"]?.doubleValue ?? 0
+        guard let scrollX = document["scrollOffsetX"]?.doubleValue,
+            let scrollY = document["scrollOffsetY"]?.doubleValue,
+            let contentWidth = document["contentWidth"]?.doubleValue,
+            let contentHeight = document["contentHeight"]?.doubleValue else {
+            throw malformed("missing document scroll extent")
+        }
+        let documentBounds = try WebLint.checkedRect(x: -scrollX, y: -scrollY, width: contentWidth, height: contentHeight)
+        let documentViewport = viewport
         var geometry: [Int: (Rect, [String])] = [:]
         var clientRects: [Int: Rect] = [:]
         var offsetRects: [Int: Rect] = [:]
+        var scrollRects: [Int: Rect] = [:]
         for (offset, index) in layoutNodes.enumerated() {
             guard parents.indices.contains(index) else {
                 throw malformed("invalid layout index")
@@ -106,8 +118,11 @@ public enum DOMSnapshotAssembly {
             if case let .array(rects) = layout["offsetRects"], rects.indices.contains(offset), case let .array(values) = rects[offset], !values.isEmpty {
                 offsetRects[index] = try rectangle(rects[offset])
             }
+            if case let .array(rects) = layout["scrollRects"], rects.indices.contains(offset), case let .array(values) = rects[offset], !values.isEmpty {
+                scrollRects[index] = try rectangle(rects[offset])
+            }
             var style = try integers(styles[offset]).map { try string($0, in: strings) }
-            if style.isEmpty && types[index] == 9 { style = ["block", "visible", "1", "auto"] }
+            if style.isEmpty && types[index] == 9 { style = ["block", "visible", "1", "auto", "static", "auto", "none", "visible", "visible", "none", "none", "none", "none", "auto"] }
             guard style.count == computedStyles.count else { throw malformed("missing computed styles") }
             let shifted = Rect(x: frame.x - scrollX, y: frame.y - scrollY,
                                width: frame.width, height: frame.height)
@@ -168,19 +183,39 @@ public enum DOMSnapshotAssembly {
                 if role == .textField || tag == "input" || tag == "textarea" { descendants = [] }
                 let accessibleName = accessibleNames[index].map { WebRedaction.clean($0, secrets: secrets) }
                 let visible = style[0] != "none" && style[1] != "hidden" && style[1] != "collapse"
-                    && (Double(style[2]) ?? 1) > 0
+                    && (Double(style[2]) ?? 1) > 0 && !WebLint.emptyPaint(position: style[4], clip: style[5], clipPath: style[6], frame: frame)
                 if !visible { descendants = descendants.map(hidden) }
                 // Document/body boxes are browser scaffolding, not evidence. An
                 // empty page must retain the kernel's vacuous-verdict failure.
                 if tag != "html" && tag != "body" && !(types[index] == 3 && rawText?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false) {
                     var metadata: [String: AttributeValue] = ["web.tag": .string(WebRedaction.clean(tag, secrets: secrets)), "web.backendID": .number(Double(backend[index]))]
                     metadata["web.frame"] = .string(frameID)
+                    metadata["web.position"] = .string(style[4])
+                    metadata["web.scrollX"] = .number(scrollX)
+                    metadata["web.scrollY"] = .number(scrollY)
+                    // Only measured containing-block properties qualify; a fixed
+                    // descendant of these ancestors scrolls with that ancestor.
+                    metadata["web.fixedContainer"] = .bool(WebLint.establishesFixedContainer(styles: style))
+                    if (style[7] == "auto" || style[7] == "scroll" || style[8] == "auto" || style[8] == "scroll"),
+                       let client = clientRects[index], let scroll = scrollRects[index] {
+                        let offset = offsetRects[index] ?? frame
+                        let sx = offset.width > 0 ? frame.width / offset.width : 1
+                        let sy = offset.height > 0 ? frame.height / offset.height : 1
+                        let extent = try WebLint.checkedRect(x: frame.x + (client.x - scroll.x) * sx,
+                            y: frame.y + (client.y - scroll.y) * sy, width: scroll.width * sx, height: scroll.height * sy)
+                        WebLint.store(extent, key: "web.scrollBounds", in: &metadata)
+                        let window = try WebLint.checkedRect(x: frame.x + client.x * sx, y: frame.y + client.y * sy,
+                                                            width: client.width * sx, height: client.height * sy)
+                        WebLint.store(window, key: "web.scrollViewport", in: &metadata)
+                    }
                     if let embedded = embedded[index] { metadata["web.documentIndex"] = .number(Double(embedded)) }
                     if tag == "iframe" || tag == "frame" {
                         let client = clientRects[index] ?? Rect(x: 0, y: 0, width: frame.width, height: frame.height)
                         let offset = offsetRects[index] ?? frame
                         let scaleX = offset.width > 0 ? frame.width / offset.width : 1
                         let scaleY = offset.height > 0 ? frame.height / offset.height : 1
+                        metadata["web.contentWidth"] = .number(client.width)
+                        metadata["web.contentHeight"] = .number(client.height)
                         metadata["web.contentX"] = .number(frame.x + client.x * scaleX)
                         metadata["web.contentY"] = .number(frame.y + client.y * scaleY)
                         metadata["web.scaleX"] = .number(scaleX)
@@ -216,7 +251,12 @@ public enum DOMSnapshotAssembly {
             if parent >= 0 { assembled[parent, default: []].insert(contentsOf: descendants, at: 0) }
             else { assembled[-1, default: []].insert(contentsOf: descendants, at: 0) }
         }
-        return assembled[-1] ?? []
+        return (assembled[-1] ?? []).map { source in
+            var node = source
+            WebLint.store(documentBounds, key: "web.documentBounds", in: &node.attributes)
+            WebLint.store(documentViewport, key: "web.documentViewport", in: &node.attributes)
+            return node
+        }
     }
 
     static func role(tag: String, attributes: [String: String]) -> Role {
