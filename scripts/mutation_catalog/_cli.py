@@ -8,6 +8,27 @@ from mutation_catalog_types import Mutation, Runner  # noqa: F401
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="consumer daemon byte drips evade the absolute frame deadline",
+        path="Sources/VerdictUICLICore/ProjectRunnerBroker.swift",
+        old="guard persistent || ProcessInfo.processInfo.systemUptime < frameDeadline else { return }",
+        new="guard persistent || frameDeadline.isFinite else { return }",
+        test="ProjectRunnerBrokerTests/testDrippedIncompleteSocketFrameHasAbsoluteDeadline",
+    ),
+    Mutation(
+        name="consumer daemon empty lines renew an unfinished frame deadline",
+        path="Sources/VerdictUICLICore/ProjectRunnerBroker.swift",
+        old="guard !line.isEmpty else { continue }",
+        new="guard !line.isEmpty else { frameDeadline = ProcessInfo.processInfo.systemUptime + frameSeconds; continue }",
+        test="ProjectRunnerBrokerTests/testEmptyLinesCannotExtendSocketFrameDeadline",
+    ),
+    Mutation(
+        name="persistent consumer MCP is incorrectly subject to daemon idle budgets",
+        path="Sources/VerdictUICLICore/ProjectRunnerBroker.swift",
+        old="guard persistent || ProcessInfo.processInfo.systemUptime < frameDeadline else { return }",
+        new="guard ProcessInfo.processInfo.systemUptime < frameDeadline else { return }",
+        test="ProjectRunnerBrokerTests/testPersistentMCPRemainsUsableAfterFrameBudgetIdle",
+    ),
+    Mutation(
         name="the launcher forgets the consumer build step",
         path="Sources/VerdictUICLICore/ProjectRunner.swift",
         old="try buildIfConfigured(projectRoot: root)",

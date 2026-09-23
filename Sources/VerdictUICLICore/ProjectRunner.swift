@@ -148,7 +148,7 @@ public enum ProjectRunner {
                         ? "consumer build cancelled"
                         : "consumer build timed out after \(timeout) seconds")
             }
-            Thread.sleep(forTimeInterval: 0.025)
+            _ = process.waitForExitEvent(timeout: 0.025)
         }
         guard try process.status() == 0 else {
             throw Failure(description: "consumer build failed; stale runner was not executed")

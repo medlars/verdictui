@@ -61,8 +61,8 @@ public enum ProjectRunnerBroker {
         }
         if wire == .mcp {
             try serve(
-                input: STDIN_FILENO, output: STDOUT_FILENO, session: session, shutdown: shutdown,
-                persistent: true)
+                input: STDIN_FILENO, output: STDOUT_FILENO, session: session, persistent: true,
+                shouldStop: { shutdown.stopped })
         } else {
             let path = daemonPath
             let listener = try DaemonTransport.prepare(path: path)
@@ -77,8 +77,8 @@ public enum ProjectRunnerBroker {
                 guard client >= 0 else { continue }
                 defer { Darwin.close(client) }
                 try serve(
-                    input: client, output: client, session: session, shutdown: shutdown,
-                    persistent: false)
+                    input: client, output: client, session: session, persistent: false,
+                    shouldStop: { shutdown.stopped })
             }
         }
         return true
@@ -98,13 +98,19 @@ public enum ProjectRunnerBroker {
         throw Failure("invalid consumer daemon arguments; expected [start|stop|status] [--socket PATH]")
     }
 
-    private static func serve(
-        input: Int32, output: Int32, session: Session, shutdown: Shutdown, persistent: Bool
+    static func serve(
+        input: Int32, output: Int32, session: Session, persistent: Bool,
+        frameSeconds: TimeInterval = 10, shouldStop: () -> Bool = { false }
     ) throws {
         var pending = Data()
-        while !shutdown.stopped {
+        var frameDeadline = ProcessInfo.processInfo.systemUptime + frameSeconds
+        while !shouldStop() {
+            // A socket client must finish a nonempty frame within an absolute
+            // budget. Byte drips and empty lines never extend that budget.
+            // Persistent MCP stdin may remain idle indefinitely between calls.
             var fd = pollfd(fd: input, events: Int16(POLLIN), revents: 0)
             let ready = poll(&fd, 1, 200)
+            guard persistent || ProcessInfo.processInfo.systemUptime < frameDeadline else { return }
             if ready <= 0 {
                 if !persistent { return }
                 continue
@@ -119,8 +125,9 @@ public enum ProjectRunnerBroker {
                 pending.removeSubrange(...newline)
                 guard !line.isEmpty else { continue }
                 if let response = session.answer(line) {
-                    do { try writeAll(response, to: output, shouldStop: { shutdown.stopped }) } catch { return }
+                    do { try writeAll(response, to: output, shouldStop: shouldStop) } catch { return }
                 }
+                frameDeadline = ProcessInfo.processInfo.systemUptime + frameSeconds
             }
         }
     }
@@ -332,7 +339,7 @@ public enum ProjectRunnerBroker {
                     else {
                         throw Failure("consumer daemon did not become ready")
                     }
-                    Thread.sleep(forTimeInterval: 0.025)
+                    _ = process.waitForExitEvent(timeout: 0.025)
                 }
             }
         }
