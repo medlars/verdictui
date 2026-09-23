@@ -45,4 +45,18 @@ MUTATIONS: list[Mutation] = [
         new="if false {",
         test="ProjectRunnerBrokerTests/testExternalBuildProductReplacementRestartsChild",
     ),
+    Mutation(
+        name="consumer source scans ignore the byte limit",
+        path="Sources/VerdictUICLICore/ProjectRunnerBroker.swift",
+        old="bytesRead <= maximumBytes,",
+        new="true,",
+        test="ProjectRunnerBrokerTests/testSourceScanBudgetsRefuseExcessDataAndTime",
+    ),
+    Mutation(
+        name="consumer resource contents are not fingerprinted",
+        path="Sources/VerdictUICLICore/ProjectRunnerBroker.swift",
+        old="hash.update(data: chunk)",
+        new="hash.update(data: Data())",
+        test="ProjectRunnerBrokerTests/testGeneratedTreesAreIgnoredButResourceEditsInvalidateGeneration",
+    ),
 ]
