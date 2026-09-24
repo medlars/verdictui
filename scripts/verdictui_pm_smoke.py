@@ -5,6 +5,7 @@ Same mixin rule as `verdictui_pm_stages`: inherited, never re-exported.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import re
@@ -12,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from pathlib import Path
 
 import verdictui_pm_support as S
 import verdictui_pm_swift as SW
@@ -38,6 +40,18 @@ from verdictui_pm_swift import (
 )
 
 _PYTEST_EVIDENCE_PATH = S.PROJECT_ROOT / "logs" / "pytest-latest.json"
+WORKBENCH_NATIVE_TIMEOUT = 40
+
+
+def _run_workbench_native(arguments, *, cwd, timeout):
+    """Share the acceptance wrapper's retained ownership and TERM-first boundary."""
+    path = Path(__file__).with_name("workbench-acceptance.py")
+    spec = importlib.util.spec_from_file_location("workbench_acceptance_owner", path)
+    if spec is None or spec.loader is None:
+        raise ValueError("native acceptance process owner unavailable")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.run_owned_command(arguments, cwd=cwd, timeout=timeout)
 
 
 def _save_pytest_evidence(
@@ -492,7 +506,7 @@ class VerdictUISmokeMixin:
                 log_root = S.PROJECT_ROOT / "logs"
                 log_root.mkdir(exist_ok=True)
                 attempt = tempfile.mkdtemp(prefix="workbench-native-", dir=log_root)
-                native = subprocess.run(
+                native = _run_workbench_native(
                     [
                         sys.executable,
                         str(S.PROJECT_ROOT / "scripts/workbench-acceptance.py"),
@@ -506,9 +520,7 @@ class VerdictUISmokeMixin:
                         attempt + "/run",
                     ],
                     cwd=S.PROJECT_ROOT,
-                    capture_output=True,
-                    text=True,
-                    timeout=40,
+                    timeout=WORKBENCH_NATIVE_TIMEOUT,
                 )
                 observed = re.search(
                     r"^WORKBENCH ACCEPTANCE PASS: ([1-9][0-9]*) assertions, 10/10 native phases complete$",

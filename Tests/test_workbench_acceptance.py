@@ -21,6 +21,171 @@ def subject():
     return module
 
 
+def test_exited_native_leader_still_closes_owned_descendant(tmp_path):
+    import os
+    import sys
+    import time
+
+    release = tmp_path / "release"
+    stopped = tmp_path / "stopped"
+    ready = tmp_path / "ready"
+    script = (
+        "import os,pathlib,signal,time\n"
+        f"release=pathlib.Path({str(release)!r});stopped=pathlib.Path({str(stopped)!r})\n"
+        "child=os.fork()\n"
+        "if child:\n"
+        " os._exit(7)\n"
+        "def stop(sig,frame):\n"
+        " stopped.write_text(str(sig));os._exit(0)\n"
+        "signal.signal(signal.SIGTERM,stop)\n"
+        f"pathlib.Path({str(ready)!r}).write_text(str(os.getpid()))\n"
+        "deadline=time.monotonic()+10\n"
+        "while not release.exists() and time.monotonic()<deadline: time.sleep(.01)\n"
+    )
+    module = subject()
+    process = module.spawn_owned([sys.executable, "-c", script])
+    try:
+        deadline = time.monotonic() + 5
+        while not ready.exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert ready.exists()
+        while os.waitid(os.P_PID, process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT) is None:
+            assert time.monotonic() < deadline
+            time.sleep(0.01)
+        module.stop_owned(process, grace=0.3)
+        assert stopped.exists(), "exited native leader left its owned descendant running"
+        assert stopped.read_text() == "15"
+    finally:
+        release.touch()
+        process.wait(timeout=3)
+
+
+def test_reaped_native_leader_refuses_signals(monkeypatch):
+    import subprocess
+    import sys
+
+    process = subprocess.Popen([sys.executable, "-c", "pass"], start_new_session=True)
+    process.wait(timeout=5)
+    monkeypatch.setattr("os.killpg", lambda *_: pytest.fail("signalled a reaped identity"))
+    with pytest.raises(ValueError, match="ownership already released"):
+        subject().stop_owned(process, grace=0)
+
+
+def test_waitid_lost_ownership_refuses_signals(monkeypatch):
+    import os
+    import sys
+
+    module = subject()
+    process = module.spawn_owned([sys.executable, "-c", "pass"])
+    os.waitpid(process.pid, 0)  # Another owner reaped it without updating Popen.
+    monkeypatch.setattr("os.killpg", lambda *_: pytest.fail("signalled lost ownership"))
+    with pytest.raises(ValueError, match="ownership lost"):
+        module.stop_owned(process, grace=0)
+    process.returncode = 0
+
+
+def test_nonowned_group_refuses_signals(monkeypatch):
+    import subprocess
+    import sys
+
+    process = subprocess.Popen([sys.executable, "-c", "import time;time.sleep(5)"])
+    try:
+        monkeypatch.setattr("os.killpg", lambda *_: pytest.fail("signalled an unowned group"))
+        with pytest.raises(ValueError, match="dedicated session"):
+            subject().stop_owned(process, grace=0)
+    finally:
+        process.terminate()
+        process.wait(timeout=3)
+
+
+def test_loopback_fixture_never_resolves_a_hostname(monkeypatch):
+    import socket
+    from http.server import BaseHTTPRequestHandler
+
+    monkeypatch.setattr(socket, "getfqdn", lambda *_: pytest.fail("loopback fixture performed DNS"))
+    with subject().LoopbackFixtureServer(("127.0.0.1", 0), BaseHTTPRequestHandler) as server:
+        assert server.server_name == "127.0.0.1"
+        assert server.server_port > 0
+
+
+def test_outer_signal_reaches_detached_native_and_restores_handler(tmp_path):
+    import signal
+    import subprocess
+    import sys
+    import time
+
+    ready, stopped = tmp_path / "ready", tmp_path / "stopped"
+    release, restored = tmp_path / "release", tmp_path / "restored"
+    native = tmp_path / "native.py"
+    native.write_text(
+        "import pathlib,signal,time,sys\n"
+        "def stop(sig,frame):\n"
+        f" pathlib.Path({str(stopped)!r}).write_text(str(sig));sys.exit(0)\n"
+        "signal.signal(signal.SIGTERM,stop)\n"
+        f"pathlib.Path({str(ready)!r}).touch()\n"
+        "deadline=time.monotonic()+10\n"
+        f"while not pathlib.Path({str(release)!r}).exists() and time.monotonic()<deadline: time.sleep(.01)\n"
+    )
+    loader = (
+        "import importlib.util,pathlib,signal,sys\n"
+        f"spec=importlib.util.spec_from_file_location('owner',{str(SCRIPT)!r})\n"
+        "m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)\n"
+    )
+    wrapper = tmp_path / "wrapper.py"
+    wrapper.write_text(
+        loader
+        + "with m.TerminationGuard() as guard, m.ExitStack() as cleanup:\n"
+        + " with guard.registration():\n"
+        + f"  child=m.spawn_owned([sys.executable,{str(native)!r}]);cleanup.callback(m.stop_owned,child)\n"
+        + " try: m.wait_owned(child,8)\n"
+        + " finally: guard.cleaning=True\n"
+    )
+    outer = tmp_path / "outer.py"
+    outer.write_text(
+        loader
+        + "before=signal.getsignal(signal.SIGTERM)\n"
+        + "try:\n"
+        + f" m.run_owned_command([sys.executable,{str(wrapper)!r}],cwd=pathlib.Path({str(tmp_path)!r}),timeout=8)\n"
+        + "except ValueError:\n"
+        + " assert signal.getsignal(signal.SIGTERM)==before\n"
+        + f" pathlib.Path({str(restored)!r}).touch();sys.exit(2)\n"
+    )
+    process = subprocess.Popen([sys.executable, str(outer)])
+    try:
+        deadline = time.monotonic() + 5
+        while not ready.exists() and time.monotonic() < deadline:
+            assert process.poll() is None
+            time.sleep(0.01)
+        assert ready.exists()
+        process.send_signal(signal.SIGTERM)
+        assert process.wait(timeout=6) == 2
+        assert restored.exists()
+        assert stopped.read_text() == str(signal.SIGTERM)
+    finally:
+        release.touch()
+        process.wait(timeout=10)
+
+
+def test_outer_owner_rejects_fast_oversized_output(tmp_path, monkeypatch):
+    import sys
+
+    module = subject()
+    spawn = module.spawn_owned
+
+    def already_completed(*args, **kwargs):
+        process = spawn(*args, **kwargs)
+        module.wait_owned(process, 5)
+        return process
+
+    monkeypatch.setattr(module, "spawn_owned", already_completed)
+    with pytest.raises(ValueError, match="output exceeds budget"):
+        module.run_owned_command(
+            [sys.executable, "-c", "import sys;sys.stdout.write('x'*(9*1024*1024))"],
+            cwd=tmp_path,
+            timeout=5,
+        )
+
+
 @pytest.mark.parametrize("receipt", [{}, {"status": "pass"}, {"status": "pass", "phases": []}])
 def test_missing_native_observations_never_pass(tmp_path, receipt):
     with pytest.raises(ValueError):

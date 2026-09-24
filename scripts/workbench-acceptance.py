@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
+import errno
 import hashlib
 import importlib.util
 import io
@@ -11,7 +13,10 @@ import json
 import math
 import os
 import signal
+import socketserver
 import subprocess
+import sys
+import tempfile
 import threading
 import time
 import uuid
@@ -44,6 +49,27 @@ REQUIRED_IMAGES = {
     "final",
     "compact",
 }
+
+WORKBENCH_NATIVE_TIMEOUT = 40
+_STARTED = time.monotonic()
+
+
+def phase_timing(phase: str) -> None:
+    # Fixed phase names only: no project paths, URLs or application contents.
+    print(
+        f"WORKBENCH PHASE {phase} elapsed={time.monotonic() - _STARTED:.3f}s monotonic_ns={time.monotonic_ns()}",
+        file=sys.stderr,
+        flush=True,
+    )
+
+
+class LoopbackFixtureServer(ThreadingHTTPServer):
+    def server_bind(self):
+        # HTTPServer's implementation performs unbounded reverse DNS. This
+        # private numeric loopback fixture needs neither a hostname nor DNS.
+        socketserver.TCPServer.server_bind(self)
+        self.server_name = "127.0.0.1"
+        self.server_port = self.server_address[1]
 
 
 def digest(path: Path) -> str:
@@ -230,14 +256,142 @@ def validate_native_receipt(receipt: Any, root: Path) -> dict:
     return receipt
 
 
-def stop_owned(process: subprocess.Popen, grace: float = 2) -> None:
-    if process.poll() is None:
-        os.killpg(process.pid, signal.SIGTERM)
+def spawn_owned(arguments, **options) -> subprocess.Popen:
+    if "start_new_session" in options:
+        raise ValueError("process ownership controls session creation")
+    process = subprocess.Popen(arguments, start_new_session=True, **options)
+    # Popen's successful exec handshake guarantees setsid completed. Darwin's
+    # getpgid/getsid stop resolving an exited zombie, so retain this launch fact.
+    setattr(process, "_verdictui_owned_session", process.pid)
+    return process
+
+
+def owned_status(process: subprocess.Popen) -> int | None:
+    """Observe without reaping: the retained child anchors its process group."""
+    if process.returncode is not None:
+        raise ValueError("process ownership already released")
+    if getattr(process, "_verdictui_owned_session", None) != process.pid:
+        raise ValueError("process ownership requires a dedicated session and group")
+    try:
+        observed = os.waitid(os.P_PID, process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+    except ChildProcessError as error:
+        raise ValueError("process ownership lost before cleanup") from error
+    if observed is None:
+        return None
+    return observed.si_status if observed.si_code == os.CLD_EXITED else -observed.si_status
+
+
+def group_running(process: subprocess.Popen) -> bool:
+    """Darwin group inventory mirrors OwnedCommandProcess's zombie check."""
+    owned_status(process)
+    if sys.platform != "darwin":
+        # Other platforms still receive TERM/KILL while the anchor is retained;
+        # wait the bounded grace rather than infer descendant death from a leader.
+        return True
+    library = ctypes.CDLL("/usr/lib/libproc.dylib", use_errno=True)
+    members = (ctypes.c_int * 4096)()
+    ctypes.set_errno(0)
+    count = library.proc_listpids(2, process.pid, members, ctypes.sizeof(members))
+    if count < 0 or (count == 0 and ctypes.get_errno()) or count >= ctypes.sizeof(members):
+        raise ValueError("owned process group inventory unavailable or oversized")
+    for pid in members[: count // ctypes.sizeof(ctypes.c_int)]:
+        if pid <= 0:
+            continue
+        # Public proc_bsdshortinfo: pid, ppid, pgid, status, comm[16], eight uint32s.
+        info = (ctypes.c_uint32 * 16)()
+        ctypes.set_errno(0)
+        read = library.proc_pidinfo(pid, 13, 0, info, ctypes.sizeof(info))
+        if read == 0 and ctypes.get_errno() == errno.ESRCH:
+            continue
+        if read != ctypes.sizeof(info):
+            raise ValueError("owned process member status unavailable")
+        if info[2] == process.pid and info[3] != 5:  # SZOMB
+            return True
+    return False
+
+
+def signal_owned(process: subprocess.Popen, number: int) -> None:
+    owned_status(process)
+    try:
+        os.killpg(process.pid, number)
+    except ProcessLookupError:
+        pass
+    except PermissionError:
+        # Darwin returns EPERM for a group of zombies, including our anchor.
+        if group_running(process):
+            raise
+
+
+def wait_owned(process: subprocess.Popen, timeout: float) -> int:
+    deadline = time.monotonic() + timeout
+    while (code := owned_status(process)) is None:
+        if time.monotonic() >= deadline:
+            raise subprocess.TimeoutExpired(process.args, timeout)
+        time.sleep(0.02)
+    return code
+
+
+def stop_owned(process: subprocess.Popen, grace: float = 6) -> None:
+    phase_timing("cleanup-start")
+    signal_owned(process, signal.SIGTERM)
+    deadline = time.monotonic() + grace
+    while group_running(process) and time.monotonic() < deadline:
+        time.sleep(0.02)
+    signal_owned(process, signal.SIGKILL)
+    deadline = time.monotonic() + 2
+    while sys.platform == "darwin" and group_running(process):
+        if time.monotonic() >= deadline:
+            raise ValueError("owned process group survived bounded cleanup")
+        time.sleep(0.02)
+    wait_owned(process, 2)
+    process.wait(timeout=2)  # Release identity only after the final group signal.
+    phase_timing("cleanup-end")
+
+
+def run_owned_command(
+    arguments: list[str], *, cwd: Path, timeout: float, cleanup_grace: float = 10
+) -> subprocess.CompletedProcess[str]:
+    """Outer PM/CI deadline permits the wrapper's detached-native cleanup."""
+    phase_timing("outer-start")
+    if not math.isfinite(timeout) or timeout <= 0 or not 0 <= cleanup_grace <= 15:
+        raise ValueError("invalid native wrapper time limits")
+    with (
+        TerminationGuard() as guard,
+        ExitStack() as cleanup,
+        tempfile.TemporaryFile() as output,
+        tempfile.TemporaryFile() as errors,
+    ):
+        with guard.registration():
+            process = spawn_owned(arguments, cwd=cwd, stdout=output, stderr=errors)
+            cleanup.callback(stop_owned, process, grace=cleanup_grace)
         try:
-            process.wait(timeout=grace)
-        except subprocess.TimeoutExpired:
-            os.killpg(process.pid, signal.SIGKILL)
-            process.wait(timeout=grace)
+            deadline = time.monotonic() + timeout
+            while (code := owned_status(process)) is None:
+                if (
+                    max(os.fstat(stream.fileno()).st_size for stream in (output, errors))
+                    > 8 * 1024 * 1024
+                ):
+                    raise ValueError("native wrapper output exceeds budget")
+                if time.monotonic() >= deadline:
+                    raise subprocess.TimeoutExpired(arguments, timeout)
+                time.sleep(0.02)
+        finally:
+            # Timeout/interrupt must deliver TERM, not subprocess.run's SIGKILL.
+            guard.cleaning = True
+            cleanup.close()
+            if (
+                max(os.fstat(stream.fileno()).st_size for stream in (output, errors))
+                > 8 * 1024 * 1024
+            ):
+                raise ValueError("native wrapper output exceeds budget")
+            for stream in (output, errors):
+                stream.seek(0)
+            stdout = output.read(8 * 1024 * 1024 + 1).decode("utf-8", errors="replace")
+            stderr = errors.read(8 * 1024 * 1024 + 1).decode("utf-8", errors="replace")
+            if stderr:
+                print(stderr, file=sys.stderr, end="", flush=True)
+            phase_timing("outer-end")
+        return subprocess.CompletedProcess(arguments, code, stdout, stderr)
 
 
 def validate_report(report: dict, run_root: Path) -> dict:
@@ -352,12 +506,15 @@ def run(args: argparse.Namespace, root: Path, output: Path) -> dict:
 
 
 def _run(args, root: Path, output: Path, guard: TerminationGuard, cleanup: ExitStack) -> dict:
+    phase_timing("start")
     driver_sha256 = digest(Path(__file__).resolve())
     identity = load_identity(root)
     app_identity = identity.validate_app(root, args.app)
+    phase_timing("app-identity")
     consumer_identity = identity.validate_consumer(
         root, args.consumer_runner, args.consumer_build_receipt
     )
+    phase_timing("consumer-identity")
     release = threading.Event()
     token = uuid.uuid4().hex
 
@@ -386,7 +543,8 @@ def _run(args, root: Path, output: Path, guard: TerminationGuard, cleanup: ExitS
                 pass
 
     with guard.registration():
-        server = ThreadingHTTPServer(("127.0.0.1", 0), Fixture)
+        phase_timing("fixture-bind-start")
+        server = LoopbackFixtureServer(("127.0.0.1", 0), Fixture)
         server.daemon_threads = True
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
@@ -394,6 +552,7 @@ def _run(args, root: Path, output: Path, guard: TerminationGuard, cleanup: ExitS
         cleanup.callback(server.server_close)
         cleanup.callback(server.shutdown)
         cleanup.callback(release.set)
+    phase_timing("fixture-ready")
     projects = []
     for name in ("consumer-a", "consumer-b"):
         project = output / name
@@ -436,24 +595,26 @@ def _run(args, root: Path, output: Path, guard: TerminationGuard, cleanup: ExitS
         },
     )
     executable = args.app / "Contents/MacOS/VerdictUIWorkbench"
+    phase_timing("config-ready")
     process = None
     started = time.monotonic()
     with (output / "native.log").open("x") as log:
         os.chmod(output / "native.log", 0o600)
         with guard.registration():
-            process = subprocess.Popen(
+            process = spawn_owned(
                 [str(executable), "--acceptance-config", str(config)],
                 cwd=root,
                 env=dict(os.environ, TMPDIR=str(temporary)),
                 stdout=log,
                 stderr=subprocess.STDOUT,
-                start_new_session=True,
             )
             cleanup.callback(stop_owned, process)
+        phase_timing("native-spawn")
         try:
-            code = process.wait(timeout=args.timeout_seconds)
+            code = wait_owned(process, args.timeout_seconds)
         except subprocess.TimeoutExpired as error:
             raise ValueError("native acceptance exceeded its explicit deadline") from error
+    phase_timing("native-end")
     if code:
         raise ValueError(f"native acceptance unavailable (exit {code}); inspect private native.log")
     native_path = output / "native-report.json"
@@ -498,12 +659,14 @@ def _run(args, root: Path, output: Path, guard: TerminationGuard, cleanup: ExitS
                 f"actual browser judge did not produce the expected {key}; exit {result.returncode}; inspect {path.name}"
             )
         verdicts[key] = {"path": path.name, "sha256": digest(path), "exit_code": result.returncode}
+        phase_timing(key)
     if (
         identity.validate_app(root, args.app) != app_identity
         or identity.validate_consumer(root, args.consumer_runner, args.consumer_build_receipt)
         != consumer_identity
     ):
         raise ValueError("source or executable identity changed during acceptance")
+    phase_timing("postflight-identities")
     if digest(Path(__file__).resolve()) != driver_sha256:
         raise ValueError("acceptance wrapper changed during the attempt")
     report = dict(
@@ -515,10 +678,13 @@ def _run(args, root: Path, output: Path, guard: TerminationGuard, cleanup: ExitS
         elapsed_seconds=time.monotonic() - started,
         owned_process={"pid": process.pid, "returncode": code},
     )
-    return validate_report(report, output)
+    result = validate_report(report, output)
+    phase_timing("end")
+    return result
 
 
 def main() -> int:
+    phase_timing("main")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--app", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)

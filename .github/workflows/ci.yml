@@ -64,14 +64,19 @@ jobs:
       - name: Verify real native Workbench workflow
         run: |
           python3.14 - <<'PY'
-          import json, pathlib, subprocess
+          import importlib.util, json, pathlib, sys
           root = pathlib.Path.cwd()
+          spec = importlib.util.spec_from_file_location('workbench_acceptance_owner', root / 'scripts/workbench-acceptance.py')
+          owner = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(owner)
           (root / 'logs').mkdir(exist_ok=True)
           inputs = json.loads((root / 'dist/workbench-acceptance-inputs.json').read_text())
-          subprocess.run(['python3.14', 'scripts/workbench-acceptance.py',
+          result = owner.run_owned_command([sys.executable, 'scripts/workbench-acceptance.py',
               '--app', inputs['app'], '--consumer-runner', inputs['consumer_runner'],
               '--consumer-build-receipt', inputs['consumer_build_receipt'],
-              '--output', str(root / 'logs/workbench-native-ci')], check=True, timeout=40)
+              '--output', str(root / 'logs/workbench-native-ci')], cwd=root, timeout=owner.WORKBENCH_NATIVE_TIMEOUT)
+          print(result.stdout, end='')
+          raise SystemExit(result.returncode)
           PY
 
       - name: Retain native Workbench observations
