@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import VerdictUIWeb
 
@@ -11,6 +12,14 @@ enum BoundedCommand {
 
     private static func validateOutputSize(_ output: Int, error: Int, limit: Int) throws {
         guard output <= limit, error <= limit - output else { throw Failure.excessiveOutput }
+    }
+
+    private static func currentSize(_ handle: FileHandle) throws -> Int {
+        var info = stat()
+        guard fstat(handle.fileDescriptor, &info) == 0, info.st_size >= 0 else {
+            throw Failure.temporaryFile
+        }
+        return Int(info.st_size)
     }
 
     static func run(executable: URL, arguments: [String], root: URL,
@@ -40,9 +49,10 @@ enum BoundedCommand {
                 errorOutput = try FileHandle(forWritingTo: errorFile)
             }
             func validateSize() throws {
-                let size = try file.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-                let errorSize = captureStandardError
-                    ? try errorFile.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0 : 0
+                // URL resourceValues caches metadata; inspect the retained
+                // descriptors so a running writer cannot hide behind size zero.
+                let size = try currentSize(output)
+                let errorSize = try errorOutput.map(currentSize) ?? 0
                 try validateOutputSize(size, error: errorSize, limit: limit)
             }
             var environment = ProcessInfo.processInfo.environment

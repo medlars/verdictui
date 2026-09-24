@@ -1,6 +1,7 @@
 # VerdictUI TODO
 
 - [ ] (2026-09-24) CIS-29C493E5: repair the legacy AppKit runner's serial stdout/stderr pipe deadlock through the existing bounded command boundary. Preserve stdout and failure diagnostics separately; enforce time and combined output limits, retained-child cleanup and cancellation. Actual baseline: 1KiB diagnostics succeeds, 256KiB blocks until a private fixture self-exit capability releases it. Add behavioral controls and mutation witnesses before final aggregate verification.
+- [ ] (2026-09-24) CIS-6960ED98: the running-output limit read cached URL metadata and missed growth until timeout. A held stderr producer reproduced the failure; retained-descriptor fstat now observes current bytes. The corrected control and ready-barrier cancellation pass with the focused AppKit/project-check suite. Finish mutation verification and release integration; do not attribute the retained failure solely to interpreter startup.
 
 - [x] (2026-09-24) Repair the integrated mutation-filter gate: each Swift test alternative is validated independently, including missing first/middle witnesses and changed classes. The original quick PM failure is retained. Focused controls87 pass; the last-only mutant is detected with byte-identical restoration. The complete Python stage passes654 tests with1 explicit skip and11 subtests; architecture/lint and628 target mappings pass. Independent source review found no issues.
 

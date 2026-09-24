@@ -41,6 +41,26 @@ final class AppKitCommandRunnerTests: XCTestCase {
         return runner.path
     }
 
+    private func heldRunner(diagnostics: Int = 0) throws -> (String, URL, URL) {
+        let path = try boundedRunner("")
+        let runner = URL(fileURLWithPath: path)
+        let directory = runner.deletingLastPathComponent()
+        let script = """
+            #!/usr/bin/python3
+            import os, pathlib, time
+            root = pathlib.Path(__file__).parent
+            os.write(2, b"D" * \(diagnostics))
+            (root / "ready").touch()
+            deadline = time.monotonic() + 5
+            while not (root / "release").exists() and time.monotonic() < deadline:
+                time.sleep(0.01)
+            os.write(1, b"late")
+            """
+        try script.write(to: runner, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: runner.path)
+        return (path, directory.appendingPathComponent("ready"), directory.appendingPathComponent("release"))
+    }
+
     @MainActor
     func testCombinedDiagnosticAndTreeOutputIsBounded() async throws {
         let body = "printf '%s' '\(String(repeating: "a", count: 48))'; "
@@ -67,13 +87,30 @@ final class AppKitCommandRunnerTests: XCTestCase {
 
     @MainActor
     func testRunnerCancellationIsUnavailableAndCannotReturnLateOutput() async throws {
-        let runner = try boundedRunner("/bin/sleep 0.3; printf late")
+        let (runner, ready, release) = try heldRunner()
         let operation = Task { await AppKitCommand.invoke(runner: runner, arguments: []) }
-        try await Task.sleep(for: .milliseconds(30))
+        defer { operation.cancel(); try? Data().write(to: release) }
+        let deadline = ContinuousClock.now + .seconds(3)
+        while !FileManager.default.fileExists(atPath: ready.path), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: ready.path), "Runner must be active before cancellation")
         operation.cancel()
         switch await operation.value {
         case .produced: XCTFail("A cancelled runner cannot produce a verified tree")
         case .failed(let detail): XCTAssertTrue(detail.contains("CancellationError"))
+        }
+    }
+
+    @MainActor
+    func testRunningDiagnosticOverflowFailsBeforeTheRunnerTimeout() async throws {
+        let (runner, _, release) = try heldRunner(diagnostics: 256)
+        defer { try? Data().write(to: release) }
+        // Allow interpreter startup before the fixture writes; the assertion is
+        // the output-cap outcome, not a subsecond scheduling measurement.
+        switch await AppKitCommand.invoke(runner: runner, arguments: [], timeout: 3, limit: 128) {
+        case .produced: XCTFail("Oversized diagnostics cannot produce a tree")
+        case .failed(let detail): XCTAssertTrue(detail.contains("excessiveOutput"), detail)
         }
     }
 

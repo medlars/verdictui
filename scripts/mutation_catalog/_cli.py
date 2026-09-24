@@ -8,6 +8,27 @@ from mutation_catalog_types import Mutation, Runner  # noqa: F401
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="bounded command observes stale zero output size",
+        path="Sources/VerdictUICLICore/BoundedCommand.swift",
+        old="return Int(info.st_size)",
+        new="return 0",
+        test="AppKitCommandRunnerTests/testRunningDiagnosticOverflowFailsBeforeTheRunnerTimeout",
+    ),
+    Mutation(
+        name="bounded command refuses valid output descriptors",
+        path="Sources/VerdictUICLICore/BoundedCommand.swift",
+        old="guard fstat(handle.fileDescriptor, &info) == 0, info.st_size >= 0 else {",
+        new="guard fstat(handle.fileDescriptor, &info) != 0, info.st_size >= 0 else {",
+        test="AppKitCommandRunnerTests/testCombinedDiagnosticAndTreeOutputIsBounded",
+    ),
+    Mutation(
+        name="bounded command leaves running diagnostic overflow until timeout",
+        path="Sources/VerdictUICLICore/BoundedCommand.swift",
+        old="while try process.status() == nil {\n                    try validateSize()",
+        new="while try process.status() == nil {",
+        test="AppKitCommandRunnerTests/testRunningDiagnosticOverflowFailsBeforeTheRunnerTimeout",
+    ),
+    Mutation(
         name="AppKit runner loses diagnostic capture",
         path="Sources/VerdictUICLICore/AppKitCommand.swift",
         old="captureStandardError: true",
