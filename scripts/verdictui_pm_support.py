@@ -147,7 +147,11 @@ NO_OUTPUT = "no output"
 # invocation layer (not Package.swift unsafeFlags) so downstream consumers of
 # the library are unaffected. CI mirrors these flags — keep the two in sync.
 SWIFT_STRICT_FLAGS = ["-Xswiftc", "-warnings-as-errors"]
+# Swift 6.4's default runner was observed exiting zero after a build without
+# executing tests. Select the measured runner; summary admission remains required.
 SWIFT_PM_FLAGS = [
+    "--build-system",
+    "native",
     "--disable-sandbox",
     "--cache-path",
     str(_SWIFTPM_SHARED_CACHE),
