@@ -531,7 +531,7 @@ class VerdictUISmokeMixin:
                     return {
                         "passed": False,
                         "detail": "native Workbench acceptance unavailable or failed: "
-                        + (native.stderr or native.stdout)[-700:],
+                        + (native.stderr + "\n" + native.stdout)[-700:],
                     }
                 return {
                     "passed": True,
