@@ -336,6 +336,46 @@ final class VerdictClockTests: XCTestCase {
         XCTAssertEqual(flips, 2)
     }
 
+    @MainActor
+    func testAnimationPolicySurvivesNestedAnimationAndCanChangeOnSameHost() async throws {
+        for implicitAnimation in [false, true] {
+            try await assertAnimationPolicyCanChange(implicitAnimation: implicitAnimation)
+        }
+    }
+
+    @MainActor
+    private func assertAnimationPolicyCanChange(implicitAnimation: Bool) async throws {
+        let model = TransactionRecordingModel()
+        let host = OracleHost(
+            scenario: TransactionRecordingScenario(model: model, implicitAnimation: implicitAnimation),
+            viewport: Size(width: 120, height: 40)
+        )
+        _ = try await host.currentTree()
+
+        for policy in [SettlePolicy.runAnimations, .skipAnimations, .runAnimations] {
+            host.settlePolicy = policy
+            model.transactions.removeAll()
+            host.applyStateChange {
+                if implicitAnimation {
+                    model.expanded.toggle()
+                } else {
+                    withAnimation(.linear(duration: 10)) { model.expanded.toggle() }
+                }
+            }
+            _ = try await host.currentTree()
+            XCTAssertFalse(model.transactions.isEmpty, "must observe the transaction in the hosted view")
+            if policy == .skipAnimations {
+                XCTAssertFalse(model.transactions.contains { $0.animated })
+                XCTAssertTrue(model.transactions.contains { $0.disabled })
+            } else {
+                XCTAssertTrue(model.transactions.contains { $0.animated && !$0.disabled })
+                XCTAssertFalse(model.transactions.contains { $0.disabled })
+            }
+        }
+        XCTAssertTrue(model.expanded, "policy changes must retain the scenario's state")
+        XCTAssertEqual(host.caTransactionFlushCount, 2)
+    }
+
     // MARK: - Helpers
 
     private static func boxWidth(in tree: SemanticNode) -> Double {
@@ -348,6 +388,44 @@ final class VerdictClockTests: XCTestCase {
 }
 
 // MARK: - Fixtures
+
+@MainActor
+private final class TransactionRecordingModel: ObservableObject {
+    @Published var expanded = false
+    var transactions: [(animated: Bool, disabled: Bool)] = []
+}
+
+private struct TransactionRecordingScenario: VerdictScenario {
+    let model: TransactionRecordingModel
+    let implicitAnimation: Bool
+    var name: String { "transaction-recording" }
+
+    func body(state: ScenarioState) -> some View {
+        TransactionRecordingView(model: model, implicitAnimation: implicitAnimation)
+    }
+}
+
+private struct TransactionRecordingView: View {
+    @ObservedObject var model: TransactionRecordingModel
+    let implicitAnimation: Bool
+
+    private var content: some View {
+        Color.red
+            .frame(width: model.expanded ? 100 : 10, height: 10)
+            .transaction { transaction in
+                model.transactions.append((transaction.animation != nil, transaction.disablesAnimations))
+            }
+            .verdictProbe("transaction-box", role: .image)
+    }
+
+    var body: some View {
+        if implicitAnimation {
+            content.animation(.linear(duration: 10), value: model.expanded)
+        } else {
+            content
+        }
+    }
+}
 
 private actor WakeFlag {
     private var isSet = false

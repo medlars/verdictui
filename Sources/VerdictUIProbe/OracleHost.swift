@@ -518,6 +518,15 @@ public final class OracleHost {
         // sweep would be silently inert again.
         AnyView(
             view
+                .transaction { transaction in
+                    // A nested `withAnimation` can replace the animation on
+                    // the injected transaction. Its disablesAnimations flag
+                    // survives, so enforce skip mode at the hosted root too.
+                    // Keep runAnimations transactions unchanged.
+                    if transaction.disablesAnimations {
+                        transaction.animation = nil
+                    }
+                }
                 .verdictRoot(into: sink)
                 .verdictPinnedEnvironment(overriding: variant)
                 .environment(\.verdictClock, clock)
