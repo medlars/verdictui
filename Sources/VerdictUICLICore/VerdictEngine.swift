@@ -76,6 +76,13 @@ public struct VerdictEngine: Sendable {
         return entry
     }
 
+    /// Consumer policy supplements the caller's lint selection. The harness and
+    /// sweep supply their own observed after-tree and per-cell viewport.
+    private func judgmentRules(for entry: ScenarioEntry, requested: [any LintRule]) -> [any LintRule] {
+        guard !entry.expectations.expectations.isEmpty else { return requested }
+        return requested + [ScenarioExpectationRule(set: entry.expectations)]
+    }
+
     /// Render `scenario` and return its semantic tree.
     @MainActor
     public func render(
@@ -178,10 +185,11 @@ public struct VerdictEngine: Sendable {
                 reason: "custom scenario has no external witness host; cross-validation is unavailable"
             )
         }
+        let entry = try entry(named: name)
         let tree = try await render(scenario: name, viewport: viewport, deadline: deadline)
         let context = LintContext.macOS(viewport: tree.frame, scenario: name)
         var verdict = RuleEngine.run(
-            rules: rules,
+            rules: judgmentRules(for: entry, requested: rules),
             on: tree,
             context: context,
             includeTree: includeTree
@@ -250,7 +258,7 @@ public struct VerdictEngine: Sendable {
         let entry = try entry(named: name)
         let harness = Harness(
             host: entry.host(viewport: viewport, deadline: deadline),
-            rules: rules,
+            rules: judgmentRules(for: entry, requested: rules),
             includeTree: includeTree
         )
         return await harness.perform(action)
@@ -316,7 +324,7 @@ public struct VerdictEngine: Sendable {
             do {
                 let tree = try await host.currentTree()
                 let verdict = RuleEngine.run(
-                    rules: rules,
+                    rules: judgmentRules(for: entry, requested: rules),
                     on: tree,
                     context: LintContext.macOS(
                         viewport: tree.frame,
@@ -368,5 +376,15 @@ public struct VerdictEngine: Sendable {
         let candidate = binary.deletingLastPathComponent()
             .appendingPathComponent("verdictui-witness-host")
         return FileManager.default.isExecutableFile(atPath: candidate.path) ? candidate : nil
+    }
+}
+
+/// Adapts the existing DSL without creating a second predicate/suppression path.
+private struct ScenarioExpectationRule: LintRule {
+    static let id = Expectation.id
+    let set: ExpectationSet
+
+    func evaluate(_ root: SemanticNode, context: LintContext) -> [Finding] {
+        set.evaluate(in: root, context: context)
     }
 }

@@ -59,6 +59,42 @@ the `runner` path remains relative to the consumer root (for example,
 The same build path serves standalone and broker commands. This does not
 assert that a consumer runner implements MCP, or expand process containment.
 
+### Compiled scenario expectations
+
+A consumer can attach its required elements to the registry entry, using the
+existing expectation DSL rather than replacing the shared runner's judgment:
+
+```swift
+let entry = ScenarioEntry(
+    viewport: Size(width: 400, height: 240),
+    expectations: [
+        Expectation("support-button")
+            .text("Contact Support")
+            .width(.atLeast(Double.leastNonzeroMagnitude))
+            .height(.atLeast(Double.leastNonzeroMagnitude))
+            .onscreen
+    ]
+) { SupportScenario() }
+```
+
+The entry stores an `ExpectationSet` named after its scenario. Omit
+`expectations` to preserve existing standard-lint behavior. These are compiled
+consumer declarations, not executable manifest configuration.
+
+`verify` adds expectation findings to the requested rules. `act` evaluates them
+on the actually observed after-tree, preserving its before/after delta. `sweep`
+evaluates each measured cell against that cell's viewport. CLI, MCP and daemon
+use those same engine methods. Missing nodes produce `expectation` errors;
+present-node predicate failures retain the DSL's `verdict.suppress` behavior.
+Positive-dimension predicates reject non-finite measurements; `.onscreen` means
+complete viewport containment, not merely `isVisible`.
+
+`render` and pixel capture remain observational even if a required node is
+missing. A failed capture or unmeasured sweep cell does not become a fabricated
+missing-node verdict. Failed actions retain their action/capture/settle evidence
+without evaluating expectations on an unobserved after-state. No verdict or
+semantic-tree wire schema changes are required.
+
 ### Daemon
 
 Keeps scenario hosts warm so a repeat verify pays only the render. Answers

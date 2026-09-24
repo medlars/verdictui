@@ -36,29 +36,12 @@ final class MCPTransportTests: XCTestCase {
         _ lines: [String],
         seedBaselineFor scenario: String? = nil
     ) async throws -> [[String: Any]] {
-        let input = Pipe()
-        let output = Pipe()
         let verdictEngine = engine()
-
         if let scenario {
             let tree = try await verdictEngine.render(scenario: scenario)
             try verdictEngine.baselines.update(scenario: scenario, tree: tree, accepted: false)
         }
-
-        let payload = Data(lines.map { $0 + "\n" }.joined().utf8)
-        input.fileHandleForWriting.write(payload)
-        try input.fileHandleForWriting.close()
-
-        await MCPTransport(engine: verdictEngine)
-            .serve(input: input.fileHandleForReading, output: output.fileHandleForWriting)
-        try output.fileHandleForWriting.close()
-
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        return
-            String(decoding: data, as: UTF8.self)
-            .split(separator: "\n")
-            .compactMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) }
-            .compactMap { $0 as? [String: Any] }
+        return try await exchangeMCPFrames(lines, engine: verdictEngine)
     }
 
     // MARK: - Handshake
@@ -401,4 +384,25 @@ final class MCPTransportTests: XCTestCase {
                 + "\(tree.keys.sorted())"
         )
     }
+}
+
+/// Shared real-pipe exchange for catalog and compiled-consumer expectation tests.
+@MainActor
+func exchangeMCPFrames(_ lines: [String], engine verdictEngine: VerdictEngine) async throws -> [[String: Any]] {
+    let input = Pipe()
+    let output = Pipe()
+    let payload = Data(lines.map { $0 + "\n" }.joined().utf8)
+    input.fileHandleForWriting.write(payload)
+    try input.fileHandleForWriting.close()
+
+    await MCPTransport(engine: verdictEngine)
+        .serve(input: input.fileHandleForReading, output: output.fileHandleForWriting)
+    try output.fileHandleForWriting.close()
+
+    let data = output.fileHandleForReading.readDataToEndOfFile()
+    return
+        String(decoding: data, as: UTF8.self)
+        .split(separator: "\n")
+        .compactMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) }
+        .compactMap { $0 as? [String: Any] }
 }

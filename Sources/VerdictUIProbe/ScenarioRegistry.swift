@@ -33,21 +33,28 @@ public struct ScenarioEntry: Sendable {
     /// ``OracleHost`` measure one.
     public let viewport: Size?
 
+    /// Compiled consumer claims evaluated by shared verify, act and sweep judgments.
+    /// Rendering remains observational; an empty set preserves standard lint behavior.
+    public let expectations: ExpectationSet
+
     /// Builds a host for the concrete scenario. A closure because the concrete
-    /// type exists only inside ``init(viewport:make:)``.
+    /// type exists only inside ``init(viewport:expectations:make:)``.
     private let makeHost: @Sendable @MainActor (Size?, TimeInterval, Variant?) -> OracleHost
 
     /// - Parameters:
     ///   - viewport: value for ``viewport``.
+    ///   - expectations: required elements and predicates for this scenario.
     ///   - make: builds a fresh scenario. Called once here to read the name, and
     ///     again for every host — a fresh value each time, because a host owns
     ///     the render it was constructed for and two hosts must not share one.
     public init<Scenario: VerdictScenario & Sendable>(
         viewport: Size? = nil,
+        expectations: [Expectation] = [],
         make: @escaping @Sendable () -> Scenario
     ) {
         self.name = make().name
         self.viewport = viewport
+        self.expectations = ExpectationSet(name, expectations)
         self.makeHost = { viewport, deadline, variant in
             OracleHost(
                 scenario: make(),
