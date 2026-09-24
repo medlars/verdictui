@@ -121,7 +121,7 @@
 | `specs/fleet-evidence-prevention-steps.json` | Validated executable step contracts. | Active | 2026-09-23 |
 | `.decisions/2026-09-23-fleet-evidence.md` | Decision to reuse source and observed-outcome boundaries. | Active | 2026-09-23 |
 | `Sources/VerdictUIProjectRunner/VerdictUIProjectRunner.swift` | Explicit self-test registry host used by installed CLI/MCP clients in this checkout; avoids delegating back to the stock launcher | Active | 2026-09-23 |
-| `Tests/test_project_mcp_bootstrap.py` | Real external-launcher initialization, 18-tool discovery, and scenario invocation through the project host | Active | 2026-09-23 |
+| `Tests/test_project_mcp_bootstrap.py` | Real external-launcher initialization, 19-tool discovery, and scenario invocation through the project host | Active | 2026-09-23 |
 | `Tests/VerdictUIKernelTests/BaselineStoreTests.swift`                | The destructive guard's refusals, the append-only audit log, name escaping, and SHA-256 against the published FIPS vectors                              | Active | 2026-08-11 |
 | `Tests/VerdictUICLICoreTests/VerdictEngineTests.swift`               | The command surface in-process — three-valued exit codes, and the Wave 5 baseline round trip (create → FAIL → accept → PASS → audit)                    | Active | 2026-08-11 |
 | `Tests/VerdictUICLICoreTests/CLIBinarySmokeTests.swift`              | Runs the BUILT binary — the only suite that can see a tool which refuses to start; negative-controlled via `xcrun xctest` (no.md #32)                   | Active | 2026-08-11 |
