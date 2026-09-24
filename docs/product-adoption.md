@@ -88,11 +88,27 @@ Those images retain their original source identity. Broader tabs, live clicks,
 other sizes/themes, real accounts and installed application behavior are not
 covered. The canonical fleet reader still requires current admitted receipts.
 
-The measured cold automatic build exceeded the launcher's 300-second budget;
-the safe explicit first build took 424.92 seconds. Subsequent acceptance passed
-without skips. A working prebuilt consumer is therefore established, while that
-cold automatic path remains unavailable. See SagaMail's published
-`docs/verdictui-adoption.md` for reproduction and the complete evidence boundary.
+The earlier cold build exceeded the default 300-second budget; the explicit
+first build took 424.92 seconds. The new source candidate adds a validated
+per-project `buildTimeoutSeconds` with the same 300-second default and an
+1,800-second ceiling. SagaMail source `d8cda99d` selects 900 seconds. Fresh tracked
+consumer clones with no initial build directory completed CLI in 525.54 seconds
+and MCP in 505.24 seconds using VerdictUI `9bd283c`. Both exposed SagaMail's own
+registry and distinguished the normal view from the real offscreen negative
+control. Seven warm CLI/MCP controls also passed. Shared package-download caches
+may have existed; this is not a claim of an entirely cold machine.
+
+Independent review checked the raw outputs, all sixteen artifact bindings, the
+frozen CLI hash and both source pins. The first CLI evidence producer failed
+while decoding compiler diagnostics after the actual command had succeeded;
+that failed receipt remains intact. A separate reconciliation and subsequent
+controls establish the consumer result. These are source-candidate results;
+installed 1.1.3 and the earlier signed 1.1.4 archive have not gained this feature.
+
+Current layout and paint admission is being refreshed after the final consumer
+documentation commit. Behavior remains unavailable: these preset view states
+do not exercise actual user actions. See SagaMail's `docs/verdictui-adoption.md`
+for reproduction and the complete evidence boundary.
 
 ## Earlier read-only directory census
 
@@ -155,8 +171,8 @@ and report project coverage.
 
 ## Required adoption work
 
-1. Admit current receipts for SagaMail's published three-state consumer, resolve
-   its measured cold automatic-build limit, and audit remaining settings and
+1. Admit current layout and paint receipts for SagaMail's three-state consumer,
+   publish its verified cold-build configuration, and audit remaining settings and
    installed account flows separately from synthetic controls.
 2. Add project-owned checks for each actual product surface. Web targets need a
    reachable app URL and an expected rendered result. AppKit targets need their
