@@ -7,6 +7,14 @@ _TEST = "VerdictUIWebTests."
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="web inline enrichment skips cumulative candidate reservation",
+        path=_BASE + "WebInlineGeometry.swift",
+        old="        try budget.reserveCandidates(candidates.count)",
+        new="        try budget.reserveCandidates(0)",
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/testInlineEnrichmentRejectsExhaustedCandidatesBeforeRemoteCommands",
+    ),
+    Mutation(
         name="web frame coherence does not retry stale capture",
         path=_BASE + "WebSession.swift",
         old="for attempt in 0..<3 {",

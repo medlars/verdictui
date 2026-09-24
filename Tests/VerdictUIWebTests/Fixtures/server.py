@@ -166,7 +166,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             ).encode()
         elif self.path in ("/inline", "/inline-overlap", "/inline-budget"):
             if self.path == "/inline-budget":
-                content = "".join(f"<span>Item {i} </span>" for i in range(4097))
+                # Keep the candidate-count boundary independent of a single
+                # enormous inline formatting context's layout cost.
+                content = "".join(f"<div><span>Item {i}</span></div>" for i in range(4097))
             else:
                 content = (
                     '<p style="width:300px"><span id="label">Project templates:</span><span id="wrapped"> from beginner to advanced examples with source code and detailed instructions.</span></p>'

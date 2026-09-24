@@ -37,6 +37,40 @@ from verdictui_pm_swift import (
     _swift_timing_environment,
 )
 
+_PYTEST_EVIDENCE_PATH = S.PROJECT_ROOT / "logs" / "pytest-latest.json"
+
+
+def _save_pytest_evidence(
+    stdout: str, stderr: str, returncode: int | None, *, timed_out: bool
+) -> None:
+    """Retain the actual child output before reducing it to a dashboard line."""
+    path = _PYTEST_EVIDENCE_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=path.parent, prefix=".pytest-evidence-", delete=False
+        ) as stream:
+            temporary = stream.name
+            json.dump(
+                {
+                    "stdout": stdout,
+                    "stderr": stderr,
+                    "returncode": returncode,
+                    "timed_out": timed_out,
+                    "timeout_seconds": TIMEOUT_PYTEST,
+                },
+                stream,
+            )
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+        temporary = None
+    finally:
+        if temporary is not None:
+            os.unlink(temporary)
+
 
 class VerdictUISmokeMixin:
     """Smoke, parity, mutation-catalog and SLO-benchmark stages for `VerdictUIPM`."""
@@ -735,28 +769,62 @@ class VerdictUISmokeMixin:
         exits 0 when it collects NOTHING, so a broken marker or a moved test
         directory would otherwise read as a fast, clean suite.
         """
-        r = subprocess.run(  # noqa: S603 -- fixed argv built from constants
-            [sys.executable, "-m", "pytest", "Tests", "-q", "-p", "no:cacheprovider"],
-            cwd=S.PROJECT_ROOT,
-            capture_output=True,
-            env={**os.environ, "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1"},
-            text=True,
-            timeout=TIMEOUT_PYTEST,
-        )
+        timed_out = False
+        try:
+            r = subprocess.run(  # noqa: S603 -- fixed argv built from constants
+                [sys.executable, "-m", "pytest", "Tests", "-q", "-p", "no:cacheprovider"],
+                cwd=S.PROJECT_ROOT,
+                capture_output=True,
+                env={**os.environ, "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1"},
+                text=True,
+                timeout=TIMEOUT_PYTEST,
+            )
+        except subprocess.TimeoutExpired as exc:
+            timed_out = True
+
+            def decoded(value: bytes | str | None) -> str:
+                return (
+                    value.decode("utf-8", errors="replace")
+                    if isinstance(value, bytes)
+                    else value or ""
+                )
+
+            r = subprocess.CompletedProcess(exc.cmd, -1, decoded(exc.stdout), decoded(exc.stderr))
+        try:
+            _save_pytest_evidence(
+                r.stdout, r.stderr, None if timed_out else r.returncode, timed_out=timed_out
+            )
+        except OSError as exc:
+            return {
+                "passed": False,
+                "detail": f"pytest evidence could not be retained: {exc}"[:300],
+            }
+        evidence = {"evidence": str(_PYTEST_EVIDENCE_PATH)}
+        if timed_out:
+            return {
+                "passed": False,
+                "detail": f"pytest timed out after {TIMEOUT_PYTEST}s",
+                **evidence,
+            }
         output = r.stdout + r.stderr
         match = re.search(r"(\d+) passed", output)
         if match is None:
             tail = output.strip().splitlines()
             detail = tail[-1] if tail else NO_OUTPUT
-            return {"passed": False, "detail": f"no pytest summary line: {detail}"[:300]}
+            return {
+                "passed": False,
+                "detail": f"no pytest summary line: {detail}"[:300],
+                **evidence,
+            }
         passed = int(match.group(1))
         if r.returncode != 0:
             failing = [ln for ln in output.splitlines() if ln.startswith("FAILED")]
             first = failing[0] if failing else output.strip().splitlines()[-1]
-            return {"passed": False, "detail": first[:300]}
+            return {"passed": False, "detail": first[:300], **evidence}
         if passed == 0:
             return {
                 "passed": False,
                 "detail": "pytest collected 0 tests -- the suite is not being found",
+                **evidence,
             }
-        return {"passed": True, "detail": f"{passed} Python tests PASS"}
+        return {"passed": True, "detail": f"{passed} Python tests PASS", **evidence}

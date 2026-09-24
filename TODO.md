@@ -9,6 +9,8 @@
 
 ## P1 — High Priority
 
+- [ ] (P1) Isolate the stock MCP malformed-input test from consumer runner discovery; preserve full pytest failure/timeout evidence. Simplify the inline-limit browser fixture without changing its 4096-candidate limit, deadline, or exact refusal assertion; add a direct enrichment boundary witness. Re-run focused controls, mutations, and the full PM/CI before 1.1.4 publication.
+
 - [x] (2026-09-23) Repair measured MCP startup scan: generated scratch data no longer enters consumer fingerprints; source/resource invalidation and scan bounds retained. Published and installed 1.1.3; 22 focused tests and 2/2 new mutation witnesses pass. Actual Codex connection exposes 18 tools and observes the public page; Claude project health is connected, with its actual tool-call check still pending below.
 
 - [x] (P1) CEO/stage_pytest: Classified VerdictUIProjectRunner as SwiftSyntax-free; full Python suite 499 passed, 3 explicitly skipped.

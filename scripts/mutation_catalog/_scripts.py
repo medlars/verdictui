@@ -8,6 +8,22 @@ from mutation_catalog_types import Mutation, Runner  # noqa: F401
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="PM pytest discards the original failure and timeout output",
+        path="scripts/verdictui_pm_smoke.py",
+        old="        os.replace(temporary, path)",
+        new="        os.unlink(temporary)",
+        test="Tests/test_verdictui_failclosed.py::TestStagePytest::test_full_failure_and_timeout_output_is_retained",
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
+        name="PM pytest reports green when failure evidence cannot be saved",
+        path="scripts/verdictui_pm_smoke.py",
+        old='"detail": f"pytest evidence could not be retained: {exc}"[:300],',
+        new='"detail": "lost evidence", "passed": True,',
+        test="Tests/test_verdictui_failclosed.py::TestStagePytest::test_storage_failure_cannot_report_green",
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
         name="PM cleanup treats a transient group probe permission error as absence",
         path="scripts/verdictui_pm_swift.py",
         old=(
