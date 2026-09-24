@@ -172,13 +172,13 @@ extension ProjectRunnerTests {
 
 extension ProjectRunnerTests {
     private func buildProject(
-        settings: [String: String], script: String = "exit 0",
+        settings: [String: Any], script: String = "exit 0",
         _ body: (URL, URL) throws -> Void
     ) throws {
         try project(runner: "runner") { root in
             var manifest = settings
             manifest["runner"] = "runner"
-            try JSONEncoder().encode(manifest).write(to: root.appendingPathComponent(".verdictui/config.json"))
+            try JSONSerialization.data(withJSONObject: manifest).write(to: root.appendingPathComponent(".verdictui/config.json"))
             let executable = root.appendingPathComponent("swift-stub")
             try Data(("#!/bin/sh\n" + script + "\n").utf8).write(to: executable)
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
@@ -193,13 +193,75 @@ extension ProjectRunnerTests {
             let arguments = try String(contentsOf: root.appendingPathComponent("arguments.txt"), encoding: .utf8)
             XCTAssertTrue(arguments.contains("--product=Consumer;echo-not-a-shell\n"))
             XCTAssertTrue(arguments.contains("--configuration=release\n"))
-            XCTAssertTrue(arguments.contains("--package-path\n\(root.path)\n"))
+            XCTAssertTrue(arguments.contains("--package-path\n\(root.resolvingSymlinksInPath().path)\n"))
             let cwd = try String(contentsOf: root.appendingPathComponent("cwd.txt"), encoding: .utf8)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             let actual = try FileManager.default.attributesOfItem(atPath: cwd)
             let expected = try FileManager.default.attributesOfItem(atPath: root.path)
             XCTAssertEqual(actual[.systemFileNumber] as? NSNumber, expected[.systemFileNumber] as? NSNumber)
             XCTAssertEqual(actual[.systemNumber] as? NSNumber, expected[.systemNumber] as? NSNumber)
+        }
+    }
+
+    func testNestedBuildPackageUsesResolvedPathAndKeepsRunnerRootRelative() throws {
+        try buildProject(settings: ["buildProduct": "Consumer", "buildPackagePath": "linked"],
+                         script: "printf '%s\\n' \"$@\" > arguments.txt") { root, executable in
+            let package = root.appendingPathComponent("app", isDirectory: true)
+            try FileManager.default.createDirectory(at: package, withIntermediateDirectories: true)
+            try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("linked"), withDestinationURL: package)
+            try ProjectRunner.buildIfConfigured(projectRoot: root, swiftExecutable: executable)
+            let arguments = try String(contentsOf: root.appendingPathComponent("arguments.txt"), encoding: .utf8)
+            XCTAssertTrue(arguments.contains("--package-path\n\(package.resolvingSymlinksInPath().path)\n"))
+            XCTAssertEqual(try ProjectScenarios.declaredRunnerStrict(projectRoot: root)?.path,
+                           root.appendingPathComponent("runner").path)
+        }
+    }
+
+    func testInvalidBuildPackagePathsRejectBeforeProcessLaunch() throws {
+        let invalid: [Any] = ["", " ", "a\0b", "/", "..", "../sibling", "missing", "file", "escape", true, false, 3, NSNull()]
+        for path in invalid {
+            try buildProject(settings: ["buildProduct": "Consumer", "buildPackagePath": path],
+                             script: "echo launched > launched.txt") { root, executable in
+                try Data().write(to: root.appendingPathComponent("file"))
+                try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("escape"),
+                                                          withDestinationURL: root.deletingLastPathComponent())
+                XCTAssertThrowsError(try ProjectRunner.buildIfConfigured(projectRoot: root, swiftExecutable: executable)) { error in
+                    XCTAssertTrue(error is ProjectScenarios.MalformedManifest)
+                }
+                XCTAssertThrowsError(try ProjectScenarios.declaredRunnerStrict(projectRoot: root))
+                XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("launched.txt").path))
+            }
+        }
+        try buildProject(settings: ["buildPackagePath": "."], script: "echo launched > launched.txt") { root, executable in
+            XCTAssertThrowsError(try ProjectRunner.buildIfConfigured(projectRoot: root, swiftExecutable: executable))
+            XCTAssertThrowsError(try ProjectScenarios.declaredRunnerStrict(projectRoot: root))
+            XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("launched.txt").path))
+        }
+    }
+
+    func testRealNestedSwiftPackageBuildProducesItsOwnExecutable() throws {
+        try buildProject(settings: ["buildProduct": "NestedConsumer", "buildPackagePath": "app", "buildTimeoutSeconds": 90]) { root, _ in
+            let package = root.appendingPathComponent("app", isDirectory: true)
+            let source = package.appendingPathComponent("Sources/NestedConsumer", isDirectory: true)
+            try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+            try """
+                // swift-tools-version: 6.0
+                import PackageDescription
+                let package = Package(name: "NestedConsumer", targets: [.executableTarget(name: "NestedConsumer")])
+                """.write(to: package.appendingPathComponent("Package.swift"), atomically: true, encoding: .utf8)
+            try "print(\"nested-consumer-built\")".write(to: source.appendingPathComponent("main.swift"), atomically: true, encoding: .utf8)
+            try ProjectRunner.buildIfConfigured(projectRoot: root)
+            let binary = package.appendingPathComponent(".build/debug/NestedConsumer")
+            XCTAssertTrue(FileManager.default.isExecutableFile(atPath: binary.path))
+            let process = Process()
+            process.executableURL = binary
+            let output = Pipe()
+            process.standardOutput = output
+            try process.run()
+            process.waitUntilExit()
+            XCTAssertEqual(process.terminationStatus, 0)
+            XCTAssertEqual(String(data: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8), "nested-consumer-built\n")
+            XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(".build/debug/NestedConsumer").path))
         }
     }
 
@@ -216,6 +278,65 @@ extension ProjectRunnerTests {
             XCTAssertThrowsError(try ProjectRunner.buildIfConfigured(projectRoot: root, timeout: 0.01, swiftExecutable: executable)) { error in
                 XCTAssertTrue(String(describing: error).contains("timed out"))
             }
+        }
+    }
+
+    func testDeclaredBuildTimeoutReachesRunningCommand() throws {
+        try buildProject(settings: ["buildProduct": "Consumer", "buildTimeoutSeconds": 0.15],
+                         script: "echo started > started.txt\nexec /bin/sleep 0.5") { root, executable in
+            XCTAssertThrowsError(try ProjectRunner.buildIfConfigured(projectRoot: root, swiftExecutable: executable)) { error in
+                XCTAssertTrue(String(describing: error).contains("timed out after 0.15 seconds"))
+            }
+            XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("started.txt").path))
+        }
+    }
+
+    func testExplicitTimeoutOverridesProjectBuildBudget() throws {
+        try buildProject(settings: ["buildProduct": "Consumer", "buildTimeoutSeconds": 0.01],
+                         script: "/bin/sleep 0.05\necho built > built.txt") { root, executable in
+            let diagnostics = Pipe()
+            let original = dup(STDERR_FILENO)
+            guard original >= 0 else { throw POSIXError(.EBADF) }
+            defer { close(original) }
+            try {
+                guard dup2(diagnostics.fileHandleForWriting.fileDescriptor, STDERR_FILENO) == STDERR_FILENO else {
+                    throw POSIXError(.EBADF)
+                }
+                defer { _ = dup2(original, STDERR_FILENO) }
+                try ProjectRunner.buildIfConfigured(projectRoot: root, timeout: 1, swiftExecutable: executable)
+            }()
+            try diagnostics.fileHandleForWriting.close()
+            let event = try XCTUnwrap(try JSONSerialization.jsonObject(
+                with: diagnostics.fileHandleForReading.readDataToEndOfFile()) as? [String: Any])
+            XCTAssertEqual(event["buildTimeoutSeconds"] as? Double, 1)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("built.txt").path))
+        }
+    }
+
+    func testCancellationRemainsEffectiveWithLongProjectBuildBudget() throws {
+        try buildProject(settings: ["buildProduct": "Consumer", "buildTimeoutSeconds": 900],
+                         script: "exec /bin/sleep 3") { root, executable in
+            XCTAssertThrowsError(try ProjectRunner.buildIfConfigured(projectRoot: root,
+                swiftExecutable: executable, shouldCancel: { true })) { error in
+                XCTAssertTrue(String(describing: error).contains("consumer build cancelled"))
+            }
+        }
+    }
+
+    func testInvalidBuildBudgetsRejectBeforeProcessLaunch() throws {
+        let invalid: [Any] = [0, -1, 1800.01, true, false, "900", "NaN", NSNull()]
+        for timeout in invalid {
+            try buildProject(settings: ["buildProduct": "Consumer", "buildTimeoutSeconds": timeout],
+                             script: "echo launched > launched.txt") { root, executable in
+                XCTAssertThrowsError(try ProjectRunner.buildIfConfigured(projectRoot: root, swiftExecutable: executable)) { error in
+                    XCTAssertTrue(error is ProjectScenarios.MalformedManifest)
+                }
+                XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("launched.txt").path))
+            }
+        }
+        try buildProject(settings: ["buildTimeoutSeconds": 900], script: "echo launched > launched.txt") { root, executable in
+            XCTAssertThrowsError(try ProjectRunner.buildIfConfigured(projectRoot: root, swiftExecutable: executable))
+            XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("launched.txt").path))
         }
     }
 
@@ -246,7 +367,7 @@ extension ProjectRunnerTests {
     func testLauncherBuildsBeforeItDelegates() throws {
         try buildProject(settings: ["buildProduct": "Consumer"], script: "echo built > built.txt") { root, executable in
             let config = root.appendingPathComponent(".verdictui/config.json")
-            try JSONEncoder().encode(["runner": "/usr/bin/true", "buildProduct": "Consumer"])
+            try JSONSerialization.data(withJSONObject: ["runner": "/usr/bin/true", "buildProduct": "Consumer", "buildTimeoutSeconds": 900])
                 .write(to: config)
             try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("swift"), withDestinationURL: executable)
             let sourceRoot = URL(fileURLWithPath: #filePath)
@@ -260,13 +381,18 @@ extension ProjectRunnerTests {
             environment["PATH"] = root.path + ":" + (environment["PATH"] ?? "/usr/bin:/bin")
             process.environment = environment
             let output = Pipe()
+            let diagnostics = Pipe()
             process.standardOutput = output
-            process.standardError = FileHandle.nullDevice
+            process.standardError = diagnostics
             try process.run()
             process.waitUntilExit()
             XCTAssertEqual(process.terminationStatus, 0)
             XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("built.txt").path))
             XCTAssertEqual(output.fileHandleForReading.readDataToEndOfFile(), Data())
+            let event = try XCTUnwrap(try JSONSerialization.jsonObject(
+                with: diagnostics.fileHandleForReading.readDataToEndOfFile()) as? [String: Any])
+            XCTAssertEqual(event["event"] as? String, "project-build")
+            XCTAssertEqual(event["buildTimeoutSeconds"] as? Double, 900)
         }
     }
 }

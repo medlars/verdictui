@@ -20,6 +20,46 @@ import XCTest
 /// a directory belongs to, and whether its declared runner exists.
 final class ProjectScenariosTests: XCTestCase {
 
+    func testBuildBudgetDefaultsAndDeclaredBoundsDecode() throws {
+        for (declaration, expected) in [("", 300.0), (",\"buildTimeoutSeconds\":0.05", 0.05),
+                                      (",\"buildTimeoutSeconds\":900", 900.0), (",\"buildTimeoutSeconds\":1800", 1800.0)] {
+            try withTempProject { root in
+                let dir = root.appendingPathComponent(".verdictui", isDirectory: true)
+                try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                try "{\"runner\":\"runner\",\"buildProduct\":\"Consumer\"\(declaration)}"
+                    .write(to: dir.appendingPathComponent("config.json"), atomically: true, encoding: .utf8)
+                XCTAssertEqual(try ProjectScenarios.buildConfiguration(projectRoot: root)?.timeoutSeconds, expected)
+            }
+        }
+    }
+
+    func testBuildPackageDefaultAndContainedDirectoriesDecode() throws {
+        for path in [nil, ".", "app", "app/.."] as [String?] {
+            try withTempProject { root in
+                try FileManager.default.createDirectory(at: root.appendingPathComponent(".verdictui"), withIntermediateDirectories: true)
+                try FileManager.default.createDirectory(at: root.appendingPathComponent("app"), withIntermediateDirectories: true)
+                var manifest = ["runner": "runner", "buildProduct": "Consumer"]
+                manifest["buildPackagePath"] = path
+                try JSONEncoder().encode(manifest).write(to: root.appendingPathComponent(".verdictui/config.json"))
+                let expected = path == "app" ? root.appendingPathComponent("app") : root
+                XCTAssertEqual(try ProjectScenarios.buildConfiguration(projectRoot: root)?.packageRoot.path,
+                               expected.resolvingSymlinksInPath().standardizedFileURL.path)
+            }
+        }
+    }
+
+    func testNonfiniteBuildBudgetCannotBeReadAsAValidRunner() throws {
+        for value in ["1e309", "-1e309", "NaN", "Infinity", "\"Infinity\""] {
+            try withTempProject { root in
+                let dir = root.appendingPathComponent(".verdictui", isDirectory: true)
+                try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                try "{\"runner\":\"runner\",\"buildProduct\":\"Consumer\",\"buildTimeoutSeconds\":\(value)}"
+                    .write(to: dir.appendingPathComponent("config.json"), atomically: true, encoding: .utf8)
+                XCTAssertThrowsError(try ProjectScenarios.declaredRunnerStrict(projectRoot: root))
+            }
+        }
+    }
+
     private func withTempProject(
         _ body: (URL) throws -> Void
     ) throws {

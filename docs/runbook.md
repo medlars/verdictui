@@ -26,6 +26,39 @@ Exit codes are three-valued and the third is load-bearing:
 
 Never treat 2 as a product defect: it means the tool could not look.
 
+### Consumer build deadline
+
+Automatic CLI, daemon and MCP consumer builds default to 300 seconds. A project
+with a measured longer cold build can set its own deadline in `.verdictui/config.json`:
+
+```json
+{
+  "runner": ".build/debug/MyVerdictRunner",
+  "buildProduct": "MyVerdictRunner",
+  "buildTimeoutSeconds": 900
+}
+```
+
+`buildTimeoutSeconds` must be a finite JSON number greater than zero and at most
+1800; it requires `buildProduct`. Strings, booleans, null, invalid ranges and a
+timeout without a build product are configuration errors before process launch.
+Omitting the key preserves 300 seconds. The `project-build` progress event on
+stderr includes the effective `buildTimeoutSeconds` alongside `product` and
+`configuration`. Cancellation and failed-build refusal still prevent executing
+a stale runner. The deadline changes neither Swift build arguments nor process
+ownership; separate-group SwiftPM containment (CIS-4F278A0F) remains open.
+
+A consumer whose Swift package is nested can additionally set `"buildPackagePath":
+"app"` alongside `buildProduct`. The default is `"."`. The path must be a
+nonempty relative path to an existing directory inside the consumer project,
+after resolving symlinks; absolute paths, escapes, files, null and non-string
+values are rejected before starting a process. A path without `buildProduct`
+is also invalid. Swift receives the resolved directory as `--package-path`;
+the `runner` path remains relative to the consumer root (for example,
+`app/.build/debug/MyVerdictRunner`, or a wrapper that adds a verification flag).
+The same build path serves standalone and broker commands. This does not
+assert that a consumer runner implements MCP, or expand process containment.
+
 ### Daemon
 
 Keeps scenario hosts warm so a repeat verify pays only the render. Answers

@@ -65,6 +65,51 @@ layout rectangles. The renderer correction and its genuine-defect controls are
 being verified separately. These empty-state results do not cover populated
 tables, async data, installed application behavior or paint.
 
+## SagaMail source adoption checkpoint — September 24
+
+PR43 is merged as `dc35111a`, preserving the qualified `3a9c6b5a` tree.
+The executable `SagaMailVerdictRunner` and project-owned manifests replace the
+earlier source-file configuration. They render the real Junk Mail settings tab
+at 700 × 900 points in three declared states, with UUID-named synthetic defaults.
+The offscreen negative control renders the same tab and is excluded from normal
+checks. Standard preferences and the installed application were not changed.
+
+Six native tests and six actual CLI/MCP controls passed locally. Hosted CI
+`36040668168` passed with all six settings tests observed executing; the
+self-hosted render lane also passed. Two dispatch-only GUI jobs were skipped.
+A fresh-HOME, tracked-only CI-shape probe passed 84 source checks and 30 website
+checks. The unrestricted Python suite was deliberately not run because its live
+fixtures access Keychain, localhost message state and the installed application.
+
+Both reviewers inspected all three original PNGs from source `4d7ff8eb`:
+the controls align, conditional content matches the settings, and probed bounds
+stay inside the viewport. A minor existing empty divider row remains recorded.
+Those images retain their original source identity. Broader tabs, live clicks,
+other sizes/themes, real accounts and installed application behavior are not
+covered. The canonical fleet reader still requires current admitted receipts.
+
+The earlier cold build exceeded the default 300-second budget; the explicit
+first build took 424.92 seconds. The new source candidate adds a validated
+per-project `buildTimeoutSeconds` with the same 300-second default and an
+1,800-second ceiling. SagaMail source `d8cda99d` selects 900 seconds. Fresh tracked
+consumer clones with no initial build directory completed CLI in 525.54 seconds
+and MCP in 505.24 seconds using VerdictUI `9bd283c`. Both exposed SagaMail's own
+registry and distinguished the normal view from the real offscreen negative
+control. Seven warm CLI/MCP controls also passed. Shared package-download caches
+may have existed; this is not a claim of an entirely cold machine.
+
+Independent review checked the raw outputs, all sixteen artifact bindings, the
+frozen CLI hash and both source pins. The first CLI evidence producer failed
+while decoding compiler diagnostics after the actual command had succeeded;
+that failed receipt remains intact. A separate reconciliation and subsequent
+controls establish the consumer result. These are source-candidate results;
+installed 1.1.3 and the earlier signed 1.1.4 archive have not gained this feature.
+
+Current layout and paint admission is being refreshed after the final consumer
+documentation commit. Behavior remains unavailable: these preset view states
+do not exercise actual user actions. See SagaMail's `docs/verdictui-adoption.md`
+for reproduction and the complete evidence boundary.
+
 ## Earlier read-only directory census
 
 The census enumerated 80 non-hidden top-level directories under `~/Projects`,
@@ -126,9 +171,9 @@ and report project coverage.
 
 ## Required adoption work
 
-1. Replace SagaMail's nonexecutable manifest with a genuine consumer executable
-   and retain honest coverage labels; audit all settings tabs/parameters against
-   the installed app separately from synthetic controls.
+1. Admit current layout and paint receipts for SagaMail's three-state consumer,
+   publish its verified cold-build configuration, and audit remaining settings and
+   installed account flows separately from synthetic controls.
 2. Add project-owned checks for each actual product surface. Web targets need a
    reachable app URL and an expected rendered result. AppKit targets need their
    executable and real subject; SwiftUI targets need the consumer registry.

@@ -49,17 +49,40 @@ public enum ProjectScenarios {
         let runner: String
         let buildProduct: String?
         let configuration: String?
+        let buildTimeoutSeconds: TimeInterval?
+        let buildPackagePath: String?
+
+        private enum CodingKeys: String, CodingKey {
+            case runner, buildProduct, configuration, buildTimeoutSeconds, buildPackagePath
+        }
+
+        init(from decoder: Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            runner = try values.decode(String.self, forKey: .runner)
+            buildProduct = try values.decodeIfPresent(String.self, forKey: .buildProduct)
+            configuration = try values.decodeIfPresent(String.self, forKey: .configuration)
+            // An explicitly supplied null is invalid; only an absent key uses the default.
+            buildTimeoutSeconds = values.contains(.buildTimeoutSeconds)
+                ? try values.decode(TimeInterval.self, forKey: .buildTimeoutSeconds) : nil
+            buildPackagePath = values.contains(.buildPackagePath)
+                ? try values.decode(String.self, forKey: .buildPackagePath) : nil
+        }
     }
 
     public struct BuildConfiguration: Equatable, Sendable {
         public let product: String
         public let configuration: String
+        public let packageRoot: URL
+        public let timeoutSeconds: TimeInterval
     }
 
     public static func buildConfiguration(projectRoot: URL) throws -> BuildConfiguration? {
         guard let manifest = try readManifest(projectRoot: projectRoot),
             let product = manifest.buildProduct else { return nil }
-        return BuildConfiguration(product: product, configuration: manifest.configuration ?? "debug")
+        return BuildConfiguration(
+            product: product, configuration: manifest.configuration ?? "debug",
+            packageRoot: try resolvedBuildPackagePath(manifest.buildPackagePath ?? ".", projectRoot: projectRoot),
+            timeoutSeconds: manifest.buildTimeoutSeconds ?? 300)
     }
 
     /// The nearest ancestor of `directory` holding a `.verdictui/config.json`.
@@ -143,7 +166,40 @@ public enum ProjectScenarios {
                 throw MalformedManifest(path: manifestPath, underlying: "configuration needs buildProduct and must be debug or release")
             }
         }
+        if let timeout = manifest.buildTimeoutSeconds {
+            guard manifest.buildProduct != nil else {
+                throw MalformedManifest(path: manifestPath, underlying: "buildTimeoutSeconds needs buildProduct")
+            }
+            // These bounds also reject NaN and either infinity.
+            guard timeout > 0, timeout <= 1800 else {
+                throw MalformedManifest(path: manifestPath, underlying: "buildTimeoutSeconds must be finite, greater than zero and at most 1800")
+            }
+        }
+        guard manifest.buildPackagePath == nil || manifest.buildProduct != nil else {
+            throw MalformedManifest(path: manifestPath, underlying: "buildPackagePath needs buildProduct")
+        }
+        if let path = manifest.buildPackagePath {
+            _ = try resolvedBuildPackagePath(path, projectRoot: projectRoot)
+        }
         return manifest
+    }
+
+    private static func resolvedBuildPackagePath(_ path: String, projectRoot: URL) throws -> URL {
+        let manifestPath = projectRoot.appendingPathComponent(".verdictui/config.json")
+        guard !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            !path.contains("\0"), !(path as NSString).isAbsolutePath else {
+            throw MalformedManifest(path: manifestPath, underlying: "buildPackagePath must be a nonempty relative directory path")
+        }
+        let root = projectRoot.resolvingSymlinksInPath().standardizedFileURL
+        let package = root.appendingPathComponent(path, isDirectory: true).resolvingSymlinksInPath().standardizedFileURL
+        guard package.pathComponents.starts(with: root.pathComponents) else {
+            throw MalformedManifest(path: manifestPath, underlying: "buildPackagePath must stay inside the consumer project")
+        }
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: package.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+            throw MalformedManifest(path: manifestPath, underlying: "buildPackagePath must name an existing directory")
+        }
+        return package
     }
 
     public static func declaredRunnerStrict(projectRoot: URL) throws -> URL? {
