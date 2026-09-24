@@ -353,7 +353,21 @@ jobs:
       # pm-base main; pinning and containment are separate assertions and only
       # the first fails loudly (pm-base docs/CI-DEPLOY-KEYS.md).
       - name: Install pm_base
-        run: pip install "git+ssh://git@github.com/medlars/pm-base.git@0b5b8943badd38ca5eba86cbe45d6ca44bfd8904"
+        run: |
+          # GitHub's SSH frontend intermittently refuses a valid deploy key: on
+          # 2026-09-24 (14:40Z, 15:34-15:37Z) 8 pm-base installs in 7 repos (and one
+          # projects-shared checkout) got 'Permission denied (publickey)', two keys
+          # in the same second, often on the lazy blob fetch just after the same key
+          # had cloned. Bounded retry; each retry is annotated, and a persistent
+          # failure still fails this step (CIS-72CBC8B5).
+          for attempt in 1 2 3; do
+            if [ "$attempt" -gt 1 ]; then
+              echo "::warning::pm-base install attempt $((attempt - 1)) failed; retrying (CIS-72CBC8B5)"
+              sleep $((attempt * 15))
+            fi
+            pip install "git+ssh://git@github.com/medlars/pm-base.git@0b5b8943badd38ca5eba86cbe45d6ca44bfd8904" && exit 0
+          done
+          exit 1
 
       - name: Python test suite (PM + kernel symbol audit)
         run: |
