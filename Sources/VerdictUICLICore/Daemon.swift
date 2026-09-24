@@ -581,7 +581,7 @@ public actor VerdictDaemon {
         }
 
         guard let subject = request.subject, !subject.isEmpty else {
-            switch AppKitCommand.invoke(runner: runner, arguments: ["list"]) {
+            switch await AppKitCommand.invoke(runner: runner, arguments: ["list"]) {
             case .produced(let text):
                 let names = text.split(separator: "\n")
                     .map { $0.trimmingCharacters(in: .whitespaces) }
@@ -594,7 +594,7 @@ public actor VerdictDaemon {
         }
 
         let text: String
-        switch AppKitCommand.invoke(runner: runner, arguments: ["render", subject]) {
+        switch await AppKitCommand.invoke(runner: runner, arguments: ["render", subject]) {
         case .produced(let produced): text = produced
         case .failed(let reason): return failure(reason)
         }

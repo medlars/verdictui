@@ -284,9 +284,9 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="bounded check subprocess accepts oversized completed output",
         path="Sources/VerdictUICLICore/BoundedCommand.swift",
-        old="guard data.count <= limit else { throw Failure.excessiveOutput }",
-        new="_ = data.count <= limit",
-        test="ProjectChecksTests/testSubprocessBoundsOutputAndTime",
+        old="guard output <= limit, error <= limit - output else { throw Failure.excessiveOutput }",
+        new="_ = output <= limit",
+        test="ProjectChecksTests/testSubprocessBoundsOutputAndTime|AppKitCommandRunnerTests/testCombinedDiagnosticAndTreeOutputIsBounded",
     ),
     Mutation(
         name="owned command cleanup signals only leader leaving descendants",

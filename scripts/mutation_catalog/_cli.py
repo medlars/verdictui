@@ -8,6 +8,48 @@ from mutation_catalog_types import Mutation, Runner  # noqa: F401
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="AppKit runner loses diagnostic capture",
+        path="Sources/VerdictUICLICore/AppKitCommand.swift",
+        old="captureStandardError: true",
+        new="captureStandardError: false",
+        test="AppKitCommandRunnerTests/testNonzeroExitPreservesSeparateDiagnostics|AppKitCommandRunnerTests/testCombinedDiagnosticAndTreeOutputIsBounded",
+    ),
+    Mutation(
+        name="AppKit runner ignores its timeout",
+        path="Sources/VerdictUICLICore/AppKitCommand.swift",
+        old="timeout: timeout, limit: limit, captureStandardError: true",
+        new="timeout: 60, limit: limit, captureStandardError: true",
+        test="AppKitCommandRunnerTests/testRunnerTimeoutIsUnavailableAndCannotReturnLateOutput",
+    ),
+    Mutation(
+        name="AppKit runner ignores its output budget",
+        path="Sources/VerdictUICLICore/AppKitCommand.swift",
+        old="timeout: timeout, limit: limit, captureStandardError: true",
+        new="timeout: timeout, limit: 8 * 1_024 * 1_024, captureStandardError: true",
+        test="AppKitCommandRunnerTests/testCombinedDiagnosticAndTreeOutputIsBounded",
+    ),
+    Mutation(
+        name="bounded command discards the diagnostic descriptor",
+        path="Sources/VerdictUICLICore/BoundedCommand.swift",
+        old="standardError: errorOutput?.fileDescriptor",
+        new="standardError: nil",
+        test="AppKitCommandRunnerTests/testNonzeroExitPreservesSeparateDiagnostics",
+    ),
+    Mutation(
+        name="bounded command discards captured diagnostics",
+        path="Sources/VerdictUICLICore/BoundedCommand.swift",
+        old="let errorData = captureStandardError ? try Data(contentsOf: errorFile) : Data()",
+        new="let errorData = Data()",
+        test="AppKitCommandRunnerTests/testNonzeroExitPreservesSeparateDiagnostics",
+    ),
+    Mutation(
+        name="bounded command refuses valid diagnostic storage",
+        path="Sources/VerdictUICLICore/BoundedCommand.swift",
+        old="guard FileManager.default.createFile(atPath: errorFile.path, contents: nil,",
+        new="guard !FileManager.default.createFile(atPath: errorFile.path, contents: nil,",
+        test="AppKitCommandRunnerTests/testLargeDiagnosticStreamCannotBlockTreeDelivery",
+    ),
+    Mutation(
         name="consumer command boundaries lose crash guardians",
         path="Sources/VerdictUICLICore/BoundedCommand.swift",
         old="typealias GuardedProcess = VerdictUIWeb.GuardedProcess",

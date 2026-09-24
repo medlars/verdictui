@@ -1,5 +1,7 @@
 # VerdictUI TODO
 
+- [ ] (2026-09-24) CIS-29C493E5: repair the legacy AppKit runner's serial stdout/stderr pipe deadlock through the existing bounded command boundary. Preserve stdout and failure diagnostics separately; enforce time and combined output limits, retained-child cleanup and cancellation. Actual baseline: 1KiB diagnostics succeeds, 256KiB blocks until a private fixture self-exit capability releases it. Add behavioral controls and mutation witnesses before final aggregate verification.
+
 - [x] (2026-09-24) Repair the integrated mutation-filter gate: each Swift test alternative is validated independently, including missing first/middle witnesses and changed classes. The original quick PM failure is retained. Focused controls87 pass; the last-only mutant is detected with byte-identical restoration. The complete Python stage passes654 tests with1 explicit skip and11 subtests; architecture/lint and628 target mappings pass. Independent source review found no issues.
 
 - [x] (2026-09-24) Preserve the consumer reload success marker consumed by the PM (`same MCP/daemon PID`). The regression binds the producer's actual message to the real PM acceptance stage, fails on the previous wording, and passes with the restored prefix. All 25 reload identity mutations are detected with exact restores. The final compiled consumer-stage proof and source receipt are retained under the private `reload-marker-*` evidence paths alongside the original reload proof.
