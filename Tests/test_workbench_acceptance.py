@@ -4,6 +4,7 @@ import copy
 import hashlib
 import importlib.util
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -695,6 +696,39 @@ def test_loaded_page_must_match_packaged_resource_identity(tmp_path, mutation):
     native.pop("loaded_page", None)
     if "loaded_page" in receipt:
         native["loaded_page"] = receipt["loaded_page"]
+    native_path.write_text(json.dumps(native))
+    receipt["native_report"]["sha256"] = module.digest(native_path)
+    with pytest.raises(ValueError, match="loaded page"):
+        module.validate_report(receipt, tmp_path)
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="Darwin system path alias")
+def test_loaded_page_accepts_verified_darwin_var_alias(tmp_path):
+    module = subject()
+    assert Path("/var").resolve() == Path("/private/var")
+    receipt = synthetic_receipt(tmp_path)
+    receipt["identities"]["app"]["resource_root"] = "/private/var/folders/workbench/Resources"
+    receipt["loaded_page"] = "file:///var/folders/workbench/Resources/index.html"
+    native_path = tmp_path / "native-report.json"
+    native = json.loads(native_path.read_text())
+    native["loaded_page"] = receipt["loaded_page"]
+    native_path.write_text(json.dumps(native))
+    receipt["native_report"]["sha256"] = module.digest(native_path)
+    assert module.validate_report(receipt, tmp_path)["status"] == "pass"
+
+
+def test_loaded_page_rejects_arbitrary_alias_even_to_packaged_assets(tmp_path):
+    module = subject()
+    receipt = synthetic_receipt(tmp_path)
+    resources = Path(receipt["identities"]["app"]["resource_root"])
+    resources.mkdir()
+    (resources / "index.html").write_text("<title>packaged</title>")
+    alias = tmp_path / "build-tree"
+    alias.symlink_to(resources, target_is_directory=True)
+    receipt["loaded_page"] = (alias / "index.html").as_uri()
+    native_path = tmp_path / "native-report.json"
+    native = json.loads(native_path.read_text())
+    native["loaded_page"] = receipt["loaded_page"]
     native_path.write_text(json.dumps(native))
     receipt["native_report"]["sha256"] = module.digest(native_path)
     with pytest.raises(ValueError, match="loaded page"):

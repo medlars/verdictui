@@ -394,6 +394,18 @@ def run_owned_command(
         return subprocess.CompletedProcess(arguments, code, stdout, stderr)
 
 
+def native_resource_path(path: str) -> str:
+    """Foundation reports Darwin's /private/var assets using the /var spelling."""
+    if (
+        sys.platform == "darwin"
+        and path.startswith("/var/")
+        and os.path.realpath("/var") == "/private/var"
+    ):
+        return "/private" + path
+    # Do not resolve arbitrary aliases: build-tree fallback must still be refused.
+    return path
+
+
 def validate_report(report: dict, run_root: Path) -> dict:
     """Revalidate retained measurements without launching a process or UI."""
     validate_native_receipt(report, run_root)
@@ -449,7 +461,8 @@ def validate_report(report: dict, run_root: Path) -> dict:
         or page.netloc
         or page.query
         or page.fragment
-        or unquote(page.path, errors="strict") != str(Path(resources) / "index.html")
+        or native_resource_path(unquote(page.path, errors="strict"))
+        != native_resource_path(str(Path(resources) / "index.html"))
     ):
         raise ValueError("loaded page differs from the packaged resource identity")
     return report

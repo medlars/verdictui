@@ -4,6 +4,14 @@ from mutation_catalog_types import Mutation, Runner
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="native resource identity loses verified Darwin path alias",
+        path="scripts/workbench-acceptance.py",
+        old='return "/private" + path',
+        new="return path",
+        test="Tests/test_workbench_acceptance.py::test_loaded_page_accepts_verified_darwin_var_alias",
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
         name="native resource resolver loses flat SwiftPM layout",
         path="Sources/VerdictUIWorkbenchCore/WorkbenchResources.swift",
         old='[["Contents", "Resources", "Resources"], ["Resources"]]',
@@ -113,7 +121,7 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="native workbench trusts build-tree page instead of packaged resource identity",
         path="scripts/workbench-acceptance.py",
-        old='or unquote(page.path, errors="strict") != str(Path(resources) / "index.html")',
+        old='or native_resource_path(unquote(page.path, errors="strict"))\n        != native_resource_path(str(Path(resources) / "index.html"))',
         new="or False",
         test="Tests/test_workbench_acceptance.py::test_loaded_page_must_match_packaged_resource_identity[build-tree]",
         runner=Runner.PYTEST,
