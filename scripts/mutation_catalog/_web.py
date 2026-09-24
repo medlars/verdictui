@@ -7,6 +7,22 @@ _TEST = "VerdictUIWebTests."
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="web login loses the saved task when the page reopens",
+        path="Tests/VerdictUIWebTests/Fixtures/server.py",
+        old="body = (fixture_root / path[1:]).read_bytes()",
+        new="body = (fixture_root / path[1:]).read_bytes().replace(b'<script>', b\"<script>localStorage.removeItem('task-complete');\")",
+        test=_TEST
+        + "WebSessionIntegrationTests/testLoginTaskBadPasswordSecretRedactionAndProfilePersistence",
+    ),
+    Mutation(
+        name="web HTTP login fixture mistakes its query for a route",
+        path="Tests/VerdictUIWebTests/Fixtures/server.py",
+        old="path = urllib.parse.urlsplit(self.path).path",
+        new="path = self.path",
+        test="Tests/test_web_fixture.py::test_loopback_fixture_starts_and_serves_without_reverse_dns",
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
         name="web orderly MCP witness truncates the valid shutdown allowance",
         path="Tests/VerdictUIWebTests/WebCredentialLifecycleTests.swift",
         old="let shutdownAllowance = crash ? 8 : WebSession.consumerShutdownGrace",
