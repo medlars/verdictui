@@ -9,6 +9,8 @@
 
 ## P1 — High Priority
 
+- [ ] (2026-09-24) Repair the CI SwiftPM resource-layout assumption and bind actual native loaded-page URLs to the packaged assets. Support nested and flat bundles while rejecting ambiguous trees and symlinked parents; packaged apps must never fall back to build-folder resources. Three focused controls reproduced the old defects before repair.
+
 - [x] (2026-09-24) Repair the all-advertised-tools MCP transport fixture for `judge_web`: valid observed DOM, required subject and real executable protocol, with decoded PASS asserted over the wire. Exact CI exposed the missing fixture; all 13 strict transport tests now pass and independent review found no issues.
 - [ ] (2026-09-24) Preserve renderer-based web checks in the Workbench editor, including ordinary edits and explicit URL/renderer switches. The existing URL-only editor rejects or replaces real runner declarations. Exact-source CI and behavioral acceptance must pass before release.
 
