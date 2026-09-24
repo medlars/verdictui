@@ -375,7 +375,8 @@
 | `scripts/workbench-acceptance.py` | Own native acceptance process and isolated fixtures; validate retained observations | Active | 2026-09-24 |
 | `Tests/test_workbench_acceptance.py` | Reject incomplete phases, corrupted images/history/tree and unbound native reports | Active | 2026-09-24 |
 
-
+| `Sources/VerdictUIWorkbenchCore/WorkbenchResources.swift` | Resolve exact native copied assets in nested and flat SwiftPM bundles | Active | 2026-09-24 |
+| `Tests/VerdictUIWorkbenchCoreTests/WorkbenchResourcesTests.swift` | Real filesystem layout and redirection refusal controls | Active | 2026-09-24 |
 
 ## Archived / Removed
 

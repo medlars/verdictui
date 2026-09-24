@@ -4,6 +4,41 @@ from mutation_catalog_types import Mutation, Runner
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="native resource resolver loses flat SwiftPM layout",
+        path="Sources/VerdictUIWorkbenchCore/WorkbenchResources.swift",
+        old='[["Contents", "Resources", "Resources"], ["Resources"]]',
+        new='[["Contents", "Resources", "Resources"]]',
+        test="WorkbenchResourcesTests/testFlatBundleUsesOneResourcesDirectory",
+    ),
+    Mutation(
+        name="native resource resolver loses nested SwiftPM layout",
+        path="Sources/VerdictUIWorkbenchCore/WorkbenchResources.swift",
+        old='[["Contents", "Resources", "Resources"], ["Resources"]]',
+        new='[["Resources"]]',
+        test="WorkbenchResourcesTests/testNestedBundleUsesCopiedDirectory",
+    ),
+    Mutation(
+        name="native resource resolver admits ambiguous layouts",
+        path="Sources/VerdictUIWorkbenchCore/WorkbenchResources.swift",
+        old="guard candidates.count == 1, let directory = candidates.first else",
+        new="guard let directory = candidates.first else",
+        test="WorkbenchResourcesTests/testAmbiguousBundleIsRefused",
+    ),
+    Mutation(
+        name="native resource resolver admits redirected ancestors",
+        path="Sources/VerdictUIWorkbenchCore/WorkbenchResources.swift",
+        old="guard attributes[.type] as? FileAttributeType == .typeDirectory else",
+        new="guard attributes[.type] as? FileAttributeType != .typeRegular else",
+        test="WorkbenchResourcesTests/testRedirectedAncestorIsRefused",
+    ),
+    Mutation(
+        name="native resource resolver admits redirected page",
+        path="Sources/VerdictUIWorkbenchCore/WorkbenchResources.swift",
+        old="guard attributes[.type] as? FileAttributeType == .typeRegular else",
+        new="guard attributes[.type] as? FileAttributeType != .typeDirectory else",
+        test="WorkbenchResourcesTests/testRedirectedPageIsRefused",
+    ),
+    Mutation(
         name="native outer owner omits external signal cleanup",
         path="scripts/workbench-acceptance.py",
         old="self.previous[signum] = signal.signal(signum, self.interrupt)",

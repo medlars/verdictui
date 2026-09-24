@@ -11,23 +11,16 @@ struct WorkbenchHost {
     let executable: URL
 
     init(store: WorkbenchStore, size: CGSize) throws {
-        let resourceBundle: Bundle
+        let resourceBundle: URL
         if Bundle.main.bundleURL.pathExtension == "app" {
             // Older SwiftPM accessors can fall back to an absolute build path.
             // A packaged app must use its own resources even on a build machine.
-            let packaged = Bundle.main.bundleURL.appendingPathComponent(
+            resourceBundle = Bundle.main.bundleURL.appendingPathComponent(
                 "Contents/Resources/VerdictUI_VerdictUIWorkbench.bundle", isDirectory: true)
-            guard let bundled = Bundle(url: packaged) else {
-                throw NSError(domain: "WorkbenchResourcesUnavailable", code: 1)
-            }
-            resourceBundle = bundled
         } else {
-            resourceBundle = .module
+            resourceBundle = Bundle.module.bundleURL
         }
-        guard let bundle = resourceBundle.resourceURL else {
-            throw NSError(domain: "WorkbenchResourcesUnavailable", code: 1)
-        }
-        let resources = bundle.appendingPathComponent("Resources")
+        let resources = try WorkbenchResources.directory(in: resourceBundle)
         let page = resources.appendingPathComponent("index.html")
         let bundledCLI = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/verdictui")
         let developmentCLI = URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent().appendingPathComponent("verdictui")
