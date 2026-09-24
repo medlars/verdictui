@@ -132,12 +132,14 @@ def test_outer_signal_reaches_detached_native_and_restores_handler(tmp_path):
         f"spec=importlib.util.spec_from_file_location('owner',{str(SCRIPT)!r})\n"
         "m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)\n"
     )
+    # Non-Darwin cleanup intentionally spends its full grace. Keep nested
+    # fixture budgets below the assertion deadline, with time for inner cleanup.
     wrapper = tmp_path / "wrapper.py"
     wrapper.write_text(
         loader
         + "with m.TerminationGuard() as guard, m.ExitStack() as cleanup:\n"
         + " with guard.registration():\n"
-        + f"  child=m.spawn_owned([sys.executable,{str(native)!r}]);cleanup.callback(m.stop_owned,child)\n"
+        + f"  child=m.spawn_owned([sys.executable,{str(native)!r}]);cleanup.callback(m.stop_owned,child,grace=.3)\n"
         + " try: m.wait_owned(child,8)\n"
         + " finally: guard.cleaning=True\n"
     )
@@ -146,7 +148,7 @@ def test_outer_signal_reaches_detached_native_and_restores_handler(tmp_path):
         loader
         + "before=signal.getsignal(signal.SIGTERM)\n"
         + "try:\n"
-        + f" m.run_owned_command([sys.executable,{str(wrapper)!r}],cwd=pathlib.Path({str(tmp_path)!r}),timeout=8)\n"
+        + f" m.run_owned_command([sys.executable,{str(wrapper)!r}],cwd=pathlib.Path({str(tmp_path)!r}),timeout=8,cleanup_grace=2)\n"
         + "except ValueError:\n"
         + " assert signal.getsignal(signal.SIGTERM)==before\n"
         + f" pathlib.Path({str(restored)!r}).touch();sys.exit(2)\n"

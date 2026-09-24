@@ -35,7 +35,7 @@ _ARCHIVED_HEADING = "## Archived / Removed"
 # workflow step referencing a file nobody had written, which failed every
 # scheduled run for as long as the pins were stale. Source, so it takes a row.
 _SOURCE_SUFFIXES = frozenset(
-    {".swift", ".py", ".sh", ".json", ".toml", ".cjs", ".html", ".css", ".js"}
+    {".swift", ".c", ".h", ".py", ".sh", ".json", ".toml", ".cjs", ".html", ".css", ".js"}
 )
 
 # Everything tracked that is deliberately not source. Declared rather than
