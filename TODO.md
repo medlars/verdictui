@@ -9,6 +9,8 @@
 
 ## P1 — High Priority
 
+- [ ] (P1) Final 1.1.4 full PM: native fixture reported changed foreground application or global cursor; other technical stages passed (B99.4). Await the requested quiet window and remeasure without weakening noninterference checks. measured: 2026-09-23; falsify: `python3.14 scripts/product-smoke.py --binary .build/debug/verdictui`.
+
 - [ ] (P1) Isolate the stock MCP malformed-input test from consumer runner discovery; preserve full pytest failure/timeout evidence. Replace the oversized browser fixture with a real three-candidate snapshot tested on both sides of the unchanged cumulative 4096-candidate budget; retain the direct enrichment witness and exact refusal before remote work. Re-run focused controls, mutations, and the full PM/CI before 1.1.4 publication.
 
 - [x] (2026-09-23) Repair measured MCP startup scan: generated scratch data no longer enters consumer fingerprints; source/resource invalidation and scan bounds retained. Published and installed 1.1.3; 22 focused tests and 2/2 new mutation witnesses pass. Actual Codex connection exposes 18 tools and observes the public page; Claude project health is connected, with its actual tool-call check still pending below.
