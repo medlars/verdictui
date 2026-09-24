@@ -381,7 +381,11 @@ final class WebCredentialLifecycleTests: XCTestCase {
         try await exerciseMCPShutdown(crash: true)
     }
 
-    private func exerciseMCPShutdown(crash: Bool) async throws {
+    func testMCPSIGTERMAwaitsPermittedLateBrowserExit() async throws {
+        try await exerciseMCPShutdown(crash: false, delayedBrowserExit: true)
+    }
+
+    private func exerciseMCPShutdown(crash: Bool, delayedBrowserExit: Bool = false) async throws {
         let (root, executable) = try fixture()
         let sentinel = Process()
         sentinel.executableURL = URL(fileURLWithPath: "/bin/sleep")
@@ -399,6 +403,25 @@ final class WebCredentialLifecycleTests: XCTestCase {
         environment["VERDICTUI_WEB_OP"] = executable.path
         environment["RESOLVER_ROOT"] = root.path
         environment["VERDICTUI_WEB_PROFILE_ROOT"] = root.appendingPathComponent("profiles").path
+        if delayedBrowserExit {
+            let wrapper = root.appendingPathComponent("delayed-browser")
+            let script = #"""
+            #!/usr/bin/env python3
+            import json,os,pathlib,subprocess,sys,threading
+            root=pathlib.Path(os.environ['RESOLVER_ROOT'])
+            browser=subprocess.Popen([os.environ['LIFECYCLE_REAL_BROWSER'],*sys.argv[1:]])
+            code=browser.wait()
+            (root/'browser-exit.json').write_text(json.dumps({'code':code}))
+            # Explicit late-exit fault injection, below the production 10s allowance.
+            threading.Event().wait(9)
+            (root/'wrapper-exited').write_text('normal')
+            raise SystemExit(code)
+            """#
+            try script.write(to: wrapper, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: wrapper.path)
+            environment["LIFECYCLE_REAL_BROWSER"] = try BrowserLocator.locate(environment: ProcessInfo.processInfo.environment).path
+            environment["VERDICTUI_WEB_BROWSER"] = wrapper.path
+        }
         process.environment = environment
         process.standardInput = input; process.standardOutput = output; process.standardError = FileHandle.nullDevice
         try process.run()
@@ -422,11 +445,20 @@ final class WebCredentialLifecycleTests: XCTestCase {
         let child = try await pid("child", root: root)
         if crash { XCTAssertEqual(kill(process.processIdentifier, SIGKILL), 0) }
         else { process.terminate() }
-        let deadline = ContinuousClock.now + .seconds(8)
+        // Orderly exit includes credentials, Chrome's own close and retained
+        // guardian cleanup. The crash witness keeps its separate short bound.
+        let shutdownAllowance = crash ? 8 : WebSession.consumerShutdownGrace
+        let deadline = ContinuousClock.now + .seconds(shutdownAllowance)
         while process.isRunning, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(20)) }
         XCTAssertFalse(process.isRunning)
         if !process.isRunning { XCTAssertEqual(process.terminationStatus, crash ? SIGKILL : 128 + SIGTERM) }
         try await assertGone([leader, child, browserPID])
+        if delayedBrowserExit {
+            let observed = try JSONSerialization.jsonObject(with: Data(contentsOf: root.appendingPathComponent("browser-exit.json"))) as? [String: Int]
+            XCTAssertEqual(observed?["code"], 0, "real Chrome must complete its own shutdown")
+            XCTAssertEqual(try String(contentsOf: root.appendingPathComponent("wrapper-exited"), encoding: .utf8), "normal",
+                "the permitted late-exit wrapper must finish without forced termination")
+        }
         XCTAssertTrue(sentinel.isRunning, "resolver cleanup touched an unrelated retained sentinel")
     }
 }

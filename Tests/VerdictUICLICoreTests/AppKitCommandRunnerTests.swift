@@ -127,25 +127,43 @@ final class AppKitCommandRunnerTests: XCTestCase {
 
     @MainActor
     func testLargeDiagnosticStreamCannotBlockTreeDelivery() async throws {
+        try await diagnosticStream(startupDelay: 0)
+    }
+
+    @MainActor
+    func testSlowStartupCannotTriggerDiagnosticReleaseBeforeExecution() async throws {
+        try await diagnosticStream(startupDelay: 4)
+    }
+
+    @MainActor
+    private func diagnosticStream(startupDelay: Int) async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("appkit-diagnostics-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let release = directory.appendingPathComponent("release")
+        let ready = directory.appendingPathComponent("ready")
         let runner = directory.appendingPathComponent("runner")
         let script = """
             #!/usr/bin/python3
             import os, pathlib, threading, time
+            time.sleep(\(startupDelay))
             release = pathlib.Path(__file__).parent / "release"
             def cleanup():
                 while not release.exists(): time.sleep(0.01)
                 os._exit(93)
             threading.Thread(target=cleanup, daemon=True).start()
+            (pathlib.Path(__file__).parent / "ready").touch()
             os.write(2, b"diagnostic" * 32768)
             os.write(1, b'{"id":"root","role":"container","frame":{"x":0,"y":0,"width":200,"height":100},"children":[]}\\n')
             """
         try script.write(to: runner, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: runner.path)
         let cleanup = Task.detached {
+            // Measure the blocked-output allowance after actual fixture startup.
+            // The command's own timeout bounds startup; defer cancels this waiter.
+            while !FileManager.default.fileExists(atPath: ready.path) {
+                try await Task.sleep(for: .milliseconds(10))
+            }
             try await Task.sleep(for: .seconds(3))
             try Data().write(to: release)
         }
@@ -157,8 +175,8 @@ final class AppKitCommandRunnerTests: XCTestCase {
         let output = CapturedOutput()
         let code = await AppKitCommand(runner: runner.path, subject: "proof", judge: false)
             .run(makeEnvironment(output), pretty: false)
-        XCTAssertEqual(code, .pass)
-        XCTAssertTrue(output.standardOutput.contains("\"root\""))
+        XCTAssertEqual(code, .pass, String(output.standardError.prefix(2048)))
+        XCTAssertTrue(output.standardOutput.contains("\"root\""), String(output.standardError.prefix(2048)))
     }
 
     fileprivate func makeEnvironment(_ output: CapturedOutput) -> CommandEnvironment {

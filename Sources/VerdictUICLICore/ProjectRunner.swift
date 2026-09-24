@@ -118,21 +118,23 @@ public enum ProjectRunner {
 
     static func buildIfConfigured(
         projectRoot: URL,
-        timeout: TimeInterval = 300,
+        timeout: TimeInterval? = nil,
         swiftExecutable: URL = URL(fileURLWithPath: "/usr/bin/env"),
         shouldCancel: () -> Bool = { false }
     ) throws {
         guard let build = try ProjectScenarios.buildConfiguration(projectRoot: projectRoot) else {
             return
         }
+        let timeout = timeout ?? build.timeoutSeconds
         let arguments = [
-            "swift", "build", "--package-path", projectRoot.path,
+            "swift", "build", "--package-path", build.packageRoot.path,
             "--product=\(build.product)", "--configuration=\(build.configuration)", "--jobs", "2",
         ]
         let event = try JSONSerialization.data(
             withJSONObject: [
                 "event": "project-build", "product": build.product,
                 "configuration": build.configuration,
+                "buildTimeoutSeconds": timeout,
             ], options: [.sortedKeys])
         FileHandle.standardError.write(event + Data([10]))
         let process = try GuardedProcess.spawn(

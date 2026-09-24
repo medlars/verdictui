@@ -7,6 +7,20 @@ _TEST = "VerdictUIWebTests."
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="web orderly MCP witness truncates the valid shutdown allowance",
+        path="Tests/VerdictUIWebTests/WebCredentialLifecycleTests.swift",
+        old="let shutdownAllowance = crash ? 8 : WebSession.consumerShutdownGrace",
+        new="let shutdownAllowance: TimeInterval = 8",
+        test=_TEST + "WebCredentialLifecycleTests/testMCPSIGTERMAwaitsPermittedLateBrowserExit",
+    ),
+    Mutation(
+        name="web persistent profile accidentally becomes incognito",
+        path=_BASE + "HeadlessBrowser.swift",
+        old='"--remote-debugging-port=0",',
+        new='"--incognito",\n            "--remote-debugging-port=0",',
+        test=_TEST + "WebSessionLifecycleTests/testHTTPStorageSurvivesImmediateCloseAndReopen",
+    ),
+    Mutation(
         name="web failed retirement is mistaken for completed cleanup",
         path=_BASE + "WebSession.swift",
         old="try await close()\n            return false",
