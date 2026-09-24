@@ -1,0 +1,10 @@
+{
+  "checks": [
+    {
+      "name": "workbench-connected-workflow",
+      "kind": "web",
+      "runner": ".verdictui/run-workbench.py",
+      "subject": "workbench-connected-workflow"
+    }
+  ]
+}

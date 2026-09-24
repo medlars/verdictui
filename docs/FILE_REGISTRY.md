@@ -7,6 +7,11 @@
 
 | File                                                                 | Purpose                                                                                                                                                | Status | Added      |
 | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ | ---------- |
+| `.verdictui/checks.json` | Actual Workbench workflow check, never demo catalog | Active | 2026-09-23 |
+| `.verdictui/coverage.json` | Explicit measured Workbench surface scope | Active | 2026-09-23 |
+| `.verdictui/run-workbench.py` | Executable actual Workbench consumer protocol | Active | 2026-09-23 |
+| `scripts/workbench_coverage.py` | Source-bound native workflow and independent paint admission | Active | 2026-09-23 |
+| `Tests/test_workbench_coverage.py` | Stale attempt, build and image review admission controls | Active | 2026-09-23 |
 | `Package.swift`                                                      | SPM manifest — kernel, probe, demo-scenarios, demo executable targets, strict concurrency                                                              | Active | 2026-08-04 |
 | `Sources/VerdictUIKernel/SemanticNode.swift`                         | Semantic tree: `Role`, `AttributeValue`, `TextMetrics`, `SemanticNode`, `Rect`/`Size` geometry                                                         | Active | 2026-08-04 |
 | `Sources/VerdictUIKernel/TreeDiff.swift`                             | `NodePath`, `TreeDelta` and its four categories, `TreeDiff.compute`/`apply`                                                                            | Active | 2026-08-04 |
