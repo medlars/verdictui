@@ -51,7 +51,7 @@ jobs:
 
       # Warnings-as-errors mirrors the PM's SWIFT_STRICT_FLAGS — keep in sync.
       - name: Build (including test targets, zero-warning)
-        run: swift build --build-tests -Xswiftc -warnings-as-errors
+        run: swift build --build-system native --build-tests -Xswiftc -warnings-as-errors
 
       - name: Test (zero-warning)
         id: tests
@@ -61,7 +61,12 @@ jobs:
           # Mac; the fixed 10 s/5 s budgets refused heavy fixtures with "deadline
           # exceeded" instead of the verdict under test (CIS-4ADF5658).
           VERDICTUI_WEB_TIMEOUT_SCALE: "3"
-        run: swift test -Xswiftc -warnings-as-errors
+        run: |
+          log="${RUNNER_TEMP}/verdictui-swift-tests.log"
+          status=0
+          swift test --build-system native -Xswiftc -warnings-as-errors > "$log" 2>&1 || status=$?
+          cat "$log"
+          python3.14 scripts/verify-swift-test-output.py "$log" --exit-code "$status"
 
       # DemoReportTests exercises the executable's body in-process; this catches
       # what it cannot: a process-level failure (broken @MainActor async entry,
