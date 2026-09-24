@@ -179,3 +179,12 @@ file sizes are measured through retained descriptors: Foundation URL metadata
 was observed to cache the initial size and miss later output growth. The held
 producer, timeout, cancellation and mutation controls establish these specific
 behaviors; they do not replace final integrated or installed-artifact acceptance.
+
+Credential helpers share the launch-owned guardian. Normal consumer shutdown
+drains pending launches and open sessions concurrently and allows browser storage
+to flush; genuine protocol/build failures retain short escalation. Failed session
+retirement propagates through lookup/open and remains owned when listing omits
+an unavailable session. A later close can therefore retry cleanup. These guards
+are covered by explicit crash, delayed persistence and failed-retirement controls.
+MCP initialization identifies the software release separately from the verdict
+schema; the candidate reports1.1.4, while its wire schema remains1.1.
