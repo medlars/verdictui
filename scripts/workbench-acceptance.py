@@ -262,7 +262,8 @@ def spawn_owned(arguments, **options) -> subprocess.Popen:
     process = subprocess.Popen(arguments, start_new_session=True, **options)
     # Popen's successful exec handshake guarantees setsid completed. Darwin's
     # getpgid/getsid stop resolving an exited zombie, so retain this launch fact.
-    setattr(process, "_verdictui_owned_session", process.pid)
+    # Popen does not declare this private metadata attribute in its type contract.
+    setattr(process, "_verdictui_owned_session", process.pid)  # noqa: B010
     return process
 
 
@@ -691,9 +692,9 @@ def _run(args, root: Path, output: Path, guard: TerminationGuard, cleanup: ExitS
         elapsed_seconds=time.monotonic() - started,
         owned_process={"pid": process.pid, "returncode": code},
     )
-    result = validate_report(report, output)
+    validated_report = validate_report(report, output)
     phase_timing("end")
-    return result
+    return validated_report
 
 
 def main() -> int:
