@@ -362,7 +362,7 @@ def reload_proof(launcher: Path, root: Path) -> None:
                         log.seek(0)
                         print(log.read().decode(), file=sys.stderr)
         print(
-            "consumer reload PASS: same MCP/daemon identity, rebuilt state, owned child crash recovery, failed-build refusal"
+            "consumer reload PASS: same MCP/daemon PID and birth identity, rebuilt state, owned child crash recovery, failed-build refusal"
         )
 
 

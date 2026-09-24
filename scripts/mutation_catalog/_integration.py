@@ -4,6 +4,14 @@ from mutation_catalog_types import Mutation, Runner
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="reload identity changes PM success marker",
+        path="examples/ConsumerApp/verify-integration.py",
+        old="consumer reload PASS: same MCP/daemon PID and birth identity",
+        new="consumer reload PASS: same MCP/daemon identity",
+        test="Tests/test_consumer_reload_identity.py::test_reload_success_message_satisfies_pm_acceptance_contract",
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
         name="reload identity admits unsupported platform",
         path="examples/ConsumerApp/verify-integration.py",
         old='check(sys.platform == "darwin",',

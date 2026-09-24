@@ -1,8 +1,10 @@
 """Consumer selection follows the guardian topology and refuses changed identities."""
 
+import ast
 import ctypes
 import errno
 import importlib.util
+import inspect
 import os
 import subprocess
 import sys
@@ -11,6 +13,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from pm_test_support import load_pm
 
 PATH = Path(__file__).resolve().parents[1] / "examples/ConsumerApp/verify-integration.py"
 SPEC = importlib.util.spec_from_file_location("consumer_reload_proof", PATH)
@@ -18,6 +21,30 @@ assert SPEC and SPEC.loader
 PROOF = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = PROOF
 SPEC.loader.exec_module(PROOF)
+
+
+def test_reload_success_message_satisfies_pm_acceptance_contract(monkeypatch):
+    messages = [
+        node.value
+        for node in ast.walk(ast.parse(inspect.getsource(PROOF.reload_proof)))
+        if isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and node.value.startswith("consumer reload PASS:")
+    ]
+    assert len(messages) == 1
+    pm_module = load_pm()
+    seen = []
+
+    def run(args, **kwargs):
+        seen.append(args[-1])
+        message = "cold external consumer auto-build PASS" if args[-1] == "--cold" else messages[0]
+        return subprocess.CompletedProcess(args, 0, message, "")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    pm = pm_module.VerdictUIPM.__new__(pm_module.VerdictUIPM)
+    result = pm.stage_consumer_runner()
+    assert seen == ["--cold", "--reload"]
+    assert result["passed"], result["detail"]
 
 
 @pytest.fixture
