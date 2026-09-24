@@ -12,7 +12,7 @@ enum WebInlineGeometry {
         var candidates = 4096
         var fragments = 100_000
         let deadline: ContinuousClock.Instant
-        init(deadline: ContinuousClock.Instant = .now + .seconds(10)) { self.deadline = deadline }
+        init(deadline: ContinuousClock.Instant = .now + WebTiming.current.captureDeadline) { self.deadline = deadline }
         mutating func reserveCandidates(_ count: Int) throws {
             guard count >= 0, count <= candidates else { throw unavailable("inline element limit exceeded") }
             candidates -= count
@@ -24,7 +24,7 @@ enum WebInlineGeometry {
         func timeout() throws -> Duration {
             let remaining = ContinuousClock.now.duration(to: deadline)
             guard remaining > .zero else { throw unavailable("inline geometry capture deadline exceeded") }
-            return min(remaining, .seconds(5))
+            return min(remaining, WebTiming.current.requestCap)
         }
     }
 

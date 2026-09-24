@@ -12,6 +12,11 @@ import tempfile
 import time
 from pathlib import Path
 
+# Poll interval while waiting for the broker socket to appear.
+SOCKET_POLL_SECONDS = 0.05
+# Pause after SIGKILL so the broker observes the dead child before the next request.
+CHILD_DEATH_SETTLE_SECONDS = 0.1
+
 
 def check(condition: bool, message: str) -> None:
     if not condition:
@@ -126,7 +131,7 @@ def reload_proof(launcher: Path, root: Path) -> None:
                             and broker.poll() is None
                             and time.monotonic() < deadline
                         ):
-                            time.sleep(0.05)
+                            time.sleep(SOCKET_POLL_SECONDS)
                         check(Path(public_socket).exists(), "broker daemon not ready")
                     check(verify() == "PASS", f"{mode} initial consumer")
                     first_child = child_of(broker.pid)
@@ -137,7 +142,7 @@ def reload_proof(launcher: Path, root: Path) -> None:
                         "transport did not remain alive",
                     )
                     os.kill(child_of(broker.pid), signal.SIGKILL)
-                    time.sleep(0.1)
+                    time.sleep(CHILD_DEATH_SETTLE_SECONDS)
                     check(verify() is None, "dead child masqueraded as available")
                     check(verify() == "FAIL", "next request did not recover")
                     source.write_text(original + "\nthis is invalid Swift !!!\n")

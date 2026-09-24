@@ -240,6 +240,7 @@
 | `Tests/test_validate_contracts.py`                                   | Pins the hand-rolled wire-contract validator: every check it makes and every fail-closed path (unimplemented keyword, bad fixture, version drift) must FAIL | Active | 2026-09-01 |
 | `Tests/test_floor_check_todo_tracking.py`                            | Pins the floor's TODO-tracking check: TODO.md present, or a CTS record, or the floor fails -- every branch driven through fakes                          | Active | 2026-09-01 |
 | `Tests/test_workflow_jobs_pinned.py`                                 | Pins the guard jobs (secret-scan, pinned-action checker, close-on-green): a job silently dropped from CI must fail a local test, not un-guard silently    | Active | 2026-09-01 |
+| `Tests/test_swift_toolchain_pin.py` | Runs the CI "Swift version" step against a fake swift in both directions and checks the local toolchain equals .github/swift-toolchain-version, so local and CI compile with one Swift | Active | 2026-09-23 |
 | `Tests/__init__.py`                                                  | Python package marker for pytest collection                                                                                                            | Active | 2026-08-04 |
 | `pyproject.toml`                                                     | Fleet tooling config (ruff/mypy/pyright/pytest) — no [project] section                                                                                 | Active | 2026-08-04 |
 | `docs/kernel.md`                                                     | Kernel reference: role vocabulary, rule catalog, diff and schema reference                                                                             | Active | 2026-08-04 |
@@ -305,6 +306,8 @@
 | `Sources/VerdictUIWeb/DOMSnapshotAssembly.swift` | Validated DOM geometry, original ancestry and retained redacted evidence | Active | 2026-09-23 |
 | `Sources/VerdictUIWeb/WebInlineGeometry.swift` | Bounded isolated-world measurements of native inline border fragments | Active | 2026-09-23 |
 | `Tests/VerdictUIWebTests/WebInlineGeometryTests.swift` | Inline capture budgets, cleanup, identity, concurrency and cancellation controls | Active | 2026-09-23 |
+| `Sources/VerdictUIWeb/WebTiming.swift` | Web capture/settle/request budgets, stretched by `VERDICTUI_WEB_TIMEOUT_SCALE` on slower hosts (CIS-4ADF5658) | Active | 2026-09-24 |
+| `Tests/VerdictUIWebTests/WebTimingTests.swift` | Timeout-scale parsing: defaults kept, invalid/shrinking values refused, upper bound | Active | 2026-09-24 |
 | `Sources/VerdictUIWeb/WebPaintSemantics.swift` | Conservative paint classification and measured containing-block clip boundaries | Active | 2026-09-23 |
 | `Tests/VerdictUIWebTests/WebPaintSemanticsTests.swift` | Positive and negative controls for browser paint uncertainty and clipping | Active | 2026-09-23 |
 | `Sources/VerdictUIWeb/WebLint.swift` | Browser document/scroll paint projections, bounded CSS clipping and original-tree verdict evidence | Active | 2026-09-23 |
@@ -334,7 +337,10 @@
 | `examples/ConsumerApp/verify-integration.py` | verify-integration: external consumer acceptance fixture | Active | 2026-09-23 |
 | `examples/LiveAppFixture/Fixture.swift` | Fixture: external consumer acceptance fixture | Active | 2026-09-23 |
 | `scripts/mutation_catalog/_native.py` | _native: guard mutation witnesses | Active | 2026-09-23 |
-| `scripts/mutation_catalog/_web.py` | _web: guard mutation witnesses | Active | 2026-09-23 |
+| `scripts/mutation_catalog/_web.py` | _web: session, transport, browser and credential guard mutation witnesses | Active | 2026-09-24 |
+| `scripts/mutation_catalog/_web_lint.py` | _web_lint: WebLint guard mutation witnesses (split from _web.py, CTS-61F7E641) | Active | 2026-09-24 |
+| `scripts/mutation_catalog/_web_paint.py` | _web_paint: paint-semantics, frame and inline geometry guard mutation witnesses | Active | 2026-09-24 |
+| `scripts/mutation_catalog/_web_snapshot.py` | _web_snapshot: DOMSnapshot assembly and accessible-name guard mutation witnesses | Active | 2026-09-24 |
 | `Tests/VerdictUIWebTests/Fixtures/broken.html` | broken: real-product verification and regression evidence | Active | 2026-09-23 |
 | `Tests/VerdictUIWebTests/Fixtures/clean.html` | clean: real-product verification and regression evidence | Active | 2026-09-23 |
 | `Tests/VerdictUIWebTests/Fixtures/empty.html` | empty: real-product verification and regression evidence | Active | 2026-09-23 |
