@@ -51,6 +51,8 @@
 
 ## P1 — High Priority
 
+- [ ] (P1) Remove stale action discovery and refuse built-in actions when a previously registered probe has disappeared from the observed tree. LaunchGate actual welcome last-page Skip reproduces the defect; retain the failed consumer witness, add native disappear/reappear controls and mutation rows before requalifying consumers.
+
 - [x] (P1) Preserve ScenarioEntry.init(viewport:make:) alongside explicit expectations. Root622973f aggregate D69.5 and independent source typecheck exposed removed public signature. Restored original overload;104 strict native tests including existing macro consumers pass, source factory typechecks,1 actual empty-policy mutant detected with exact restoration. Failed original aggregate retained; fresh committed aggregate acceptance is separate.
 
 - [x] (P1) CEO/stage_codewatch: the original new-checkout run observed 0/456 scans and failed. A fresh canonical scan and repairs now pass the scoped stage (448/456 currently scanned; five dirty paths excluded by its policy and separately scanned). Clean-commit full PM must re-admit the committed files; original failure retained.

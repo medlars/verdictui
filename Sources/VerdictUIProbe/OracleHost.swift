@@ -369,13 +369,18 @@ public final class OracleHost {
     /// The discovery half of ``apply(_:)``: a caller holding a tree can ask
     /// which of its probes are drivable instead of learning it from a refusal.
     ///
+    /// Registrations retain scenario state across view changes. A removed probe
+    /// may therefore still own storage, but it is not a currently rendered action.
+    /// Discovery intersects those registrations with the latest observed tree.
+    ///
     /// Forces a layout pass for the SAME reason ``apply(_:)`` does — bindings
     /// register during view evaluation, so asking before any render would
     /// report an empty set and read as "nothing here is actionable", which is
     /// a wrong answer rather than an absent one.
     public var actionableProbes: [String: [String]] {
         hostingView.layoutSubtreeIfNeeded()
-        return state.actionableProbes
+        let present = Set(sink.latestTree?.flattened().map(\.id) ?? [])
+        return state.actionableProbes.filter { present.contains($0.key) }
     }
 
     /// Apply a ``ProbeAction`` to ``state`` under ``settlePolicy``.
@@ -388,6 +393,14 @@ public final class OracleHost {
     /// no compatible binding.
     public func apply(_ action: ProbeAction) throws {
         hostingView.layoutSubtreeIfNeeded()
+        switch action {
+        case .custom:
+            break // Explicit scenario mutations need not name a rendered control.
+        default:
+            guard sink.latestTree?.node(withID: action.probeID) != nil else {
+                throw ProbeActionError.unknownProbe(action.probeID)
+            }
+        }
         var thrown: (any Error)?
         applyStateChange {
             do {
