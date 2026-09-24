@@ -135,23 +135,27 @@ public enum ProjectRunner {
                 "configuration": build.configuration,
             ], options: [.sortedKeys])
         FileHandle.standardError.write(event + Data([10]))
-        let process = try OwnedCommandProcess.spawn(
+        let process = try GuardedProcess.spawn(
             executable: swiftExecutable, arguments: arguments,
             directory: projectRoot, environment: ProcessInfo.processInfo.environment,
             standardOutput: STDERR_FILENO, standardError: STDERR_FILENO)
-        defer { _ = try? process.stop(grace: 0.2) }
-        let deadline = ProcessInfo.processInfo.systemUptime + timeout
-        while try process.status() == nil {
-            guard !shouldCancel(), ProcessInfo.processInfo.systemUptime < deadline else {
-                throw Failure(
-                    description: shouldCancel()
-                        ? "consumer build cancelled"
-                        : "consumer build timed out after \(timeout) seconds")
+        do {
+            let deadline = ProcessInfo.processInfo.systemUptime + timeout
+            while try process.status() == nil {
+                guard !shouldCancel(), ProcessInfo.processInfo.systemUptime < deadline else {
+                    throw Failure(
+                        description: shouldCancel()
+                            ? "consumer build cancelled"
+                            : "consumer build timed out after \(timeout) seconds")
+                }
+                _ = process.waitForExitEvent(timeout: 0.025)
             }
-            _ = process.waitForExitEvent(timeout: 0.025)
-        }
-        guard try process.status() == 0 else {
-            throw Failure(description: "consumer build failed; stale runner was not executed")
+            guard try process.stop(grace: 0) == 0 else {
+                throw Failure(description: "consumer build failed; stale runner was not executed")
+            }
+        } catch {
+            try process.stop(grace: 0.2)
+            throw error
         }
     }
 

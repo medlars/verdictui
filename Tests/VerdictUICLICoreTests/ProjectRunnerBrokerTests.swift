@@ -97,6 +97,24 @@ final class ProjectRunnerBrokerTests: XCTestCase {
         XCTAssertEqual(value(try answer(session)), "one")
     }
 
+    func testLostChildOwnershipRetainsUnavailableHostAndRefusesReplacement() throws {
+        let (_, session) = try fixture()
+        _ = try answer(session)
+        let child = try XCTUnwrap(session.child)
+        XCTAssertEqual(kill(child.processIdentifier, SIGKILL), 0)
+        let deadline = ContinuousClock.now + .seconds(3)
+        while try child.status() == nil, ContinuousClock.now < deadline { _ = child.waitForExitEvent(timeout: 0.01) }
+        XCTAssertNotNil(try child.status())
+        var status: Int32 = 0
+        // Deliberate interference: the broker must fail closed after ECHILD.
+        XCTAssertEqual(waitpid(child.processIdentifier, &status, WNOHANG), child.processIdentifier)
+        for _ in 0..<2 {
+            let unavailable = try answer(session)
+            XCTAssertEqual((unavailable["result"] as? [String: Any])?["isError"] as? Bool, true)
+            XCTAssertTrue(session.child === child, "failed cleanup cannot discard the identity owner")
+        }
+    }
+
     func testDeathDuringRequestNeverReplaysActionAndNextRequestRecovers() throws {
         let (_, session) = try fixture()
         _ = try answer(session)
@@ -358,4 +376,41 @@ final class ProjectRunnerBrokerTests: XCTestCase {
         wait(for: [ended], timeout: 2)
     }
 
+}
+
+extension ProjectRunnerBrokerTests {
+    func testBusyMCPBrokerOwnerSIGKILLContainsHost() throws {
+        let fixture = try ConsumerCrashFixture(), input = Pipe()
+        try fixture.write("runner", ConsumerCrashFixture.script, executable: true)
+        try fixture.write(".verdictui/config.json", #"{"runner":"runner"}"#)
+        try fixture.launch(["mcp"], input: input)
+        try input.fileHandleForWriting.write(contentsOf: Data("{\"id\":1,\"method\":\"tools/call\"}\n".utf8))
+        try fixture.assertCrashContained()
+    }
+
+    func testDaemonStartupOwnerSIGKILLContainsHost() throws {
+        let fixture = try ConsumerCrashFixture()
+        try fixture.write("runner", ConsumerCrashFixture.script, executable: true)
+        try fixture.write(".verdictui/config.json", #"{"runner":"runner"}"#)
+        let input = Pipe()
+        // MCP forces host creation immediately; the daemon launch itself occurs
+        // after the first socket request, so connect using the public client.
+        try fixture.launch(["daemon", "start", "--socket", fixture.root.appendingPathComponent("broker.sock").path], input: input)
+        let path = fixture.root.appendingPathComponent("broker.sock").path
+        let deadline = ContinuousClock.now + .seconds(3)
+        while !FileManager.default.fileExists(atPath: path), ContinuousClock.now < deadline { Thread.sleep(forTimeInterval: 0.01) }
+        let client = socket(AF_UNIX, SOCK_STREAM, 0); defer { close(client) }
+        var address = sockaddr_un(); address.sun_family = sa_family_t(AF_UNIX)
+        let bytes = Array(path.utf8) + [0]
+        // Use the short symlink path /tmp to stay inside sockaddr_un's limit.
+        XCTAssertLessThanOrEqual(bytes.count, MemoryLayout.size(ofValue: address.sun_path))
+        guard bytes.count <= MemoryLayout.size(ofValue: address.sun_path) else { return }
+        withUnsafeMutableBytes(of: &address.sun_path) { $0.copyBytes(from: bytes) }
+        XCTAssertEqual(withUnsafePointer(to: &address) { ptr in ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+            connect(client, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
+        } }, 0)
+        let request = Data("{\"id\":\"private\",\"method\":\"list\"}\n".utf8)
+        _ = request.withUnsafeBytes { write(client, $0.baseAddress!, $0.count) }
+        try fixture.assertCrashContained()
+    }
 }

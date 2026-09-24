@@ -14,65 +14,28 @@ extension BrowserProcessIdentity {
     func finish() throws {}
 }
 
-/// The process source captures only this fd owner, never the browser object.
-/// Closing is idempotent under concurrent exit delivery and explicit shutdown.
-private final class BrowserLifetime: @unchecked Sendable {
-    private let lock = NSLock()
-    private var writer: Int32
-    init(_ writer: Int32) { self.writer = writer }
-    func closeWriter() {
-        lock.lock(); defer { lock.unlock() }
-        if writer >= 0 { close(writer); writer = -1 }
-    }
-    deinit { closeWriter() }
-}
-
+/// Browser-specific interface over the shared command lifetime owner.
 final class LaunchedBrowserProcess: BrowserProcessIdentity, @unchecked Sendable {
-    private let guardian: OwnedCommandProcess
-    private let browser: OwnedCommandProcess
-    private let lifetime: BrowserLifetime
-    private let exitSource: DispatchSourceProcess
-    let pid: pid_t
+    private let process: GuardedProcess
+    var pid: pid_t { process.processIdentifier }
 
-    private init(_ launch: OwnedCommandProcess.GuardedLaunch) {
-        guardian = launch.guardian; browser = launch.browser
-        pid = browser.processIdentifier
-        lifetime = BrowserLifetime(launch.lifetimeWriter)
-        exitSource = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit,
-                                                       queue: .global(qos: .utility))
-        let lifetime = self.lifetime
-        exitSource.setEventHandler { lifetime.closeWriter() }
-        exitSource.activate()
-        // Cover browser exit before or during registration, without reaping it.
-        if !isRunning { lifetime.closeWriter() }
-    }
+    private init(_ process: GuardedProcess) { self.process = process }
 
     static func launch(executable: URL, arguments: [String], environment: [String: String]) throws -> LaunchedBrowserProcess {
-        LaunchedBrowserProcess(try OwnedCommandProcess.spawnGuardedBrowser(executable: executable,
-            arguments: arguments, environment: environment))
+        LaunchedBrowserProcess(try GuardedProcess.spawn(executable: executable,
+            arguments: arguments, directory: URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+            environment: environment))
     }
 
     var isRunning: Bool {
-        do { return try browser.status() == nil && guardian.status() == nil }
-        catch { lifetime.closeWriter(); return false }
+        do { return try process.status() == nil } catch { return false }
     }
 
     func signal(_ value: Int32) throws {
-        if value == SIGTERM { try browser.requestBrowserTermination() }
-        else if value == SIGKILL { try finish(grace: 0) }
+        if value == SIGTERM { try process.requestTermination() }
+        else if value == SIGKILL { try process.finish(grace: 0) }
         else { throw OwnedCommandProcess.Failure.invalidLaunch }
     }
 
-    private func finish(grace: TimeInterval) throws {
-        lifetime.closeWriter()
-        exitSource.cancel()
-        // Group completion precedes both reaping the browser and releasing its
-        // profile lock in the caller. Guardian exit alone does not prove this.
-        try guardian.finishGuardian(grace: grace)
-        try browser.finishBrowser()
-    }
-
-    func finish() throws { try finish(grace: 2) }
-
-    deinit { try? finish(grace: 0) }
+    func finish() throws { try process.finish(grace: 2) }
 }

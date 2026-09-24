@@ -5,7 +5,7 @@ import VerdictUIProcessGuardian
 /// Owns one process group while retaining its unreaped leader as an identity
 /// anchor. A completed leader cannot have its PID recycled before cleanup.
 public final class OwnedCommandProcess: @unchecked Sendable {
-    public enum Failure: Error { case invalidLaunch, system(Int32), guardianCleanupTimeout }
+    public enum Failure: Error { case invalidLaunch, system(Int32), guardianCleanupTimeout, guardianUnavailable }
     public let processIdentifier: pid_t
     private let lock = NSLock()
     private var reaped = false
@@ -24,12 +24,22 @@ public final class OwnedCommandProcess: @unchecked Sendable {
         let lifetimeWriter: Int32
     }
 
-    /// Internal launch factory, never an arbitrary-PID adoption surface.
     static func spawnGuardedBrowser(executable: URL, arguments: [String],
                                     environment: [String: String]) throws -> GuardedLaunch {
+        try spawnGuardedCommand(executable: executable, arguments: arguments,
+            directory: URL(fileURLWithPath: FileManager.default.currentDirectoryPath), environment: environment)
+    }
+
+    /// Internal launch factory, never an arbitrary-PID adoption surface.
+    static func spawnGuardedCommand(executable: URL, arguments: [String], directory: URL,
+                                    environment: [String: String], standardInput: Int32? = nil,
+                                    standardOutput: Int32? = nil, standardError: Int32? = nil) throws -> GuardedLaunch {
         let argv = [executable.path] + arguments
         let env = environment.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }
-        guard executable.isFileURL, !(argv + env).contains(where: { $0.contains("\0") }) else {
+        let launchStrings = argv + env + [directory.path]
+        guard executable.isFileURL, directory.isFileURL,
+              [standardInput, standardOutput, standardError].allSatisfy({ $0 == nil || $0! >= 0 }),
+              !launchStrings.contains(where: { $0.contains("\0") }) else {
             throw Failure.invalidLaunch
         }
         let argumentPointers = argv.map { strdup($0) }
@@ -40,8 +50,12 @@ public final class OwnedCommandProcess: @unchecked Sendable {
         }
         var arguments = argumentPointers + [nil], environment = environmentPointers + [nil]
         var launched = vui_guardian_launch_result()
-        let error = executable.path.withCString {
-            vui_guardian_launch($0, &arguments, &environment, 3000, 1000, &launched)
+        let descriptors: [Int32] = [standardInput ?? -1, standardOutput ?? -1, standardError ?? -1]
+        let error = executable.path.withCString { executablePath in
+            directory.path.withCString { directoryPath in
+                vui_guardian_launch(executablePath, &arguments, &environment, directoryPath,
+                                    descriptors, 3000, 1000, &launched)
+            }
         }
         try checked(error)
         guard launched.guardian_pid > 0, launched.lifetime_fd >= 0 else { throw Failure.invalidLaunch }
@@ -103,7 +117,7 @@ public final class OwnedCommandProcess: @unchecked Sendable {
         let deadline = ContinuousClock.now + .seconds(2)
         while groupReady && !groupHasOnlyExitedMembers() {
             guard ContinuousClock.now < deadline else { throw Failure.guardianCleanupTimeout }
-            Thread.sleep(forTimeInterval: 0.01)
+            Thread.sleep(forTimeInterval: 0.01) // verdictui-os-cleanup:group-quiescence
         }
         try reapRetainedChild()
     }
@@ -125,7 +139,7 @@ public final class OwnedCommandProcess: @unchecked Sendable {
             if try observe() != nil { return true }
             // A process-exit event can precede waitid's exit record on Darwin.
             // Retained-child cleanup needs the record, not only the event.
-            Thread.sleep(forTimeInterval: 0.01)
+            Thread.sleep(forTimeInterval: 0.01) // verdictui-os-cleanup:waitid-readiness
         } while ContinuousClock.now < deadline
         return try observe() != nil
     }

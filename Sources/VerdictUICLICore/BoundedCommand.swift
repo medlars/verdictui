@@ -2,6 +2,7 @@ import Foundation
 import VerdictUIWeb
 
 typealias OwnedCommandProcess = VerdictUIWeb.OwnedCommandProcess
+typealias GuardedProcess = VerdictUIWeb.GuardedProcess
 
 /// A subprocess boundary for project checks: no shell, bounded time and output.
 enum BoundedCommand {
@@ -22,7 +23,7 @@ enum BoundedCommand {
             defer { try? output.close() }
             var environment = ProcessInfo.processInfo.environment
             environment.removeValue(forKey: ProjectRunner.delegationMarker)
-            let process = try OwnedCommandProcess.spawn(executable: executable, arguments: arguments,
+            let process = try GuardedProcess.spawn(executable: executable, arguments: arguments,
                 directory: root, environment: environment, standardOutput: output.fileDescriptor)
             let deadline = ContinuousClock.now + .seconds(timeout)
             do {

@@ -16,7 +16,11 @@ typedef struct {
     int error;
 } vui_guardian_launch_result;
 
+/* Each stdio descriptor is borrowed for this call; -1 opens /dev/null.
+ * Other negative or closed descriptors fail before any child is launched.
+ * Concurrently closing caller descriptors during launch is unsupported. */
 int vui_guardian_launch(const char *executable, char *const argv[],
-                        char *const environment[], int handshake_ms, int grace_ms,
+                        char *const environment[], const char *directory,
+                        const int standard_descriptors[3], int handshake_ms, int grace_ms,
                         vui_guardian_launch_result *result);
 #endif

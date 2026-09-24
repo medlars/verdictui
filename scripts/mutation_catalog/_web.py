@@ -7,10 +7,72 @@ _TEST = "VerdictUIWebTests."
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="guarded command silently truncates NUL arguments",
+        path=_BASE + "OwnedCommandProcess.swift",
+        old='!launchStrings.contains(where: { $0.contains("\\0") })',
+        new="!launchStrings.isEmpty",
+        test=_TEST + "GuardedProcessTests/testLaunchRejectsNulArgumentsAndNonFileURLs",
+    ),
+    Mutation(
+        name="guarded command ignores working directory",
+        path="Sources/VerdictUIProcessGuardian/ProcessGuardian.c",
+        old="error = working_directory(&actions, directory);",
+        new="(void)working_directory; error = directory[0] ? 0 : EINVAL;",
+        test=_TEST
+        + "GuardedProcessTests/testWorkingDirectoryEnvironmentBinaryStreamsAndActualExitCode",
+    ),
+    Mutation(
+        name="guarded command drops standard error",
+        path="Sources/VerdictUIProcessGuardian/ProcessGuardian.c",
+        old="if (descriptors[fd] >= 0)\n                error = posix_spawn_file_actions_adddup2",
+        new="if (descriptors[fd] >= 0 && fd != 2)\n                error = posix_spawn_file_actions_adddup2",
+        test=_TEST
+        + "GuardedProcessTests/testWorkingDirectoryEnvironmentBinaryStreamsAndActualExitCode",
+    ),
+    Mutation(
+        name="guarded command accepts reused closed source descriptor",
+        path="Sources/VerdictUIProcessGuardian/ProcessGuardian.c",
+        old="standard_descriptors[fd] >= 0 && fcntl(standard_descriptors[fd], F_GETFD) < 0",
+        new="standard_descriptors[fd] >= 0 && 0 && fcntl(standard_descriptors[fd], F_GETFD) < 0",
+        test=_TEST
+        + "GuardedProcessTests/testClosedDescriptorCannotBeReusedByEarlierStreamSnapshot",
+    ),
+    Mutation(
+        name="guarded command closes borrowed descriptor instead of snapshot",
+        path="Sources/VerdictUIProcessGuardian/ProcessGuardian.c",
+        old="descriptors[fd] = fcntl(standard_descriptors[fd], F_DUPFD_CLOEXEC, 3);",
+        new="descriptors[fd] = standard_descriptors[fd];",
+        test=_TEST
+        + "GuardedProcessTests/testWorkingDirectoryEnvironmentBinaryStreamsAndActualExitCode",
+    ),
+    Mutation(
+        name="guarded command forgets caller grace",
+        path="Sources/VerdictUIWeb/GuardedProcess.swift",
+        old="if grace > 0 { _ = child.waitForExitEvent(timeout: grace) }",
+        new="if grace > 0 { _ = child.waitForExitEvent(timeout: 0) }",
+        test=_TEST + "GuardedProcessTests/testCallerGraceAllowsDelayedFlushAndReturnsCommandStatus",
+    ),
+    Mutation(
+        name="guarded command ignores lost guardian",
+        path="Sources/VerdictUIWeb/GuardedProcess.swift",
+        old="guard try guardian.status() == nil else {",
+        new="guard try guardian.status() == nil || true else {",
+        test=_TEST
+        + "GuardedProcessTests/testLostGuardianMakesRunningCommandUnavailableUntilCleanup",
+    ),
+    Mutation(
+        name="guarded command substitutes guardian exit status",
+        path="Sources/VerdictUIWeb/GuardedProcess.swift",
+        old="completedCode = code",
+        new="completedCode = code == 0 ? 0 : 137",
+        test=_TEST
+        + "GuardedProcessTests/testWorkingDirectoryEnvironmentBinaryStreamsAndActualExitCode",
+    ),
+    Mutation(
         name="guardian truncates requested graceful shutdown",
-        path=_BASE + "BrowserProcessIdentity.swift",
-        old="if value == SIGTERM { try browser.requestBrowserTermination() }",
-        new="if value == SIGTERM { lifetime.closeWriter() }",
+        path=_BASE + "GuardedProcess.swift",
+        old="try child.requestBrowserTermination()",
+        new="lifetime.closeWriter()",
         test=_TEST
         + "BrowserCrashGuardianTests/testRequestedGraceAllowsBrowserToFlushBeforeGroupCleanup|"
         + _TEST
@@ -73,7 +135,7 @@ MUTATIONS: list[Mutation] = [
     ),
     Mutation(
         name="guardian browser first exit leaves writer open",
-        path="Sources/VerdictUIWeb/BrowserProcessIdentity.swift",
+        path="Sources/VerdictUIWeb/GuardedProcess.swift",
         old="exitSource.setEventHandler { lifetime.closeWriter() }",
         new="exitSource.setEventHandler { _ = lifetime }",
         test=_TEST

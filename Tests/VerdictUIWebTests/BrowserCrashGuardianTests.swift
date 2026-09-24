@@ -132,8 +132,22 @@ final class BrowserCrashGuardianTests: XCTestCase {
             profileDirectory: fixture.directory)
         try await browser.terminate(grace: 3)
         XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.file("flushed").path),
-                      "normal termination must preserve caller grace beyond the crash guardian's 1s deadline")
+                      "normal termination must preserve caller grace beyond the crash guardian's 1s deadline; term=\((try? String(contentsOf: fixture.file("term-observed"), encoding: .utf8)) ?? "absent") flush=\((try? String(contentsOf: fixture.file("flush-observed"), encoding: .utf8)) ?? "absent")")
         XCTAssertFalse(active(leaf[0]))
+    }
+
+    func testRequestedGraceUsesElapsedFixtureDelayWithSlowWakeups() async throws {
+        let fixture = try Fixture(); defer { fixture.remove() }
+        let process = try LaunchedBrowserProcess.launch(executable: fixture.executable,
+            arguments: ["graceful-delayed", fixture.directory.path], environment: [:])
+        defer { try? process.finish() }
+        _ = try fixture.record("leaf")
+        let browser = HeadlessBrowser(process: process,
+            endpoint: DevtoolsEndpoint(port: 12345, browserPath: "/devtools/browser/fixture"),
+            profileDirectory: fixture.directory)
+        try await browser.terminate(grace: 3)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.file("flushed").path),
+                      "a 1.5s fixture delay must use elapsed time even when each wakeup is delayed")
     }
 
     func testDiscoveryTimeoutCleansStartedBrowserAndDescendant() async throws {
@@ -252,6 +266,7 @@ private let fixtureSource = #"""
 #include <sys/wait.h>
 #include <unistd.h>
 #include <poll.h>
+#include <time.h>
 extern char **environ;
 static int marker = -1;
 static volatile sig_atomic_t term_seen = 0;
@@ -280,7 +295,7 @@ int main(int argc, char **argv) {
             if (strncmp(argv[i], "--user-data-dir=", 16) == 0) root = argv[i] + 16;
     }
     if (!strcmp(mode, "sentinel")) { sleep(10); return 0; }
-    if (!strcmp(mode, "browser") || !strcmp(mode, "graceful") || !strcmp(mode, "coordinated")) {
+    if (!strcmp(mode, "browser") || !strcmp(mode, "graceful") || !strcmp(mode, "coordinated") || !strcmp(mode, "graceful-delayed")) {
         int clean = 1; struct sigaction action; sigset_t mask;
         sigprocmask(SIG_SETMASK, NULL, &mask);
         int signals[] = {SIGTERM, SIGINT, SIGPIPE, SIGUSR1};
@@ -307,9 +322,18 @@ int main(int argc, char **argv) {
             if (exists(root, "child-flushed")) record(root, "flushed", getpid(), getpgrp(), 0, 0);
             return 0;
         }
-        if (!strcmp(mode, "graceful")) {
+        if (!strcmp(mode, "graceful") || !strcmp(mode, "graceful-delayed")) {
             for (int i = 0; i < 800 && !term_seen; ++i) usleep(10000);
-            for (int i = 0; i < 150; ++i) usleep(10000);
+            struct timespec start, now;
+            clock_gettime(CLOCK_MONOTONIC, &start);
+            record(root, "term-observed", (int)start.tv_sec, (int)start.tv_nsec, getpid(), getpgrp());
+            /* This fixture models 1.5s elapsed work, not 150 scheduler wakeups.
+             * Delayed wakeups must not turn it into work longer than caller grace. */
+            do {
+                usleep(!strcmp(mode, "graceful-delayed") ? 22000 : 10000);
+                clock_gettime(CLOCK_MONOTONIC, &now);
+            } while ((now.tv_sec - start.tv_sec) * 1000000000LL + now.tv_nsec - start.tv_nsec < 1500000000LL);
+            record(root, "flush-observed", (int)now.tv_sec, (int)now.tv_nsec, getpid(), getpgrp());
             record(root, "flushed", getpid(), getpgrp(), 0, 0); return 0;
         }
         for (int i = 0; i < 800 && !exists(root, "exit-browser"); ++i) usleep(10000);
@@ -330,7 +354,8 @@ int main(int argc, char **argv) {
     }
     char *args[] = {argv[0], "browser", (char *)root, NULL};
     vui_guardian_launch_result result;
-    int error = vui_guardian_launch(argv[0], args, environ, 3000, 1000, &result);
+    int descriptors[] = {-1,-1,-1};
+    int error = vui_guardian_launch(argv[0], args, environ, root, descriptors, 3000, 1000, &result);
     record(root, "launched", result.guardian_pid, result.browser_pid, result.group_ready, error ? error : result.error);
     if (error || result.error) return 94;
     if (!strcmp(mode, "leak")) {

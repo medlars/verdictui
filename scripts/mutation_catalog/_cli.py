@@ -8,6 +8,20 @@ from mutation_catalog_types import Mutation, Runner  # noqa: F401
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="consumer command boundaries lose crash guardians",
+        path="Sources/VerdictUICLICore/BoundedCommand.swift",
+        old="typealias GuardedProcess = VerdictUIWeb.GuardedProcess",
+        new="typealias GuardedProcess = VerdictUIWeb.OwnedCommandProcess",
+        test="ProjectChecksTests/testCheckOwnerSIGKILLContainsActualDelegatedCommand|ProjectRunnerTests/testConfiguredBuildOwnerSIGKILLContainsBuildCommand|ProjectRunnerBrokerTests/testBusyMCPBrokerOwnerSIGKILLContainsHost|ProjectRunnerBrokerTests/testDaemonStartupOwnerSIGKILLContainsHost",
+    ),
+    Mutation(
+        name="consumer broker discards failed cleanup ownership",
+        path="Sources/VerdictUICLICore/ProjectRunnerBroker.swift",
+        old="if let child { try child.stop(grace: 2) }",
+        new="if let child { _ = try? child.stop(grace: 2) }",
+        test="ProjectRunnerBrokerTests/testLostChildOwnershipRetainsUnavailableHostAndRefusesReplacement",
+    ),
+    Mutation(
         name="consumer daemon byte drips evade the absolute frame deadline",
         path="Sources/VerdictUICLICore/ProjectRunnerBroker.swift",
         old="guard persistent || ProcessInfo.processInfo.systemUptime < frameDeadline else { return }",
@@ -45,8 +59,8 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="failed consumer builds can execute stale runners",
         path="Sources/VerdictUICLICore/ProjectRunner.swift",
-        old="process.status() == 0 else {",
-        new="process.status() != 0 else {",
+        old="process.stop(grace: 0) == 0 else {",
+        new="process.stop(grace: 0) != 0 else {",
         test="ProjectRunnerTests/testBuildFailureRefusesStaleRunner",
     ),
     Mutation(

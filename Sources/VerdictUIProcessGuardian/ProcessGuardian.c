@@ -1,4 +1,5 @@
 #include "VerdictUIProcessGuardian.h"
+#include <Availability.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <libproc.h>
@@ -121,10 +122,21 @@ static _Noreturn void child_main(int lifetime, int output, int descriptor_limit,
     }
 }
 
+static int working_directory(posix_spawn_file_actions_t *actions, const char *directory) {
+#if __MAC_OS_X_VERSION_MIN_REQUIRED >= 260000
+    return posix_spawn_file_actions_addchdir(actions, directory);
+#elif __MAC_OS_X_VERSION_MAX_ALLOWED >= 260000
+    if (__builtin_available(macOS 26.0, *)) return posix_spawn_file_actions_addchdir(actions, directory);
+    else return posix_spawn_file_actions_addchdir_np(actions, directory);
+#else
+    return posix_spawn_file_actions_addchdir_np(actions, directory);
+#endif
+}
+
 /* Parent-only: posix_spawn reports exec failure synchronously and its CLOEXEC
  * default prevents the browser inheriting either pipe (or any caller fd). */
-static int spawn_browser(const char *executable, char *const argv[], char *const environment[],
-                         pid_t guardian, pid_t *browser) {
+static int spawn_command(const char *executable, char *const argv[], char *const environment[],
+                         const char *directory, const int descriptors[3], pid_t guardian, pid_t *child) {
     posix_spawnattr_t attributes;
     posix_spawn_file_actions_t actions;
     int error = posix_spawnattr_init(&attributes);
@@ -137,19 +149,41 @@ static int spawn_browser(const char *executable, char *const argv[], char *const
         !(error = posix_spawnattr_setsigmask(&attributes, &mask)) &&
         !(error = posix_spawnattr_setflags(&attributes, POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_SETSIGDEF |
                                          POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_CLOEXEC_DEFAULT))) {
-        for (int fd = 0; fd <= 2 && !error; ++fd)
-            error = posix_spawn_file_actions_addopen(&actions, fd, "/dev/null", O_RDWR, 0);
-        if (!error) error = posix_spawn(browser, executable, &actions, &attributes, argv, environment);
+        error = working_directory(&actions, directory);
+        for (int fd = 0; fd <= 2 && !error; ++fd) {
+            if (descriptors[fd] >= 0)
+                error = posix_spawn_file_actions_adddup2(&actions, descriptors[fd], fd);
+            else error = posix_spawn_file_actions_addopen(&actions, fd, "/dev/null", O_RDWR, 0);
+        }
+        if (!error) error = posix_spawn(child, executable, &actions, &attributes, argv, environment);
     }
     posix_spawn_file_actions_destroy(&actions); posix_spawnattr_destroy(&attributes);
     return error;
 }
 
 int vui_guardian_launch(const char *executable, char *const argv[], char *const environment[],
+                        const char *directory, const int standard_descriptors[3],
                         int handshake_ms, int grace_ms, vui_guardian_launch_result *result) {
     *result = (vui_guardian_launch_result){ -1, -1, -1, 0, 0 };
+    if (!executable || !argv || !environment || !directory || !standard_descriptors) return EINVAL;
     if (handshake_ms < 1 || handshake_ms > 10000 || grace_ms < 0 || grace_ms > 5000) return EINVAL;
     int lifetime[2] = {-1,-1}, output[2] = {-1,-1}, error;
+    int descriptors[3] = {-1,-1,-1};
+    /* Parent-only snapshots avoid aliasing stdio actions (including 0/1/2 swaps).
+     * Capture before creating any pipe so a closed caller fd cannot be reused by
+     * our own setup. The guardian closes every snapshot before READY. */
+    for (int fd = 0; fd <= 2; ++fd) {
+        if (standard_descriptors[fd] < -1) { error = EBADF; goto failed; }
+        if (standard_descriptors[fd] >= 0 && fcntl(standard_descriptors[fd], F_GETFD) < 0) {
+            error = errno; goto failed;
+        }
+    }
+    for (int fd = 0; fd <= 2; ++fd) {
+        if (standard_descriptors[fd] >= 0) {
+            descriptors[fd] = fcntl(standard_descriptors[fd], F_DUPFD_CLOEXEC, 3);
+            if (descriptors[fd] < 0) { error = errno; goto failed; }
+        }
+    }
     if ((error = cloexec_pipe(lifetime)) || (error = cloexec_pipe(output))) goto failed;
     int descriptor_limit = descriptor_ceiling();
     if (descriptor_limit < 0) { error = errno; goto failed; }
@@ -185,11 +219,13 @@ int vui_guardian_launch(const char *executable, char *const argv[], char *const 
         result->error = EPROTO; goto completed;
     }
     result->group_ready = 1;
-    result->error = spawn_browser(executable, argv, environment, guardian, &result->browser_pid);
+    result->error = spawn_command(executable, argv, environment, directory, descriptors, guardian, &result->browser_pid);
 completed:
+    for (int fd = 0; fd <= 2; ++fd) if (descriptors[fd] >= 0) close(descriptors[fd]);
     close(output[0]);
     return 0; /* Failed handshakes also return retained children for cleanup. */
 failed:
+    for (int fd = 0; fd <= 2; ++fd) if (descriptors[fd] >= 0) close(descriptors[fd]);
     for (int i = 0; i < 2; ++i) { if (lifetime[i] >= 0) close(lifetime[i]); if (output[i] >= 0) close(output[i]); }
     return error;
 }
