@@ -15,6 +15,7 @@ import re
 import shutil
 import subprocess
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -78,7 +79,7 @@ def test_the_local_toolchain_matches_the_pin() -> None:
         pytest.skip("no swift on PATH (the Linux lint job); the CI step covers the runner")
     # B603 false positive: resolved swift binary, fixed argv.
     out = subprocess.run(  # nosec B603
-        [swift, "--version"], capture_output=True, text=True, timeout=60, check=False
+        [cast(str, swift), "--version"], capture_output=True, text=True, timeout=60, check=False
     )
     found = _VERSION_RE.search(out.stdout + out.stderr)
     assert found, f"could not read a Swift version from: {out.stdout + out.stderr!r}"

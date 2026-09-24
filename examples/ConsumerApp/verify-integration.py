@@ -15,6 +15,7 @@ import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 # Poll interval while waiting for the broker socket to appear.
 SOCKET_POLL_SECONDS = 0.05
@@ -124,7 +125,7 @@ def direct_children(parent: int) -> list[ProcessIdentity]:
         if pid > 0:
             identity = process_identity(pid)
             check(identity is not None, "broker child disappeared during inventory")
-            children.append(identity)
+            children.append(cast(ProcessIdentity, identity))
     return children
 
 

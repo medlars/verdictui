@@ -192,6 +192,7 @@
 | `Tests/test_verdictui_pm.py`                                         | Python tests for PM stages, floor-check, and the contract validator                                                                                    | Active | 2026-08-04 |
 | `Tests/test_kernel_symbol_audit.py`                                  | Python tests for the kernel public-surface audit                                                                                                       | Active | 2026-08-04 |
 | `Tests/test_capture_trigger_coverage.py`                            | Asserts the capture workflow's `workflow_run` trigger names every workflow in this repo — one omitted is inert while looking watched, so its failures file no issue | Active | 2026-08-31 |
+| `Tests/test_swift_test_execution.py` | Behavioral native-runner entry-point and completed-summary admission controls | Active | 2026-09-24 |
 | `Tests/test_mutation_check.py`                                       | Python tests for the mutation harness: catalog integrity, baseline precondition, both runners                                                          | Active | 2026-08-04 |
 | `Tests/test_claude_md_ssot.py`                                       | Pins `CLAUDE.md`: SSoT rows resolve to real files and symbols, every referenced path exists                                                            | Active | 2026-08-04 |
 | `Tests/test_cli_version_identifies_the_release.py`                   | Holds `verdictui --version` to the BUILD, not the wire schema — the v1.0.1 tarball printed `1.1`, matching no release (CTS-959AB320)                   | Active | 2026-08-28 |
@@ -256,6 +257,7 @@
 | `scripts/verdictui_pm_smoke.py` | PM stage mixin — CLI/transport smoke, mutation catalog, installed parity, stale buffer, SLO benches, pytest | Active | 2026-08-30 |
 | `scripts/floor-check.py`                                             | Floor compliance audit                                                                                                                                 | Active | 2026-08-04 |
 | `scripts/kernel-symbol-audit.py`                                     | Exit-gate checker: every public kernel symbol documented and mentioned by a test                                                                       | Active | 2026-08-04 |
+| `scripts/verify-swift-test-output.py` | Standalone CI test-summary admission with command status and explicit skip accounting | Active | 2026-09-24 |
 | `scripts/mutation-check.py`                                          | Mutation harness — breaks a guard on purpose and fails if no test notices                                                                              | Active | 2026-08-04 |
 | `scripts/mutation_catalog/__init__.py` | Reassembles `MUTATIONS` from the parts below in a fixed order; separate from the harness so a row may quote harness code without self-matching (`no.md` #16) | Active | 2026-08-28 |
 | `scripts/mutation_catalog/_probe.py` | Mutation rows targeting `Sources/VerdictUIProbe` | Active | 2026-08-28 |
