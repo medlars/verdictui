@@ -117,14 +117,15 @@ public actor WebSession {
     }
 
     /// A dead child cannot become live again. Retire its transport and lock
-    /// before the manager exposes or reopens this profile.
-    func isAvailable() async -> Bool {
-        if let closingTask { _ = try? await closingTask.value }
+    /// before the manager exposes or reopens this profile. Failure to retire
+    /// throws so the manager retains the cleanup owner instead of evicting it.
+    func isAvailable() async throws -> Bool {
+        if let closingTask { try await closingTask.value }
         guard !closed else { return false }
         guard await browser.isRunning() else {
             // A resolver may still be active while its browser dies. The same
             // close path owns both lifetimes before profile reuse is allowed.
-            do { try await close() } catch { return false }
+            try await close()
             return false
         }
         return !closed
@@ -552,7 +553,7 @@ public actor WebSession {
     }
 
     private func handle(_ error: any Error) async throws {
-        let available = await isAvailable()
+        let available = try await isAvailable()
         if Task.isCancelled && available {
             try await close()
         }

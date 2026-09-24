@@ -41,8 +41,14 @@ public actor WebSessionManager {
         var result: [WebSessionInfo] = []
         for key in sessions.keys.sorted() {
             if let session = sessions[key] {
-                if await session.isAvailable() { result.append(await session.info()) }
-                else if sessions[key] === session { sessions.removeValue(forKey: key) }
+                do {
+                    if try await session.isAvailable() { result.append(await session.info()) }
+                    else if sessions[key] === session { sessions.removeValue(forKey: key) }
+                } catch {
+                    // Listing exposes available sessions only. A failed retirement
+                    // remains owned here so closeAll can retry its cleanup.
+                    continue
+                }
             }
         }
         return result
@@ -57,7 +63,7 @@ public actor WebSessionManager {
         opening.insert(profile)
         defer { opening.remove(profile) }
         if let session = sessions[profile] {
-            if await session.isAvailable() {
+            if try await session.isAvailable() {
                 guard !stopping else { throw WebBrowserError.invalidWebOperation(reason: "session manager is closing") }
                 try await session.navigate(url: url)
                 let info = await session.info()
@@ -156,7 +162,7 @@ public actor WebSessionManager {
     }
     private func session(_ profile: String) async throws -> WebSession {
         guard let session = sessions[profile] else { throw WebBrowserError.unknownSession(profile: profile) }
-        guard await session.isAvailable() else {
+        guard try await session.isAvailable() else {
             if sessions[profile] === session { sessions.removeValue(forKey: profile) }
             throw WebBrowserError.unknownSession(profile: profile)
         }

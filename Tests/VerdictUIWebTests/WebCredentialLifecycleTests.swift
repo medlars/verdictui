@@ -25,6 +25,7 @@ private final class OrderlyBrowserIdentity: BrowserProcessIdentity, @unchecked S
     let pid = ProcessInfo.processInfo.processIdentifier
     private let mutex = NSLock()
     private var running = true
+    private var refusesFinish = false
     private var recorded: [String] = []
     private let profileLockPath: URL
     init(profileLockPath: URL) { self.profileLockPath = profileLockPath }
@@ -37,8 +38,10 @@ private final class OrderlyBrowserIdentity: BrowserProcessIdentity, @unchecked S
     func signal(_ value: Int32) {
         mutex.withLock { recorded.append("signal-\(value)"); running = false }
     }
-    func finish() {
+    func refuseFinish(_ value: Bool) { mutex.withLock { refusesFinish = value } }
+    func finish() throws {
         record(FileManager.default.fileExists(atPath: profileLockPath.path) ? "finish-locked" : "finish-unlocked")
+        if mutex.withLock({ refusesFinish }) { throw WebBrowserError.processRefusedToDie(pid: pid) }
     }
 }
 
@@ -77,6 +80,54 @@ private actor OrderlyBrowserSocket: CDPSocket {
 
 @MainActor
 final class WebCredentialLifecycleTests: XCTestCase {
+    func testFailedRetirementRetainsOwnerForRetryAcrossListOpenAndLookup() async throws {
+        for operation in ["list", "open", "render"] {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent("verdictui-retirement-\(UUID().uuidString)")
+            defer { try? FileManager.default.removeItem(at: root) }
+            let lock = try ProfileLock.acquire(profile: "owned", registry: ProfileRegistry(root: root))
+            let identity = OrderlyBrowserIdentity(profileLockPath: lock.path)
+            identity.refuseFinish(true)
+            let browser = HeadlessBrowser(process: identity,
+                endpoint: DevtoolsEndpoint(port: 12345, browserPath: "/devtools/browser/fixture"), profileDirectory: root)
+            let url = URL(fileURLWithPath: "/fixture")
+            // Keep an independent fixture reference so deinit's best-effort cleanup
+            // cannot conceal manager ownership loss in the failing control.
+            let session = WebSession(profile: "owned", browser: browser,
+                transport: CDPTransport(socket: OrderlyBrowserSocket(identity: identity)),
+                pageSessionID: "fixture", lock: lock, credentials: WebCredentials(environment: [:], onePassword: nil),
+                viewport: Rect(x: 0, y: 0, width: 1280, height: 800), url: url)
+            let opened = CloseBarrier()
+            let manager = WebSessionManager(root: root) { _, _, _, _, _, _ in
+                await opened.mark(UUID().uuidString)
+                return session
+            }
+            _ = try await manager.open(profile: "owned", url: url)
+            identity.orderlyExit()
+            if operation == "list" {
+                let available = await manager.list()
+                XCTAssertTrue(available.isEmpty)
+            } else {
+                do {
+                    if operation == "open" { _ = try await manager.open(profile: "owned", url: url) }
+                    else { _ = try await manager.render(profile: "owned") }
+                    XCTFail("failed cleanup must make \(operation) unavailable")
+                } catch { XCTAssertEqual(error as? WebBrowserError, .processRefusedToDie(pid: identity.pid)) }
+            }
+            let beforeRetry = identity.events.filter { $0.hasPrefix("finish-") }.count
+            XCTAssertGreaterThan(beforeRetry, 0)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: lock.path.path))
+            identity.refuseFinish(false)
+            let failures = await manager.closeAll()
+            XCTAssertTrue(failures.isEmpty)
+            XCTAssertGreaterThan(identity.events.filter { $0.hasPrefix("finish-") }.count, beforeRetry,
+                                 "\(operation) discarded the manager's cleanup retry owner")
+            XCTAssertFalse(FileManager.default.fileExists(atPath: lock.path.path))
+            let opens = await opened.count()
+            XCTAssertEqual(opens, 1, "failed cleanup must not launch a replacement")
+            try await session.close()
+        }
+    }
+
     func testManagerCoalescesConcurrentShutdownAndDrainsPendingAndOpenSessionsTogether() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("verdictui-manager-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }

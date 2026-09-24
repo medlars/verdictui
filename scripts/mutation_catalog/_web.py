@@ -7,6 +7,38 @@ _TEST = "VerdictUIWebTests."
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="web failed retirement is mistaken for completed cleanup",
+        path=_BASE + "WebSession.swift",
+        old="try await close()\n            return false",
+        new="_ = try? await close()\n            return false",
+        test=_TEST
+        + "WebCredentialLifecycleTests/testFailedRetirementRetainsOwnerForRetryAcrossListOpenAndLookup",
+    ),
+    Mutation(
+        name="web listing discards failed retirement ownership",
+        path=_BASE + "WebSessionManager.swift",
+        old="} catch {\n                    // Listing exposes available sessions only.",
+        new="} catch {\n                    sessions.removeValue(forKey: key)\n                    // Listing exposes available sessions only.",
+        test=_TEST
+        + "WebCredentialLifecycleTests/testFailedRetirementRetainsOwnerForRetryAcrossListOpenAndLookup",
+    ),
+    Mutation(
+        name="web reopen swallows failed retirement",
+        path=_BASE + "WebSessionManager.swift",
+        old="if try await session.isAvailable() {\n                guard !stopping else",
+        new="if (try? await session.isAvailable()) == true {\n                guard !stopping else",
+        test=_TEST
+        + "WebCredentialLifecycleTests/testFailedRetirementRetainsOwnerForRetryAcrossListOpenAndLookup",
+    ),
+    Mutation(
+        name="web lookup swallows failed retirement",
+        path=_BASE + "WebSessionManager.swift",
+        old="guard try await session.isAvailable() else",
+        new="guard (try? await session.isAvailable()) == true else",
+        test=_TEST
+        + "WebCredentialLifecycleTests/testFailedRetirementRetainsOwnerForRetryAcrossListOpenAndLookup",
+    ),
+    Mutation(
         name="web credential resolver loses owner crash containment",
         path=_BASE + "WebCredentials.swift",
         old="private typealias CredentialProcess = GuardedProcess",
@@ -451,21 +483,21 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="web session list advertises a dead browser",
         path=_BASE + "WebSessionManager.swift",
-        old="if await session.isAvailable() { result.append",
-        new="if !key.isEmpty { result.append",
+        old="if try await session.isAvailable() { result.append",
+        new="if try await session.isAvailable() || !key.isEmpty { result.append",
         test=_TEST + "WebSessionIntegrationTests/testBrowserDownIsUnavailableAndReleasesProfile",
     ),
     Mutation(
         name="web reopen navigates a dead session",
         path=_BASE + "WebSessionManager.swift",
-        old="if await session.isAvailable() {\n                guard !stopping else",
+        old="if try await session.isAvailable() {\n                guard !stopping else",
         new="if !profile.isEmpty {\n                guard !stopping else",
         test=_TEST + "WebSessionIntegrationTests/testBrowserDownIsUnavailableAndReleasesProfile",
     ),
     Mutation(
         name="web session lookup bypasses dead child eviction",
         path=_BASE + "WebSessionManager.swift",
-        old="guard await session.isAvailable() else",
+        old="guard try await session.isAvailable() else",
         new="guard !profile.isEmpty else",
         test=_TEST + "WebSessionIntegrationTests/testBrowserDownIsUnavailableAndReleasesProfile",
     ),
