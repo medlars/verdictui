@@ -295,9 +295,8 @@ main {
   font:10px/1.7 ui-monospace,SFMono-Regular,Menlo,monospace;
   color:#817a8f;
   margin:7px 0 0;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  white-space:nowrap;
+  overflow-wrap:anywhere;
+  white-space:normal;
   max-width:520px
 }
 .button {
