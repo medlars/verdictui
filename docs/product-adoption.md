@@ -65,6 +65,35 @@ layout rectangles. The renderer correction and its genuine-defect controls are
 being verified separately. These empty-state results do not cover populated
 tables, async data, installed application behavior or paint.
 
+## SagaMail source adoption checkpoint — September 24
+
+PR43 is merged as `dc35111a`, preserving the qualified `3a9c6b5a` tree.
+The executable `SagaMailVerdictRunner` and project-owned manifests replace the
+earlier source-file configuration. They render the real Junk Mail settings tab
+at 700 × 900 points in three declared states, with UUID-named synthetic defaults.
+The offscreen negative control renders the same tab and is excluded from normal
+checks. Standard preferences and the installed application were not changed.
+
+Six native tests and six actual CLI/MCP controls passed locally. Hosted CI
+`36040668168` passed with all six settings tests observed executing; the
+self-hosted render lane also passed. Two dispatch-only GUI jobs were skipped.
+A fresh-HOME, tracked-only CI-shape probe passed 84 source checks and 30 website
+checks. The unrestricted Python suite was deliberately not run because its live
+fixtures access Keychain, localhost message state and the installed application.
+
+Both reviewers inspected all three original PNGs from source `4d7ff8eb`:
+the controls align, conditional content matches the settings, and probed bounds
+stay inside the viewport. A minor existing empty divider row remains recorded.
+Those images retain their original source identity. Broader tabs, live clicks,
+other sizes/themes, real accounts and installed application behavior are not
+covered. The canonical fleet reader still requires current admitted receipts.
+
+The measured cold automatic build exceeded the launcher's 300-second budget;
+the safe explicit first build took 424.92 seconds. Subsequent acceptance passed
+without skips. A working prebuilt consumer is therefore established, while that
+cold automatic path remains unavailable. See SagaMail's published
+`docs/verdictui-adoption.md` for reproduction and the complete evidence boundary.
+
 ## Earlier read-only directory census
 
 The census enumerated 80 non-hidden top-level directories under `~/Projects`,
@@ -126,9 +155,9 @@ and report project coverage.
 
 ## Required adoption work
 
-1. Replace SagaMail's nonexecutable manifest with a genuine consumer executable
-   and retain honest coverage labels; audit all settings tabs/parameters against
-   the installed app separately from synthetic controls.
+1. Admit current receipts for SagaMail's published three-state consumer, resolve
+   its measured cold automatic-build limit, and audit remaining settings and
+   installed account flows separately from synthetic controls.
 2. Add project-owned checks for each actual product surface. Web targets need a
    reachable app URL and an expected rendered result. AppKit targets need their
    executable and real subject; SwiftUI targets need the consumer registry.
