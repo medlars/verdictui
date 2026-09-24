@@ -155,9 +155,12 @@ review of all nine native PNGs. Compiled renderer checks retain their runner
 and subject when renamed or saved; the loaded WKWebView page must match the
 verified packaged resource path. The integrated release must retain its own
 fresh observation and image review after final source changes before admission.
-Review additionally found cleanup gaps at the outer timeout and after a native
-leader crash; those require real process controls before release. A successful
-normal cancellation does not establish either crash case.
+The launch-owned guardian repair has actual native/browser and compiled-consumer
+owner-death controls, with unrelated sentinel processes left alive. These controls
+cover inherited process groups. A real SwiftPM manifest demonstrated that a child
+can create a separate group and escape that boundary; CIS-4F278A0F remains open.
+Credential helpers and graceful consumer reload have separate controls: ordinary
+cancellation alone does not establish crash cleanup or persisted browser state.
 
 This scope covers project selection, editing and saving checks, actual consumer
 PASS/FAIL, running state, cancellation, history and reload. It does not certify
@@ -165,3 +168,14 @@ OS file pickers, notifications, window management, other products or every
 possible state. Native captures measured the owner's enabled reduced-motion
 preference; normal native motion remains unmeasured. See
 [workbench-adoption.md](workbench-adoption.md) for reproducible admission.
+
+## Runner reliability follow-up
+
+The legacy AppKit runner could deadlock while reading stdout before a full stderr
+pipe. It now uses the same bounded command boundary as project checks, retaining
+separate failure diagnostics and enforcing an aggregate output budget. A real CLI
+fixture distinguishes the old blocking behavior from the repaired result. Running
+file sizes are measured through retained descriptors: Foundation URL metadata
+was observed to cache the initial size and miss later output growth. The held
+producer, timeout, cancellation and mutation controls establish these specific
+behaviors; they do not replace final integrated or installed-artifact acceptance.
