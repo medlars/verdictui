@@ -412,6 +412,19 @@ public actor VerdictDaemon {
             }
         }
 
+        if request.method == "judge_web" {
+            guard let runner = request.runner, let subject = request.subject else {
+                return failure("judge_web requires runner and subject")
+            }
+            do {
+                let verdict = try await ProjectCheckRuntime.judgeWebRunner(runner: runner, subject: subject,
+                    root: URL(fileURLWithPath: FileManager.default.currentDirectoryPath))
+                return success(.verdict(verdict))
+            } catch {
+                return failure("web consumer unavailable: \(error)")
+            }
+        }
+
         // `judge_appkit` is handled BEFORE the scenario guard because it needs
         // no scenario: it drives a binary the consumer compiled, not an entry in
         // the registry compiled into this one. Falling through to
@@ -568,7 +581,7 @@ public actor VerdictDaemon {
         }
 
         guard let subject = request.subject, !subject.isEmpty else {
-            switch AppKitCommand.invoke(runner: runner, arguments: ["list"]) {
+            switch await AppKitCommand.invoke(runner: runner, arguments: ["list"]) {
             case .produced(let text):
                 let names = text.split(separator: "\n")
                     .map { $0.trimmingCharacters(in: .whitespaces) }
@@ -581,7 +594,7 @@ public actor VerdictDaemon {
         }
 
         let text: String
-        switch AppKitCommand.invoke(runner: runner, arguments: ["render", subject]) {
+        switch await AppKitCommand.invoke(runner: runner, arguments: ["render", subject]) {
         case .produced(let produced): text = produced
         case .failed(let reason): return failure(reason)
         }

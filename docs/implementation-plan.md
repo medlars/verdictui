@@ -185,7 +185,7 @@ this alone would justify the project.
 - [ ] Hostile suite green (all four adversarial scenarios behave as specified)
 - [ ] `perform()` p95 < 100 ms on demo app — **SLO 1 formally met and enforced by PM stage**
 - [ ] Settle never hangs: every test path has deadline coverage (verified by suite-level timeout margin)
-- [ ] Zero screenshots, zero sleeps anywhere in harness source (`rg "sleep\(|usleep|Thread.sleep" Sources/` clean, virtual-clock internals exempted by comment)
+- [ ] Zero screenshots and zero real sleeps in deterministic UI settling. The source gate exempts the virtual clock implementation and exactly two marked external OS cleanup retries in `OwnedCommandProcess.swift` (decision 2026-09-24 in `docs/business-decisions.md`). These retries observe waitid readiness and group quiescence under unchanged monotonic deadlines; elapsed time never establishes verification success. No whole-file or module exemption applies.
 - [ ] PM quick Grade A
 
 ### Risks

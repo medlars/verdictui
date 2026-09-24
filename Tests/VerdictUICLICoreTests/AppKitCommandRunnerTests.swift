@@ -30,6 +30,137 @@ import XCTest
 /// the behaviour under test, so faking it away would test nothing.
 final class AppKitCommandRunnerTests: XCTestCase {
 
+    private func boundedRunner(_ body: String) throws -> String {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("appkit-bounded-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let runner = directory.appendingPathComponent("runner")
+        try ("#!/bin/sh\n" + body + "\n").write(to: runner, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: runner.path)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        return runner.path
+    }
+
+    private func heldRunner(diagnostics: Int = 0) throws -> (String, URL, URL) {
+        let path = try boundedRunner("")
+        let runner = URL(fileURLWithPath: path)
+        let directory = runner.deletingLastPathComponent()
+        let script = """
+            #!/usr/bin/python3
+            import os, pathlib, time
+            root = pathlib.Path(__file__).parent
+            os.write(2, b"D" * \(diagnostics))
+            (root / "ready").touch()
+            deadline = time.monotonic() + 5
+            while not (root / "release").exists() and time.monotonic() < deadline:
+                time.sleep(0.01)
+            os.write(1, b"late")
+            """
+        try script.write(to: runner, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: runner.path)
+        return (path, directory.appendingPathComponent("ready"), directory.appendingPathComponent("release"))
+    }
+
+    @MainActor
+    func testCombinedDiagnosticAndTreeOutputIsBounded() async throws {
+        let body = "printf '%s' '\(String(repeating: "a", count: 48))'; "
+            + "printf '%s' '\(String(repeating: "b", count: 48))' >&2"
+        let runner = try boundedRunner(body)
+        switch await AppKitCommand.invoke(runner: runner, arguments: [], limit: 80) {
+        case .produced: XCTFail("Both streams must share one output budget")
+        case .failed(let detail): XCTAssertTrue(detail.contains("excessiveOutput"))
+        }
+        switch await AppKitCommand.invoke(runner: runner, arguments: [], limit: 96) {
+        case .produced(let value): XCTAssertEqual(value, String(repeating: "a", count: 48))
+        case .failed(let detail): XCTFail("An exact-boundary result is valid: \(detail)")
+        }
+    }
+
+    @MainActor
+    func testRunnerTimeoutIsUnavailableAndCannotReturnLateOutput() async throws {
+        let runner = try boundedRunner("/bin/sleep 0.3; printf late")
+        switch await AppKitCommand.invoke(runner: runner, arguments: [], timeout: 0.01) {
+        case .produced: XCTFail("A timed-out runner cannot produce a verified tree")
+        case .failed(let detail): XCTAssertTrue(detail.contains("timeout"))
+        }
+    }
+
+    @MainActor
+    func testRunnerCancellationIsUnavailableAndCannotReturnLateOutput() async throws {
+        let (runner, ready, release) = try heldRunner()
+        let operation = Task { await AppKitCommand.invoke(runner: runner, arguments: []) }
+        defer { operation.cancel(); try? Data().write(to: release) }
+        let deadline = ContinuousClock.now + .seconds(3)
+        while !FileManager.default.fileExists(atPath: ready.path), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: ready.path), "Runner must be active before cancellation")
+        operation.cancel()
+        switch await operation.value {
+        case .produced: XCTFail("A cancelled runner cannot produce a verified tree")
+        case .failed(let detail): XCTAssertTrue(detail.contains("CancellationError"))
+        }
+    }
+
+    @MainActor
+    func testRunningDiagnosticOverflowFailsBeforeTheRunnerTimeout() async throws {
+        let (runner, _, release) = try heldRunner(diagnostics: 256)
+        defer { try? Data().write(to: release) }
+        // Allow interpreter startup before the fixture writes; the assertion is
+        // the output-cap outcome, not a subsecond scheduling measurement.
+        switch await AppKitCommand.invoke(runner: runner, arguments: [], timeout: 3, limit: 128) {
+        case .produced: XCTFail("Oversized diagnostics cannot produce a tree")
+        case .failed(let detail): XCTAssertTrue(detail.contains("excessiveOutput"), detail)
+        }
+    }
+
+    @MainActor
+    func testNonzeroExitPreservesSeparateDiagnostics() async throws {
+        let runner = try boundedRunner("printf tree; printf diagnostic >&2; exit 7")
+        switch await AppKitCommand.invoke(runner: runner, arguments: []) {
+        case .produced: XCTFail("Nonzero status cannot produce a tree")
+        case .failed(let detail):
+            XCTAssertTrue(detail.contains("exited 7: diagnostic"))
+            XCTAssertFalse(detail.contains("tree"))
+        }
+    }
+
+    @MainActor
+    func testLargeDiagnosticStreamCannotBlockTreeDelivery() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("appkit-diagnostics-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let release = directory.appendingPathComponent("release")
+        let runner = directory.appendingPathComponent("runner")
+        let script = """
+            #!/usr/bin/python3
+            import os, pathlib, threading, time
+            release = pathlib.Path(__file__).parent / "release"
+            def cleanup():
+                while not release.exists(): time.sleep(0.01)
+                os._exit(93)
+            threading.Thread(target=cleanup, daemon=True).start()
+            os.write(2, b"diagnostic" * 32768)
+            os.write(1, b'{"id":"root","role":"container","frame":{"x":0,"y":0,"width":200,"height":100},"children":[]}\\n')
+            """
+        try script.write(to: runner, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: runner.path)
+        let cleanup = Task.detached {
+            try await Task.sleep(for: .seconds(3))
+            try Data().write(to: release)
+        }
+        defer {
+            cleanup.cancel()
+            try? Data().write(to: release)
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let output = CapturedOutput()
+        let code = await AppKitCommand(runner: runner.path, subject: "proof", judge: false)
+            .run(makeEnvironment(output), pretty: false)
+        XCTAssertEqual(code, .pass)
+        XCTAssertTrue(output.standardOutput.contains("\"root\""))
+    }
+
     fileprivate func makeEnvironment(_ output: CapturedOutput) -> CommandEnvironment {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("appkit-cli-\(UUID().uuidString)")

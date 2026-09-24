@@ -53,6 +53,7 @@ def test_external_launcher_reaches_the_project_runner(tmp_path: Path) -> None:
     replies = {item["id"]: item for item in map(json.loads, result.stdout.splitlines())}
     assert set(replies) == {1, 2, 3}, result.stdout
     assert all("error" not in reply for reply in replies.values()), result.stdout
-    assert len(replies[2]["result"]["tools"]) == 18
+    assert len(replies[2]["result"]["tools"]) == 19
+    assert "judge_web" in {tool["name"] for tool in replies[2]["result"]["tools"]}
     assert replies[3]["result"].get("isError") is not True
     assert "demo-clean-settings" in json.dumps(replies[3])

@@ -1,15 +1,30 @@
+import Darwin
 import Foundation
 import VerdictUIWeb
 
 typealias OwnedCommandProcess = VerdictUIWeb.OwnedCommandProcess
+typealias GuardedProcess = VerdictUIWeb.GuardedProcess
 
 /// A subprocess boundary for project checks: no shell, bounded time and output.
 enum BoundedCommand {
-    struct Result: Sendable { let code: Int32; let output: Data }
+    struct Result: Sendable { let code: Int32; let output: Data; let error: Data }
     enum Failure: Error { case timeout, excessiveOutput, temporaryFile, invalidLimits }
 
+    private static func validateOutputSize(_ output: Int, error: Int, limit: Int) throws {
+        guard output <= limit, error <= limit - output else { throw Failure.excessiveOutput }
+    }
+
+    private static func currentSize(_ handle: FileHandle) throws -> Int {
+        var info = stat()
+        guard fstat(handle.fileDescriptor, &info) == 0, info.st_size >= 0 else {
+            throw Failure.temporaryFile
+        }
+        return Int(info.st_size)
+    }
+
     static func run(executable: URL, arguments: [String], root: URL,
-                    timeout: TimeInterval = 330, limit: Int = 8 * 1_024 * 1_024) async throws -> Result {
+                    timeout: TimeInterval = 330, limit: Int = 8 * 1_024 * 1_024,
+                    captureStandardError: Bool = false) async throws -> Result {
         guard timeout.isFinite, timeout > 0, limit > 0 else { throw Failure.invalidLimits }
         let worker = Task.detached {
             let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -20,24 +35,48 @@ enum BoundedCommand {
             defer { try? FileManager.default.removeItem(at: file) }
             let output = try FileHandle(forWritingTo: file)
             defer { try? output.close() }
+            let errorFile = file.appendingPathExtension("stderr")
+            var errorOutput: FileHandle?
+            defer {
+                try? errorOutput?.close()
+                if captureStandardError { try? FileManager.default.removeItem(at: errorFile) }
+            }
+            if captureStandardError {
+                guard FileManager.default.createFile(atPath: errorFile.path, contents: nil,
+                                                    attributes: [.posixPermissions: 0o600]) else {
+                    throw Failure.temporaryFile
+                }
+                errorOutput = try FileHandle(forWritingTo: errorFile)
+            }
+            func validateSize() throws {
+                // URL resourceValues caches metadata; inspect the retained
+                // descriptors so a running writer cannot hide behind size zero.
+                let size = try currentSize(output)
+                let errorSize = try errorOutput.map(currentSize) ?? 0
+                try validateOutputSize(size, error: errorSize, limit: limit)
+            }
             var environment = ProcessInfo.processInfo.environment
             environment.removeValue(forKey: ProjectRunner.delegationMarker)
-            let process = try OwnedCommandProcess.spawn(executable: executable, arguments: arguments,
-                directory: root, environment: environment, standardOutput: output.fileDescriptor)
+            let process = try GuardedProcess.spawn(executable: executable, arguments: arguments,
+                directory: root, environment: environment, standardOutput: output.fileDescriptor,
+                standardError: errorOutput?.fileDescriptor)
             let deadline = ContinuousClock.now + .seconds(timeout)
             do {
                 while try process.status() == nil {
-                    let size = try file.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-                    if size > limit { throw Failure.excessiveOutput }
+                    try validateSize()
                     if ContinuousClock.now >= deadline { throw Failure.timeout }
                     try Task.checkCancellation()
                     try await Task.sleep(for: .milliseconds(20))
                 }
                 let code = try process.stop(grace: 0)
                 try Task.checkCancellation()
+                // All owned writers have exited before inspecting or reading
+                // either stream; diagnostics cannot deadlock a stdout reader.
+                try validateSize()
                 let data = try Data(contentsOf: file)
-                guard data.count <= limit else { throw Failure.excessiveOutput }
-                return Result(code: code, output: data)
+                let errorData = captureStandardError ? try Data(contentsOf: errorFile) : Data()
+                try validateOutputSize(data.count, error: errorData.count, limit: limit)
+                return Result(code: code, output: data, error: errorData)
             } catch {
                 try process.stop()
                 throw error

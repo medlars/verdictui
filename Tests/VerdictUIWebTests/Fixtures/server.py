@@ -6,8 +6,8 @@ import socketserver
 import sys
 import time
 
-# One past WebInlineGeometry.Budget.candidates (4096): the page must be refused.
-INLINE_CANDIDATES_OVER_LIMIT = 4097
+# Small real-browser payload; the witness preconsumes the cumulative budget.
+INLINE_BUDGET_CANDIDATES = 3
 # Long enough that the document scrolls far past any viewport.
 LONG_TEXT_LINES = 10000
 # Enough controls to exhaust the overlap lint's bounded work budget.
@@ -174,7 +174,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         elif self.path in ("/inline", "/inline-overlap", "/inline-budget"):
             if self.path == "/inline-budget":
                 content = "".join(
-                    f"<span>Item {i} </span>" for i in range(INLINE_CANDIDATES_OVER_LIMIT)
+                    f"<div><span>Item {i}</span></div>" for i in range(INLINE_BUDGET_CANDIDATES)
                 )
             else:
                 content = (

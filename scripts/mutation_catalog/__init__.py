@@ -41,6 +41,7 @@ from mutation_catalog._web_lint import MUTATIONS as _WEB_LINT
 from mutation_catalog._web_paint import MUTATIONS as _WEB_PAINT
 from mutation_catalog._web_snapshot import MUTATIONS as _WEB_SNAPSHOT
 from mutation_catalog._workbench import MUTATIONS as _WORKBENCH
+from mutation_catalog._workbench_adoption import MUTATIONS as _WORKBENCH_ADOPTION
 
 __all__ = ["MUTATIONS", "Mutation", "Runner"]
 
@@ -61,5 +62,6 @@ MUTATIONS: list[Mutation] = (
     + _WEB_PAINT
     + _INTEGRATION
     + _WORKBENCH
+    + _WORKBENCH_ADOPTION
     + _BROKER
 )

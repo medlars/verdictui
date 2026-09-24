@@ -248,24 +248,43 @@ final class WitnessIntegrationTests: XCTestCase {
         }
     }
 
-    /// A host launch must leave NOTHING behind in the temporary directory.
-    ///
-    /// `makeBundle` creates a UUID-named ROOT directory and puts the `.app`
-    /// inside it; the cleanup removed only the `.app`, so the root survived
-    /// every launch. That is one leaked directory per scenario — about 23 per
-    /// suite run — and it is not merely untidy: every one of them is an app
-    /// bundle path `launchservicesd` has seen, and it was measured at 208 % CPU
-    /// with 88 of these present, on a machine whose load average had climbed to
-    /// 113 with no heavy job running at all.
-    ///
-    /// The test drives the REAL launch path rather than asserting on
-    /// `makeBundle` directly: the leak is in the relationship between what
-    /// `makeBundle` creates and what the cleanup removes, and a test that called
-    /// `makeBundle` alone could not see the cleanup at all. `/bin/echo` is a
-    /// deliberate choice — it is a genuine executable, so it passes the
-    /// `isExecutableFile` guard and a bundle IS created, and it is not an app,
-    /// so `open` fails afterwards. That reaches the cleanup on the error path,
-    /// which is the path a crashed or rejected launch takes in production.
+    private static let earlyExitScenario = "verdictui-unregistered-launch-fixture"
+
+    /// Exercise a real launch that exits before making any window. Relocating
+    /// Apple's /bin/echo violates its launch constraints and creates a macOS
+    /// damaged-app alert on every attempt, even when the test expects failure.
+    private func earlyExitingHost() throws -> WitnessHostProcess {
+        let executable = try XCTUnwrap(
+            hostExecutable, "verdictui-witness-host was not built alongside the tests")
+        let probe = Process()
+        probe.executableURL = executable
+        probe.arguments = [Self.earlyExitScenario]
+        probe.standardOutput = FileHandle.nullDevice
+        probe.standardError = FileHandle.nullDevice
+        try probe.run()
+        probe.waitUntilExit()
+        _ = try XCTUnwrap(
+            probe.terminationReason == .exit && probe.terminationStatus == 3 ? true : nil,
+            "the owned fixture must reject the unknown scenario before creating a window")
+        return WitnessHostProcess(executable: executable, lifetime: 1)
+    }
+
+    private func readEarlyExitingHost(_ host: WitnessHostProcess) {
+        XCTAssertThrowsError(
+            try host.readTree(scenario: Self.earlyExitScenario, readyTimeout: 1)
+        ) { error in
+            switch error {
+            case AXReader.Failure.hostUnavailable(let detail):
+                XCTAssertEqual(detail, "the host process never appeared")
+            case AXReader.Failure.noWindow:
+                break  // The short-lived process was observed before its normal exit.
+            default:
+                XCTFail("unexpected launch failure: \(error)")
+            }
+        }
+    }
+
+    /// Repeated real launches must reuse the same process-scoped bundle.
     func testRepeatedLaunchesReuseOneTemporaryDirectory() throws {
         let root = URL(fileURLWithPath: NSTemporaryDirectory())
         // Count the BUNDLE directories, not the top-level witness roots. The
@@ -306,15 +325,14 @@ final class WitnessIntegrationTests: XCTestCase {
         // must hold now is that the directory count is bounded by the PROCESS,
         // not by the number of launches: the second launch must add nothing.
         let before = try witnessDirectories()
-        let host = WitnessHostProcess(
-            executable: URL(fileURLWithPath: "/bin/echo"), lifetime: 1)
+        let host = try earlyExitingHost()
         // The reads are EXPECTED to fail; the subject under test is what
         // survives them, not whether they succeeded.
-        _ = try? host.readTree(scenario: "demo-clean-settings", readyTimeout: 1)
+        readEarlyExitingHost(host)
         let afterFirst = try witnessDirectories().subtracting(before)
 
-        _ = try? host.readTree(scenario: "demo-clean-settings", readyTimeout: 1)
-        _ = try? host.readTree(scenario: "demo-clean-settings", readyTimeout: 1)
+        readEarlyExitingHost(host)
+        readEarlyExitingHost(host)
         let afterFourth = try witnessDirectories().subtracting(before)
 
         XCTAssertLessThanOrEqual(
@@ -361,14 +379,21 @@ final class WitnessIntegrationTests: XCTestCase {
             return Set(text.split(separator: "\n").map(String.init))
         }
 
-        let host = WitnessHostProcess(
-            executable: URL(fileURLWithPath: "/bin/echo"), lifetime: 1)
-        _ = try? host.readTree(scenario: "demo-clean-settings", readyTimeout: 1)
+        let host = try earlyExitingHost()
+        readEarlyExitingHost(host)
         let afterFirst = try registeredWitnessPaths()
+        let ownedRoot = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("verdictui-witness-\(ProcessInfo.processInfo.processIdentifier)")
+            .resolvingSymlinksInPath().path + "/"
+        XCTAssertTrue(
+            afterFirst.contains {
+                URL(fileURLWithPath: $0).resolvingSymlinksInPath().path.hasPrefix(ownedRoot)
+            },
+            "the first real launch must register this process's witness bundle")
 
-        _ = try? host.readTree(scenario: "demo-clean-settings", readyTimeout: 1)
-        _ = try? host.readTree(scenario: "demo-clean-settings", readyTimeout: 1)
-        _ = try? host.readTree(scenario: "demo-clean-settings", readyTimeout: 1)
+        readEarlyExitingHost(host)
+        readEarlyExitingHost(host)
+        readEarlyExitingHost(host)
         let afterFourth = try registeredWitnessPaths()
 
         XCTAssertTrue(

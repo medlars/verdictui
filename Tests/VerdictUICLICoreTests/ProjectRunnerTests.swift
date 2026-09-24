@@ -270,3 +270,13 @@ extension ProjectRunnerTests {
         }
     }
 }
+
+extension ProjectRunnerTests {
+    func testConfiguredBuildOwnerSIGKILLContainsBuildCommand() throws {
+        let fixture = try ConsumerCrashFixture()
+        try fixture.write("swift", ConsumerCrashFixture.script, executable: true)
+        try fixture.write(".verdictui/config.json", #"{"runner":"/usr/bin/true","buildProduct":"PrivateBuild"}"#)
+        try fixture.launch(["list"])
+        try fixture.assertCrashContained()
+    }
+}

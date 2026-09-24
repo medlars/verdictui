@@ -92,6 +92,31 @@ final class DOMSnapshotAssemblyTests: XCTestCase {
         }
     }
 
+    func testInlineEnrichmentRejectsExhaustedCandidatesBeforeRemoteCommands() async throws {
+        var payload = snapshot()
+        guard case var .array(strings) = payload["strings"], case var .array(documents) = payload["documents"],
+              case var .object(document) = documents[0] else { return XCTFail("fixture") }
+        strings[5] = .string("inline")
+        document["frameId"] = .integer(Int64(strings.count))
+        strings.append(.string("frame"))
+        documents[0] = .object(document)
+        payload["strings"] = .array(strings)
+        payload["documents"] = .array(documents)
+        let tree = try DOMSnapshotAssembly.assemble(payload, viewport: viewport)
+        XCTAssertEqual(tree.flattened().filter { $0.attributes["web.inlineCandidate"] == .bool(true) }.count, 1)
+        var budget = WebInlineGeometry.Budget()
+        try budget.reserveCandidates(4096)
+        do {
+            _ = try await WebInlineGeometry.enrich(payload, viewport: viewport, budget: &budget) { method, _, _ in
+                XCTFail("candidate refusal must precede any remote command: \(method)")
+                return [:]
+            }
+            XCTFail("the 4097th candidate must be refused")
+        } catch {
+            XCTAssertTrue(String(describing: error).contains("inline element limit"), "\(error)")
+        }
+    }
+
     private func containingBlockSnapshot(position: String = "absolute", middlePosition: String = "static",
         outerTag: String = "DIV", outerTransform: String = "none", middleTransform: String = "none",
         unlaidMiddle: Bool = false, outerExtra: [Int: String] = [:], middleExtra: [Int: String] = [:]) -> [String: CDPValue] {

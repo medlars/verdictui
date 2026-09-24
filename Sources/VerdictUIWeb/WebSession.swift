@@ -22,6 +22,16 @@ public enum WebAction: Sendable {
 public actor WebSession {
     /// Chrome's orderly exit after Browser.close; measured ~5 s for SIGTERM on macOS.
     static let orderlyExitGrace: TimeInterval = 10
+    /// Normal consumer exit allowance, independent of the number of profiles:
+    /// the manager drains pending launches and sessions together, and credential
+    /// operations drain concurrently. Existing process waits are guardian exit
+    /// 5s + group quiescence 2s + retained child exit 5s. A pending launch can
+    /// spend 3s in READY; credentials stop with 1s grace; Browser.close gets 2s,
+    /// orderly exit 10s, then TERM 1s and normal guardian finish 2s plus waits.
+    /// The initial 2s permits signal dispatch; it is not an OS scheduling guarantee.
+    /// Broker escalation can add another 12s after this graceful-exit allowance.
+    public static let consumerShutdownGrace: TimeInterval =
+        2 + 3 + (1 + 5 + 2 + 5) + 2 + orderlyExitGrace + (1 + 2 + 5 + 2 + 5)
     let profile: String
     let browser: HeadlessBrowser
     let transport: CDPTransport
@@ -37,7 +47,9 @@ public actor WebSession {
     private var closed = false
     private var closingTask: Task<Void, Error>?
 
-    private init(profile: String, browser: HeadlessBrowser, transport: CDPTransport,
+    // Internal so lifecycle tests exercise the real session close path with
+    // retained process and socket identities; public callers must use open().
+    init(profile: String, browser: HeadlessBrowser, transport: CDPTransport,
                  pageSessionID: String, lock: ProfileLock, credentials: WebCredentials,
                  viewport: Rect, url: URL) {
         self.profile = profile; self.browser = browser; self.transport = transport
@@ -105,14 +117,15 @@ public actor WebSession {
     }
 
     /// A dead child cannot become live again. Retire its transport and lock
-    /// before the manager exposes or reopens this profile.
-    func isAvailable() async -> Bool {
-        if let closingTask { _ = try? await closingTask.value }
+    /// before the manager exposes or reopens this profile. Failure to retire
+    /// throws so the manager retains the cleanup owner instead of evicting it.
+    func isAvailable() async throws -> Bool {
+        if let closingTask { try await closingTask.value }
         guard !closed else { return false }
         guard await browser.isRunning() else {
             // A resolver may still be active while its browser dies. The same
             // close path owns both lifetimes before profile reuse is allowed.
-            do { try await close() } catch { return false }
+            try await close()
             return false
         }
         return !closed
@@ -206,7 +219,7 @@ public actor WebSession {
             // loaded CI runners, CIS-4ADF5658). Browser.close runs Chrome's own
             // orderly exit; the reply may never arrive because the socket closes.
             _ = try? await transport.send(method: "Browser.close", timeout: .seconds(2))
-            _ = await HeadlessBrowser.awaitDeath(pid: browser.pid, within: Self.orderlyExitGrace)
+            _ = await browser.awaitExit(within: Self.orderlyExitGrace)
             await transport.close()
             try await browser.terminate(grace: 1)
             lock.release()
@@ -540,7 +553,7 @@ public actor WebSession {
     }
 
     private func handle(_ error: any Error) async throws {
-        let available = await isAvailable()
+        let available = try await isAvailable()
         if Task.isCancelled && available {
             try await close()
         }

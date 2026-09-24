@@ -407,6 +407,9 @@ public struct VerdictUITool: AsyncParsableCommand {
                 """)
         public var external = false
 
+        @Flag(name: .long, help: "Judge an observed DOM tree with browser layout and paint semantics. Requires a tree path; viewport is observed.")
+        public var web = false
+
         @Option(
             name: .long,
             help: "Viewport width in points. Defaults to the root node's own width."
@@ -427,6 +430,9 @@ public struct VerdictUITool: AsyncParsableCommand {
         @MainActor
         public func run() async throws {
             let environment = CommandEnvironment.standard()
+            if web && (tree == nil || live.pid != nil || live.app != nil || colors || viewportWidth != 0 || viewportHeight != 0) {
+                throw ValidationError("--web requires a tree path and cannot use live targeting, colors or viewport overrides")
+            }
             guard let tree else {
                 let code = await LiveJudgeCommand(
                     target: try live.liveTarget(), colors: colors,
@@ -447,7 +453,8 @@ public struct VerdictUITool: AsyncParsableCommand {
                 viewportWidth: viewportWidth,
                 viewportHeight: viewportHeight,
                 scenarioName: name,
-                externallyObserved: external
+                externallyObserved: external,
+                webObserved: web
             ).run(environment, pretty: formatting.pretty, summary: formatting.summary)
             try VerdictUITool.finish(code)
         }

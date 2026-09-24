@@ -4,6 +4,62 @@ from mutation_catalog_types import Mutation
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="AppKit native controls revert to decorative bounds",
+        path="Sources/VerdictUIAppKit/AppKitRenderer.swift",
+        old="frame: alignmentFrame ?? rawFrame,",
+        new="frame: rawFrame,",
+        test="AppKitRendererTests/testNativeButtonDecorationMayExtendOutsideItsLogicalContainer",
+    ),
+    Mutation(
+        name="AppKit popup buttons lose alignment geometry",
+        path="Sources/VerdictUIAppKit/AppKitRenderer.swift",
+        old="type(of: view) == NSButton.self || type(of: view) == NSPopUpButton.self,",
+        new="type(of: view) == NSButton.self,",
+        test="AppKitRendererTests/testNativePopupFitsItsAutoLayoutStackWithoutDecorativeOverflow",
+    ),
+    Mutation(
+        name="AppKit custom button subclasses lose raw geometry",
+        path="Sources/VerdictUIAppKit/AppKitRenderer.swift",
+        old="type(of: view) == NSButton.self || type(of: view) == NSPopUpButton.self,",
+        new="view is NSButton,",
+        test="AppKitRendererTests/testCustomButtonAndRootKeepTheirFullBounds",
+    ),
+    Mutation(
+        name="AppKit control roots lose viewport bounds",
+        path="Sources/VerdictUIAppKit/AppKitRenderer.swift",
+        old="guard view !== root,\n            type(of: view) == NSButton.self || type(of: view) == NSPopUpButton.self,",
+        new="guard type(of: view) == NSButton.self || type(of: view) == NSPopUpButton.self,",
+        test="AppKitRendererTests/testCustomButtonAndRootKeepTheirFullBounds",
+    ),
+    Mutation(
+        name="AppKit alignment rectangles use child rather than parent coordinates",
+        path="Sources/VerdictUIAppKit/AppKitRenderer.swift",
+        old="return rootFrame(parent.convert(alignment, to: root), in: root)",
+        new="_ = parent\n        return rootFrame(view.convert(alignment, to: root), in: root)",
+        test="AppKitRendererTests/testNativeButtonAlignmentKeepsRawBoundsEvidenceAndFlippedRootCoordinates",
+    ),
+    Mutation(
+        name="AppKit native controls discard raw bounds evidence",
+        path="Sources/VerdictUIAppKit/AppKitRenderer.swift",
+        old="if alignmentFrame != nil {",
+        new="if alignmentFrame == nil {",
+        test="AppKitRendererTests/testNativeButtonAlignmentKeepsRawBoundsEvidenceAndFlippedRootCoordinates",
+    ),
+    Mutation(
+        name="AppKit native alignment uses local bounds as a parent frame",
+        path="Sources/VerdictUIAppKit/AppKitRenderer.swift",
+        old="let alignment = view.alignmentRect(forFrame: view.frame)",
+        new="let alignment = view.alignmentRect(forFrame: view.bounds)",
+        test="AppKitRendererTests/testNativeButtonAlignmentKeepsRawBoundsEvidenceAndFlippedRootCoordinates",
+    ),
+    Mutation(
+        name="AppKit flipped roots invert alignment geometry",
+        path="Sources/VerdictUIAppKit/AppKitRenderer.swift",
+        old="let y = root.isFlipped ? converted.origin.y : rootHeight - converted.maxY",
+        new="let y = rootHeight - converted.maxY",
+        test="AppKitRendererTests/testNativeButtonAlignmentKeepsRawBoundsEvidenceAndFlippedRootCoordinates",
+    ),
+    Mutation(
         name="native input accepts non-finite display coordinates",
         path="Sources/VerdictUIWitness/NativeInput.swift",
         old="guard x.isFinite, y.isFinite else { throw Failure.invalidPoint }",

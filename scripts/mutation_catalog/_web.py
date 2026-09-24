@@ -7,6 +7,233 @@ _TEST = "VerdictUIWebTests."
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="web failed retirement is mistaken for completed cleanup",
+        path=_BASE + "WebSession.swift",
+        old="try await close()\n            return false",
+        new="_ = try? await close()\n            return false",
+        test=_TEST
+        + "WebCredentialLifecycleTests/testFailedRetirementRetainsOwnerForRetryAcrossListOpenAndLookup",
+    ),
+    Mutation(
+        name="web listing discards failed retirement ownership",
+        path=_BASE + "WebSessionManager.swift",
+        old="} catch {\n                    // Listing exposes available sessions only.",
+        new="} catch {\n                    sessions.removeValue(forKey: key)\n                    // Listing exposes available sessions only.",
+        test=_TEST
+        + "WebCredentialLifecycleTests/testFailedRetirementRetainsOwnerForRetryAcrossListOpenAndLookup",
+    ),
+    Mutation(
+        name="web reopen swallows failed retirement",
+        path=_BASE + "WebSessionManager.swift",
+        old="if try await session.isAvailable() {\n                guard !stopping else",
+        new="if (try? await session.isAvailable()) == true {\n                guard !stopping else",
+        test=_TEST
+        + "WebCredentialLifecycleTests/testFailedRetirementRetainsOwnerForRetryAcrossListOpenAndLookup",
+    ),
+    Mutation(
+        name="web lookup swallows failed retirement",
+        path=_BASE + "WebSessionManager.swift",
+        old="guard try await session.isAvailable() else",
+        new="guard (try? await session.isAvailable()) == true else",
+        test=_TEST
+        + "WebCredentialLifecycleTests/testFailedRetirementRetainsOwnerForRetryAcrossListOpenAndLookup",
+    ),
+    Mutation(
+        name="web credential resolver loses owner crash containment",
+        path=_BASE + "WebCredentials.swift",
+        old="private typealias CredentialProcess = GuardedProcess",
+        new="private typealias CredentialProcess = OwnedCommandProcess",
+        test=_TEST
+        + "WebCredentialLifecycleTests/testMCPSIGKILLContainsCredentialDescendantAndPreservesSentinel",
+    ),
+    Mutation(
+        name="web concurrent resolver close skips shared cleanup",
+        path=_BASE + "WebCredentials.swift",
+        old="if await closingTask.value.values.contains(false) { throw WebBrowserError.credentialUnavailable }",
+        new="_ = closingTask",
+        test=_TEST
+        + "WebCredentialLifecycleTests/testCloseAndCancellationAwaitOwnedResolverGroupAndRefuseFallback",
+    ),
+    Mutation(
+        name="web manager concurrent shutdown returns before shared cleanup",
+        path=_BASE + "WebSessionManager.swift",
+        old="if let closingTask { return await closingTask.value.compactMap(\\.failure) }",
+        new="if closingTask != nil { return [] }",
+        test=_TEST
+        + "WebCredentialLifecycleTests/testManagerCoalescesConcurrentShutdownAndDrainsPendingAndOpenSessionsTogether",
+    ),
+    Mutation(
+        name="web manager serializes independent profile close deadlines",
+        path=_BASE + "WebSessionManager.swift",
+        old="group.addTask { await Self.closeOutcome(profile: profile, session: session) }",
+        new="let outcome = await Self.closeOutcome(profile: profile, session: session); group.addTask { outcome }",
+        test=_TEST
+        + "WebCredentialLifecycleTests/testManagerCoalescesConcurrentShutdownAndDrainsPendingAndOpenSessionsTogether",
+    ),
+    Mutation(
+        name="guarded command silently truncates NUL arguments",
+        path=_BASE + "OwnedCommandProcess.swift",
+        old='!launchStrings.contains(where: { $0.contains("\\0") })',
+        new="!launchStrings.isEmpty",
+        test=_TEST + "GuardedProcessTests/testLaunchRejectsNulArgumentsAndNonFileURLs",
+    ),
+    Mutation(
+        name="guarded command ignores working directory",
+        path="Sources/VerdictUIProcessGuardian/ProcessGuardian.c",
+        old="error = working_directory(&actions, directory);",
+        new="(void)working_directory; error = directory[0] ? 0 : EINVAL;",
+        test=_TEST
+        + "GuardedProcessTests/testWorkingDirectoryEnvironmentBinaryStreamsAndActualExitCode",
+    ),
+    Mutation(
+        name="guarded command drops standard error",
+        path="Sources/VerdictUIProcessGuardian/ProcessGuardian.c",
+        old="if (descriptors[fd] >= 0)\n                error = posix_spawn_file_actions_adddup2",
+        new="if (descriptors[fd] >= 0 && fd != 2)\n                error = posix_spawn_file_actions_adddup2",
+        test=_TEST
+        + "GuardedProcessTests/testWorkingDirectoryEnvironmentBinaryStreamsAndActualExitCode",
+    ),
+    Mutation(
+        name="guarded command accepts reused closed source descriptor",
+        path="Sources/VerdictUIProcessGuardian/ProcessGuardian.c",
+        old="standard_descriptors[fd] >= 0 && fcntl(standard_descriptors[fd], F_GETFD) < 0",
+        new="standard_descriptors[fd] >= 0 && 0 && fcntl(standard_descriptors[fd], F_GETFD) < 0",
+        test=_TEST
+        + "GuardedProcessTests/testClosedDescriptorCannotBeReusedByEarlierStreamSnapshot",
+    ),
+    Mutation(
+        name="guarded command closes borrowed descriptor instead of snapshot",
+        path="Sources/VerdictUIProcessGuardian/ProcessGuardian.c",
+        old="descriptors[fd] = fcntl(standard_descriptors[fd], F_DUPFD_CLOEXEC, 3);",
+        new="descriptors[fd] = standard_descriptors[fd];",
+        test=_TEST
+        + "GuardedProcessTests/testWorkingDirectoryEnvironmentBinaryStreamsAndActualExitCode",
+    ),
+    Mutation(
+        name="guarded command forgets caller grace",
+        path="Sources/VerdictUIWeb/GuardedProcess.swift",
+        old="if grace > 0 { _ = child.waitForExitEvent(timeout: grace) }",
+        new="if grace > 0 { _ = child.waitForExitEvent(timeout: 0) }",
+        test=_TEST + "GuardedProcessTests/testCallerGraceAllowsDelayedFlushAndReturnsCommandStatus",
+    ),
+    Mutation(
+        name="guarded command ignores lost guardian",
+        path="Sources/VerdictUIWeb/GuardedProcess.swift",
+        old="guard try guardian.status() == nil else {",
+        new="guard try guardian.status() == nil || true else {",
+        test=_TEST
+        + "GuardedProcessTests/testLostGuardianMakesRunningCommandUnavailableUntilCleanup",
+    ),
+    Mutation(
+        name="guarded command substitutes guardian exit status",
+        path="Sources/VerdictUIWeb/GuardedProcess.swift",
+        old="completedCode = code",
+        new="completedCode = code == 0 ? 0 : 137",
+        test=_TEST
+        + "GuardedProcessTests/testWorkingDirectoryEnvironmentBinaryStreamsAndActualExitCode",
+    ),
+    Mutation(
+        name="guardian truncates requested graceful shutdown",
+        path=_BASE + "GuardedProcess.swift",
+        old="try child.requestBrowserTermination()",
+        new="lifetime.closeWriter()",
+        test=_TEST
+        + "BrowserCrashGuardianTests/testRequestedGraceAllowsBrowserToFlushBeforeGroupCleanup|"
+        + _TEST
+        + "BrowserCrashGuardianTests/testNormalTERMAllowsBrowserToCoordinateChildFlush",
+    ),
+    Mutation(
+        name="guardian ignores parent death with leaked writer",
+        path="Sources/VerdictUIProcessGuardian/ProcessGuardian.c",
+        old="if (getppid() != parent) return 1;",
+        new="if (getppid() != parent && 0) return 1;",
+        test=_TEST + "BrowserCrashGuardianTests/testLeakedWriterCannotDefeatActualParentDeath",
+    ),
+    Mutation(
+        name="guardian ignores sole writer EOF",
+        path="Sources/VerdictUIProcessGuardian/ProcessGuardian.c",
+        old="return read(lifetime, &byte, 1) <= 0;",
+        new="(void)read(lifetime, &byte, 1); return 0;",
+        test=_TEST
+        + "BrowserCrashGuardianTests/testSoleLifetimeWriterCloseCleansGroupWhileParentStaysAlive",
+    ),
+    Mutation(
+        name="guardian kills leader without browser group",
+        path="Sources/VerdictUIProcessGuardian/ProcessGuardian.c",
+        old="(void)kill(0, SIGKILL);",
+        new="(void)kill(getpid(), SIGKILL);",
+        test=_TEST
+        + "BrowserCrashGuardianTests/testParentSIGKILLReapsBrowserGroupWithoutTouchingUnrelatedSentinel",
+    ),
+    Mutation(
+        name="guardian leaves high inherited descriptors open",
+        path="Sources/VerdictUIProcessGuardian/ProcessGuardian.c",
+        old="fd < descriptor_limit; ++fd",
+        new="fd < descriptor_limit && fd < 64; ++fd",
+        test=_TEST
+        + "BrowserCrashGuardianTests/testDescriptorsAboveLoweredLimitAreClosedAndBrowserSignalsReset",
+    ),
+    Mutation(
+        name="guardian browser escapes owned group",
+        path="Sources/VerdictUIProcessGuardian/ProcessGuardian.c",
+        old="posix_spawnattr_setpgroup(&attributes, guardian)",
+        new="posix_spawnattr_setpgroup(&attributes, guardian - guardian)",
+        test=_TEST
+        + "BrowserCrashGuardianTests/testParentSIGKILLReapsBrowserGroupWithoutTouchingUnrelatedSentinel",
+    ),
+    Mutation(
+        name="guardian browser keeps ignored signal handlers",
+        path="Sources/VerdictUIProcessGuardian/ProcessGuardian.c",
+        old="POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_SETSIGDEF |",
+        new="POSIX_SPAWN_SETPGROUP |",
+        test=_TEST
+        + "BrowserCrashGuardianTests/testDescriptorsAboveLoweredLimitAreClosedAndBrowserSignalsReset",
+    ),
+    Mutation(
+        name="guardian browser keeps blocked signal mask",
+        path="Sources/VerdictUIProcessGuardian/ProcessGuardian.c",
+        old="POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_CLOEXEC_DEFAULT",
+        new="POSIX_SPAWN_CLOEXEC_DEFAULT",
+        test=_TEST
+        + "BrowserCrashGuardianTests/testDescriptorsAboveLoweredLimitAreClosedAndBrowserSignalsReset",
+    ),
+    Mutation(
+        name="guardian browser first exit leaves writer open",
+        path="Sources/VerdictUIWeb/GuardedProcess.swift",
+        old="exitSource.setEventHandler { lifetime.closeWriter() }",
+        new="exitSource.setEventHandler { _ = lifetime }",
+        test=_TEST
+        + "BrowserCrashGuardianTests/testBrowserFirstExitCleansDescendantAndReleasesRetainedChildren",
+    ),
+    Mutation(
+        name="guardian cleanup forgets permanent ownership loss",
+        path="Sources/VerdictUIWeb/OwnedCommandProcess.swift",
+        old="if errno == ECHILD { reaped = true; retentionFailure = ECHILD }",
+        new="if errno == ECHILD { reaped = true }",
+        test=_TEST
+        + "BrowserCrashGuardianTests/testAlreadyReapedGuardianRevokesSignalAuthorityEvenWithCachedExit|"
+        + _TEST
+        + "BrowserCrashGuardianTests/testAlreadyReapedBrowserRefusesNormalTERMDespiteCachedExit",
+    ),
+    Mutation(
+        name="guardian hides failed cleanup after browser exit",
+        path=_BASE + "HeadlessBrowser.swift",
+        old="guard process.isRunning else { try process.finish(); return }",
+        new="guard process.isRunning else { return }",
+        test=_TEST
+        + "BrowserProcessIdentityTests/testCleanupFailurePropagatesEvenWhenBrowserAlreadyExited",
+    ),
+    Mutation(
+        name="web inline enrichment skips cumulative candidate reservation",
+        path=_BASE + "WebInlineGeometry.swift",
+        old="        try budget.reserveCandidates(candidates.count)",
+        new="        try budget.reserveCandidates(0)",
+        test=_TEST
+        + "DOMSnapshotAssemblyTests/testInlineEnrichmentRejectsExhaustedCandidatesBeforeRemoteCommands|"
+        + _TEST
+        + "WebFrameIntegrationTests/testRealInlineSnapshotHonorsCumulativeCandidateBoundaryBeforeRemoteWork",
+    ),
+    Mutation(
         name="web frame coherence does not retry stale capture",
         path=_BASE + "WebSession.swift",
         old="for attempt in 0..<3 {",
@@ -184,6 +411,22 @@ MUTATIONS: list[Mutation] = [
         + "WebSessionIntegrationTests/testLoginTaskBadPasswordSecretRedactionAndProfilePersistence",
     ),
     Mutation(
+        name="web normal session close omits Chrome profile flush",
+        path=_BASE + "WebSession.swift",
+        old='transport.send(method: "Browser.close", timeout: .seconds(2))',
+        new='transport.send(method: "Browser.getVersion", timeout: .seconds(2))',
+        test=_TEST
+        + "WebCredentialLifecycleTests/testSessionCloseFlushesBeforeDisconnectAndProfileReleaseWithoutAReply",
+    ),
+    Mutation(
+        name="web orderly exit waits on recycled pid instead of owned child",
+        path=_BASE + "HeadlessBrowser.swift",
+        old="await Self.awaitOwnedDeath(process: process, within: grace)\n    }",
+        new="await Self.awaitDeath(pid: pid, within: grace)\n    }",
+        test=_TEST
+        + "WebCredentialLifecycleTests/testSessionCloseFlushesBeforeDisconnectAndProfileReleaseWithoutAReply",
+    ),
+    Mutation(
         name="web unmet action expectation is accepted",
         path=_BASE + "WebSession.swift",
         old='rule: "web-expectation", severity: .error',
@@ -209,7 +452,7 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="web dead owned process signals a recycled live pid on terminate",
         path=_BASE + "HeadlessBrowser.swift",
-        old="guard process.isRunning else { return }",
+        old="guard process.isRunning else { try process.finish(); return }",
         new="guard pid > 0 else { return }",
         test=_TEST
         + "BrowserProcessIdentityTests/testReusedLivePIDDoesNotAuthorizeTerminatingADeadChild",
@@ -217,8 +460,8 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="web dead owned process signals a recycled live pid on deinit",
         path=_BASE + "HeadlessBrowser.swift",
-        old="if process.isRunning { process.signal(SIGKILL) }",
-        new="if pid > 0 { process.signal(SIGKILL) }",
+        old="if process.isRunning { try? process.signal(SIGKILL) }",
+        new="if pid > 0 { try? process.signal(SIGKILL) }",
         test=_TEST
         + "BrowserProcessIdentityTests/testReusedLivePIDDoesNotAuthorizeTerminatingADeadChild",
     ),
@@ -240,21 +483,21 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="web session list advertises a dead browser",
         path=_BASE + "WebSessionManager.swift",
-        old="if await session.isAvailable() { result.append",
-        new="if !key.isEmpty { result.append",
+        old="if try await session.isAvailable() { result.append",
+        new="if try await session.isAvailable() || !key.isEmpty { result.append",
         test=_TEST + "WebSessionIntegrationTests/testBrowserDownIsUnavailableAndReleasesProfile",
     ),
     Mutation(
         name="web reopen navigates a dead session",
         path=_BASE + "WebSessionManager.swift",
-        old="if await session.isAvailable() {\n                try await session.navigate",
-        new="if !profile.isEmpty {\n                try await session.navigate",
+        old="if try await session.isAvailable() {\n                guard !stopping else",
+        new="if !profile.isEmpty {\n                guard !stopping else",
         test=_TEST + "WebSessionIntegrationTests/testBrowserDownIsUnavailableAndReleasesProfile",
     ),
     Mutation(
         name="web session lookup bypasses dead child eviction",
         path=_BASE + "WebSessionManager.swift",
-        old="guard await session.isAvailable() else",
+        old="guard try await session.isAvailable() else",
         new="guard !profile.isEmpty else",
         test=_TEST + "WebSessionIntegrationTests/testBrowserDownIsUnavailableAndReleasesProfile",
     ),

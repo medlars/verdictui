@@ -7,6 +7,13 @@
 
 | File                                                                 | Purpose                                                                                                                                                | Status | Added      |
 | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ | ---------- |
+| `.verdictui/checks.json` | Actual Workbench workflow check, never demo catalog | Active | 2026-09-23 |
+| `.verdictui/coverage.json` | Explicit measured Workbench surface scope | Active | 2026-09-23 |
+| `.verdictui/run-workbench.py` | Executable actual Workbench consumer protocol | Active | 2026-09-23 |
+| `scripts/workbench_coverage.py` | Source-bound native workflow and independent paint admission | Active | 2026-09-23 |
+| `Tests/test_workbench_coverage.py` | Stale attempt, build and image review admission controls | Active | 2026-09-23 |
+| `Sources/VerdictUIWeb/GuardedProcess.swift` | Shared launch-owned command lifetime, actual status and caller grace over the crash guardian | Active | 2026-09-24 |
+| `Tests/VerdictUIWebTests/GuardedProcessTests.swift` | Real cwd, binary streams, descriptor refusal, EOF and graceful command controls | Active | 2026-09-24 |
 | `Package.swift`                                                      | SPM manifest — kernel, probe, demo-scenarios, demo executable targets, strict concurrency                                                              | Active | 2026-08-04 |
 | `Sources/VerdictUIKernel/SemanticNode.swift`                         | Semantic tree: `Role`, `AttributeValue`, `TextMetrics`, `SemanticNode`, `Rect`/`Size` geometry                                                         | Active | 2026-08-04 |
 | `Sources/VerdictUIKernel/TreeDiff.swift`                             | `NodePath`, `TreeDelta` and its four categories, `TreeDiff.compute`/`apply`                                                                            | Active | 2026-08-04 |
@@ -116,7 +123,7 @@
 | `specs/fleet-evidence-prevention-steps.json` | Validated executable step contracts. | Active | 2026-09-23 |
 | `.decisions/2026-09-23-fleet-evidence.md` | Decision to reuse source and observed-outcome boundaries. | Active | 2026-09-23 |
 | `Sources/VerdictUIProjectRunner/VerdictUIProjectRunner.swift` | Explicit self-test registry host used by installed CLI/MCP clients in this checkout; avoids delegating back to the stock launcher | Active | 2026-09-23 |
-| `Tests/test_project_mcp_bootstrap.py` | Real external-launcher initialization, 18-tool discovery, and scenario invocation through the project host | Active | 2026-09-23 |
+| `Tests/test_project_mcp_bootstrap.py` | Real external-launcher initialization, 19-tool discovery, and scenario invocation through the project host | Active | 2026-09-23 |
 | `Tests/VerdictUIKernelTests/BaselineStoreTests.swift`                | The destructive guard's refusals, the append-only audit log, name escaping, and SHA-256 against the published FIPS vectors                              | Active | 2026-08-11 |
 | `Tests/VerdictUICLICoreTests/VerdictEngineTests.swift`               | The command surface in-process — three-valued exit codes, and the Wave 5 baseline round trip (create → FAIL → accept → PASS → audit)                    | Active | 2026-08-11 |
 | `Tests/VerdictUICLICoreTests/CLIBinarySmokeTests.swift`              | Runs the BUILT binary — the only suite that can see a tool which refuses to start; negative-controlled via `xcrun xctest` (no.md #32)                   | Active | 2026-08-11 |
@@ -236,6 +243,7 @@
 | `Tests/test_floor_check_todo_tracking.py`                            | Pins the floor's TODO-tracking check: TODO.md present, or a CTS record, or the floor fails -- every branch driven through fakes                          | Active | 2026-09-01 |
 | `Tests/test_workflow_jobs_pinned.py`                                 | Pins the guard jobs (secret-scan, pinned-action checker, close-on-green): a job silently dropped from CI must fail a local test, not un-guard silently    | Active | 2026-09-01 |
 | `Tests/test_swift_toolchain_pin.py` | Runs the CI "Swift version" step against a fake swift in both directions and checks the local toolchain equals .github/swift-toolchain-version, so local and CI compile with one Swift | Active | 2026-09-23 |
+| `Tests/test_consumer_reload_identity.py` | Guardian-aware consumer identity, recycled/extra process rejection, private crash capability and real Darwin identity controls for the compiled reload proof | Active | 2026-09-24 |
 | `Tests/__init__.py`                                                  | Python package marker for pytest collection                                                                                                            | Active | 2026-08-04 |
 | `pyproject.toml`                                                     | Fleet tooling config (ruff/mypy/pyright/pytest) — no [project] section                                                                                 | Active | 2026-08-04 |
 | `docs/kernel.md`                                                     | Kernel reference: role vocabulary, rule catalog, diff and schema reference                                                                             | Active | 2026-08-04 |
@@ -365,7 +373,21 @@
 | `Sources/VerdictUIWorkbench/Resources/workbench.js` | workbench: product UI, packaging or regression evidence | Active | 2026-09-23 |
 | `scripts/build-workbench.sh` | build-workbench: product UI, packaging or regression evidence | Active | 2026-09-23 |
 | `scripts/mutation_catalog/_workbench.py` | _workbench: product UI, packaging or regression evidence | Active | 2026-09-23 |
-
+| `scripts/workbench_identity.py` | Bound packaged UI and consumer binaries to current build inputs | Active | 2026-09-23 |
+| `scripts/build-workbench-acceptance.sh` | Explicit cold preparation of packaged Workbench and pinned real consumer | Active | 2026-09-23 |
+| `Tests/test_workbench_identity.py` | Reject stale binaries, source changes, invalid stamps and replaced assets | Active | 2026-09-23 |
+| `scripts/mutation_catalog/_workbench_adoption.py` | Workbench build identity admission mutation controls | Active | 2026-09-23 |
+| `Sources/VerdictUIWeb/WebTreeJudge.swift` | Bounded explicit observed-DOM admission into the canonical browser layout engine | Active | 2026-09-24 |
+| `Tests/VerdictUIWebTests/WebTreeJudgeTests.swift` | Validate DOM budgets/metadata, real defect controls and retained paint uncertainty | Active | 2026-09-24 |
+| `Tests/VerdictUICLICoreTests/WebMCPToolTests.swift` | Verify explicit web consumer CLI, shared check and MCP process/transport parity | Active | 2026-09-24 |
+| `Sources/VerdictUIWorkbench/WorkbenchAcceptance.swift` | Quiet real WKWebView/bridge workflow, native snapshots and observed DOM export | Active | 2026-09-24 |
+| `scripts/workbench-acceptance.py` | Own native acceptance process and isolated fixtures; validate retained observations | Active | 2026-09-24 |
+| `Tests/test_workbench_acceptance.py` | Reject incomplete phases, corrupted images/history/tree and unbound native reports | Active | 2026-09-24 |
+| `Sources/VerdictUIWorkbenchCore/WorkbenchResources.swift` | Resolve exact native copied assets in nested and flat SwiftPM bundles | Active | 2026-09-24 |
+| `Tests/VerdictUIWorkbenchCoreTests/WorkbenchResourcesTests.swift` | Real filesystem layout and redirection refusal controls | Active | 2026-09-24 |
+| `Sources/VerdictUIProcessGuardian/include/VerdictUIProcessGuardian.h` | Narrow launch-owned C guardian contract retaining guardian and browser children; lifetime fd and READY ownership | Active | 2026-09-24 |
+| `Sources/VerdictUIProcessGuardian/ProcessGuardian.c` | Parent-death/EOF group containment, parent-only browser spawn, descriptor/signal isolation and bounded guardian shutdown | Active | 2026-09-24 |
+| `Tests/VerdictUIWebTests/BrowserCrashGuardianTests.swift` | Real owner crash, leaked writer, browser-first exit, startup/discovery/exec failure, high descriptor and retained-child refusal controls | Active | 2026-09-24 |
 
 ## Archived / Removed
 

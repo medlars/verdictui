@@ -64,40 +64,30 @@ public struct AppKitCommand: Sendable {
     /// Static and injectable-free so a test can exercise it against a shell
     /// script standing in for a real consumer binary — spawning a process is the
     /// behaviour under test here, so faking it away would test nothing.
-    static func invoke(runner: String, arguments: [String]) -> RunnerOutcome {
+    static func invoke(runner: String, arguments: [String], timeout: TimeInterval = 60,
+                       limit: Int = 8 * 1_024 * 1_024) async -> RunnerOutcome {
         let executable = URL(fileURLWithPath: runner)
         guard FileManager.default.isExecutableFile(atPath: executable.path) else {
             return .failed("runner is not an executable file: \(runner)")
         }
 
-        let process = Process()
-        process.executableURL = executable
-        process.arguments = arguments
-        let out = Pipe()
-        let err = Pipe()
-        process.standardOutput = out
-        process.standardError = err
-
+        let result: BoundedCommand.Result
         do {
-            try process.run()
+            result = try await BoundedCommand.run(executable: executable, arguments: arguments,
+                root: URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+                timeout: timeout, limit: limit, captureStandardError: true)
         } catch {
-            return .failed("could not launch runner \(runner): \(error)")
+            return .failed("runner unavailable: \(error)")
         }
-        // Read BEFORE waiting: a runner whose tree exceeds the pipe buffer would
-        // block writing while we block waiting, and the command would hang
-        // forever on exactly the large trees it exists to handle.
-        let data = out.fileHandleForReading.readDataToEndOfFile()
-        let errData = err.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
 
-        guard process.terminationStatus == 0 else {
-            let detail = String(data: errData, encoding: .utf8)?
+        guard result.code == 0 else {
+            let detail = String(data: result.error, encoding: .utf8)?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             return .failed(
-                "runner exited \(process.terminationStatus)"
+                "runner exited \(result.code)"
                     + (detail.isEmpty ? "" : ": \(detail)"))
         }
-        guard let text = String(data: data, encoding: .utf8), !text.isEmpty else {
+        guard let text = String(data: result.output, encoding: .utf8), !text.isEmpty else {
             return .failed("runner produced no output")
         }
         return .produced(text)
@@ -115,7 +105,7 @@ public struct AppKitCommand: Sendable {
         summary: Bool = false
     ) async -> ExitCode {
         guard let subject else {
-            switch Self.invoke(runner: runner, arguments: ["list"]) {
+            switch await Self.invoke(runner: runner, arguments: ["list"]) {
             case .produced(let text):
                 environment.output.writeOut(text)
                 return .pass
@@ -126,7 +116,7 @@ public struct AppKitCommand: Sendable {
         }
 
         let text: String
-        switch Self.invoke(runner: runner, arguments: ["render", subject]) {
+        switch await Self.invoke(runner: runner, arguments: ["render", subject]) {
         case .produced(let produced):
             text = produced
         case .failed(let reason):
