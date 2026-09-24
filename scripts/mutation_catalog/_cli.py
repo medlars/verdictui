@@ -8,6 +8,13 @@ from mutation_catalog_types import Mutation, Runner  # noqa: F401
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="AppKit diagnostic fixture releases before startup readiness",
+        path="Tests/VerdictUICLICoreTests/AppKitCommandRunnerTests.swift",
+        old="while !FileManager.default.fileExists(atPath: ready.path) {",
+        new="while FileManager.default.fileExists(atPath: ready.path) {",
+        test="AppKitCommandRunnerTests/testSlowStartupCannotTriggerDiagnosticReleaseBeforeExecution",
+    ),
+    Mutation(
         name="MCP initialize reports schema instead of software release",
         path="Sources/VerdictUICLICore/MCPTransport.swift",
         old="version: ReleaseVersion.current",
