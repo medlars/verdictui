@@ -9,6 +9,9 @@
 
 ## P1 — High Priority
 
+- [x] (2026-09-24) Repair the all-advertised-tools MCP transport fixture for `judge_web`: valid observed DOM, required subject and real executable protocol, with decoded PASS asserted over the wire. Exact CI exposed the missing fixture; all 13 strict transport tests now pass and independent review found no issues.
+- [ ] (2026-09-24) Preserve renderer-based web checks in the Workbench editor, including ordinary edits and explicit URL/renderer switches. The existing URL-only editor rejects or replaces real runner declarations. Exact-source CI and behavioral acceptance must pass before release.
+
 - [x] (2026-09-24) Repair repeated damaged-app alerts caused by witness fixtures copying `/bin/echo`: actual crash receipt identifies `com.apple.echo` and CODESIGNING Launch Constraint Violation. Both fixtures now launch the built witness in its verified pre-window exit3 path, require expected failure types, and retain bundle reuse plus actual registration. Two real tests pass with zero skips; the original per-launch regression is detected (1/1 mutation, exact restore). macOS logs show 10 successful launches and zero matching signing/crash failures for focused controls. Independent source review: no findings. Exact-head CI passed; the reviewed test-only fix is active in the canonical checkout with HEAD/index/other tracked bytes preserved. Full 1.1.4 delivery remains pending.
 
 - [ ] (P1) Final 1.1.4 full PM: native fixture reported changed foreground application or global cursor; other technical stages passed (B99.4). Await the requested quiet window and remeasure without weakening noninterference checks. measured: 2026-09-23; falsify: `python3.14 scripts/product-smoke.py --binary .build/debug/verdictui`.

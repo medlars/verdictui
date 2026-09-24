@@ -202,22 +202,33 @@ final class MCPTransportTests: XCTestCase {
         XCTAssertEqual(result["isError"] as? Bool, true)
     }
 
-    /// An executable standing in for a consumer's AppKit runner, printing one
-    /// clean tree. `judge_appkit` drives a binary the consumer compiled, so the
-    /// catalog walk needs a real one to hand it.
-    private func makeAppKitRunner() throws -> String {
+    /// A real protocol fixture for each consumer tree format, separate from
+    /// product-rendering acceptance. Web admission requires measured DOM metadata.
+    private func makeConsumerRunner(web: Bool = false) throws -> String {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("mcp-appkit-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let path = directory.appendingPathComponent("runner")
+        func attributes(tag: String, depth: Int) -> String {
+            guard web else { return "" }
+            return """
+                "attributes":{"web.tag":"\(tag)","web.frame":"main","web.domDepth":\(depth),
+                "web.position":"static","web.overflowX":"visible","web.overflowY":"visible",
+                "web.interactionMeasured":false,"web.isClickable":false,
+                "web.isFocusable":false,"web.hasInteractiveAncestor":false},
+                """
+        }
         try """
             #!/bin/bash
-            if [ "$1" = "list" ]; then echo "a-screen"; exit 0; fi
+            if [ "$1" = "list" ]; then echo "fixture-control"; exit 0; fi
+            [ "$1" = "render" ] && [ "$2" = "fixture-control" ] || exit 7
             cat <<'TREE'
             {"id":"root","role":"container",
              "frame":{"x":0,"y":0,"width":200,"height":100},
+             \(attributes(tag: "body", depth: 0))
              "children":[{"id":"label","role":"text",
                "frame":{"x":0,"y":0,"width":180,"height":20},"text":"short",
+               \(attributes(tag: "span", depth: 1))
                "textMetrics":{"intrinsicWidth":40,"renderedLineCount":1,"idealLineCount":1},
                "children":[]}]}
             TREE
@@ -242,9 +253,10 @@ final class MCPTransportTests: XCTestCase {
         // A WORKING runner, not a placeholder path, for the same reason
         // `node_path` names a real node: `judge_appkit` spawns what it is given,
         // and a made-up path is a call the tool was always going to refuse.
-        let runner = try makeAppKitRunner()
+        let runner = try makeConsumerRunner()
+        let webRunner = try makeConsumerRunner(web: true)
 
-        let valuesByName: [String: String] = [
+        var valuesByName: [String: String] = [
             "scenario": #""demo-toggle-layout""#,
             "action": #""toggle""#,
             "probe": #""advanced-toggle""#,
@@ -255,10 +267,12 @@ final class MCPTransportTests: XCTestCase {
             "node_path": #""advanced-toggle""#,
             "runner": #""\#(runner)""#,
             "path": #""fixture-control""#,
+            "subject": #""fixture-control""#,
             "url": #""invalid://fixture""#,
         ]
 
         for tool in MCPServer.tools {
+            valuesByName["runner"] = #""\#(tool.name == "judge_web" ? webRunner : runner)""#
             var pairs: [String] = []
             for name in tool.inputSchema.required.sorted() {
                 let value = try XCTUnwrap(
@@ -296,6 +310,12 @@ final class MCPTransportTests: XCTestCase {
                 externalUnavailable,
                 "\(tool.name) could not answer: \(result["content"] ?? "no content")"
             )
+            if tool.name == "judge_web" {
+                let content = try XCTUnwrap(result["content"] as? [[String: Any]])
+                let text = try XCTUnwrap(content.first?["text"] as? String)
+                let verdict = try JSONDecoder().decode(Verdict.self, from: Data(text.utf8))
+                XCTAssertEqual(verdict.status, .pass, "The valid DOM fixture must be judged over the wire")
+            }
             if externalUnavailable {
                 let content = try XCTUnwrap(result["content"] as? [[String: Any]])
                 let text = try XCTUnwrap(content.first?["text"] as? String)
