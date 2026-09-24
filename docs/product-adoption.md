@@ -1,6 +1,6 @@
 # Product adoption and installed-artifact acceptance
 
-Measured September 23, 2026. A library import, a registered manifest, an executable
+Updated September 24, 2026. A library import, a registered manifest, an executable
 runner, and a verified installed app are different evidence states. None implies
 complete product coverage.
 
@@ -9,11 +9,14 @@ complete product coverage.
 The follow-up census reads every row of `shared/pm-registry.json`, including
 missing roots, projects without PM scripts, and additional registered roots.
 At the September 23 measurement it contained **150 rows (128 PM projects and 22 non-PM entries) plus six additional
-roots**. The initial census reported all 150 unavailable. After activating the
-reviewed shared reporting guard, a fresh canonical `ceo.py --ui-coverage` run
-reported **149 unavailable and one explicitly excluded headless library**
-(PM Base), exiting 2. These are evidence states, not failing products and not an
-assertion that the other projects have no UI.
+roots**. The latest bounded observer reported **150 unavailable** in 0.15 seconds.
+The earlier 149-unavailable/one-excluded report had an incorrect exclusion:
+PM Base serves the real CEO dashboard. Published PR 223 corrected its policy and
+instructions; those three files are active in the canonical checkout with peer
+files, HEAD and raw index preserved. The dashboard now declares
+`ceo-fleet-dashboard`; its layout, paint and behavior remain unavailable until
+current evidence exists. These are evidence states, not failing products and
+not an assertion that the other projects have no UI.
 The smaller directory search below is historical implementation evidence.
 
 The shared `ui_coverage` reader requires project-owned `.verdictui/coverage.json`
@@ -35,6 +38,8 @@ overlay in the canonical shared library, preserving its existing peer edits,
 Git index and HEAD. Fresh canonical imports and 215 focused checks passed.
 This does not claim that the canonical mixed checkout equals the complete
 published PM Base release or that already-running processes reloaded it.
+The later completion and dashboard guard is published in PR 222; runtime
+activation remains separately gated on a complete clean-source PM receipt.
 
 ## Actual client and consumer checks
 
@@ -136,13 +141,16 @@ the explicit web-tree judge, including a real consumer runner; a native AppKit
 judge is not substituted for DOM rules. The source catalog now has 19 tools,
 including `judge_web`; the currently installed 1.1.3 clients still have 18.
 
-The integrated source passed 121 Python contracts, 31 focused Swift tests and
-the PM Workbench stage (108 browser assertions in two engines, 38 native
-assertions across 10 phases). The worker candidate also passed independent
-review of all eight native PNGs and the common reader admitted layout, paint
-and behavior for its declared scope. Its real cancellation probe observed all
-nine owned children exit after awaited cleanup. The integrated release must
-retain its own fresh observation and image review before admission.
+The integrated editor and resource repair passed 138 Python contracts and
+the PM Workbench stage (138 browser assertions in two engines, 48 native
+observations across 10 phases). The worker candidate also passed independent
+review of all nine native PNGs. Compiled renderer checks retain their runner
+and subject when renamed or saved; the loaded WKWebView page must match the
+verified packaged resource path. The integrated release must retain its own
+fresh observation and image review after final source changes before admission.
+Review additionally found cleanup gaps at the outer timeout and after a native
+leader crash; those require real process controls before release. A successful
+normal cancellation does not establish either crash case.
 
 This scope covers project selection, editing and saving checks, actual consumer
 PASS/FAIL, running state, cancellation, history and reload. It does not certify
