@@ -38,6 +38,7 @@ from mutation_catalog._probe import MUTATIONS as _PROBE
 from mutation_catalog._scripts import MUTATIONS as _SCRIPTS
 from mutation_catalog._web import MUTATIONS as _WEB
 from mutation_catalog._workbench import MUTATIONS as _WORKBENCH
+from mutation_catalog._workbench_adoption import MUTATIONS as _WORKBENCH_ADOPTION
 
 __all__ = ["MUTATIONS", "Mutation", "Runner"]
 
@@ -55,5 +56,6 @@ MUTATIONS: list[Mutation] = (
     + _WEB
     + _INTEGRATION
     + _WORKBENCH
+    + _WORKBENCH_ADOPTION
     + _BROKER
 )
