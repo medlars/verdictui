@@ -1,18 +1,18 @@
 {
   "authority": "ci_unprotected",
-  "completed_at": "2026-09-24T09:51:17.812255Z",
-  "content_digest": "ff47a23c9b70607b8199725f80e28c0b0f0d2a912cf27c86c90ae1e547b2f7d2",
+  "completed_at": "2026-09-24T10:14:05.250509Z",
+  "content_digest": "ad5ede19a6d52aa5f18f5151d094dbfb858fe9294d426d4bc028369408d64f62",
   "evaluator": {
     "name": "governance-v2.ci-emitter",
     "version": "1.0.0"
   },
-  "expires_at": "2026-09-25T09:51:17.812255Z",
+  "expires_at": "2026-09-25T10:14:05.250509Z",
   "project": {
     "aliases": [],
     "canonical_id": "verdictui",
     "registry_version": "projects-shared@40b5051f19dbbc10dea91302a5b5e305a3694a45"
   },
-  "run_id": "a1de2002-9dcc-4e31-be56-57e2d21ab59b",
+  "run_id": "923c3f61-2024-44bf-9309-ffaf0fb95d76",
   "runner": {
     "identity": "github-actions/run/35983036035",
     "kind": "ci",
@@ -46,7 +46,7 @@
       "state": "PASS"
     }
   ],
-  "started_at": "2026-09-24T09:51:17.812255Z",
+  "started_at": "2026-09-24T10:14:05.250509Z",
   "summary": {
     "confidence": 1.0,
     "counts": {
