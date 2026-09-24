@@ -53,6 +53,8 @@
 
 ## P1 — High Priority
 
+- [ ] (P1) Qualify browser lifecycle and bounded-page tests after the preserved36c5ef6 aggregate B92.7: first1306-test suite missed the late-browser exit marker; automatic repeat also hit the inline capture deadline before the overlap budget. Diagnose the test contracts with independent review and retain original failures; no larger budgets, retry-based acceptance or production workaround. Focused instrumented late-exit test passes, but does not establish the aggregate cause. Evidence: /Users/eiman/Temp/verdictui-final-integration-20260924/release-36c5ef6 and browser-shutdown-diagnostic.
+
 - [x] (P1) Refuse stale action discovery/injection for probes absent from the observed tree (7d585a4). Native disappear/reappear witness reproduced1test4fail; focused105total/104pass/1declared timing skip,2/2actualmutants caught/restored; independent review findings:[]; actual LaunchGate welcome12native pass with fix. Combined aggregate/CI/publication remain separate.
 
 - [x] (P1) Preserve ScenarioEntry.init(viewport:make:) alongside explicit expectations. Root622973f aggregate D69.5 and independent source typecheck exposed removed public signature. Restored original overload;104 strict native tests including existing macro consumers pass, source factory typechecks,1 actual empty-policy mutant detected with exact restoration. Failed original aggregate retained; fresh committed aggregate acceptance is separate.
