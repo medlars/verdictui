@@ -12,7 +12,9 @@ MUTATIONS: list[Mutation] = [
         old="        try budget.reserveCandidates(candidates.count)",
         new="        try budget.reserveCandidates(0)",
         test=_TEST
-        + "DOMSnapshotAssemblyTests/testInlineEnrichmentRejectsExhaustedCandidatesBeforeRemoteCommands",
+        + "DOMSnapshotAssemblyTests/testInlineEnrichmentRejectsExhaustedCandidatesBeforeRemoteCommands|"
+        + _TEST
+        + "WebFrameIntegrationTests/testRealInlineSnapshotHonorsCumulativeCandidateBoundaryBeforeRemoteWork",
     ),
     Mutation(
         name="web frame coherence does not retry stale capture",
