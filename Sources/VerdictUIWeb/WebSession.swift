@@ -230,7 +230,7 @@ public actor WebSession {
     }
 
     private func command(_ method: String, _ params: [String: CDPValue] = [:], session: String? = nil) async throws -> [String: CDPValue] {
-        do { return try await transport.send(method: method, params: params, timeout: .seconds(5), sessionID: session ?? pageSessionID) }
+        do { return try await transport.send(method: method, params: params, timeout: WebTiming.current.requestCap, sessionID: session ?? pageSessionID) }
         catch { throw Self.sanitized(error) }
     }
 
@@ -254,7 +254,7 @@ public actor WebSession {
     private enum CaptureInconsistency: Error { case missingOwner }
 
     private func settledTree() async throws -> SemanticNode {
-        let deadline = ContinuousClock.now + .seconds(10)
+        let deadline = ContinuousClock.now + WebTiming.current.captureDeadline
         var stability = CaptureStability()
         while ContinuousClock.now < deadline {
             try Task.checkCancellation()
@@ -279,7 +279,7 @@ public actor WebSession {
             } else { stability = CaptureStability() }
             try await Task.sleep(for: .milliseconds(100))
         }
-        throw WebBrowserError.invalidWebOperation(reason: "page did not finish loading and settle within 10 seconds")
+        throw WebBrowserError.invalidWebOperation(reason: "page did not finish loading and settle within \(WebTiming.current.captureDeadlineDescription)")
     }
 
     private func snapshot(session: String, budget: inout WebInlineGeometry.Budget) async throws -> [String: CDPValue] {
@@ -302,7 +302,7 @@ public actor WebSession {
     }
 
     // Internal test synchronization only; CLI/MCP callers cannot supply code.
-    func captureTree(deadline: ContinuousClock.Instant = .now + .seconds(10),
+    func captureTree(deadline: ContinuousClock.Instant = .now + WebTiming.current.captureDeadline,
         afterMainSnapshot: (@Sendable (CDPTransport, String) async throws -> Void)? = nil) async throws -> CapturedTree {
         for attempt in 0..<3 {
             try Task.checkCancellation()
@@ -400,7 +400,7 @@ public actor WebSession {
     }
 
     private func observedTree(expectText: String?) async throws -> SemanticNode {
-        let deadline = ContinuousClock.now + .seconds(10)
+        let deadline = ContinuousClock.now + WebTiming.current.captureDeadline
         var tree = try await settledTree()
         guard let expectText else { return tree }
         while !contains(expectText, in: tree), ContinuousClock.now < deadline {
