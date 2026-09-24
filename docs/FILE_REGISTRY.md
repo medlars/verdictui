@@ -114,7 +114,7 @@
 | `Sources/VerdictUICLICore/LiveCommands.swift` | Live-app verbs: `LiveTarget` (running --pid or a freshly launched --app with launch args/env, surface selection), `inspect` (read all surfaces, colours, act verbs), `judge --pid/--app`, window-only `capture`, and `sweep --app` relaunching per locale x appearance cell | Active | 2026-09-10 |
 | `Sources/VerdictUICLICore/ReleaseVersion.swift`                      | The version of THIS BUILD, deliberately distinct from `SchemaVersion.current` — the wire schema is a stable 1.0 promise (ADR 2026-022) and cannot double as a release identifier | Active | 2026-08-28 |
 | `Sources/VerdictUICLICore/CommandLineInterface.swift`                | argument-parser declarations, in the LIBRARY so tests can construct them; `@available` is required for async root dispatch                              | Active | 2026-08-11 |
-| `Sources/VerdictUICLICore/ProjectScenarios.swift`                    | Consumer-project scenario discovery: finds `.verdictui/config.json`, resolves declared runners from the project root, and treats malformed manifests as broken adoption rather than absent adoption | Active | 2026-08-16 |
+| `Sources/VerdictUICLICore/ProjectScenarios.swift` | Consumer manifest discovery and validated per-project build budgets; malformed configuration is an error | Active | 2026-09-24 |
 | `Sources/VerdictUICLICore/VerdictOutput.swift`                       | The stdout/stderr contract, injectable `OutputSink`, and the three-valued `ExitCode`                                                                    | Active | 2026-08-11 |
 | `Sources/VerdictUICLICore/SweepWire.swift`                           | Serializable sweep report — declared here so SwiftUI framework enums never gain a Codable conformance this package would own                            | Active | 2026-08-11 |
 | `Sources/verdictui/VerdictUIMain.swift`                              | The binary's `@main`. NOT named main.swift — that filename forbids `@main` and silently selects the sync overload (no.md #32)                           | Active | 2026-08-11 |
@@ -138,8 +138,8 @@
 | `Tests/VerdictUICLICoreTests/MCPServerTests.swift`                   | Every advertised tool resolves to a method that answers; the destructive verb is asserted absent with a read-only control                               | Active | 2026-08-11 |
 | `Tests/VerdictUICLICoreTests/JudgeCommandTests.swift`               | The kernel judges a tree no Swift renderer produced -- hand-written JSON, a clean control, the vacuity refusal, and malformed input as a tool error rather than a verdict                          | Active | 2026-08-16 |
 | `Tests/VerdictUICLICoreTests/LiveCommandTests.swift` | Live-app verbs: exactly-one-target validation, launch options refused on a running pid, the sweep matrix and its refusals (running pid, inert dynamic type, empty axes), variant launch arguments, and exit-2 refusals that happen before any launch | Active | 2026-09-10 |
-| `Tests/VerdictUICLICoreTests/ProjectScenariosTests.swift`           | A consumer's scenarios must reach the CLI — manifest discovery, the walk that stops rather than borrowing an ancestor's, and a malformed manifest erroring instead of reading as absent   | Active | 2026-08-16 |
-| `Sources/VerdictUICLICore/ProjectScenarios.swift`                    | Finds the invoking project's VerdictUI manifest by walking up; a malformed manifest errors rather than reading as absent, because the fallback for absent is the demo catalog        | Active | 2026-08-16 |
+| `Tests/VerdictUICLICoreTests/ProjectScenariosTests.swift` | Manifest discovery, bounded numeric build-budget decoding and nonfinite rejection | Active | 2026-09-24 |
+| `Sources/VerdictUICLICore/ProjectScenarios.swift` | Consumer manifest discovery and validated per-project build budgets; malformed configuration is an error | Active | 2026-09-24 |
 | `.verdictui/config.json`                                             | VerdictUI's own scenario manifest — the first consumer of the mechanism, which is what stops the tool telling itself its catalog is borrowed                       | Active | 2026-08-16 |
 | `docs/tree-contract.md`                                             | The wire shape a non-Swift producer must emit for `verdictui judge`, with the exit-code contract and the textMetrics keys that are required rather than defaulted        | Active | 2026-08-16 |
 | `.decisions/2026-025-judge-takes-a-tree-rather-than-rendering-foreign-ui.md` | Why `judge` accepts a caller-supplied tree instead of rendering foreign UI, and the four alternatives weighed | Active | 2026-08-16 |
@@ -305,7 +305,7 @@
 | `Sources/VerdictUICLICore/LiveCommandLine.swift` | LiveCommandLine: real-product verification integration | Active | 2026-09-23 |
 | `Sources/VerdictUICLICore/LiveRuntime.swift` | LiveRuntime: real-product verification integration | Active | 2026-09-23 |
 | `Sources/VerdictUICLICore/ProjectChecks.swift` | ProjectChecks: real-product verification integration | Active | 2026-09-23 |
-| `Sources/VerdictUICLICore/ProjectRunner.swift` | ProjectRunner: real-product verification integration | Active | 2026-09-23 |
+| `Sources/VerdictUICLICore/ProjectRunner.swift` | Shared consumer build/delegation path with effective deadline progress, cancellation and stale-runner refusal | Active | 2026-09-24 |
 | `Sources/VerdictUICLICore/RuntimeShutdown.swift` | RuntimeShutdown: real-product verification integration | Active | 2026-09-23 |
 | `Sources/VerdictUICLICore/WebCommandLine.swift` | WebCommandLine: real-product verification integration | Active | 2026-09-23 |
 | `Sources/VerdictUICLICore/WebRuntime.swift` | WebRuntime: real-product verification integration | Active | 2026-09-23 |
@@ -327,7 +327,7 @@
 | `Tests/VerdictUICLICoreTests/DaemonClientTests.swift` | DaemonClientTests: behavioral and refusal regression coverage | Active | 2026-09-23 |
 | `Tests/VerdictUICLICoreTests/LiveRuntimeTests.swift` | LiveRuntimeTests: behavioral and refusal regression coverage | Active | 2026-09-23 |
 | `Tests/VerdictUICLICoreTests/ProjectChecksTests.swift` | ProjectChecksTests: behavioral and refusal regression coverage | Active | 2026-09-23 |
-| `Tests/VerdictUICLICoreTests/ProjectRunnerTests.swift` | ProjectRunnerTests: behavioral and refusal regression coverage | Active | 2026-09-23 |
+| `Tests/VerdictUICLICoreTests/ProjectRunnerTests.swift` | Consumer build execution, deadline/override/cancellation controls, prelaunch refusal and progress evidence | Active | 2026-09-24 |
 | `Tests/VerdictUICLICoreTests/WebRuntimeTests.swift` | WebRuntimeTests: behavioral and refusal regression coverage | Active | 2026-09-23 |
 | `Tests/VerdictUIWebTests/DOMSnapshotAssemblyTests.swift` | DOMSnapshotAssemblyTests: behavioral and refusal regression coverage | Active | 2026-09-23 |
 | `Tests/VerdictUIWebTests/Fixtures/server.py` | server: behavioral and refusal regression coverage | Active | 2026-09-23 |

@@ -49,17 +49,35 @@ public enum ProjectScenarios {
         let runner: String
         let buildProduct: String?
         let configuration: String?
+        let buildTimeoutSeconds: TimeInterval?
+
+        private enum CodingKeys: String, CodingKey {
+            case runner, buildProduct, configuration, buildTimeoutSeconds
+        }
+
+        init(from decoder: Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            runner = try values.decode(String.self, forKey: .runner)
+            buildProduct = try values.decodeIfPresent(String.self, forKey: .buildProduct)
+            configuration = try values.decodeIfPresent(String.self, forKey: .configuration)
+            // An explicitly supplied null is invalid; only an absent key uses the default.
+            buildTimeoutSeconds = values.contains(.buildTimeoutSeconds)
+                ? try values.decode(TimeInterval.self, forKey: .buildTimeoutSeconds) : nil
+        }
     }
 
     public struct BuildConfiguration: Equatable, Sendable {
         public let product: String
         public let configuration: String
+        public let timeoutSeconds: TimeInterval
     }
 
     public static func buildConfiguration(projectRoot: URL) throws -> BuildConfiguration? {
         guard let manifest = try readManifest(projectRoot: projectRoot),
             let product = manifest.buildProduct else { return nil }
-        return BuildConfiguration(product: product, configuration: manifest.configuration ?? "debug")
+        return BuildConfiguration(
+            product: product, configuration: manifest.configuration ?? "debug",
+            timeoutSeconds: manifest.buildTimeoutSeconds ?? 300)
     }
 
     /// The nearest ancestor of `directory` holding a `.verdictui/config.json`.
@@ -141,6 +159,15 @@ public enum ProjectScenarios {
             guard manifest.buildProduct != nil,
                 ["debug", "release"].contains(configuration) else {
                 throw MalformedManifest(path: manifestPath, underlying: "configuration needs buildProduct and must be debug or release")
+            }
+        }
+        if let timeout = manifest.buildTimeoutSeconds {
+            guard manifest.buildProduct != nil else {
+                throw MalformedManifest(path: manifestPath, underlying: "buildTimeoutSeconds needs buildProduct")
+            }
+            // These bounds also reject NaN and either infinity.
+            guard timeout > 0, timeout <= 1800 else {
+                throw MalformedManifest(path: manifestPath, underlying: "buildTimeoutSeconds must be finite, greater than zero and at most 1800")
             }
         }
         return manifest
