@@ -112,6 +112,120 @@ def bounds(page: Any) -> dict[str, Any]:
     )
 
 
+def web_source_editing(page: Any, browser_name: str, artifact_dir: Path, run: SmokeRun) -> None:
+    """Drive real rendered form controls; this bridge fixture tests edit intent only."""
+    check = run.assertion
+    renderer = {
+        "name": "Rendered settings",
+        "kind": "web",
+        "runner": "/tmp/My Product/renderer",
+        "subject": "settings-view",
+    }
+    receive(page, {**FIXTURE_STATE, "checks": [renderer]})
+    page.locator("[data-view=checks]").click()
+    page.locator("#check-0-name").fill("Renamed renderer")
+    before = page.evaluate("testMessages.length")
+    page.locator("#save-checks").click()
+    renamed = {**renderer, "name": "Renamed renderer"}
+    check(
+        browser_name + " existing web renderer survives name-only save",
+        page.evaluate("testMessages.length") == before + 1
+        and page.evaluate("testMessages.at(-1)")
+        == {
+            "action": "saveChecks",
+            "project": FIXTURE_STATE["selectedProject"],
+            "checks": [renamed],
+        },
+    )
+    receive(page, {**FIXTURE_STATE, "checks": [renamed]})
+    check(
+        browser_name + " existing web renderer mode restored",
+        page.locator("#check-0-source").input_value() == "renderer",
+    )
+    check(
+        browser_name + " renderer has no URL requirement", page.locator("#check-0-url").count() == 0
+    )
+    for width in (1000, 360):
+        page.set_viewport_size({"width": width, "height": 780})
+        geometry = page.locator("#check-0-source,#check-0-runner,#check-0-subject").evaluate_all(
+            "es=>es.map(e=>{const r=e.getBoundingClientRect();return {id:e.id,x:r.x,right:r.right,width:r.width,height:r.height,label:e.labels[0]?.textContent}})"
+        )
+        check(
+            browser_name + f" renderer controls align at {width}",
+            len(geometry) == 3 and len({(r["x"], r["width"], r["height"]) for r in geometry}) == 1,
+        )
+        check(
+            browser_name + f" renderer controls labelled within {width}",
+            all(r["label"] and r["x"] >= 0 and r["right"] <= width for r in geometry),
+        )
+        subject_field = page.locator("#check-0-subject")
+        subject_field.scroll_into_view_if_needed()
+        subject_field.focus()
+        exposure = subject_field.evaluate(
+            "e=>{const r=e.getBoundingClientRect();return {focused:document.activeElement===e,visible:r.top>=0&&r.bottom<=innerHeight,unobscured:document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)===e}}"
+        )
+        check(
+            browser_name + f" renderer subject can be focused without obstruction at {width}",
+            all(exposure.values()),
+        )
+        page.screenshot(path=str(artifact_dir / f"{browser_name}-web-renderer-focus-{width}.png"))
+        (artifact_dir / f"{browser_name}-web-renderer-focus-{width}.json").write_text(
+            json.dumps(exposure, indent=2)
+        )
+        if width <= 660:
+            check(
+                browser_name + " narrow renderer controls meet44px",
+                all(row["height"] >= 44 for row in geometry),
+            )
+        page.screenshot(
+            path=str(artifact_dir / f"{browser_name}-web-renderer-{width}.png"), full_page=True
+        )
+        (artifact_dir / f"{browser_name}-web-renderer-{width}.json").write_text(
+            json.dumps(geometry, indent=2)
+        )
+    page.set_viewport_size({"width": 1000, "height": 700})
+    page.locator("#check-0-source").select_option("url")
+    check(
+        browser_name + " URL switch removes renderer fields",
+        page.locator("#check-0-runner").count() == 0
+        and page.locator("#check-0-subject").count() == 0,
+    )
+    page.locator("#check-0-url").fill("https://example.test/rendered")
+    page.locator("#check-0-expectText").fill("Saved account")
+    page.locator("#save-checks").click()
+    url_check = {
+        "name": renamed["name"],
+        "kind": "web",
+        "url": "https://example.test/rendered",
+        "expectText": "Saved account",
+    }
+    check(
+        browser_name + " renderer to URL serialization is exclusive",
+        page.evaluate("testMessages.at(-1).checks") == [url_check],
+    )
+    receive(page, {**FIXTURE_STATE, "checks": [url_check]})
+    page.locator("#check-0-source").select_option("renderer")
+    check(
+        browser_name + " renderer switch removes URL expectations",
+        page.locator("#check-0-url").count() == 0
+        and page.locator("#check-0-expectText").count() == 0,
+    )
+    page.locator("#check-0-runner").fill(renderer["runner"])
+    before = page.evaluate("testMessages.length")
+    page.locator("#save-checks").click()
+    check(
+        browser_name + " missing renderer subject blocks save",
+        page.evaluate("testMessages.length") == before,
+    )
+    page.locator("#check-0-subject").fill(renderer["subject"])
+    page.locator("#save-checks").click()
+    check(
+        browser_name + " URL to renderer serialization is exclusive",
+        page.evaluate("testMessages.at(-1).checks") == [renamed],
+    )
+    receive(page, FIXTURE_STATE)
+
+
 def exercise(
     browser_name: str, browser: Any, root: Path, artifact_dir: Path, run: SmokeRun
 ) -> None:
@@ -157,6 +271,7 @@ def exercise(
     (artifact_dir / (browser_name + "-sibling-rects.json")).write_text(
         json.dumps({"navigationHeights": nav_sizes, "fields": field_sizes}, indent=2)
     )
+    web_source_editing(page, browser_name, artifact_dir, run)
     page.locator("[data-view=overview]").click()
     page.locator("#choose-project").click()
     check(

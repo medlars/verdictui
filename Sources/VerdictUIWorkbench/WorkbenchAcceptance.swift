@@ -21,6 +21,7 @@ final class WorkbenchAcceptance {
     private var phases: [[String: Any]] = []
     private var snapshots: [[String: Any]] = []
     private var assertions = 0
+    private var loadedPage = ""
 
     static func launch(arguments: [String]) async {
         var driver: WorkbenchAcceptance?
@@ -132,6 +133,45 @@ final class WorkbenchAcceptance {
         try await click("[data-view='overview']")
     }
 
+    private func persistedCheck(_ project: URL) throws -> [String: Any] {
+        let data = try Data(contentsOf: project.appendingPathComponent(".verdictui/checks.json"))
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let checks = object["checks"] as? [[String: Any]], checks.count == 1 else {
+            throw Failure(description: "persisted editor declaration unavailable")
+        }
+        return checks[0]
+    }
+
+    private func editWebCheck() async throws -> [String: Any] {
+        let original = try persistedCheck(projectB)
+        guard original["kind"] as? String == "web", let runner = original["runner"] as? String,
+              let subject = original["subject"] as? String else { throw Failure(description: "existing renderer declaration missing") }
+        try await click("[data-view='checks']")
+        try await input("check-0-name", "Saved rendered view")
+        try await save()
+        let renamed = try persistedCheck(projectB)
+        var expected = original; expected["name"] = "Saved rendered view"
+        try require(NSDictionary(dictionary: renamed).isEqual(to: expected), "name-only save changed renderer fields")
+        try await click("[data-view='checks']")
+        try await wait("document.getElementById('check-0-source').value === 'renderer'")
+        try await capture("web-renderer")
+        try await input("check-0-source", "url", event: "change")
+        try await input("check-0-url", fixtureURL)
+        try await input("check-0-expectText", "Controlled navigation")
+        try await save()
+        let urlMode = try persistedCheck(projectB)
+        let expectedURL = ["name": "Saved rendered view", "kind": "web", "url": fixtureURL, "expectText": "Controlled navigation"]
+        try require(NSDictionary(dictionary: urlMode).isEqual(to: expectedURL), "URL switch retained renderer fields or lost expected text")
+        try await click("[data-view='checks']")
+        try await input("check-0-source", "renderer", event: "change")
+        try await input("check-0-runner", runner)
+        try await input("check-0-subject", subject)
+        try await save()
+        let restored = try persistedCheck(projectB)
+        try require(NSDictionary(dictionary: restored).isEqual(to: expected), "renderer switch retained URL fields or changed the renderer")
+        return ["renderer_original": original, "renderer_renamed": renamed, "url_mode": urlMode, "renderer_restored": restored]
+    }
+
     private func runScenario(_ scenario: String, status: String, count: Int) async throws {
         try await click("[data-view='checks']")
         try await input("check-0-scenario", scenario)
@@ -153,12 +193,14 @@ final class WorkbenchAcceptance {
 
     private func run() async throws {
         try await wait("document.readyState === 'complete' && document.getElementById('connection-label') !== null")
+        loadedPage = try packagedPage()
         try await wait("document.getElementById('connection-label').textContent === 'Engine connected' && !document.getElementById('run-checks').disabled")
         try require(host.store.selectedProject == projectA.path, "wrong initial project")
         phase("connected", ["helper": host.executable.path])
         try await capture("connected")
         _ = try await evaluate("Array.from(document.querySelectorAll('.project-button')).find(e=>e.title===\(try jsString(projectB.path))).click()")
         try await wait("document.getElementById('project-path').textContent === \(try jsString(projectB.path))")
+        let webEditor = try await editWebCheck()
         _ = try await evaluate("Array.from(document.querySelectorAll('.project-button')).find(e=>e.title===\(try jsString(projectA.path))).click()")
         try await wait("document.getElementById('project-path').textContent === \(try jsString(projectA.path))")
         try require(host.store.selectedProject == projectA.path, "project selection was not persisted")
@@ -167,7 +209,7 @@ final class WorkbenchAcceptance {
         try await input("check-0-name", "Saved consumer check")
         try await save()
         try require(try host.store.checks()?.checks.first?.name == "Saved consumer check", "form did not save the actual manifest")
-        phase("edit-save")
+        phase("edit-save", ["web_editor": webEditor])
         try await runScenario("consumer-settings", status: "pass", count: 1)
         try await runScenario("consumer-fault", status: "fail", count: 2)
 
@@ -206,6 +248,7 @@ final class WorkbenchAcceptance {
         await host.bridge.shutdown()
         host = try WorkbenchHost(store: WorkbenchStore(stateURL: root.appendingPathComponent("state.json")), size: CGSize(width: 1160, height: 800))
         try await wait("document.readyState === 'complete' && document.getElementById('connection-label') !== null")
+        try require(try packagedPage() == loadedPage, "host recreation changed the packaged page")
         try await wait("document.getElementById('connection-label').textContent === 'Engine connected'")
         try require(host.store.history.count == 3 && host.store.selectedProject == projectA.path, "host recreation lost persisted history or project")
         try await click("[data-view='history']")
@@ -267,12 +310,27 @@ final class WorkbenchAcceptance {
 
     private static func hash(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
 
+    private func packagedPage() throws -> String {
+        let bundle = Bundle.main.bundleURL.standardizedFileURL
+        let resources = bundle.appendingPathComponent("Contents/Resources/VerdictUI_VerdictUIWorkbench.bundle")
+        guard let page = host.view.url, page.isFileURL,
+              page.query == nil, page.fragment == nil else {
+            throw Failure(description: "loaded page is not a packaged file URL")
+        }
+        let actual = page.standardizedFileURL
+        try require(bundle.pathExtension == "app" && actual.lastPathComponent == "index.html"
+            && actual.path.hasPrefix(resources.path + "/")
+            && actual.resolvingSymlinksInPath() == actual, "loaded page is outside the packaged resource bundle")
+        return page.absoluteString
+    }
+
     private func finish(status: String, error: String?) throws {
         let treeURL = root.appendingPathComponent("final-tree.json")
         let tree = try? Data(contentsOf: treeURL)
         let state = try Data(contentsOf: root.appendingPathComponent("state.json"))
         let negative = try? Data(contentsOf: root.appendingPathComponent("negative-tree.json"))
         let report: [String: Any] = ["schema": 1, "run_id": runID, "status": status, "error": error ?? "",
+            "loaded_page": loadedPage,
             "required_phase_ids": Self.requiredPhases, "phases": phases, "assertions": assertions, "snapshots": snapshots,
             "history": ["path": "state.json", "sha256": Self.hash(state)],
             "final_tree": ["path": "final-tree.json", "sha256": tree.map(Self.hash) ?? "", "viewport": ["width": 1160, "height": 800]],

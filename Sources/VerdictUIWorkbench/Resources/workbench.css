@@ -1355,3 +1355,8 @@ progress::-webkit-progress-value {
 .brand-mark,.brand-mark *, .lens-scene,.lens-scene * { pointer-events:none }
 /* The dot is an intentional layer of the brand mark. */
 .brand-mark span { z-index:1 }
+@media(max-width:660px) {
+  .check-fields input,.check-fields select {
+    min-height:44px
+  }
+}

@@ -124,15 +124,20 @@ consumer fixtures certify this integration, not any other fleet application's UI
 Required observations include connection, project selection, edited/saved
 checks, actual consumer PASS and FAIL, running state, cancellation followed by a
 terminal unavailable report, history, host recreation and measured DOM geometry.
-Eight actual WKWebView PNGs cover connected, passing, failing, two running states,
-history, compact 760×600 and final 1160×800 layouts. The emitted `final-tree.json`
+Nine actual WKWebView PNGs cover connected, the compiled-renderer editor, passing,
+failing, two running states, history, compact 760×600 and final 1160×800 layouts.
+The editor preserves runner and view name on a name-only save. Switching Source
+between Page URL and Compiled renderer saves only that mode’s fields. Acceptance
+reads the actual stored declarations after the name change and both switches. The emitted `final-tree.json`
 contains observed DOM IDs, roles, bounds, visibility and text; it is not a
 hand-authored success tree. Intrinsic text and comprehensive CSS paint semantics
 are not invented where the DOM exporter cannot measure them.
 
 `report.json` binds each artifact hash to `native-report.json`, the app/helper
 and consumer build identities, the exact Python driver hash, and the complete
-phase set. Successful acceptance requires the bundled helper to judge the final
+phase set. The observed WKWebView file URL must match the packaged resource root's
+`index.html`; a build-directory fallback cannot satisfy this check.
+Successful acceptance requires the bundled helper to judge the final
 observed tree as PASS. A measured FAIL is retained as a real layout defect. A
 separate temporary DOM overlap must FAIL with cited negative-control node IDs.
 The actual negative tree and both helper verdicts are retained; the injected

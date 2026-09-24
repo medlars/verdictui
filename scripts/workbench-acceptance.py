@@ -19,6 +19,7 @@ from contextlib import ExitStack, contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, cast
+from urllib.parse import unquote, urlsplit
 
 REQUIRED_PHASES = (
     "connected",
@@ -33,6 +34,7 @@ REQUIRED_PHASES = (
     "geometry",
 )
 REQUIRED_IMAGES = {
+    "web-renderer",
     "connected",
     "pass",
     "fail",
@@ -102,6 +104,30 @@ def artifact_bytes(root: Path, descriptor: Any) -> bytes:
     return body
 
 
+def validate_web_editor(observations: Any) -> None:
+    if not isinstance(observations, dict):
+        raise ValueError("web editor roundtrip observations missing")
+    original = observations.get("renderer_original", {})
+    expected = {**original, "name": "Saved rendered view"} if isinstance(original, dict) else {}
+    url = observations.get("url_mode", {})
+    if (
+        not isinstance(original, dict)
+        or set(original) != {"name", "kind", "runner", "subject"}
+        or original.get("kind") != "web"
+        or not all(isinstance(value, str) and value.strip() for value in original.values())
+        or observations.get("renderer_renamed") != expected
+        or observations.get("renderer_restored") != expected
+        or not isinstance(url, dict)
+        or set(url) != {"name", "kind", "url", "expectText"}
+        or url.get("name") != expected["name"]
+        or url.get("kind") != "web"
+        or not isinstance(url.get("url"), str)
+        or not url["url"].startswith("http://127.0.0.1:")
+        or url.get("expectText") != "Controlled navigation"
+    ):
+        raise ValueError("web editor roundtrip did not preserve exclusive declarations")
+
+
 def validate_native_receipt(receipt: Any, root: Path) -> dict:
     if (
         not isinstance(receipt, dict)
@@ -122,6 +148,8 @@ def validate_native_receipt(receipt: Any, root: Path) -> dict:
         REQUIRED_PHASES
     ):
         raise ValueError("native acceptance contains too few observations")
+    editor = phases[2].get("observations")
+    validate_web_editor(editor.get("web_editor") if isinstance(editor, dict) else None)
     cleanup = receipt.get("cleanup", {})
     if (
         not isinstance(cleanup, dict)
@@ -253,6 +281,23 @@ def validate_report(report: dict, run_root: Path) -> dict:
     identities = report.get("identities", {})
     if not identities.get("app") or not identities.get("consumer"):
         raise ValueError("application and consumer identities are missing")
+    loaded = report.get("loaded_page")
+    resources = identities["app"].get("resource_root")
+    if (
+        not isinstance(loaded, str)
+        or not isinstance(resources, str)
+        or not Path(resources).is_absolute()
+    ):
+        raise ValueError("loaded page or packaged resource identity is missing")
+    page = urlsplit(loaded)
+    if (
+        page.scheme != "file"
+        or page.netloc
+        or page.query
+        or page.fragment
+        or unquote(page.path, errors="strict") != str(Path(resources) / "index.html")
+    ):
+        raise ValueError("loaded page differs from the packaged resource identity")
     return report
 
 
@@ -359,6 +404,13 @@ def _run(args, root: Path, output: Path, guard: TerminationGuard, cleanup: ExitS
             {
                 "checks": [
                     {
+                        "name": "Existing rendered view",
+                        "kind": "web",
+                        "runner": str(root / ".verdictui/run-workbench.py"),
+                        "subject": "workbench-connected-workflow",
+                    }
+                    if name == "consumer-b"
+                    else {
                         "name": "Consumer scenario",
                         "kind": "scenario",
                         "scenario": "consumer-settings",

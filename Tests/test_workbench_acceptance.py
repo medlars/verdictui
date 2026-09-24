@@ -49,6 +49,27 @@ def test_artifact_escape_is_refused(tmp_path):
         subject().artifact(tmp_path, {"path": "../outside", "sha256": "0" * 64})
 
 
+def synthetic_editor_observations():
+    original = {
+        "name": "Existing rendered view",
+        "kind": "web",
+        "runner": "/unit/renderer",
+        "subject": "workbench-connected-workflow",
+    }
+    renamed = {**original, "name": "Saved rendered view"}
+    return {
+        "renderer_original": original,
+        "renderer_renamed": renamed,
+        "url_mode": {
+            "name": renamed["name"],
+            "kind": "web",
+            "url": "http://127.0.0.1:1234/unit",
+            "expectText": "Controlled navigation",
+        },
+        "renderer_restored": dict(renamed),
+    }
+
+
 def synthetic_receipt(root) -> dict[str, Any]:
     """Synthetic validator unit data, never native/UI acceptance evidence."""
     module = subject()
@@ -115,9 +136,17 @@ def synthetic_receipt(root) -> dict[str, Any]:
     receipt = {
         "schema": 1,
         "status": "pass",
+        "loaded_page": (root / "Packaged 雪 Resources/index.html").as_uri(),
         "required_phase_ids": list(module.REQUIRED_PHASES),
         "phases": [
-            {"id": name, "status": "pass", "observations": {}} for name in module.REQUIRED_PHASES
+            {
+                "id": name,
+                "status": "pass",
+                "observations": {"web_editor": synthetic_editor_observations()}
+                if name == "edit-save"
+                else {},
+            }
+            for name in module.REQUIRED_PHASES
         ],
         "assertions": 20,
         "cleanup": {"bridge_shutdown_awaited": True, "visible_windows": 0},
@@ -149,7 +178,10 @@ def synthetic_receipt(root) -> dict[str, Any]:
                 ],
             },
         ),
-        identities={"app": {"test": True}, "consumer": {"test": True}},
+        identities={
+            "app": {"resource_root": str(root / "Packaged 雪 Resources")},
+            "consumer": {"test": True},
+        },
     )
 
 
@@ -365,7 +397,7 @@ def test_real_wrapper_preserves_measured_layout_outcome(
         module,
         "load_identity",
         lambda _root: types.SimpleNamespace(
-            validate_app=lambda *_args: {"unit_fixture": True},
+            validate_app=lambda *_args: {"resource_root": str(template / "Packaged 雪 Resources")},
             validate_consumer=lambda *_args: {"unit_fixture": True},
         ),
     )
@@ -413,4 +445,92 @@ def test_measured_layout_verdict_must_match_recorded_exit_code(tmp_path):
     receipt = synthetic_receipt(tmp_path)
     receipt["layout_verdict"]["exit_code"] = 1
     with pytest.raises(ValueError, match="exit code disagree"):
+        module.validate_report(receipt, tmp_path)
+
+
+@pytest.mark.parametrize(
+    "mutation", ["missing", "malformed", "lost-subject", "mixed-url", "changed-runner"]
+)
+def test_web_editor_roundtrip_observations_are_required(tmp_path, mutation):
+    receipt = synthetic_receipt(tmp_path)
+    observed = receipt["phases"][2]["observations"]["web_editor"]
+    if mutation == "missing":
+        receipt["phases"][2]["observations"].clear()
+    elif mutation == "malformed":
+        receipt["phases"][2]["observations"] = None
+    elif mutation == "lost-subject":
+        observed["renderer_renamed"].pop("subject")
+    elif mutation == "mixed-url":
+        observed["url_mode"]["runner"] = observed["renderer_original"]["runner"]
+    else:
+        observed["renderer_restored"]["runner"] = "/changed/renderer"
+    with pytest.raises(ValueError, match="web editor roundtrip"):
+        subject().validate_native_receipt(receipt, tmp_path)
+
+
+def test_web_renderer_editor_browser_contract(tmp_path):
+    """Actual Chromium form behavior; native persistence is separately exercised."""
+    import sys
+
+    from playwright.sync_api import sync_playwright
+
+    path = SCRIPT.parent / "workbench-smoke.py"
+    spec = importlib.util.spec_from_file_location("editor_smoke", path)
+    assert spec and spec.loader
+    smoke = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = smoke
+    spec.loader.exec_module(smoke)
+    with sync_playwright() as engine:
+        browser = engine.chromium.launch()
+        try:
+            page = browser.new_page(viewport={"width": 1000, "height": 700})
+            page.add_init_script(smoke.MOCK_BRIDGE)
+            page.goto(
+                (SCRIPT.parents[1] / "Sources/VerdictUIWorkbench/Resources/index.html").as_uri()
+            )
+            smoke.receive(page, smoke.FIXTURE_STATE)
+            run = smoke.SmokeRun()
+            smoke.web_source_editing(page, "chromium", tmp_path, run)
+            assert len(run.passed) >= 12 and not run.failures
+        finally:
+            browser.close()
+
+
+def test_renderer_editor_png_is_required(tmp_path):
+    receipt = synthetic_receipt(tmp_path)
+    receipt["snapshots"] = [row for row in receipt["snapshots"] if row["phase"] != "web-renderer"]
+    with pytest.raises(ValueError, match="PNG phases"):
+        subject().validate_native_receipt(receipt, tmp_path)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ["missing", "build-tree", "remote", "query", "fragment", "root-missing", "root-relative"],
+)
+def test_loaded_page_must_match_packaged_resource_identity(tmp_path, mutation):
+    module = subject()
+    receipt = synthetic_receipt(tmp_path)
+    if mutation == "missing":
+        receipt.pop("loaded_page")
+    elif mutation == "build-tree":
+        receipt["loaded_page"] = (tmp_path / ".build/Resources/index.html").as_uri()
+    elif mutation == "remote":
+        receipt["loaded_page"] = "https://example.invalid/index.html"
+    elif mutation == "query":
+        receipt["loaded_page"] += "?replacement=true"
+    elif mutation == "fragment":
+        receipt["loaded_page"] += "#replacement"
+    elif mutation == "root-missing":
+        receipt["identities"]["app"].clear()
+        receipt["identities"]["app"]["unit_fixture"] = True
+    else:
+        receipt["identities"]["app"]["resource_root"] = "relative/Resources"
+    native_path = tmp_path / "native-report.json"
+    native = json.loads(native_path.read_text())
+    native.pop("loaded_page", None)
+    if "loaded_page" in receipt:
+        native["loaded_page"] = receipt["loaded_page"]
+    native_path.write_text(json.dumps(native))
+    receipt["native_report"]["sha256"] = module.digest(native_path)
+    with pytest.raises(ValueError, match="loaded page"):
         module.validate_report(receipt, tmp_path)
