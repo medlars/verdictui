@@ -34,7 +34,7 @@ final class WebSessionIntegrationTests: XCTestCase {
             let session = try XCTUnwrap(attached["sessionId"]?.stringValue)
             // Fixed read-only expression: never disclose credentials or query values.
             let state = try await transport.send(method: "Runtime.evaluate", params: [
-                "expression": .string("({stored:localStorage.getItem('task-complete')==='yes',status:document.getElementById('status').textContent,protocol:location.protocol})"),
+                "expression": .string("({stored:localStorage.getItem('task-complete')==='yes',status:document.getElementById('status').textContent,protocol:location.protocol,origin:location.origin})"),
                 "returnByValue": .bool(true)], sessionID: session)
             await transport.close()
             guard case let .object(remote) = state["result"], case let .object(value) = remote["value"], state["exceptionDetails"] == nil else {
@@ -42,6 +42,34 @@ final class WebSessionIntegrationTests: XCTestCase {
             }
             return value
         } catch { await transport.close(); throw error }
+    }
+
+    /// Metadata only: retain shutdown/profile evidence without emitting stored values.
+    private func profileDiskState(root: URL) -> [String: CDPValue] {
+        let profile = root.appendingPathComponent("login/Default")
+        let preferences = profile.appendingPathComponent("Preferences")
+        var result: [String: CDPValue] = [:]
+        do {
+            if FileManager.default.fileExists(atPath: preferences.path) {
+                let parsed = try JSONSerialization.jsonObject(with: Data(contentsOf: preferences)) as? [String: Any]
+                let state = parsed?["profile"] as? [String: Any]
+                if let exitType = state?["exit_type"] as? String { result["exitType"] = .string(exitType) }
+                if let exitedCleanly = state?["exited_cleanly"] as? Bool { result["exitedCleanly"] = .bool(exitedCleanly) }
+            }
+            let database = profile.appendingPathComponent("Local Storage/leveldb")
+            if FileManager.default.fileExists(atPath: database.path) {
+                var sizes: [String: CDPValue] = [:]
+                for name in try FileManager.default.contentsOfDirectory(atPath: database.path) {
+                    let attributes = try FileManager.default.attributesOfItem(atPath: database.appendingPathComponent(name).path)
+                    if let size = attributes[.size] as? NSNumber { sizes[name] = .number(size.doubleValue) }
+                }
+                result["localStorageFileSizes"] = .object(sizes)
+            }
+        } catch {
+            let failure = error as NSError
+            result["metadataUnavailable"] = .string("\(failure.domain):\(failure.code)")
+        }
+        return result
     }
 
     func testRealPageRendersJudgesAndTrustedClickChangesApplication() async throws {
@@ -133,14 +161,16 @@ final class WebSessionIntegrationTests: XCTestCase {
             let closeStart = ContinuousClock.now
             try await manager.close(profile: "login")
             let closeElapsed = closeStart.duration(to: .now)
+            let diskAfterClose = profileDiskState(root: root)
             _ = try await manager.open(profile: "login", url: XCTUnwrap(url.url))
             let storedAfter = try await persistedTaskState(root: root)
             let persisted = try await manager.verify(profile: "login", expectText: "Task complete")
             let persistedEvidence = String(decoding: try JSONEncoder().encode(persisted), as: UTF8.self)
             XCTAssertFalse(persistedEvidence.contains(secret)); XCTAssertFalse(persistedEvidence.contains(badSecret))
             let diagnostic: [String: CDPValue] = ["before": .object(storedBefore), "after": .object(storedAfter),
-                "closeDuration": .string(String(describing: closeElapsed))]
+                "closeDuration": .string(String(describing: closeElapsed)), "diskAfterClose": .object(diskAfterClose)]
             print("PROFILE-PERSISTENCE " + String(decoding: try JSONEncoder().encode(diagnostic), as: UTF8.self))
+            XCTAssertEqual(storedAfter["origin"], storedBefore["origin"], "reopen must retain the same storage origin")
             XCTAssertEqual(storedAfter["stored"], .bool(true), "storage must survive normal close/reopen")
             XCTAssertEqual(persisted.status, .pass, persistedEvidence)
             await manager.closeAll()
