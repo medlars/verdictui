@@ -21,6 +21,10 @@ STAMP = Path("Contents/Resources/WorkbenchBuild.json")
 RESOURCE_ROOT = Path(
     "Contents/Resources/VerdictUI_VerdictUIWorkbench.bundle/Contents/Resources/Resources"
 )
+RESOURCE_ROOTS = (
+    RESOURCE_ROOT,
+    Path("Contents/Resources/VerdictUI_VerdictUIWorkbench.bundle/Resources"),
+)
 
 
 def _digest_paths(root: Path, paths: list[Path]) -> str:
@@ -173,6 +177,28 @@ def stamp_app(root: Path, app: Path, before: str, configuration: str, toolchain:
     )
 
 
+def packaged_resource_root(app: Path) -> Path:
+    """Admit one SwiftPM layout; refuse ambiguous or redirected resource trees."""
+    candidates = []
+    for relative in RESOURCE_ROOTS:
+        current = app
+        for component in relative.parts:
+            current /= component
+            try:
+                info = current.lstat()
+            except FileNotFoundError:
+                break
+            if stat.S_ISLNK(info.st_mode):
+                raise ValueError("packaged resource ancestor symlink refused")
+            if not stat.S_ISDIR(info.st_mode):
+                raise ValueError("packaged resource ancestor is not a directory")
+        else:
+            candidates.append(current)
+    if len(candidates) != 1:
+        raise ValueError("packaged Workbench resources are missing or ambiguous")
+    return candidates[0]
+
+
 def validate_app(root: Path, app: Path) -> dict[str, Any]:
     root = root.resolve(strict=True)
     app = app.resolve(strict=True)
@@ -188,7 +214,7 @@ def validate_app(root: Path, app: Path) -> dict[str, Any]:
         timeout=15,
     )
     resources = root / "Sources/VerdictUIWorkbench/Resources"
-    actual_resources = app / RESOURCE_ROOT
+    actual_resources = packaged_resource_root(app)
     if _digest_paths(resources, [resources]) != _digest_paths(actual_resources, [actual_resources]):
         raise ValueError("packaged Workbench resources do not match current source")
     binary = app / "Contents/MacOS/VerdictUIWorkbench"
@@ -198,6 +224,7 @@ def validate_app(root: Path, app: Path) -> dict[str, Any]:
     return {
         **receipt,
         "app": str(app),
+        "resource_root": str(actual_resources),
         "binary_sha256": file_sha256(binary),
         "helper_sha256": file_sha256(helper),
         "stamp_sha256": file_sha256(app / STAMP),

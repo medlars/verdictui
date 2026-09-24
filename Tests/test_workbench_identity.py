@@ -2,6 +2,7 @@
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -76,6 +77,31 @@ def test_changed_source_during_build_cannot_receive_stamp(project, packaged):
 def test_packaged_assets_cannot_be_substituted_despite_matching_source_stamp(project, packaged):
     (packaged / identity.RESOURCE_ROOT / "index.html").write_text("stale rendered content")
     with pytest.raises(ValueError, match="resources"):
+        identity.validate_app(project, packaged)
+
+
+def test_flat_swiftpm_resources_are_validated(project, packaged):
+    flat = packaged / "Contents/Resources/VerdictUI_VerdictUIWorkbench.bundle/Resources"
+    (packaged / identity.RESOURCE_ROOT).rename(flat)
+    assert identity.validate_app(project, packaged)["resource_root"] == str(flat)
+    (flat / "index.html").write_text("substituted flat resources")
+    with pytest.raises(ValueError, match="resources"):
+        identity.validate_app(project, packaged)
+
+
+def test_two_packaged_resource_roots_are_ambiguous(project, packaged):
+    flat = packaged / "Contents/Resources/VerdictUI_VerdictUIWorkbench.bundle/Resources"
+    shutil.copytree(packaged / identity.RESOURCE_ROOT, flat)
+    with pytest.raises(ValueError, match="ambiguous"):
+        identity.validate_app(project, packaged)
+
+
+def test_packaged_resource_parent_cannot_redirect_outside_app(project, packaged, tmp_path):
+    parent = (packaged / identity.RESOURCE_ROOT).parent
+    external = tmp_path / "redirected-resources"
+    parent.rename(external)
+    parent.symlink_to(external, target_is_directory=True)
+    with pytest.raises(ValueError):
         identity.validate_app(project, packaged)
 
 

@@ -7,6 +7,22 @@ _TEST = "Tests/test_workbench_identity.py::"
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="Workbench accepts ambiguous packaged resource layouts",
+        path=_SOURCE,
+        old="if len(candidates) != 1:",
+        new="if not candidates:",
+        test=_TEST + "test_two_packaged_resource_roots_are_ambiguous",
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
+        name="Workbench follows a redirected packaged resource parent",
+        path=_SOURCE,
+        old='if stat.S_ISLNK(info.st_mode):\n                raise ValueError("packaged resource ancestor symlink refused")\n            if not stat.S_ISDIR(info.st_mode):',
+        new="if not current.is_dir():",
+        test=_TEST + "test_packaged_resource_parent_cannot_redirect_outside_app",
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
         name="Workbench scalar engine output bypasses unavailable handling",
         path="scripts/workbench_coverage.py",
         old="or not isinstance(verdict, dict)",
