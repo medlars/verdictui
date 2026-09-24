@@ -5,10 +5,10 @@ cd "$(dirname "$0")/.."
 echo "=== VerdictUI Dev ==="
 
 echo "Building (kernel + probe + tests)..."
-swift build --build-tests
+swift build --build-system native --build-tests
 
 echo "Testing..."
-swift test
+swift test --build-system native
 
 echo ""
 echo "PM: python3.14 scripts/verdictui-pm.py --quick"

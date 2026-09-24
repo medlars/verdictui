@@ -179,7 +179,18 @@ def run_named_test(test: str, runner: Runner = Runner.SWIFT) -> subprocess.Compl
     # very asymmetry this closes. Touching a handful of files costs a rebuild of
     # one test target and buys a witness that judges the code on disk.
     refresh_macro_expansions()
-    return run(["swift", "test", "--filter", test, "-Xswiftc", "-warnings-as-errors"])
+    return run(
+        [
+            "swift",
+            "test",
+            "--build-system",
+            "native",
+            "--filter",
+            test,
+            "-Xswiftc",
+            "-warnings-as-errors",
+        ]
+    )
 
 
 class SweepAborted(Exception):
