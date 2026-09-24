@@ -93,6 +93,32 @@ remains scoped by [product-adoption.md](product-adoption.md).
 
 The installed background wrapper was also checked, not only the hook script:
 17 supported file-extension edit cases reached an actual configured web check;
-passing, failing and unavailable controls preserved the CLI result. This proves
-dispatch and configured-target execution, not automatic discovery of all Swift
-or AppKit views. INS-63190DA7 remains partial for unconfigured product coverage.
+passing, failing and unavailable controls preserved the CLI result. These are
+wrapper controls, not proof that the current Codex host dispatches an edit hook.
+After activating the native patch adapter, a real Codex `apply_patch` edit in a
+private declared web project produced no automatic attempt or coverage receipt.
+Host dispatch remains unavailable; INS-63190DA7 also remains partial for
+unconfigured product coverage.
+
+## Automatic source preservation follow-up
+
+Published Claude configuration PRs 59 and 60 were activated after exact-merge CI
+passed. The shared Codex hook symlink, client settings, tracked peer contents and
+staged entries were preserved. Installed controls passed (192 focused and 19
+legacy tests). The later Git index differed in raw bytes; its reported entries
+and flags remained identical after omitting stat-cache fields. No index was
+restored or peer change overwritten.
+
+A fresh Claude client with normal hooks connected to all 18 installed tools and
+called `list_scenarios`. Its actual SessionEnd automatically recorded successful
+boundary attempt `ee725261d24b403bba27435af8bc0780`, referencing archived event
+`fa59a26d72454f5e9eec9ae4a76fcfbc`. The 721,659-byte transcript restored exactly
+against its original (SHA-256
+`268484e3ad2e82594bff2e8867f19fa4e912476ae4daee0b0294afbaf93d72a0`).
+The private evidence is retained under AgentPromptArchive client receipts in
+`claude-followup-boundaries-20260924/automatic-boundary-readback.json`.
+
+Boundary starts and outcomes are now durable metadata. A started capture without
+an outcome remains unavailable; later success cannot erase that gap. This proves
+the observed client boundary, not that every historic or future session is
+complete. Missing dispatch and missing original sources remain explicit states.
