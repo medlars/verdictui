@@ -447,7 +447,7 @@ class VerdictUISmokeMixin:
         }
 
     def stage_workbench(self) -> dict:
-        """Require complete measured flows in both desktop rendering engines."""
+        """Require layout smoke plus the real packaged native bridge workflow."""
         result = subprocess.run(
             [
                 sys.executable,
@@ -467,6 +467,69 @@ class VerdictUISmokeMixin:
             re.MULTILINE,
         )
         passed = result.returncode == 0 and measured is not None
+        if passed:
+            try:
+                prepared = subprocess.run(
+                    [
+                        "bash",
+                        str(S.PROJECT_ROOT / "scripts/build-workbench-acceptance.sh"),
+                        "debug",
+                    ],
+                    cwd=S.PROJECT_ROOT,
+                    capture_output=True,
+                    text=True,
+                    timeout=900,
+                )
+                if prepared.returncode != 0:
+                    return {
+                        "passed": False,
+                        "detail": "native Workbench preparation failed: "
+                        + (prepared.stderr or prepared.stdout)[-700:],
+                    }
+                inputs = json.loads(
+                    (S.PROJECT_ROOT / "dist/workbench-acceptance-inputs.json").read_text()
+                )
+                log_root = S.PROJECT_ROOT / "logs"
+                log_root.mkdir(exist_ok=True)
+                attempt = tempfile.mkdtemp(prefix="workbench-native-", dir=log_root)
+                native = subprocess.run(
+                    [
+                        sys.executable,
+                        str(S.PROJECT_ROOT / "scripts/workbench-acceptance.py"),
+                        "--app",
+                        inputs["app"],
+                        "--consumer-runner",
+                        inputs["consumer_runner"],
+                        "--consumer-build-receipt",
+                        inputs["consumer_build_receipt"],
+                        "--output",
+                        attempt + "/run",
+                    ],
+                    cwd=S.PROJECT_ROOT,
+                    capture_output=True,
+                    text=True,
+                    timeout=40,
+                )
+                observed = re.search(
+                    r"^WORKBENCH ACCEPTANCE PASS: ([1-9][0-9]*) assertions, 10/10 native phases complete$",
+                    native.stdout,
+                    re.MULTILINE,
+                )
+                if native.returncode != 0 or observed is None:
+                    return {
+                        "passed": False,
+                        "detail": "native Workbench acceptance unavailable or failed: "
+                        + (native.stderr or native.stdout)[-700:],
+                    }
+                return {
+                    "passed": True,
+                    "detail": (measured.group(0) if measured else "") + "; " + observed.group(0),
+                }
+            except (OSError, ValueError, KeyError, subprocess.TimeoutExpired) as error:
+                return {
+                    "passed": False,
+                    "detail": f"native Workbench acceptance unavailable: {error}",
+                }
         return {
             "passed": passed,
             "detail": measured.group(0)

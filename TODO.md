@@ -13,6 +13,8 @@
 
 - [ ] (P1) Final 1.1.4 full PM: native fixture reported changed foreground application or global cursor; other technical stages passed (B99.4). Await the requested quiet window and remeasure without weakening noninterference checks. measured: 2026-09-23; falsify: `python3.14 scripts/product-smoke.py --binary .build/debug/verdictui`.
 
+- [ ] (2026-09-24) Add quiet native Workbench acceptance: actual bundled WKWebView and bridge, isolated consumer/helper PASS/FAIL, saved checks, running motion/cancellation, persisted history, native PNGs and DOM tree. Require source-bound prebuilt inputs and nonempty evidence in PM/CI; no mocks, activation, or global state writes.
+
 - [ ] (2026-09-23) Admit VerdictUI's real connected Workbench through an explicit product-owned AppKit runner: require current packaged source identity and actual phase/DOM/image evidence, invalidate old coverage on every attempt, and keep independent paint review separate. Prebuild outside the edit-hook budget; never replace missing evidence with the demonstration catalog.
 
 - [ ] (P1) Isolate the stock MCP malformed-input test from consumer runner discovery; preserve full pytest failure/timeout evidence. Replace the oversized browser fixture with a real three-candidate snapshot tested on both sides of the unchanged cumulative 4096-candidate budget; retain the direct enrichment witness and exact refusal before remote work. Re-run focused controls, mutations, and the full PM/CI before 1.1.4 publication.

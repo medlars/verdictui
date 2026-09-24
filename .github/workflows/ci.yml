@@ -35,6 +35,9 @@ jobs:
       - name: Swift version
         run: swift --version
 
+      - name: Install native snapshot validator
+        run: python3.14 -m pip install Pillow==12.3.0
+
       # Warnings-as-errors mirrors the PM's SWIFT_STRICT_FLAGS — keep in sync.
       - name: Build (including test targets, zero-warning)
         run: swift build --build-tests -Xswiftc -warnings-as-errors
@@ -54,6 +57,32 @@ jobs:
         run: |
           set -o pipefail
           swift run VerdictUIDemo | python3 -c "import sys, json; json.load(sys.stdin)"
+
+      - name: Prepare current native Workbench and consumer
+        run: bash scripts/build-workbench-acceptance.sh debug
+
+      - name: Verify real native Workbench workflow
+        run: |
+          python3.14 - <<'PY'
+          import json, pathlib, subprocess
+          root = pathlib.Path.cwd()
+          inputs = json.loads((root / 'dist/workbench-acceptance-inputs.json').read_text())
+          subprocess.run(['python3.14', 'scripts/workbench-acceptance.py',
+              '--app', inputs['app'], '--consumer-runner', inputs['consumer_runner'],
+              '--consumer-build-receipt', inputs['consumer_build_receipt'],
+              '--output', str(root / 'logs/workbench-native-ci')], check=True, timeout=40)
+          PY
+
+      - name: Retain native Workbench observations
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: workbench-native-observations
+          path: |
+            logs/workbench-native-ci/*.json
+            logs/workbench-native-ci/*.png
+            logs/workbench-native-ci/native.log
+          if-no-files-found: warn
 
       # ── Governance V2 S20: typed run-v2 evidence ─────────────────────────
       #
@@ -307,5 +336,5 @@ jobs:
 
       - name: Python test suite (PM + kernel symbol audit)
         run: |
-          pip install --quiet pytest
+          pip install --quiet pytest Pillow==12.3.0
           python3 -m pytest Tests/ -q

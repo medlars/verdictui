@@ -3,6 +3,7 @@
   --mist:#eeebf6;
   --ink:#252337;
   --secondary:#686579;
+  --muted:#625b72;
   --iris:#6653cc;
   --iris-dark:#5040af;
   --glass:#177c68;
@@ -1324,12 +1325,12 @@ progress::-webkit-progress-value {
     opacity:.3
   }
 }
-/* Secondary information remains readable against the pearl surface. */
-.project-path,.section-heading p,.empty-state p,.save-bar p,.history-summary p,.field-hint,.finding-node,.sidebar-empty {
-  color:#796e86
-}
-.quiet-badge,.verification-copy .stage-footnote {
-  color:#7e718c
+/* Informative small text has at least 4.5:1 contrast on pearl and sidebar mist. */
+.engine-line,.sidebar-label,.eyebrow,.page-section-heading .eyebrow,.workspace-footer,
+.project-path,.section-heading p,.empty-state p,.save-bar p,.history-summary p,
+.field-hint,.finding-node,.sidebar-empty,.quiet-badge,.verification-copy .stage-footnote,
+.field input::placeholder {
+  color:var(--muted)
 }
 .check-chip {
   max-width:100%;
