@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.1.3] — 2026-09-23
+
+- Added an explicit project MCP runner so installed clients enter this repository's declared registry without recursing into the stock CLI.
+- Excluded disposable Swift `.build-*` directories and generated indexes from consumer source scans. Source/resource edits still invalidate warm hosts; scan limits and failed-build refusal remain enforced.
+- Recovered original cross-provider instruction sources and documented separate notification, adoption and visual-evidence obligations.
+
 ## [1.1.2] — 2026-09-23
 
 - Fixed real-browser snapshots for repeated layout records, hidden frame owners,

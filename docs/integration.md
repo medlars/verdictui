@@ -73,6 +73,10 @@ runner that delegates back to the launcher is rejected instead of recursing.
 One-shot commands use process replacement. Long-lived MCP/daemon commands use
 the broker; compiler output remains on stderr and protocol stdout stays framed.
 EOF or termination shuts down its child.
+VerdictUI's own repository uses `VerdictUIProjectRunner`, an explicit host for
+its self-test registry. Pointing its manifest back to the stock `verdictui`
+launcher caused installed MCP clients to fail initialization in a clean checkout.
+These self-test scenarios remain tool-development evidence, not consumer coverage.
 Invocations from a subdirectory resolve the nearest ancestor manifest and run
 with that project root as the working directory. Baselines and pixel artifacts
 therefore stay with the declaring project.
@@ -131,4 +135,7 @@ working copy.
 Consumer source scanning streams 64 KiB chunks, with a 256 MiB total-input,
 100,000-entry, and 10-second limit per scan. Exceeding a limit is unavailable.
 Generated build/cache trees (including dist, build, DerivedData, Pods and app
-bundles) are excluded; source files and resources remain content-hashed.
+bundles, Swift scratch directories named `.build-*`, and the generated `.vexp`
+index) are excluded; source files and resources remain content-hashed. The
+`.build-*` namespace is reserved for disposable build directories; a regular
+source file with that prefix is still hashed.

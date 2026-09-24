@@ -1,4 +1,5 @@
 {
-  "runner": ".build/release/verdictui",
-  "note": "VerdictUI's own scenarios ARE the demo catalog compiled into this binary, so the runner is the binary itself. A consumer points this at an executable of their own that links VerdictUIProbe and answers the same verbs."
+  "runner": ".build/debug/VerdictUIProjectRunner",
+  "buildProduct": "VerdictUIProjectRunner",
+  "note": "This runner explicitly registers VerdictUI's own test scenarios. It is self-test coverage, never evidence about another consumer. The installed launcher rebuilds this disposable host when project sources change."
 }

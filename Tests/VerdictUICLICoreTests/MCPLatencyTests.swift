@@ -101,6 +101,9 @@ final class MCPLatencyTests: XCTestCase {
             process = Process()
             process.executableURL = binary
             process.arguments = ["mcp"]
+            // Measure the stock transport; project rebuilding has independent
+            // acceptance and would wait on this swift test process's build lock.
+            process.currentDirectoryURL = FileManager.default.temporaryDirectory
             process.standardInput = input
             process.standardOutput = output
             process.standardError = FileHandle.nullDevice

@@ -4,7 +4,30 @@ Measured September 23, 2026. A library import, a registered manifest, an executa
 runner, and a verified installed app are different evidence states. None implies
 complete product coverage.
 
-## Read-only fleet census
+## Registry coverage census
+
+The follow-up census reads every row of `shared/pm-registry.json`, including
+missing roots, projects without PM scripts, and additional registered roots.
+At the September 23 measurement it contained **150 rows (128 PM projects and 22 non-PM entries) plus six additional
+roots**. All 150 lacked an explicit coverage policy and were reported
+**unavailable**, not failing products and not an assertion that they have no UI.
+The smaller directory search below is historical implementation evidence.
+
+The shared `ui_coverage` reader requires project-owned `.verdictui/coverage.json`
+and `checks.json`, then independently validates layout, paint and behavior
+receipts. Evidence is bound to current source, declarations, declared surfaces,
+and the latest started attempt. A new run invalidates a former passing receipt.
+Paint additionally requires an actual PNG/JPEG and a review of that image.
+Explicit exclusions need a project policy and reason; absence of a target cannot
+create an exclusion. Even complete receipts certify only the declared surfaces.
+
+The CEO's `--ui-coverage` command returns the complete inventory and exits 2 for
+missing/partial evidence, 1 for observed failure. Normal reports expose this
+separately from build grades; aftermath preserves it in the signed record.
+Project adoption remains incomplete until actual project observations satisfy
+these contracts. A census or installed safeguard is not adoption completion.
+
+## Earlier read-only directory census
 
 The census enumerated 80 non-hidden top-level directories under `~/Projects`,
 searched Swift/JSON sources for `VerdictUIProbe`, `VerdictUIAppKit`,
