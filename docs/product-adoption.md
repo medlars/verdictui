@@ -105,10 +105,43 @@ that failed receipt remains intact. A separate reconciliation and subsequent
 controls establish the consumer result. These are source-candidate results;
 installed 1.1.3 and the earlier signed 1.1.4 archive have not gained this feature.
 
-Current layout and paint admission is being refreshed after the final consumer
-documentation commit. Behavior remains unavailable: these preset view states
+PR44 published the consumer build budget and diagnostic-safe integration harness
+as `3992d662`. Both candidate CI `36059158162` and published CI `36061062514`
+passed six jobs, including native render snapshots; two dispatch-only GUI jobs
+were skipped. The final harness measured seventeen controls without skips.
+Current layout and paint admission must now be refreshed against the published
+consumer and final dependency. Behavior remains unavailable: these preset view states
 do not exercise actual user actions. See SagaMail's `docs/verdictui-adoption.md`
 for reproduction and the complete evidence boundary.
+
+## Sentinel and LaunchGate source checkpoints — September 24
+
+Sentinel's isolated candidate `05645bdf` supplies its real onboarding registry
+and compiled expectations to the shared runner. The normal support view passes;
+missing and squeezed real controls fail and remain outside normal checks.
+Twenty final CLI/MCP/daemon and harness controls passed without skips, including
+same-broker source reload and failed-build refusal. Four final brokers exited
+normally and retired their sockets. Fourteen harness mutations were detected
+with exact restoration. Raw compiler diagnostics are retained before strict
+protocol decoding; forced child cleanup remains a failure, and escaped
+descendant containment remains unverified. Three static PNGs from the preceding
+Swift-equivalent candidate were reviewed. Publication, current admitted paint,
+full product coverage and installed acceptance remain separate.
+
+LaunchGate candidate `5ae0108` exposes three actual Activity states and the real
+three-page Welcome view through its executable. It uses the original mark and
+real callbacks. Native and actual CLI/MCP controls distinguish the normal views
+from a planted offscreen control and reject actions absent from the current tree.
+Independent visual report `UIV-20260924-005` found a shared animation defect:
+semantic pages changed while pixels remained on the first page. The original
+FAIL remains intact. After the shared skip-animation repair, report
+`UIV-20260924-006` verified distinct pages, exact Back/repeat restoration and
+expected action states in both themes, with 317 measurements. Root directly
+inspected all six distinct Welcome images and six clearly derived Activity
+background views. This is windowless scene evidence, not installed/live input.
+The preexisting light-theme gold link contrast is separately recorded as
+`CIS-FB44A379`; the report does not certify complete accessibility. Final framework
+policy review, consumer publication and admitted receipts remain pending.
 
 ## Earlier read-only directory census
 
@@ -171,8 +204,8 @@ and report project coverage.
 
 ## Required adoption work
 
-1. Admit current layout and paint receipts for SagaMail's three-state consumer,
-   publish its verified cold-build configuration, and audit remaining settings and
+1. Admit current layout and paint receipts for SagaMail's published three-state
+   consumer and audit remaining settings and
    installed account flows separately from synthetic controls.
 2. Add project-owned checks for each actual product surface. Web targets need a
    reachable app URL and an expected rendered result. AppKit targets need their
