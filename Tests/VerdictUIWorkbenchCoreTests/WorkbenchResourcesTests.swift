@@ -28,6 +28,8 @@ final class WorkbenchResourcesTests: XCTestCase {
         let (bundle, _) = try fixture("Resources")
         try FileManager.default.createDirectory(at: bundle.appendingPathComponent("Contents/Resources/Resources"),
                                                withIntermediateDirectories: true)
+        try Data("<!doctype html><title>Other page</title>".utf8).write(
+            to: bundle.appendingPathComponent("Contents/Resources/Resources/index.html"))
         XCTAssertThrowsError(try WorkbenchResources.directory(in: bundle))
     }
 
