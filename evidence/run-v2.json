@@ -1,20 +1,20 @@
 {
   "authority": "ci_unprotected",
-  "completed_at": "2026-09-23T21:31:38.942889Z",
-  "content_digest": "b966a44465560d694c249b488db03908971fcc861b7866e142ba3e32f65a3fa3",
+  "completed_at": "2026-09-24T00:09:40.856100Z",
+  "content_digest": "3562fef72000b86aa5ab63a888c3c884f7e4df2e8d53e0b528c790f2b91f5995",
   "evaluator": {
     "name": "governance-v2.ci-emitter",
     "version": "1.0.0"
   },
-  "expires_at": "2026-09-24T21:31:38.942889Z",
+  "expires_at": "2026-09-25T00:09:40.856100Z",
   "project": {
     "aliases": [],
     "canonical_id": "verdictui",
-    "registry_version": "projects-shared@10cde76da6ada6007614fa7c560b3b9ea2d26434"
+    "registry_version": "projects-shared@f395e8f5c486b5e0e52607d47e602f3921822ad3"
   },
-  "run_id": "44385375-6e5c-475e-979e-7f30ce3d7a2a",
+  "run_id": "cbb03b67-f011-4c7e-9bae-012c0315ccff",
   "runner": {
-    "identity": "github-actions/run/35922242165",
+    "identity": "github-actions/run/35936559099",
     "kind": "ci",
     "os": "macOS",
     "python_version": "3.14.7"
@@ -22,11 +22,11 @@
   "schema_version": "2.0.0",
   "source": {
     "branch": "main",
-    "commit_sha": "10cde76da6ada6007614fa7c560b3b9ea2d26434",
+    "commit_sha": "f395e8f5c486b5e0e52607d47e602f3921822ad3",
     "dirty": false,
     "repo": "medlars/verdictui",
-    "source_end_fingerprint": "10cde76da6ada6007614fa7c560b3b9ea2d2643410cde76da6ada6007614fa7c",
-    "source_start_fingerprint": "10cde76da6ada6007614fa7c560b3b9ea2d2643410cde76da6ada6007614fa7c"
+    "source_end_fingerprint": "f395e8f5c486b5e0e52607d47e602f3921822ad3f395e8f5c486b5e0e52607d4",
+    "source_start_fingerprint": "f395e8f5c486b5e0e52607d47e602f3921822ad3f395e8f5c486b5e0e52607d4"
   },
   "stages": [
     {
@@ -36,30 +36,28 @@
       "evidence_refs": [
         {
           "kind": "log",
-          "locator": "github://medlars/verdictui/actions/runs/35922242165"
+          "locator": "github://medlars/verdictui/actions/runs/35936559099"
         }
       ],
-      "reason_code": "no_evidence",
+      "reason_code": "ok",
       "required": true,
-      "score": 0.0,
+      "score": 100.0,
       "stage_id": "tests",
-      "state": "FAIL"
+      "state": "PASS"
     }
   ],
-  "started_at": "2026-09-23T21:31:38.942889Z",
+  "started_at": "2026-09-24T00:09:40.856100Z",
   "summary": {
     "confidence": 1.0,
     "counts": {
       "applicable": 1,
-      "passed": 0,
+      "passed": 1,
       "required": 1
     },
-    "grade": "F",
-    "quality_score": 0.0,
-    "reasons": [
-      "no_evidence"
-    ],
-    "release_verdict": "BLOCKED",
+    "grade": "A",
+    "quality_score": 100.0,
+    "reasons": [],
+    "release_verdict": "PASS",
     "stale": false
   }
 }
