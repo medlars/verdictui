@@ -9,6 +9,7 @@ The lane that decides whether the budget is ASSERTED or merely RECORDED is
 """
 
 import re
+from pathlib import Path
 
 import pytest
 from pm_test_support import _PROJECT_ROOT, load_pm, pm_source
@@ -565,48 +566,117 @@ class TestStageMCPLatency:
 
 
 class TestNoSleepsInHarnessSource:
-    """Wave 3 exit gate: zero sleeps anywhere in the harness.
+    """UI settling never guesses readiness from elapsed sleep.
 
-    The product's claim is that verification is deterministic — settle returns
-    when the UI is quiet, not when a guessed interval elapses. A `sleep` in
-    Sources/ would be that claim quietly abandoned, and it is the single
-    easiest thing to add when a test is flaky, which is exactly when it is
-    most tempting and most wrong.
-
-    `VerdictClock` is the sanctioned exception: it IMPLEMENTS Swift's `Clock`
-    protocol, whose requirement is literally named `sleep(until:tolerance:)`,
-    and its whole purpose is to make waiting controllable rather than real.
+    Two external OS cleanup retries inspect waitid/group state under unchanged
+    monotonic deadlines. Darwin exit events can precede a waitable record, and
+    leader exit cannot establish group quiescence. Each exception names one
+    statement in one source file; moving, changing or duplicating it fails.
     """
 
     _PATTERN = re.compile(r"\b(?:Thread\.sleep|usleep|nanosleep)\b|(?<![.\w])sleep\s*\(")
+    _OWNER = "Sources/VerdictUIWeb/OwnedCommandProcess.swift"
+    _CLOCK = "Sources/VerdictUIProbe/VerdictClock.swift"
+    _WAIT = "Thread.sleep(forTimeInterval: 0.01)"
+    _MARKERS = frozenset({"group-quiescence", "waitid-readiness"})
+    _PREFIX = "verdictui-os-cleanup:"
+
+    @classmethod
+    def scan(cls, root: Path) -> list[str]:
+        offenders: list[str] = []
+        counts = dict.fromkeys(cls._MARKERS, 0)
+        for path in sorted((root / "Sources").rglob("*.swift")):
+            relative = path.relative_to(root).as_posix()
+            for number, line in enumerate(path.read_text().splitlines(), start=1):
+                code, _, comment = line.partition("//")
+                approved = False
+                if cls._PREFIX in comment:
+                    marker = comment.strip().removeprefix(cls._PREFIX)
+                    if marker in counts:
+                        counts[marker] += 1
+                    approved = (
+                        relative == cls._OWNER
+                        and code.strip() == cls._WAIT
+                        and comment.strip() == cls._PREFIX + marker
+                        and marker in cls._MARKERS
+                    )
+                    if not approved:
+                        offenders.append(f"{relative}:{number}: invalid OS cleanup marker")
+                if relative != cls._CLOCK and cls._PATTERN.search(code) and not approved:
+                    offenders.append(f"{relative}:{number}: unapproved sleep")
+        for marker, count in counts.items():
+            if count != 1:
+                offenders.append(f"OS cleanup marker {marker}: expected once, observed {count}")
+        return offenders
+
+    @classmethod
+    def fixture(cls, root: Path) -> Path:
+        owner = root / cls._OWNER
+        owner.parent.mkdir(parents=True)
+        owner.write_text(
+            "\n".join(f"{cls._WAIT} // {cls._PREFIX}{marker}" for marker in sorted(cls._MARKERS))
+            + "\n"
+        )
+        return owner
 
     def test_no_real_sleeps_outside_the_virtual_clock(self) -> None:
-        offenders: list[str] = []
-        for path in sorted((_PROJECT_ROOT / "Sources").rglob("*.swift")):
-            if path.name == "VerdictClock.swift":
-                continue  # implements Clock.sleep by design — see the class docstring
-            for number, line in enumerate(path.read_text().splitlines(), start=1):
-                code = line.split("//", 1)[0]
-                if self._PATTERN.search(code):
-                    rel = path.relative_to(_PROJECT_ROOT)
-                    offenders.append(f"{rel}:{number}: {line.strip()}")
-        assert not offenders, "sleeps found in harness source:\n" + "\n".join(offenders)
+        offenders = self.scan(_PROJECT_ROOT)
+        assert not offenders, "unapproved harness waits:\n" + "\n".join(offenders)
 
-    def test_the_detector_actually_fires(self, tmp_path, monkeypatch) -> None:
-        """The test above passes on an empty match set, so on its own it cannot
-        tell 'no sleeps' from 'the pattern stopped matching'. This plants one."""
-        fake = tmp_path / "Sources" / "VerdictUIProbe"
-        fake.mkdir(parents=True)
-        (fake / "Bad.swift").write_text("func wait() {\n    Thread.sleep(forTimeInterval: 1)\n}\n")
-        monkeypatch.setattr(_S, "PROJECT_ROOT", tmp_path)
-        # Re-run the same scan against the planted tree.
-        offenders = [
-            line
-            for path in (tmp_path / "Sources").rglob("*.swift")
-            for number, line in enumerate(path.read_text().splitlines(), start=1)
-            if self._PATTERN.search(line.split("//", 1)[0])
-        ]
-        assert offenders, "the sleep detector failed to notice a planted Thread.sleep"
+    def test_exact_external_os_sites_are_admitted(self, tmp_path) -> None:
+        self.fixture(tmp_path)
+        clock = tmp_path / self._CLOCK
+        clock.parent.mkdir(parents=True)
+        clock.write_text("func sleep(until: Instant) {}\n")
+        assert self.scan(tmp_path) == []
+
+    @pytest.mark.parametrize(
+        "relative",
+        [
+            "Sources/VerdictUIProbe/Bad.swift",
+            "Sources/VerdictUIWeb/Bad.swift",
+            "Sources/VerdictUIWeb/VerdictClock.swift",
+            _OWNER,
+        ],
+    )
+    def test_the_detector_actually_fires(self, tmp_path, relative) -> None:
+        self.fixture(tmp_path)
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a") as stream:
+            stream.write("func wait() { Thread.sleep(forTimeInterval: 1) }\n")
+        assert any("unapproved sleep" in item for item in self.scan(tmp_path))
+
+    @pytest.mark.parametrize(
+        "change",
+        [
+            "wrong-interval",
+            "duplicate",
+            "missing",
+            "wrong-path",
+            "unknown",
+            "unknown-extra",
+            "unmarked",
+        ],
+    )
+    def test_os_wait_exceptions_are_exact(self, tmp_path, change) -> None:
+        owner = self.fixture(tmp_path)
+        text = owner.read_text()
+        if change == "wrong-interval":
+            owner.write_text(text.replace("0.01", "1", 1))
+        elif change == "duplicate":
+            owner.write_text(text + text.splitlines()[0] + "\n")
+        elif change == "missing":
+            owner.write_text(text.splitlines()[0] + "\n")
+        elif change == "wrong-path":
+            owner.rename(owner.with_name("Other.swift"))
+        elif change == "unknown":
+            owner.write_text(text.replace("group-quiescence", "other"))
+        elif change == "unknown-extra":
+            owner.write_text(text + self._WAIT + " // " + self._PREFIX + "other\n")
+        elif change == "unmarked":
+            owner.write_text(text + self._WAIT + "\n")
+        assert self.scan(tmp_path), f"the scanner admitted {change}"
 
 
 class TestSLODocumentStructure:
