@@ -1,0 +1,22 @@
+#ifndef VERDICT_UI_PROCESS_GUARDIAN_H
+#define VERDICT_UI_PROCESS_GUARDIAN_H
+#include <sys/types.h>
+
+/* No arbitrary PID adoption: only this launch returns a retained child. The
+ * caller owns lifetime_fd and must retain BOTH returned children unreaped until
+ * group cleanup. The caller observes browser exit and closes lifetime_fd;
+ * the guardian independently detects caller death (including inherited writers).
+ * Like public fork(), this requires async-signal-safe registered child handlers;
+ * the controlled child path after fork returns calls only async-safe functions. */
+typedef struct {
+    pid_t guardian_pid;
+    pid_t browser_pid; /* discovery only; never signal authority */
+    int lifetime_fd;
+    int group_ready;
+    int error;
+} vui_guardian_launch_result;
+
+int vui_guardian_launch(const char *executable, char *const argv[],
+                        char *const environment[], int handshake_ms, int grace_ms,
+                        vui_guardian_launch_result *result);
+#endif

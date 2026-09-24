@@ -378,6 +378,10 @@
 | `Sources/VerdictUIWorkbenchCore/WorkbenchResources.swift` | Resolve exact native copied assets in nested and flat SwiftPM bundles | Active | 2026-09-24 |
 | `Tests/VerdictUIWorkbenchCoreTests/WorkbenchResourcesTests.swift` | Real filesystem layout and redirection refusal controls | Active | 2026-09-24 |
 
+| `Sources/VerdictUIProcessGuardian/include/VerdictUIProcessGuardian.h` | Narrow launch-owned C guardian contract retaining guardian and browser children; lifetime fd and READY ownership | Active | 2026-09-24 |
+| `Sources/VerdictUIProcessGuardian/ProcessGuardian.c` | Parent-death/EOF group containment, parent-only browser spawn, descriptor/signal isolation and bounded guardian shutdown | Active | 2026-09-24 |
+| `Tests/VerdictUIWebTests/BrowserCrashGuardianTests.swift` | Real owner crash, leaked writer, browser-first exit, startup/discovery/exec failure, high descriptor and retained-child refusal controls | Active | 2026-09-24 |
+
 ## Archived / Removed
 
 | File                                                    | Reason                                                                                    | Removed    |

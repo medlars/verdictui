@@ -8,7 +8,10 @@ private final class TestBrowserIdentity: BrowserProcessIdentity, @unchecked Send
     private let lock = NSLock()
     private var running: Bool
     private var sent: [Int32] = []
-    init(running: Bool) { self.running = running }
+    enum CleanupError: Error { case unavailable }
+    private let failCleanup: Bool
+    init(running: Bool, failCleanup: Bool = false) { self.running = running; self.failCleanup = failCleanup }
+    func finish() throws { if failCleanup { throw CleanupError.unavailable } }
     var isRunning: Bool { lock.lock(); defer { lock.unlock() }; return running }
     var signals: [Int32] { lock.lock(); defer { lock.unlock() }; return sent }
     func signal(_ value: Int32) {
@@ -31,6 +34,18 @@ final class BrowserProcessIdentityTests: XCTestCase {
         XCTAssertTrue(identity.signals.isEmpty, "termination must consult the original child, not PID liveness")
         browser = nil
         XCTAssertTrue(identity.signals.isEmpty, "deinit must not signal a recycled PID")
+    }
+
+    func testCleanupFailurePropagatesEvenWhenBrowserAlreadyExited() async throws {
+        let identity = TestBrowserIdentity(running: false, failCleanup: true)
+        let browser = HeadlessBrowser(process: identity,
+            endpoint: DevtoolsEndpoint(port: 12345, browserPath: "/devtools/browser/test"),
+            profileDirectory: FileManager.default.temporaryDirectory)
+        do {
+            try await browser.terminate(grace: 0)
+            XCTFail("cleanup failure must remain visible to the profile owner")
+        } catch TestBrowserIdentity.CleanupError.unavailable { }
+        XCTAssertTrue(identity.signals.isEmpty)
     }
 
     func testOwnedLiveChildStillReceivesTerminationAndStops() async throws {

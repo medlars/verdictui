@@ -7,6 +7,85 @@ _TEST = "VerdictUIWebTests."
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="guardian ignores parent death with leaked writer",
+        path="Sources/VerdictUIProcessGuardian/ProcessGuardian.c",
+        old="if (getppid() != parent) return 1;",
+        new="if (getppid() != parent && 0) return 1;",
+        test=_TEST + "BrowserCrashGuardianTests/testLeakedWriterCannotDefeatActualParentDeath",
+    ),
+    Mutation(
+        name="guardian ignores sole writer EOF",
+        path="Sources/VerdictUIProcessGuardian/ProcessGuardian.c",
+        old="return read(lifetime, &byte, 1) <= 0;",
+        new="(void)read(lifetime, &byte, 1); return 0;",
+        test=_TEST
+        + "BrowserCrashGuardianTests/testSoleLifetimeWriterCloseCleansGroupWhileParentStaysAlive",
+    ),
+    Mutation(
+        name="guardian kills leader without browser group",
+        path="Sources/VerdictUIProcessGuardian/ProcessGuardian.c",
+        old="(void)kill(0, SIGKILL);",
+        new="(void)kill(getpid(), SIGKILL);",
+        test=_TEST
+        + "BrowserCrashGuardianTests/testParentSIGKILLReapsBrowserGroupWithoutTouchingUnrelatedSentinel",
+    ),
+    Mutation(
+        name="guardian leaves high inherited descriptors open",
+        path="Sources/VerdictUIProcessGuardian/ProcessGuardian.c",
+        old="fd < descriptor_limit; ++fd",
+        new="fd < descriptor_limit && fd < 64; ++fd",
+        test=_TEST
+        + "BrowserCrashGuardianTests/testDescriptorsAboveLoweredLimitAreClosedAndBrowserSignalsReset",
+    ),
+    Mutation(
+        name="guardian browser escapes owned group",
+        path="Sources/VerdictUIProcessGuardian/ProcessGuardian.c",
+        old="posix_spawnattr_setpgroup(&attributes, guardian)",
+        new="posix_spawnattr_setpgroup(&attributes, guardian - guardian)",
+        test=_TEST
+        + "BrowserCrashGuardianTests/testParentSIGKILLReapsBrowserGroupWithoutTouchingUnrelatedSentinel",
+    ),
+    Mutation(
+        name="guardian browser keeps ignored signal handlers",
+        path="Sources/VerdictUIProcessGuardian/ProcessGuardian.c",
+        old="POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_SETSIGDEF |",
+        new="POSIX_SPAWN_SETPGROUP |",
+        test=_TEST
+        + "BrowserCrashGuardianTests/testDescriptorsAboveLoweredLimitAreClosedAndBrowserSignalsReset",
+    ),
+    Mutation(
+        name="guardian browser keeps blocked signal mask",
+        path="Sources/VerdictUIProcessGuardian/ProcessGuardian.c",
+        old="POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_CLOEXEC_DEFAULT",
+        new="POSIX_SPAWN_CLOEXEC_DEFAULT",
+        test=_TEST
+        + "BrowserCrashGuardianTests/testDescriptorsAboveLoweredLimitAreClosedAndBrowserSignalsReset",
+    ),
+    Mutation(
+        name="guardian browser first exit leaves writer open",
+        path="Sources/VerdictUIWeb/BrowserProcessIdentity.swift",
+        old="exitSource.setEventHandler { lifetime.closeWriter() }",
+        new="exitSource.setEventHandler { _ = lifetime }",
+        test=_TEST
+        + "BrowserCrashGuardianTests/testBrowserFirstExitCleansDescendantAndReleasesRetainedChildren",
+    ),
+    Mutation(
+        name="guardian cleanup forgets permanent ownership loss",
+        path="Sources/VerdictUIWeb/OwnedCommandProcess.swift",
+        old="if errno == ECHILD { reaped = true; retentionFailure = ECHILD }",
+        new="if errno == ECHILD { reaped = true }",
+        test=_TEST
+        + "BrowserCrashGuardianTests/testAlreadyReapedGuardianRevokesSignalAuthorityEvenWithCachedExit",
+    ),
+    Mutation(
+        name="guardian hides failed cleanup after browser exit",
+        path=_BASE + "HeadlessBrowser.swift",
+        old="guard process.isRunning else { try process.finish(); return }",
+        new="guard process.isRunning else { return }",
+        test=_TEST
+        + "BrowserProcessIdentityTests/testCleanupFailurePropagatesEvenWhenBrowserAlreadyExited",
+    ),
+    Mutation(
         name="web inline enrichment skips cumulative candidate reservation",
         path=_BASE + "WebInlineGeometry.swift",
         old="        try budget.reserveCandidates(candidates.count)",
@@ -1195,7 +1274,7 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="web dead owned process signals a recycled live pid on terminate",
         path=_BASE + "HeadlessBrowser.swift",
-        old="guard process.isRunning else { return }",
+        old="guard process.isRunning else { try process.finish(); return }",
         new="guard pid > 0 else { return }",
         test=_TEST
         + "BrowserProcessIdentityTests/testReusedLivePIDDoesNotAuthorizeTerminatingADeadChild",
@@ -1203,8 +1282,8 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="web dead owned process signals a recycled live pid on deinit",
         path=_BASE + "HeadlessBrowser.swift",
-        old="if process.isRunning { process.signal(SIGKILL) }",
-        new="if pid > 0 { process.signal(SIGKILL) }",
+        old="if process.isRunning { try? process.signal(SIGKILL) }",
+        new="if pid > 0 { try? process.signal(SIGKILL) }",
         test=_TEST
         + "BrowserProcessIdentityTests/testReusedLivePIDDoesNotAuthorizeTerminatingADeadChild",
     ),
