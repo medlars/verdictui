@@ -9,8 +9,11 @@ complete product coverage.
 The follow-up census reads every row of `shared/pm-registry.json`, including
 missing roots, projects without PM scripts, and additional registered roots.
 At the September 23 measurement it contained **150 rows (128 PM projects and 22 non-PM entries) plus six additional
-roots**. All 150 lacked an explicit coverage policy and were reported
-**unavailable**, not failing products and not an assertion that they have no UI.
+roots**. The initial census reported all 150 unavailable. After activating the
+reviewed shared reporting guard, a fresh canonical `ceo.py --ui-coverage` run
+reported **149 unavailable and one explicitly excluded headless library**
+(PM Base), exiting 2. These are evidence states, not failing products and not an
+assertion that the other projects have no UI.
 The smaller directory search below is historical implementation evidence.
 
 The shared `ui_coverage` reader requires project-owned `.verdictui/coverage.json`
@@ -26,6 +29,29 @@ missing/partial evidence, 1 for observed failure. Normal reports expose this
 separately from build grades; aftermath preserves it in the signed record.
 Project adoption remains incomplete until actual project observations satisfy
 these contracts. A census or installed safeguard is not adoption completion.
+
+The reporting guard was published in pm-base PR 219 and activated as a narrow
+overlay in the canonical shared library, preserving its existing peer edits,
+Git index and HEAD. Fresh canonical imports and 215 focused checks passed.
+This does not claim that the canonical mixed checkout equals the complete
+published PM Base release or that already-running processes reloaded it.
+
+## Actual client and consumer checks
+
+The actual Codex MCP connection exposed 18 tools and successfully observed the
+published VerdictUI 1.1.3 page, with zero errors and nine layout warnings. Its
+owned browser session was closed and the empty session list verified. This
+establishes client connectivity and semantic page observation, not paint quality
+or fleet adoption.
+
+A compiled PanoMac consumer runner, built beside the actual VerdictUI source,
+was also called through the Codex `judge_appkit` tool. Eight empty controller
+surfaces passed, two reported layout errors, and the planted truncation defect
+failed as intended. Measured native alignment rectangles explain the two
+apparent errors: decorative popup/button bounds extend outside their logical
+layout rectangles. The renderer correction and its genuine-defect controls are
+being verified separately. These empty-state results do not cover populated
+tables, async data, installed application behavior or paint.
 
 ## Earlier read-only directory census
 
