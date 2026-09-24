@@ -333,6 +333,7 @@
 | `Tests/VerdictUIWebTests/Fixtures/server.py` | server: behavioral and refusal regression coverage | Active | 2026-09-23 |
 | `Tests/VerdictUIWebTests/WebCredentialsTests.swift` | WebCredentialsTests: behavioral and refusal regression coverage | Active | 2026-09-23 |
 | `Tests/VerdictUIWebTests/WebFrameIntegrationTests.swift` | WebFrameIntegrationTests: behavioral and refusal regression coverage | Active | 2026-09-23 |
+| `Tests/VerdictUIWebTests/WebSessionLifecycleTests.swift` | Immediate-write HTTP-origin persistence across actual browser close/reopen, with fresh-profile isolation control | Active | 2026-09-24 |
 | `Tests/VerdictUIWebTests/WebSessionIntegrationTests.swift` | WebSessionIntegrationTests: behavioral and refusal regression coverage | Active | 2026-09-23 |
 | `Tests/VerdictUIWitnessTests/AXActionTests.swift` | AXActionTests: behavioral and refusal regression coverage | Active | 2026-09-23 |
 | `Tests/VerdictUIWitnessTests/NativeInputIntegrationTests.swift` | NativeInputIntegrationTests: behavioral and refusal regression coverage | Active | 2026-09-23 |
