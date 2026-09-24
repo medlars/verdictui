@@ -12,6 +12,7 @@ on:
       - Persist run-v2 evidence
       - Check Pinned GitHub Actions for Updates
       - CI
+      - Dependency Graph
     types:
       - completed
 
