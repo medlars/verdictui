@@ -7,6 +7,38 @@ _TEST = "VerdictUIWebTests."
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="web document fixture deletes evidence after browser retirement failure",
+        path="Tests/VerdictUIWebTests/WebFrameIntegrationTests.swift",
+        old="guard retirementFailures.isEmpty else { return }",
+        new="// browser retirement evidence ignored",
+        test=_TEST
+        + "WebFrameIntegrationTests/testDocumentFixtureRetainsEvidenceWhenBrowserRetirementFails",
+    ),
+    Mutation(
+        name="web document fixture deletes evidence after server retirement failure",
+        path="Tests/VerdictUIWebTests/WebFrameIntegrationTests.swift",
+        old="try await stopServer()",
+        new="try? await stopServer()",
+        test=_TEST
+        + "WebFrameIntegrationTests/testDocumentFixtureRetainsEvidenceWhenServerRetirementFails",
+    ),
+    Mutation(
+        name="web document fixture deletes evidence before server retirement completes",
+        path="Tests/VerdictUIWebTests/WebFrameIntegrationTests.swift",
+        old="try await stopServer()\n        guard retirementFailures.isEmpty else { return }\n        try FileManager.default.removeItem(at: root)",
+        new="guard retirementFailures.isEmpty else { return }\n        try FileManager.default.removeItem(at: root)\n        try await stopServer()",
+        test=_TEST
+        + "WebFrameIntegrationTests/testDocumentFixtureRemovesRootOnlyAfterBothRetirementsSucceed",
+    ),
+    Mutation(
+        name="web document fixture bypasses server retirement after browser failure",
+        path="Tests/VerdictUIWebTests/WebFrameIntegrationTests.swift",
+        old="try await stopServer()\n        guard retirementFailures.isEmpty else { return }",
+        new="guard retirementFailures.isEmpty else { return }\n        try await stopServer()",
+        test=_TEST
+        + "WebFrameIntegrationTests/testDocumentFixtureRetainsEvidenceWhenBrowserRetirementFails",
+    ),
+    Mutation(
         name="web document budget witness ignores browser retirement failure",
         path="Tests/VerdictUIWebTests/WebFrameIntegrationTests.swift",
         old="let retirementFailures = await manager.closeAll()",
