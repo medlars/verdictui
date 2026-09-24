@@ -111,6 +111,12 @@
 | `Sources/VerdictUICLICore/VerdictOutput.swift`                       | The stdout/stderr contract, injectable `OutputSink`, and the three-valued `ExitCode`                                                                    | Active | 2026-08-11 |
 | `Sources/VerdictUICLICore/SweepWire.swift`                           | Serializable sweep report — declared here so SwiftUI framework enums never gain a Codable conformance this package would own                            | Active | 2026-08-11 |
 | `Sources/verdictui/VerdictUIMain.swift`                              | The binary's `@main`. NOT named main.swift — that filename forbids `@main` and silently selects the sync overload (no.md #32)                           | Active | 2026-08-11 |
+| `specs/fleet-evidence-prevention.md` | Owner-authorized cross-project prevention scope, options and rollback. | Active | 2026-09-23 |
+| `specs/fleet-evidence-prevention-architecture.md` | Component boundaries and measured import census. | Active | 2026-09-23 |
+| `specs/fleet-evidence-prevention-steps.json` | Validated executable step contracts. | Active | 2026-09-23 |
+| `.decisions/2026-09-23-fleet-evidence.md` | Decision to reuse source and observed-outcome boundaries. | Active | 2026-09-23 |
+| `Sources/VerdictUIProjectRunner/VerdictUIProjectRunner.swift` | Explicit self-test registry host used by installed CLI/MCP clients in this checkout; avoids delegating back to the stock launcher | Active | 2026-09-23 |
+| `Tests/test_project_mcp_bootstrap.py` | Real external-launcher initialization, 18-tool discovery, and scenario invocation through the project host | Active | 2026-09-23 |
 | `Tests/VerdictUIKernelTests/BaselineStoreTests.swift`                | The destructive guard's refusals, the append-only audit log, name escaping, and SHA-256 against the published FIPS vectors                              | Active | 2026-08-11 |
 | `Tests/VerdictUICLICoreTests/VerdictEngineTests.swift`               | The command surface in-process — three-valued exit codes, and the Wave 5 baseline round trip (create → FAIL → accept → PASS → audit)                    | Active | 2026-08-11 |
 | `Tests/VerdictUICLICoreTests/CLIBinarySmokeTests.swift`              | Runs the BUILT binary — the only suite that can see a tool which refuses to start; negative-controlled via `xcrun xctest` (no.md #32)                   | Active | 2026-08-11 |

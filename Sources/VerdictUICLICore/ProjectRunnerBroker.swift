@@ -249,7 +249,7 @@ public enum ProjectRunnerBroker {
             let ignored: Set<String> = [
                 ".git", ".build", ".swiftpm", ".verdictui", "node_modules", ".venv", "logs",
                 ".DS_Store", ".worktrees", "dist", "build", "DerivedData", "Pods", ".cache",
-                "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".next", "coverage",
+                "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".next", "coverage", ".vexp",
             ]
             guard
                 let walker = FileManager.default.enumerator(
@@ -271,6 +271,7 @@ public enum ProjectRunnerBroker {
                 try checkBudget()
                 let values = try file.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey])
                 if ignored.contains(file.lastPathComponent)
+                    || (values.isDirectory == true && file.lastPathComponent.hasPrefix(".build-"))
                     || (values.isDirectory == true && ["app", "xcarchive", "xcresult"].contains(file.pathExtension)) {
                     walker.skipDescendants()
                     continue

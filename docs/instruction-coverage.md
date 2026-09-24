@@ -6,20 +6,28 @@ session files and 98 name-matched command-history entries. Human queued messages
 were included and duplicate enqueue records removed. Assistant summaries and
 tool output were not treated as original owner instructions.
 
-The original August founding transcripts were not recovered in the searched
-archives. Their surviving command-history prompts and project decisions are
-leads, not equivalent to complete original conversations. A follow-up read of all
-198 surviving August 3–4 history prompts across 27 session IDs did not recover
-the founding instructions; one ambiguous pasted prompt retained only a content
-hash. The detailed private
-source ledger stays outside this public repository.
+The original August 3–4 founding conversation has now been recovered from
+Remio's **Cursor** archive, alongside the August 17 PanoMac conversation and its
+later alert-surface decision. The earlier search of Claude's surviving JSONLs
+was incomplete across providers. Complete paginated exports were checked against
+the archive's advertised bytes and lines, hashed, and retained privately:
+9,837 lines / 1,197,042 bytes for the founding conversation. Displayed conversation
+text is preserved; missing native tool payloads are not reconstructed.
+
+Sources: [founding dialogue](http://127.0.0.1:17624/notes/mtno22ylun9rzhx6bqn),
+[PanoMac original request](http://127.0.0.1:17624/notes/mtno1zoeisrnkdxwyho),
+[later alert repair](http://127.0.0.1:17624/notes/mtno1zog97l0mfr2luc).
+Injected summaries, repeated audit templates and assistant proposals remain
+separate from original human instructions. The founding scope already included
+web apps, real browser login, concurrent sessions and combined observation;
+these were not new requirements introduced in September.
 
 | Owner requirement | Recorded previously? | Finalization work and required evidence |
 | --- | --- | --- |
 | Check LaunchGate and other real products, not only demonstrations | Yes, but the installed entrypoint still used a fixed demo registry | Public consumer runner, automatic incremental build, external-package CLI/MCP checks with deliberate passing and failing controls |
 | Installed tool, on demand and automatically after edits | Registered as INS-63190DA7; the old hook used the inherited working directory and only detected SwiftUI | Explicit project checks and corrected Swift/AppKit/web hook; no demo substitution |
 | CLI, API and MCP access to the developer's own Swift/AppKit UI | Yes | Shared engine, custom runner and live native routes; actual subprocess acceptance |
-| Notification-system repair combined with the virtual-rendering request | INS-2B146691 was marked implemented using documentation references | Rendering is now verified independently. The separate notification clause has no recovered specific defect or repair evidence; the combined record is corrected to partial rather than assuming it was fixed. |
+| Notification-system repair combined with the virtual-rendering request | INS-2B146691 was marked implemented using documentation references | The original combined prompt came from PanoMac. Link rendering to INS-0105EE8B and the notification clause to CTS-804BF3B6 / INS-84CFAEB8. PanoMac uses its own banner/history by the later standing decision; current installed visual acceptance must be recorded separately from code presence. Keep the original combined source intact. |
 | Both rendered scenarios and real running applications | Yes, explicitly confirmed in September | Keep both paths and test each independently |
 | Invisible real browser login and task execution | Yes; Wave 11 was saved but only lifecycle/transport foundations existed | Trusted input, accessible names, expected outcomes, isolated persistent profiles, no screenshot dependency |
 | Concurrent sessions without identity confusion or secret exposure | Yes | Profile ownership, actual multi-client checks, credential resolution and output/argv scans |
@@ -28,6 +36,9 @@ source ledger stays outside this public repository.
 | Warm consumer rebuild and crash isolation | Implementation plan promised it, but the compiled host lacked a broker | Rebuild/restart disposable consumer process; failed builds cannot certify stale code; same connection must recover |
 | Full installed SagaMail settings/account-aware testing and all-product adoption | Recorded in other project conversations; fixtures were not equivalent | Preserve a separate adoption census and consumer acceptance scope. A framework test does not certify every consumer screen or setting |
 | Browser-quality feedback without screenshots | Registered as INS-402715D8 | Structured discover/act/observe feedback, multi-frame handling, named controls and outcome findings |
+| Resume the build from the previous session | Direct founding message, line 1133 | AGENTS continuity protocol and wave-status must agree with current Git state |
+| Immaculate build with minimal errors | Direct founding message, line 1175 | Strict compiler/concurrency and lint gates; unavailable tests cannot count as passing |
+| Retain marketing decisions and the conversation for future reference | Direct founding message, line 1322 | Keep original private source and integrity receipts; business-decisions.md remains a labeled synthesis |
 | Better designs and architecture where warranted | Current owner instruction | Reconsider mechanisms against the requirements; keep observed results as the acceptance boundary |
 | CleanMyMac-inspired desktop UI with rich process motion, rendered with web technology | Added and explicitly selected in this session; registered as INS-FAE07628 | Bundled macOS workbench, real progress, editable checks and evidence; rendered and native bridge verification |
 

@@ -59,4 +59,18 @@ MUTATIONS: list[Mutation] = [
         new="hash.update(data: Data())",
         test="ProjectRunnerBrokerTests/testGeneratedTreesAreIgnoredButResourceEditsInvalidateGeneration",
     ),
+    Mutation(
+        name="generated Swift scratch builds consume source scan budget",
+        path="Sources/VerdictUICLICore/ProjectRunnerBroker.swift",
+        old='file.lastPathComponent.hasPrefix(".build-")',
+        new='file.lastPathComponent.hasPrefix(".never-generated-")',
+        test="ProjectRunnerBrokerTests/testScratchBuildsAndIndexesCannotExhaustSourceBudget",
+    ),
+    Mutation(
+        name="generated source indexes consume source scan budget",
+        path="Sources/VerdictUICLICore/ProjectRunnerBroker.swift",
+        old='"coverage", ".vexp",',
+        new='"coverage", ".never-index",',
+        test="ProjectRunnerBrokerTests/testScratchBuildsAndIndexesCannotExhaustSourceBudget",
+    ),
 ]

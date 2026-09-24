@@ -104,7 +104,7 @@ class TestStageCLISmoke:
         fake_swift_runner = types.SimpleNamespace(
             swiftpm_command_lock=lambda *_a, **_k: _mod.contextlib.nullcontext()
         )
-        kills = []
+        kills: list[tuple[int, int]] = []
         probes = []
         cleaned = []
         monkeypatch.setattr(_mod.subprocess, "Popen", lambda *_a, **_k: _FakeProc())

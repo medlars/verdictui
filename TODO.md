@@ -8,6 +8,14 @@
 - [x] (2026-09-23) Initial saved-plan delivery (subsequently reopened above): custom scenario runner, live-app MCP and verified input, web semantic verification and trusted input, isolated sessions, artifact smoke, truthful documentation and installed release. Plan: `docs/finalization-plan.md`. Delivered in v1.1.0; signed/notarized desktop and both installed CLI copies verified.
 
 ## P1 — High Priority
+
+- [x] (2026-09-23) Repair measured MCP startup scan: canonical checkout includes 1.08 GB of generated `.build-codex-verify` and `.vexp` data. Source/resource invalidation and scan bounds retained;22 focused tests and2/2 new mutation witnesses pass. Actual Claude project handshake connected after relocating the unused build artifact; installed1.1.3 and Codex client activation remain in the owner follow-up.
+
+- [x] (P1) CEO/stage_pytest: Classified VerdictUIProjectRunner as SwiftSyntax-free; full Python suite 499 passed, 3 explicitly skipped.
+
+- [ ] (2026-09-23) Owner follow-up: reconnect installed VerdictUI MCP in Codex and Claude with a real client catalog/handshake check; repair measured transport failures.
+- [ ] (2026-09-23) Owner follow-up: prevent loss of original instruction sources, preserve clause-level completion evidence, and enforce honest adoption/rendering coverage across registered projects through shared existing governance mechanisms.
+- [ ] (2026-09-23) Owner follow-up: recover the notification repair context and verify its actual outcome; preserve unknown context as unresolved rather than substituting an unrelated fix.
 - [x] (2026-09-23) CTS-B70C5383: delivered 1.1.2, including inline/positioned geometry, editor/frame capture and explicit paint qualification. Full PM A100 and release-source CI 35875644269 passed. Signed/notarized/stapled public archive was downloaded, verified and installed; desktop/helper and Homebrew passed real native/browser CLI/MCP acceptance. Installed public-site, 13 geometry/editor and resource-budget controls passed. Website ea3502a deployed as 03db89db, CI 35878331646 passed, served links/hash/geometry and both updated pages verified with the installed engine. Instruction records cite installed evidence; pre-existing MCP clients must reconnect to refresh their catalog.
 - [x] (2026-09-23) CEO/stage_todo_review: completed implementation is now recorded separately from pending release delivery. The original full run remains recorded as Grade B 86.9 with only this workflow item failing; no technical stage, priority of an unresolved defect, or test requirement was weakened. Rerun the PM before release.
 - [x] (2026-09-23) ScenarioState patch released in 1.1.1: initial view-construction publications removed; strict observer/mutation coverage, unchanged timing contract, full PM Grade A, CI and both installed artifact gates passed. Subsequent real-site browser defects were repaired and delivered in 1.1.2 above.

@@ -29,6 +29,7 @@ class TestPyrightResolvesTestSources:
         pyright = shutil.which("pyright")
         if pyright is None:
             pytest.skip("pyright not installed")
+            return
         test_sources = sorted(str(p) for p in (_PROJECT_ROOT / "Tests").glob("test_*.py"))
         assert test_sources, "no test sources found -- the guard is aimed at nothing"
         # B603 false positive: resolved pyright over this repo's own test files; no shell.

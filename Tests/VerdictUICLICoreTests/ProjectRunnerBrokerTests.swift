@@ -261,6 +261,27 @@ final class ProjectRunnerBrokerTests: XCTestCase {
         XCTAssertNotEqual(try session.fingerprint(), withAsset)
     }
 
+    func testScratchBuildsAndIndexesCannotExhaustSourceBudget() throws {
+        let (root, session) = try fixture()
+        let initial = try session.fingerprint()
+        for directory in [".build-codex-verify", ".build-release", ".vexp"] {
+            let output = root.appendingPathComponent(directory)
+            try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+            try Data(repeating: 1, count: 131_073).write(to: output.appendingPathComponent("generated.bin"))
+        }
+        XCTAssertEqual(try session.fingerprint(maximumBytes: 65_536), initial)
+        // Ordinary source names containing build remain part of the generation.
+        let source = root.appendingPathComponent("build-settings.swift")
+        try Data("first".utf8).write(to: source)
+        let first = try session.fingerprint()
+        try Data("other".utf8).write(to: source)
+        XCTAssertNotEqual(try session.fingerprint(), first)
+        let beforeHiddenSource = try session.fingerprint()
+        let hiddenSource = root.appendingPathComponent(".build-settings.swift")
+        try Data("source".utf8).write(to: hiddenSource)
+        XCTAssertNotEqual(try session.fingerprint(), beforeHiddenSource)
+    }
+
     func testSourceScanBudgetsRefuseExcessDataAndTime() throws {
         let (root, session) = try fixture()
         try Data(repeating: 1, count: 131_073).write(to: root.appendingPathComponent("asset.bin"))
