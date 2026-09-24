@@ -20,6 +20,8 @@ public enum WebAction: Sendable {
 /// commands for the same identity rather than interleaving navigation and input.
 /// Distinct WebSession actors run independently.
 public actor WebSession {
+    /// Chrome's orderly exit after Browser.close; measured ~5 s for SIGTERM on macOS.
+    static let orderlyExitGrace: TimeInterval = 10
     let profile: String
     let browser: HeadlessBrowser
     let transport: CDPTransport
@@ -199,6 +201,12 @@ public actor WebSession {
         closed = true
         let task = Task { [credentials, transport, browser, lock] in
             try await credentials.close()
+            // Signals are not a shutdown: SIGTERM takes ~5 s and the 1 s grace then
+            // SIGKILLs Chrome before it commits the profile (localStorage lost on
+            // loaded CI runners, CIS-4ADF5658). Browser.close runs Chrome's own
+            // orderly exit; the reply may never arrive because the socket closes.
+            _ = try? await transport.send(method: "Browser.close", timeout: .seconds(2))
+            _ = await HeadlessBrowser.awaitDeath(pid: browser.pid, within: Self.orderlyExitGrace)
             await transport.close()
             try await browser.terminate(grace: 1)
             lock.release()
