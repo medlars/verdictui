@@ -5,6 +5,7 @@ import pathlib
 import socketserver
 import sys
 import time
+import urllib.parse
 
 # Small real-browser payload; the witness preconsumes the cumulative budget.
 INLINE_BUDGET_CANDIDATES = 3
@@ -251,8 +252,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         elif self.path == "/slow":
             time.sleep(0.6)
             body = b"Network task complete"
-        elif self.path in ("/clean.html", "/login.html"):
-            body = (fixture_root / self.path[1:]).read_bytes()
+        elif urllib.parse.urlsplit(self.path).path in ("/clean.html", "/login.html"):
+            # login.html reads its credential digest from the query string.
+            body = (fixture_root / urllib.parse.urlsplit(self.path).path[1:]).read_bytes()
         else:
             self.send_error(404)
             return
