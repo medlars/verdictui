@@ -4,6 +4,36 @@ Updated September 24, 2026. A library import, a registered manifest, an executab
 runner, and a verified installed app are different evidence states. None implies
 complete product coverage.
 
+## September 24 final candidate checkpoint
+
+Framework `7928e90` passed local PM Grade A100 and exact CI `36064850073`.
+The packaged desktop passed 138 browser assertions and 48 quiet native bridge
+assertions. Nine original native screenshots were reviewed for readable state
+labels, consistent controls and compact layout. Apple accepted notarization
+`3482928b-201b-4b50-ae17-0ec4e34874fa`; signature, staple and Gatekeeper checks
+also passed after archive extraction. This artifact remains bound to `7928e90`.
+No installation followed. Native normal motion is unmeasured because macOS has
+reduced motion enabled; the captured progress frames correctly remain still.
+The later `0856d7d` changes test-only browser cleanup and its mutation controls,
+retaining profile and server evidence whenever retirement is uncertain.
+
+SagaMail's published `73b2d735` (only CI evidence after `3992d662`) was observed
+with dependency and signed helper `7928e90`. Its three real Junk Mail preset
+states pass declared checks and original screenshot review; the planted
+offscreen control fails. The source-bound local receipt admits layout and paint
+only. Behavior remains unavailable, and other tabs, live accounts, themes,
+viewports and installed operation remain outside these observations. The fleet's
+canonical checkout does not inherit a verification clone's receipt automatically.
+
+Sentinel `8820a47` passed 20 consumer controls, 29 strict native tests and two
+additional checks through the signed `7928e90` helper. The 20-control run retains
+its older launcher identity separately. Aggregate qualification was stopped
+before a legacy engine smoke that would start real scanner/sync loops. A test-only
+isolation repair is required before the genuine quick pipeline can run.
+LaunchGate `5ae0108` with dependency and helper `7928e90` passed 19 strict native
+checks and six actual CLI/MCP controls. Its final same-host pixel evidence covers
+both Welcome themes and Activity states; broader installed behavior is unmeasured.
+
 ## Registry coverage census
 
 The follow-up census reads every row of `shared/pm-registry.json`, including
