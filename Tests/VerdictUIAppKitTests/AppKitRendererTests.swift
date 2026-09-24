@@ -648,6 +648,41 @@ final class AppKitRendererTests: XCTestCase {
         }
     }
 
+    func testNativeControlSizesPassTapTargetWhileAnUndersizedButtonStillFails() {
+        _ = NSApplication.shared
+        for size: NSControl.ControlSize in [.mini, .small, .regular, .large] {
+            let root = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+            let button = NSButton(title: "Go", target: nil, action: nil)
+            button.bezelStyle = .rounded
+            let toolbarButton = NSButton(title: "Go", target: nil, action: nil)
+            toolbarButton.bezelStyle = .texturedRounded
+            let popup = NSPopUpButton()
+            popup.addItems(withTitles: ["All", "Selected"])
+            for (index, control) in [button, toolbarButton, popup].enumerated() {
+                control.controlSize = size
+                control.sizeToFit()
+                control.frame.origin = NSPoint(x: 20 + index * 120, y: 20)
+                root.addSubview(control)
+            }
+            let tree = AppKitRenderer.tree(for: root)
+            let findings = TapTargetRule().evaluate(
+                tree, context: .macOS(viewport: tree.frame, scenario: "native-control-sizes"))
+            XCTAssertTrue(findings.isEmpty, "Native size \(size) failed: \(findings)")
+            XCTAssertEqual(tree.children.count, 3)
+            XCTAssertTrue(tree.children.allSatisfy { $0.children.isEmpty })
+        }
+
+        let root = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+        let undersized = NSButton(title: "Go", target: nil, action: nil)
+        undersized.bezelStyle = .texturedRounded
+        undersized.identifier = .init("undersized-button")
+        undersized.frame = NSRect(x: 20, y: 20, width: 6, height: 6)
+        root.addSubview(undersized)
+        XCTAssertTrue(judge(root).findings.contains {
+            $0.rule == "tap-target" && $0.nodeID == "undersized-button"
+        })
+    }
+
     func testCustomButtonAndRootKeepTheirFullBounds() throws {
         _ = NSApplication.shared
         let root = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 200))
