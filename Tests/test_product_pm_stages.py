@@ -192,7 +192,9 @@ def test_workbench_stage_refuses_missing_native_acceptance(monkeypatch, tmp_path
             if "workbench-smoke.py" in args[1]
             else native
         )
-        return subprocess.CompletedProcess(args, 0, output, "WORKBENCH PHASE cleanup-end elapsed=0.1s")
+        return subprocess.CompletedProcess(
+            args, 0, output, "WORKBENCH PHASE cleanup-end elapsed=0.1s"
+        )
 
     monkeypatch.setattr(subprocess, "run", run)
     monkeypatch.setattr("verdictui_pm_smoke._run_workbench_native", run)
