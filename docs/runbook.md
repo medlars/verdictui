@@ -350,3 +350,11 @@ swift test --filter WitnessIntegrationTests/testRepeatedLaunches
 Assert two executed tests and zero skips before calling the launch-path check
 complete. The repaired September24 run executed both with zero failures; macOS
 recorded successful witness launches and no matching signing/crash failures.
+
+### Removed scenario controls
+
+The host intersects action registrations with the latest observed tree before
+reporting actions and refuses built-in acts on absent probe IDs. Scenario storage
+remains available when a view reappears. Explicit in-process custom mutations
+retain their existing ability to name a non-rendered evidence ID. This presence
+check does not infer hidden/disabled state that a consumer has not instrumented.
