@@ -7,11 +7,43 @@ _TEST = "Tests/test_workbench_identity.py::"
 
 MUTATIONS: list[Mutation] = [
     Mutation(
-        name="Workbench source scan ignores byte and file limits",
+        name="Workbench source scan ignores byte limits",
         path=_SOURCE,
-        old="if count > MAX_FILES or total > MAX_BYTES:",
+        old="if total > MAX_BYTES:",
         new="if False:",
-        test=_TEST + "test_scan_limits_are_unavailable_not_partial_fingerprints",
+        test=_TEST + "test_scan_limits_are_unavailable_not_partial_fingerprints[MAX_BYTES]",
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
+        name="Workbench source scan ignores directory entry budget",
+        path=_SOURCE,
+        old="if count > MAX_FILES or time.monotonic() > deadline:",
+        new="if time.monotonic() > deadline:",
+        test=_TEST + "test_directory_entries_count_against_scan_budget",
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
+        name="Workbench consumer ignores changed canonical template",
+        path=_SOURCE,
+        old='if value.get("fixture_template_sha256") != fixture_fingerprint(root / "examples/ConsumerApp"):',
+        new="if False:",
+        test=_TEST + "test_changed_canonical_consumer_invalidates_old_copied_runner",
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
+        name="Workbench discovery skips packaged app validation",
+        path=_SOURCE,
+        old="    validate_app(root, app)\n    validate_consumer(root, runner, receipt)",
+        new="    validate_consumer(root, runner, receipt)",
+        test=_TEST + "test_discovery_manifest_requires_both_current_builds[app]",
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
+        name="Workbench discovery skips consumer validation",
+        path=_SOURCE,
+        old="    validate_consumer(root, runner, receipt)\n    _write(",
+        new="    _write(",
+        test=_TEST + "test_discovery_manifest_requires_both_current_builds[consumer]",
         runner=Runner.PYTEST,
     ),
     Mutation(

@@ -360,6 +360,7 @@
 | `scripts/build-workbench.sh` | build-workbench: product UI, packaging or regression evidence | Active | 2026-09-23 |
 | `scripts/mutation_catalog/_workbench.py` | _workbench: product UI, packaging or regression evidence | Active | 2026-09-23 |
 | `scripts/workbench_identity.py` | Bound packaged UI and consumer binaries to current build inputs | Active | 2026-09-23 |
+| `scripts/build-workbench-acceptance.sh` | Explicit cold preparation of packaged Workbench and pinned real consumer | Active | 2026-09-23 |
 | `Tests/test_workbench_identity.py` | Reject stale binaries, source changes, invalid stamps and replaced assets | Active | 2026-09-23 |
 | `scripts/mutation_catalog/_workbench_adoption.py` | Workbench build identity admission mutation controls | Active | 2026-09-23 |
 | `Sources/VerdictUIWorkbench/WorkbenchAcceptance.swift` | Quiet real WKWebView/bridge workflow, native snapshots and observed DOM export | Active | 2026-09-24 |
