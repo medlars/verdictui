@@ -23,6 +23,11 @@ import uuid
 from pathlib import Path
 from typing import IO
 
+# INT32_MAX: a pid no live process holds, so the live check must report unavailable.
+UNUSED_PID = 2147483647
+# Poll interval for eventually(); short so a met condition is seen promptly.
+POLL_SECONDS = 0.05
+
 
 class AcceptanceError(RuntimeError):
     pass
@@ -159,7 +164,7 @@ def eventually(predicate, message, timeout=10):
         value = predicate()
         if value:
             return value
-        time.sleep(0.05)
+        time.sleep(POLL_SECONDS)
     raise AcceptanceError(message)
 
 
@@ -624,7 +629,7 @@ class Smoke:
             if code == 1:
                 checks[0]["expectText"] = "unseen-state"
             elif code == 2:
-                checks[1]["pid"] = 2147483647
+                checks[1]["pid"] = UNUSED_PID
             config.write_text(json.dumps({"checks": checks}))
             result = self.cli("check", "--project", project, code=code)
             require(

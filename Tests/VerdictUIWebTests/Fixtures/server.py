@@ -6,6 +6,13 @@ import socketserver
 import sys
 import time
 
+# One past WebInlineGeometry.Budget.candidates (4096): the page must be refused.
+INLINE_CANDIDATES_OVER_LIMIT = 4097
+# Long enough that the document scrolls far past any viewport.
+LONG_TEXT_LINES = 10000
+# Enough controls to exhaust the overlap lint's bounded work budget.
+OVERLAP_BUDGET_CONTROLS = 1500
+
 fixture_root = pathlib.Path(sys.argv[1])
 port_file = pathlib.Path(sys.argv[2])
 
@@ -166,7 +173,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             ).encode()
         elif self.path in ("/inline", "/inline-overlap", "/inline-budget"):
             if self.path == "/inline-budget":
-                content = "".join(f"<span>Item {i} </span>" for i in range(4097))
+                content = "".join(
+                    f"<span>Item {i} </span>" for i in range(INLINE_CANDIDATES_OVER_LIMIT)
+                )
             else:
                 content = (
                     '<p style="width:300px"><span id="label">Project templates:</span><span id="wrapped"> from beginner to advanced examples with source code and detailed instructions.</span></p>'
@@ -186,7 +195,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         elif self.path == "/long-text":
             body = (
                 '<!doctype html><html><body><pre style="font:16px/20px monospace">'
-                + "\n".join(f"Measured line {i}" for i in range(10000))
+                + "\n".join(f"Measured line {i}" for i in range(LONG_TEXT_LINES))
                 + "</pre></body></html>"
             ).encode()
         elif self.path == "/overlap-budget":
@@ -194,7 +203,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 "<!doctype html><html><body><main>"
                 + "".join(
                     f'<button style="display:block;width:160px;height:44px;margin:4px">Control {i}</button>'
-                    for i in range(1500)
+                    for i in range(OVERLAP_BUDGET_CONTROLS)
                 )
                 + "</main></body></html>"
             ).encode()
