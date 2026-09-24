@@ -33,6 +33,21 @@ final class ProjectScenariosTests: XCTestCase {
         }
     }
 
+    func testBuildPackageDefaultAndContainedDirectoriesDecode() throws {
+        for path in [nil, ".", "app", "app/.."] as [String?] {
+            try withTempProject { root in
+                try FileManager.default.createDirectory(at: root.appendingPathComponent(".verdictui"), withIntermediateDirectories: true)
+                try FileManager.default.createDirectory(at: root.appendingPathComponent("app"), withIntermediateDirectories: true)
+                var manifest = ["runner": "runner", "buildProduct": "Consumer"]
+                manifest["buildPackagePath"] = path
+                try JSONEncoder().encode(manifest).write(to: root.appendingPathComponent(".verdictui/config.json"))
+                let expected = path == "app" ? root.appendingPathComponent("app") : root
+                XCTAssertEqual(try ProjectScenarios.buildConfiguration(projectRoot: root)?.packageRoot.path,
+                               expected.resolvingSymlinksInPath().standardizedFileURL.path)
+            }
+        }
+    }
+
     func testNonfiniteBuildBudgetCannotBeReadAsAValidRunner() throws {
         for value in ["1e309", "-1e309", "NaN", "Infinity", "\"Infinity\""] {
             try withTempProject { root in

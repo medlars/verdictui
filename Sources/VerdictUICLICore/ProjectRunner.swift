@@ -127,7 +127,7 @@ public enum ProjectRunner {
         }
         let timeout = timeout ?? build.timeoutSeconds
         let arguments = [
-            "swift", "build", "--package-path", projectRoot.path,
+            "swift", "build", "--package-path", build.packageRoot.path,
             "--product=\(build.product)", "--configuration=\(build.configuration)", "--jobs", "2",
         ]
         let event = try JSONSerialization.data(

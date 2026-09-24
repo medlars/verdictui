@@ -8,6 +8,62 @@ from mutation_catalog_types import Mutation, Runner  # noqa: F401
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="nested consumer package path is ignored by Swift",
+        path="Sources/VerdictUICLICore/ProjectRunner.swift",
+        old='"--package-path", build.packageRoot.path',
+        new='"--package-path", projectRoot.path',
+        test="ProjectRunnerTests/testNestedBuildPackageUsesResolvedPathAndKeepsRunnerRootRelative",
+    ),
+    Mutation(
+        name="nested consumer package defaults to a subdirectory",
+        path="Sources/VerdictUICLICore/ProjectScenarios.swift",
+        old='resolvedBuildPackagePath(manifest.buildPackagePath ?? ".", projectRoot: projectRoot)',
+        new='resolvedBuildPackagePath(manifest.buildPackagePath ?? "app", projectRoot: projectRoot)',
+        test="ProjectScenariosTests/testBuildPackageDefaultAndContainedDirectoriesDecode",
+    ),
+    Mutation(
+        name="nested consumer package bypasses strict JSON decoding",
+        path="Sources/VerdictUICLICore/ProjectScenarios.swift",
+        old="buildPackagePath = values.contains(.buildPackagePath)",
+        new="buildPackagePath = false",
+        test="ProjectRunnerTests/testInvalidBuildPackagePathsRejectBeforeProcessLaunch",
+    ),
+    Mutation(
+        name="nested consumer package without build product is accepted",
+        path="Sources/VerdictUICLICore/ProjectScenarios.swift",
+        old="guard manifest.buildPackagePath == nil || manifest.buildProduct != nil else {",
+        new="guard true else {",
+        test="ProjectRunnerTests/testInvalidBuildPackagePathsRejectBeforeProcessLaunch",
+    ),
+    Mutation(
+        name="nested consumer package path syntax is unchecked",
+        path="Sources/VerdictUICLICore/ProjectScenarios.swift",
+        old='guard !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,\n            !path.contains("\\0"), !(path as NSString).isAbsolutePath else {',
+        new="guard true else {",
+        test="ProjectRunnerTests/testInvalidBuildPackagePathsRejectBeforeProcessLaunch",
+    ),
+    Mutation(
+        name="nested consumer package follows an escaping symlink",
+        path="Sources/VerdictUICLICore/ProjectScenarios.swift",
+        old="root.appendingPathComponent(path, isDirectory: true).resolvingSymlinksInPath().standardizedFileURL",
+        new="root.appendingPathComponent(path, isDirectory: true).standardizedFileURL",
+        test="ProjectRunnerTests/testInvalidBuildPackagePathsRejectBeforeProcessLaunch",
+    ),
+    Mutation(
+        name="nested consumer package escapes consumer root",
+        path="Sources/VerdictUICLICore/ProjectScenarios.swift",
+        old="guard package.pathComponents.starts(with: root.pathComponents) else {",
+        new="guard true else {",
+        test="ProjectRunnerTests/testInvalidBuildPackagePathsRejectBeforeProcessLaunch",
+    ),
+    Mutation(
+        name="nested consumer package accepts nonexistent or non-directory path",
+        path="Sources/VerdictUICLICore/ProjectScenarios.swift",
+        old="guard FileManager.default.fileExists(atPath: package.path, isDirectory: &isDirectory), isDirectory.boolValue else {",
+        new="guard FileManager.default.fileExists(atPath: package.path, isDirectory: &isDirectory) || !isDirectory.boolValue else {",
+        test="ProjectRunnerTests/testInvalidBuildPackagePathsRejectBeforeProcessLaunch",
+    ),
+    Mutation(
         name="AppKit diagnostic fixture releases before startup readiness",
         path="Tests/VerdictUICLICoreTests/AppKitCommandRunnerTests.swift",
         old="while !FileManager.default.fileExists(atPath: ready.path) {",
