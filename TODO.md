@@ -53,7 +53,7 @@
 
 ## P1 — High Priority
 
-- [ ] (P1) Remove stale action discovery and refuse built-in actions when a previously registered probe has disappeared from the observed tree. LaunchGate actual welcome last-page Skip reproduces the defect; retain the failed consumer witness, add native disappear/reappear controls and mutation rows before requalifying consumers.
+- [x] (P1) Refuse stale action discovery/injection for probes absent from the observed tree (7d585a4). Native disappear/reappear witness reproduced1test4fail; focused105total/104pass/1declared timing skip,2/2actualmutants caught/restored; independent review findings:[]; actual LaunchGate welcome12native pass with fix. Combined aggregate/CI/publication remain separate.
 
 - [x] (P1) Preserve ScenarioEntry.init(viewport:make:) alongside explicit expectations. Root622973f aggregate D69.5 and independent source typecheck exposed removed public signature. Restored original overload;104 strict native tests including existing macro consumers pass, source factory typechecks,1 actual empty-policy mutant detected with exact restoration. Failed original aggregate retained; fresh committed aggregate acceptance is separate.
 
