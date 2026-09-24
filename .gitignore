@@ -41,3 +41,8 @@ logs/pixel-diffs/
 
 # Local desktop packaging output.
 /dist/
+
+# Current local UI attempts and prebuilt consumer identity are never source.
+.verdictui/coverage-attempt.json
+.verdictui/coverage-receipt.json
+.verdictui/workbench-consumer.json

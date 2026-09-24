@@ -48,7 +48,7 @@ while demo success, partial probes, or the presence of a hook stood in for
 end-to-end product evidence. Release evidence must distinguish supported
 capability, observed scenario coverage, and unavailable measurement.
 
-Release reconciliation: **v1.1.2 is published and installed** with a notarized,
+Historical release acceptance: **v1.1.2 was published and installed** with a notarized,
 stapled desktop archive and an updated Homebrew CLI. Both installed engines
 passed real native/browser CLI/MCP acceptance, including wrong-login failure,
 observed successful actions, session isolation, persistence, cleanup and secret
@@ -64,10 +64,28 @@ workbench results, badges and history. These results do not certify unmeasured
 paint or complete consumer products. Earlier superseded candidates were not
 published. Full PM passed Grade A (100), and the release source passed CI.
 
-Fresh MCP connections expose 18 tools. This long-running Codex session retained
-its older nine-tool catalog; existing clients must reconnect after the binary
-upgrade. Automating Codex's own UI was denied by the computer-use tool, so
-pre-existing connections were preserved rather than interrupted.
+The September 23 follow-up publishes **v1.1.3** and excludes generated Swift
+scratch directories from consumer source fingerprints without weakening source
+invalidation or scan limits. The signed, notarized, stapled public archive and
+installed desktop/helper were verified byte-for-byte; Homebrew is also 1.1.3.
+The candidate passed native/browser acceptance. An installed-path rerun observed
+global cursor movement, with unchanged foreground PID, so that run does not
+establish the no-interference invariant. Retain this qualification until a quiet
+installed run completes; source or artifact equality does not rewrite a receipt.
+
+**The actual Codex MCP connection now exposes all 18 tools.** Calls through the
+Codex tool interface listed scenarios, opened the published product page,
+verified its visible 1.1.3 version with zero errors and nine layout warnings,
+then closed the owned browser session and confirmed the session list was empty.
+An incorrect text expectation also produced a cited FAIL, not a transport error.
+The scenario catalog remains the framework's demonstration catalog; this is not
+consumer adoption evidence. No Codex UI change or process interruption was used.
+Claude's actual project health probe is connected. A fresh Claude client then
+completed an actual `list_scenarios` call, advertising all 18 tools and returning
+the six scenario names with no permission denial. This 53-second probe kept
+normal hooks enabled and loaded the exact configured VerdictUI server entry in
+isolation. The earlier 180-second session-start timeout remains retained as a
+failed attempt; it does not supersede this observed successful tool call.
 
 CTS-E47F57A8 records completed implementation; CTS-B70C5383 records completed
 publication and installed acceptance. INS-0105EE8B cites real consumer surfaces. Fleet coverage
@@ -75,6 +93,32 @@ remains scoped by [product-adoption.md](product-adoption.md).
 
 The installed background wrapper was also checked, not only the hook script:
 17 supported file-extension edit cases reached an actual configured web check;
-passing, failing and unavailable controls preserved the CLI result. This proves
-dispatch and configured-target execution, not automatic discovery of all Swift
-or AppKit views. INS-63190DA7 remains partial for unconfigured product coverage.
+passing, failing and unavailable controls preserved the CLI result. These are
+wrapper controls, not proof that the current Codex host dispatches an edit hook.
+After activating the native patch adapter, a real Codex `apply_patch` edit in a
+private declared web project produced no automatic attempt or coverage receipt.
+Host dispatch remains unavailable; INS-63190DA7 also remains partial for
+unconfigured product coverage.
+
+## Automatic source preservation follow-up
+
+Published Claude configuration PRs 59 and 60 were activated after exact-merge CI
+passed. The shared Codex hook symlink, client settings, tracked peer contents and
+staged entries were preserved. Installed controls passed (192 focused and 19
+legacy tests). The later Git index differed in raw bytes; its reported entries
+and flags remained identical after omitting stat-cache fields. No index was
+restored or peer change overwritten.
+
+A fresh Claude client with normal hooks connected to all 18 installed tools and
+called `list_scenarios`. Its actual SessionEnd automatically recorded successful
+boundary attempt `ee725261d24b403bba27435af8bc0780`, referencing archived event
+`fa59a26d72454f5e9eec9ae4a76fcfbc`. The 721,659-byte transcript restored exactly
+against its original (SHA-256
+`268484e3ad2e82594bff2e8867f19fa4e912476ae4daee0b0294afbaf93d72a0`).
+The private evidence is retained under AgentPromptArchive client receipts in
+`claude-followup-boundaries-20260924/automatic-boundary-readback.json`.
+
+Boundary starts and outcomes are now durable metadata. A started capture without
+an outcome remains unavailable; later success cannot erase that gap. This proves
+the observed client boundary, not that every historic or future session is
+complete. Missing dispatch and missing original sources remain explicit states.

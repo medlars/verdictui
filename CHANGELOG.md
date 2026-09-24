@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.1.4] — 2026-09-23
+
+- Corrected false AppKit clipping and overlap reports for native button and popup
+  decorations by measuring their public alignment rectangles. Original bounds
+  remain attached as evidence; custom controls and root viewports retain their
+  existing geometry.
+- Verified all ten real PanoMac empty-state controllers through its compiled
+  consumer runner. Deliberate truncation, genuine overlap, clipping and undersized
+  targets still produce findings. These checks do not certify populated data or paint.
+- Recorded successful actual Codex and Claude MCP connections, recovered original
+  instruction sources, and explicit fleet coverage states separately from release
+  and installed-product acceptance.
+
 ## [1.1.3] — 2026-09-23
 
 - Added an explicit project MCP runner so installed clients enter this repository's declared registry without recursing into the stock CLI.

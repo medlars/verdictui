@@ -1,6 +1,6 @@
 # Product adoption and installed-artifact acceptance
 
-Measured September 23, 2026. A library import, a registered manifest, an executable
+Updated September 24, 2026. A library import, a registered manifest, an executable
 runner, and a verified installed app are different evidence states. None implies
 complete product coverage.
 
@@ -9,8 +9,14 @@ complete product coverage.
 The follow-up census reads every row of `shared/pm-registry.json`, including
 missing roots, projects without PM scripts, and additional registered roots.
 At the September 23 measurement it contained **150 rows (128 PM projects and 22 non-PM entries) plus six additional
-roots**. All 150 lacked an explicit coverage policy and were reported
-**unavailable**, not failing products and not an assertion that they have no UI.
+roots**. The latest bounded observer reported **150 unavailable** in 0.15 seconds.
+The earlier 149-unavailable/one-excluded report had an incorrect exclusion:
+PM Base serves the real CEO dashboard. Published PR 223 corrected its policy and
+instructions; those three files are active in the canonical checkout with peer
+files, HEAD and raw index preserved. The dashboard now declares
+`ceo-fleet-dashboard`; its layout, paint and behavior remain unavailable until
+current evidence exists. These are evidence states, not failing products and
+not an assertion that the other projects have no UI.
 The smaller directory search below is historical implementation evidence.
 
 The shared `ui_coverage` reader requires project-owned `.verdictui/coverage.json`
@@ -26,6 +32,38 @@ missing/partial evidence, 1 for observed failure. Normal reports expose this
 separately from build grades; aftermath preserves it in the signed record.
 Project adoption remains incomplete until actual project observations satisfy
 these contracts. A census or installed safeguard is not adoption completion.
+
+The reporting guard was published in pm-base PR 219 and activated as a narrow
+overlay in the canonical shared library, preserving its existing peer edits,
+Git index and HEAD. Fresh canonical imports and 215 focused checks passed.
+This does not claim that the canonical mixed checkout equals the complete
+published PM Base release or that already-running processes reloaded it.
+The later completion and dashboard guard is published in PR 222. On September
+24, all five existing CEO LaunchAgents were restored on qualified commit
+`0f48e38` after its clean-source full PM passed A100. Their arguments and calendar
+schedules were preserved. The running watcher explicitly reported 150 unavailable
+projects and withheld UI completion; the three scheduled jobs remained idle.
+Live dashboard checks passed at 1440px and 390px, including exact API-to-DOM
+coverage text, column alignment and overflow checks. Review of the four actual
+images exposed a separate watcher-status parsing defect: a stamped PID lock was
+displayed as stopped. That repair and final paint acceptance remain pending.
+
+## Actual client and consumer checks
+
+The actual Codex MCP connection exposed 18 tools and successfully observed the
+published VerdictUI 1.1.3 page, with zero errors and nine layout warnings. Its
+owned browser session was closed and the empty session list verified. This
+establishes client connectivity and semantic page observation, not paint quality
+or fleet adoption.
+
+A compiled PanoMac consumer runner, built beside the actual VerdictUI source,
+was also called through the Codex `judge_appkit` tool. Eight empty controller
+surfaces passed, two reported layout errors, and the planted truncation defect
+failed as intended. Measured native alignment rectangles explain the two
+apparent errors: decorative popup/button bounds extend outside their logical
+layout rectangles. The renderer correction and its genuine-defect controls are
+being verified separately. These empty-state results do not cover populated
+tables, async data, installed application behavior or paint.
 
 ## Earlier read-only directory census
 
@@ -100,3 +138,53 @@ and report project coverage.
 4. Re-run this gate against the final installed binary, and each consumer's
    independent acceptance, before claiming full adoption. Record unconfigured,
    unavailable and incomplete products rather than treating them as clean.
+
+## Workbench adoption follow-up
+
+The Workbench now declares `workbench-connected-workflow` in project-owned
+checks and coverage manifests. Its runner drives the actual packaged WKWebView,
+bridge and helper against freshly compiled private consumers. CLI/API/MCP share
+the explicit web-tree judge, including a real consumer runner; a native AppKit
+judge is not substituted for DOM rules. The source catalog now has 19 tools,
+including `judge_web`; the currently installed 1.1.3 clients still have 18.
+
+The integrated editor and resource repair passed 138 Python contracts and
+the PM Workbench stage (138 browser assertions in two engines, 48 native
+observations across 10 phases). The worker candidate also passed independent
+review of all nine native PNGs. Compiled renderer checks retain their runner
+and subject when renamed or saved; the loaded WKWebView page must match the
+verified packaged resource path. The integrated release must retain its own
+fresh observation and image review after final source changes before admission.
+The launch-owned guardian repair has actual native/browser and compiled-consumer
+owner-death controls, with unrelated sentinel processes left alive. These controls
+cover inherited process groups. A real SwiftPM manifest demonstrated that a child
+can create a separate group and escape that boundary; CIS-4F278A0F remains open.
+Credential helpers and graceful consumer reload have separate controls: ordinary
+cancellation alone does not establish crash cleanup or persisted browser state.
+
+This scope covers project selection, editing and saving checks, actual consumer
+PASS/FAIL, running state, cancellation, history and reload. It does not certify
+OS file pickers, notifications, window management, other products or every
+possible state. Native captures measured the owner's enabled reduced-motion
+preference; normal native motion remains unmeasured. See
+[workbench-adoption.md](workbench-adoption.md) for reproducible admission.
+
+## Runner reliability follow-up
+
+The legacy AppKit runner could deadlock while reading stdout before a full stderr
+pipe. It now uses the same bounded command boundary as project checks, retaining
+separate failure diagnostics and enforcing an aggregate output budget. A real CLI
+fixture distinguishes the old blocking behavior from the repaired result. Running
+file sizes are measured through retained descriptors: Foundation URL metadata
+was observed to cache the initial size and miss later output growth. The held
+producer, timeout, cancellation and mutation controls establish these specific
+behaviors; they do not replace final integrated or installed-artifact acceptance.
+
+Credential helpers share the launch-owned guardian. Normal consumer shutdown
+drains pending launches and open sessions concurrently and allows browser storage
+to flush; genuine protocol/build failures retain short escalation. Failed session
+retirement propagates through lookup/open and remains owned when listing omits
+an unavailable session. A later close can therefore retry cleanup. These guards
+are covered by explicit crash, delayed persistence and failed-retirement controls.
+MCP initialization identifies the software release separately from the verdict
+schema; the candidate reports1.1.4, while its wire schema remains1.1.

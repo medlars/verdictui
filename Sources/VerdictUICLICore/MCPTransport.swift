@@ -110,7 +110,7 @@ public struct MCPTransport: Sendable {
                             protocolVersion: Self.protocolVersion,
                             serverInfo: MCPServerInfo(
                                 name: "verdictui",
-                                version: SchemaVersion.current
+                                version: ReleaseVersion.current
                             )
                         )
                     ),

@@ -127,15 +127,12 @@ let package = Package(
             dependencies: ["VerdictUIKernel"],
             swiftSettings: strictSettings
         ),
-        // Wave 11's web backend, T1: profile registry, lock registry, browser
-        // discovery, and headless process lifecycle. Deliberately depends on
-        // NOTHING in this package — T1 is process management and needs no
-        // kernel types (the CDP->SemanticNode mapping is T3, which will add
-        // the kernel dependency). Rollback is additive: deleting this target
-        // touches no other file's behavior.
+        // Browser verification uses kernel verdicts and a C-only process
+        // guardian that contains its browser group when the host exits.
+        .target(name: "VerdictUIProcessGuardian"),
         .target(
             name: "VerdictUIWeb",
-            dependencies: ["VerdictUIKernel"],
+            dependencies: ["VerdictUIKernel", "VerdictUIProcessGuardian"],
             swiftSettings: strictSettings
         ),
         // Ships the runner `docs/appkit.md` documents, so that snippet is
@@ -229,7 +226,7 @@ let package = Package(
         ),
         .testTarget(
             name: "VerdictUIWebTests",
-            dependencies: ["VerdictUIWeb", "VerdictUIKernel"],
+            dependencies: ["VerdictUIWeb", "VerdictUIKernel", "VerdictUIProcessGuardian"],
             resources: [.copy("Fixtures")],
             swiftSettings: strictSettings
         ),

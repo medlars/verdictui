@@ -26,6 +26,15 @@ _S = _mod.S
 VerdictUIPM = _mod.VerdictUIPM
 
 
+@pytest.fixture(autouse=True)
+def isolated_pytest_evidence(monkeypatch, tmp_path):
+    import verdictui_pm_smoke
+
+    destination = tmp_path / "pytest-latest.json"
+    monkeypatch.setattr(verdictui_pm_smoke, "_PYTEST_EVIDENCE_PATH", destination, raising=False)
+    return destination
+
+
 class TestStagePytest:
     """The stage that closes the CI/PM inversion. Its failure paths matter more
     than its happy one: it exists because a local Grade A used to be weaker
@@ -117,6 +126,75 @@ class TestStagePytest:
         result = self._pm().stage_pytest()
         assert not result["passed"]
         assert "test_z" in result["detail"]
+
+    @pytest.mark.parametrize("timed_out", [False, True])
+    def test_full_failure_and_timeout_output_is_retained(
+        self, monkeypatch, isolated_pytest_evidence, timed_out
+    ) -> None:
+        import json
+        import stat
+        import subprocess
+
+        stdout = "ORIGINAL ASSERTION DETAIL\nFAILED Tests/test_x.py::test_z\n1 failed, 3 passed\n"
+        stderr = "original child diagnostics\n"
+
+        def run(argv, **kwargs):
+            if timed_out:
+                raise subprocess.TimeoutExpired(
+                    argv, kwargs["timeout"], output=stdout.encode(), stderr=stderr.encode()
+                )
+            return subprocess.CompletedProcess(argv, 1, stdout, stderr)
+
+        monkeypatch.setattr(_mod.subprocess, "run", run)
+        result = self._pm().stage_pytest()
+        assert not result["passed"]
+        receipt = json.loads(isolated_pytest_evidence.read_text())
+        assert receipt["stdout"] == stdout
+        assert receipt["stderr"] == stderr
+        assert receipt["timed_out"] is timed_out
+        assert receipt["returncode"] == (None if timed_out else 1)
+        assert result["evidence"] == str(isolated_pytest_evidence)
+        assert stat.S_IMODE(isolated_pytest_evidence.stat().st_mode) == 0o600
+
+    def test_missing_summary_retains_original_output(
+        self, monkeypatch, isolated_pytest_evidence
+    ) -> None:
+        import json
+
+        self._fake(monkeypatch, stdout="collection failed before summary", returncode=2)
+        result = self._pm().stage_pytest()
+        assert not result["passed"]
+        assert (
+            json.loads(isolated_pytest_evidence.read_text())["stdout"]
+            == "collection failed before summary"
+        )
+
+    def test_storage_failure_cannot_report_green(self, monkeypatch, isolated_pytest_evidence):
+        self._fake(monkeypatch, stdout="3 passed in 0.01s\n")
+        isolated_pytest_evidence.mkdir()
+        result = self._pm().stage_pytest()
+        assert not result["passed"]
+        assert "evidence could not be retained" in result["detail"]
+        assert not list(isolated_pytest_evidence.parent.glob(".pytest-evidence-*"))
+
+    @pytest.mark.parametrize("operation", ["fsync", "replace"])
+    def test_storage_failure_preserves_previous_receipt(
+        self, monkeypatch, isolated_pytest_evidence, operation
+    ):
+        import verdictui_pm_smoke
+
+        previous = b"previous exact evidence\n"
+        isolated_pytest_evidence.write_bytes(previous)
+        self._fake(monkeypatch, stdout="3 passed in 0.01s\n")
+
+        def unavailable(*args):
+            raise OSError("injected storage failure")
+
+        monkeypatch.setattr(verdictui_pm_smoke.os, operation, unavailable)
+        result = self._pm().stage_pytest()
+        assert not result["passed"]
+        assert isolated_pytest_evidence.read_bytes() == previous
+        assert not list(isolated_pytest_evidence.parent.glob(".pytest-evidence-*"))
 
     def test_the_stage_is_registered_in_the_pipeline(self) -> None:
         source = (_PROJECT_ROOT / "scripts" / "verdictui-pm.py").read_text()

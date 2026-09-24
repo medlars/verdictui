@@ -3,6 +3,7 @@
   --mist:#eeebf6;
   --ink:#252337;
   --secondary:#686579;
+  --muted:#625b72;
   --iris:#6653cc;
   --iris-dark:#5040af;
   --glass:#177c68;
@@ -294,9 +295,8 @@ main {
   font:10px/1.7 ui-monospace,SFMono-Regular,Menlo,monospace;
   color:#817a8f;
   margin:7px 0 0;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  white-space:nowrap;
+  overflow-wrap:anywhere;
+  white-space:normal;
   max-width:520px
 }
 .button {
@@ -467,11 +467,11 @@ main {
 }
 .lens-caption {
   position:absolute;
-  bottom:16px;
+  bottom:4px;
   font-size:8px;
   letter-spacing:2.4px;
   font-weight:650;
-  color:#9b8aa9
+  color:var(--muted)
 }
 .verification-copy {
   padding:24px 30px 24px 8px;
@@ -481,7 +481,7 @@ main {
   display:flex;
   gap:7px;
   align-items:center;
-  color:#817092;
+  color:var(--muted);
   font-size:10px;
   font-weight:650;
   margin-bottom:13px
@@ -498,7 +498,7 @@ main {
   font-size:35px;
   font-weight:650;
   letter-spacing:-1.5px;
-  line-height:1.07;
+  line-height:1.2;
   margin:0 0 14px
 }
 .verification-copy>p {
@@ -948,7 +948,7 @@ progress::-webkit-progress-value {
     bottom:48px
   }
   .lens-caption {
-    bottom:23px
+    bottom:11px
   }
   .verification-copy h2 {
     font-size:42px
@@ -1324,12 +1324,12 @@ progress::-webkit-progress-value {
     opacity:.3
   }
 }
-/* Secondary information remains readable against the pearl surface. */
-.project-path,.section-heading p,.empty-state p,.save-bar p,.history-summary p,.field-hint,.finding-node,.sidebar-empty {
-  color:#796e86
-}
-.quiet-badge,.verification-copy .stage-footnote {
-  color:#7e718c
+/* Informative small text has at least 4.5:1 contrast on pearl and sidebar mist. */
+.engine-line,.sidebar-label,.eyebrow,.page-section-heading .eyebrow,.workspace-footer,
+.project-path,.section-heading p,.empty-state p,.save-bar p,.history-summary p,
+.field-hint,.finding-node,.sidebar-empty,.quiet-badge,.verification-copy .stage-footnote,
+.field input::placeholder {
+  color:var(--muted)
 }
 .check-chip {
   max-width:100%;
@@ -1349,4 +1349,14 @@ progress::-webkit-progress-value {
   background-repeat:no-repeat;
   background-position:right 10px center;
   background-size:16px;
+}
+
+/* Composed brand/lens artwork is inert; controls and labels retain hit testing. */
+.brand-mark,.brand-mark *, .lens-scene,.lens-scene * { pointer-events:none }
+/* The dot is an intentional layer of the brand mark. */
+.brand-mark span { z-index:1 }
+@media(max-width:660px) {
+  .check-fields input,.check-fields select {
+    min-height:44px
+  }
 }

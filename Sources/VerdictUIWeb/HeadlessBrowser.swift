@@ -3,12 +3,12 @@ import Foundation
 
 /// One headless browser session: launch, discover, probe, terminate.
 ///
-/// ### Why fork/exec and not LaunchServices (`open`)
+/// ### Why owned process spawning and not LaunchServices (`open`)
 ///
 /// The witness host needs LaunchServices because AX requires GUI
 /// registration; the browser needs the OPPOSITE — headless Chrome must not
-/// join the GUI session (the spec's G3 invisibility bar). Plain `Process`
-/// fork/exec is what Playwright uses for the same reason.
+/// join the GUI session (the spec's G3 invisibility bar). A C-only guardian
+/// owns its process group and survives a native host crash long enough to clean it.
 ///
 /// ### Measured facts this design encodes (2026-09-02, Chrome stable
 /// 152.0.7977.65 / macOS)
@@ -34,7 +34,7 @@ public actor HeadlessBrowser {
     func isRunning() -> Bool { process.isRunning }
 
     /// Internal seam for deterministic lifecycle tests. Production identities
-    /// can only come from launch(), which retains the exact Foundation child.
+    /// can only come from launch(), which retains the guardian child.
     init(process: any BrowserProcessIdentity, endpoint: DevtoolsEndpoint, profileDirectory: URL) {
         self.process = process
         pid = process.pid
@@ -66,7 +66,7 @@ public actor HeadlessBrowser {
     ///
     /// Static + async: the spawn itself is synchronous, but the discovery
     /// wait must yield cooperatively, so the entry point is async even
-    /// though `Process.run()` is not.
+    /// though the owned spawn is not.
     public static func launch(_ options: Options) async throws -> HeadlessBrowser {
         guard FileManager.default.isExecutableFile(atPath: options.browser.path) else {
             throw WebBrowserError.launchFailed(
@@ -80,22 +80,15 @@ public actor HeadlessBrowser {
         if FileManager.default.fileExists(atPath: activePort.path) {
             try FileManager.default.removeItem(at: activePort)
         }
-        let process = Process()
-        process.executableURL = options.browser
-        process.environment = ProcessInfo.processInfo.environment.filter { !$0.key.hasPrefix("VERDICTUI_WEB_CRED_") }
-        process.arguments = Self.launchArguments(profileDirectory: options.profileDirectory)
-        // Browser diagnostics may echo page URLs or console messages. No
-        // browser output is retained when a session can contain credentials.
-        process.standardError = FileHandle.nullDevice
-        process.standardOutput = FileHandle.nullDevice
-        process.standardInput = FileHandle.nullDevice
+        let owned: LaunchedBrowserProcess
         do {
-            try process.run()
+            owned = try LaunchedBrowserProcess.launch(executable: options.browser,
+                arguments: Self.launchArguments(profileDirectory: options.profileDirectory),
+                environment: ProcessInfo.processInfo.environment.filter { !$0.key.hasPrefix("VERDICTUI_WEB_CRED_") })
         } catch {
             throw WebBrowserError.launchFailed(
                 reason: "spawn failed: \(error)")
         }
-        let owned = LaunchedBrowserProcess(process: process)
         do {
             let deadline = ContinuousClock.now + .seconds(options.discoveryTimeout)
             while true {
@@ -114,10 +107,11 @@ public actor HeadlessBrowser {
                 try await Task.sleep(nanoseconds: 100_000_000)
             }
         } catch {
-            owned.signal(SIGKILL)
+            try owned.signal(SIGKILL)
             guard await awaitOwnedDeath(process: owned, within: 5) else {
                 throw WebBrowserError.processRefusedToDie(pid: owned.pid)
             }
+            try owned.finish()
             throw error
         }
     }
@@ -208,15 +202,20 @@ public actor HeadlessBrowser {
         return !ProcessLiveness.isAlive(pid)
     }
 
-    /// Graceful-then-kill, tied to the original Process object. A later process
-    /// that reuses its PID never becomes this session's child.
+    /// Graceful TERM uses the retained browser child; escalation uses the guardian group.
     public func terminate(grace: TimeInterval = 10) async throws {
-        guard process.isRunning else { return }
-        process.signal(SIGTERM)
-        if await Self.awaitOwnedDeath(process: process, within: grace) { return }
-        process.signal(SIGKILL)
-        if await Self.awaitOwnedDeath(process: process, within: 5) { return }
+        guard process.isRunning else { try process.finish(); return }
+        try process.signal(SIGTERM)
+        if await Self.awaitOwnedDeath(process: process, within: grace) { try process.finish(); return }
+        try process.signal(SIGKILL)
+        if await Self.awaitOwnedDeath(process: process, within: 5) { try process.finish(); return }
         throw WebBrowserError.processRefusedToDie(pid: pid)
+    }
+
+    /// Observe the retained child after Chrome's orderly close request. Cleanup
+    /// still yields under caller cancellation and never waits on a recycled PID.
+    func awaitExit(within grace: TimeInterval) async -> Bool {
+        await Self.awaitOwnedDeath(process: process, within: grace)
     }
 
     private static func awaitOwnedDeath(process: any BrowserProcessIdentity, within grace: TimeInterval) async -> Bool {
@@ -234,6 +233,7 @@ public actor HeadlessBrowser {
 
     /// A dead child's retained identity stays dead even when its pid is reused.
     deinit {
-        if process.isRunning { process.signal(SIGKILL) }
+        if process.isRunning { try? process.signal(SIGKILL) }
+        try? process.finish()
     }
 }

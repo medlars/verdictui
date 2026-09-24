@@ -106,7 +106,34 @@
     appkit: [['runner', 'Runner executable', '/path/to/your/runner', true], ['subject', 'Subject name', 'Your AppKit subject', true]],
     live: [['pid', 'Application PID', 'Process identifier', true], ['surface', 'Surface', 'window:0', false], ['expectText', 'Expected text', 'Optional text to verify in the current UI', false]]
   };
-  const kindNames = { scenario: 'SwiftUI scenario', web: 'Web page', appkit: 'AppKit subject', live: 'Running macOS app' };
+  const kindNames = { scenario: 'SwiftUI scenario', web: 'Web view', appkit: 'AppKit subject', live: 'Running macOS app' };
+  const rendererFields = [['runner', 'Runner executable', '/path/to/your/renderer', true], ['subject', 'View name', 'Your rendered view', true]];
+  const webSource = check => Object.prototype.hasOwnProperty.call(check, 'runner') || Object.prototype.hasOwnProperty.call(check, 'subject') ? 'renderer' : 'url';
+  function activeFields(check) {
+    const kind = Object.prototype.hasOwnProperty.call(fields, check.kind) ? check.kind : 'scenario';
+    return kind === 'web' && webSource(check) === 'renderer' ? rendererFields : fields[kind];
+  }
+  function sourceField(check, index) {
+    const field = node('div', 'field wide');
+    const caption = node('label', '', 'Source');
+    caption.htmlFor = 'check-' + index + '-source';
+    const select = node('select'); select.id = caption.htmlFor;
+    for (const [value, title] of [['url', 'Page URL'], ['renderer', 'Compiled renderer']]) {
+      const option = node('option', '', title); option.value = value; select.append(option);
+    }
+    select.value = webSource(check);
+    select.addEventListener('change', () => {
+      if (select.value === 'renderer') {
+        delete check.url; delete check.expectText;
+        check.runner = ''; check.subject = '';
+      } else {
+        delete check.runner; delete check.subject;
+        check.url = '';
+      }
+      markDirty(); renderEditors(); $('check-' + index + '-source').focus();
+    });
+    field.append(caption, select); return field;
+  }
   function markDirty() { state.dirty = true; renderControls(); }
   function createField(check, index, key, label, placeholder, required, wide = false) {
     const wrapper = node('div', 'field' + (wide ? ' wide' : ''));
@@ -156,7 +183,8 @@
       select.value = Object.prototype.hasOwnProperty.call(fields, check.kind) ? check.kind : 'scenario';
       select.addEventListener('change', () => { check.kind = select.value; markDirty(); renderEditors(); $('check-' + index + '-kind').focus(); });
       type.append(label, select); grid.append(type);
-      for (const [key, title, placeholder, required] of (Object.prototype.hasOwnProperty.call(fields, check.kind) ? fields[check.kind] : fields.scenario)) grid.append(createField(check, index, key, title, placeholder, required, true));
+      if (check.kind === 'web') grid.append(sourceField(check, index));
+      for (const [key, title, placeholder, required] of activeFields(check)) grid.append(createField(check, index, key, title, placeholder, required, true));
       if (check.kind === 'live') grid.append(node('p', 'field-hint', 'Reads the selected app. Declare expected text to check an observed state.'));
       section.append(heading, grid); $('check-editors').append(section);
     });
@@ -176,7 +204,7 @@
       names.add(name);
       const kind = Object.prototype.hasOwnProperty.call(fields, check.kind) ? check.kind : 'scenario';
       const result = { name, kind };
-      for (const [key, , , required] of fields[kind]) {
+      for (const [key, , , required] of activeFields(check)) {
         const value = text(check[key]).trim();
         if (required && !value) throw new Error('Complete the required fields before saving.');
         if (key === 'pid' && value) {

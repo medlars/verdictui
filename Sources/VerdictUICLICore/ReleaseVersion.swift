@@ -13,7 +13,7 @@ import VerdictUIKernel
 ///
 /// Bumped when a release is cut, beside the git tag.
 public enum ReleaseVersion {
-    public static let current = "1.1.3"
+    public static let current = "1.1.4"
 
     /// What `--version` prints: the release first, the wire schema after it.
     ///

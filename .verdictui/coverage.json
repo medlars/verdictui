@@ -1,0 +1,6 @@
+{
+  "schema": 1,
+  "applicability": "ui",
+  "scope": ["workbench-connected-workflow"],
+  "policy_ref": "docs/workbench-adoption.md"
+}

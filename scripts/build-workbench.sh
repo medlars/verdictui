@@ -4,9 +4,11 @@ set -euo pipefail
 configuration="${1:-release}"
 case "$configuration" in debug|release) ;; *) echo 'usage: build-workbench.sh [debug|release]' >&2; exit 2 ;; esac
 cd "$(dirname "$0")/.."
-swift build --jobs 2 --configuration "$configuration" --product VerdictUIWorkbench \
+source_before="$(python3.14 scripts/workbench_identity.py fingerprint --root "$PWD")"
+toolchain="$(swift --version)"
+swift build --jobs 2 --configuration "$configuration" --product VerdictUIWorkbench --force-resolved-versions \
   -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete
-swift build --jobs 2 --configuration "$configuration" --product verdictui \
+swift build --jobs 2 --configuration "$configuration" --product verdictui --force-resolved-versions \
   -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete
 bin="$(swift build --configuration "$configuration" --show-bin-path)"
 version="$(sed -n 's/.*static let current = "\([0-9.]*\)".*/\1/p' Sources/VerdictUICLICore/ReleaseVersion.swift)"
@@ -36,6 +38,8 @@ cat > "$app/Contents/Info.plist" <<PLIST
 <key>NSPrincipalClass</key><string>NSApplication</string>
 </dict></plist>
 PLIST
+python3.14 scripts/workbench_identity.py stamp --root "$PWD" --app "$app" \
+  --before "$source_before" --configuration "$configuration" --toolchain "$toolchain"
 identity="${VERDICTUI_SIGN_IDENTITY:--}"
 sign_artifact() {
   if [ "$identity" = '-' ]; then

@@ -1,6 +1,7 @@
 import CryptoKit
 import Darwin
 import Foundation
+import VerdictUIWeb
 
 /// A process boundary, not a second verdict engine. The consumer keeps owning
 /// its registry and all handlers; this broker owns stable transport and rebuilds.
@@ -140,8 +141,8 @@ public enum ProjectRunnerBroker {
         let destination: ProjectRunner.Destination
         let wire: Wire
         let shouldStop: () -> Bool
-        private var ownedChild: OwnedCommandProcess?
-        var child: OwnedCommandProcess? {
+        private var ownedChild: GuardedProcess?
+        var child: GuardedProcess? {
             lock.lock()
             defer { lock.unlock() }
             return ownedChild
@@ -155,6 +156,7 @@ public enum ProjectRunnerBroker {
         private var socketPath: String?
         private var failedGeneration: String?
         private var failedAt: TimeInterval = 0
+        private var cleanupFailure: String?
         typealias Build = (URL, () -> Bool) throws -> Void
         private let build: Build
 
@@ -178,6 +180,7 @@ public enum ProjectRunnerBroker {
             let object = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any]
             let notification = wire == .mcp && object?["method"] is String && object?["id"] == nil
             do {
+                if let cleanupFailure { throw Failure(cleanupFailure) }
                 guard let object, let method = object["method"] as? String else {
                     throw Failure("malformed request")
                 }
@@ -191,11 +194,11 @@ public enum ProjectRunnerBroker {
                 let before = try fingerprint()
                 let sourceBefore = try fingerprint(includeExecutable: false)
                 if let child, try child.status() != nil {
-                    stop()
+                    try stopVerified()
                     throw Failure("consumer process exited; retry starts a fresh host")
                 }
                 if generation != before || child == nil {
-                    stop()
+                    try stopVerified()
                     if failedGeneration == before
                         && ProcessInfo.processInfo.systemUptime - failedAt < 1
                     {
@@ -222,7 +225,7 @@ public enum ProjectRunnerBroker {
                 }
                 let response = try exchange(line, expectsReply: !notification)
                 guard generation == (try fingerprint()) else {
-                    stop()
+                    try stopVerified()
                     throw Failure("consumer changed during request; stale result discarded")
                 }
                 if wire == .mcp {
@@ -232,7 +235,9 @@ public enum ProjectRunnerBroker {
                 return response
             } catch {
                 // Never replay a failed action: its side effects may have happened.
-                stop()
+                // A signal received during exchange/build is still an orderly
+                // host shutdown. Genuine protocol/build failures keep short escalation.
+                stop(orderly: shouldStop())
                 guard !notification else { return nil }
                 return failure(line, reason: String(describing: error))
             }
@@ -306,6 +311,7 @@ public enum ProjectRunnerBroker {
         }
 
         private func start() throws {
+            guard ownedChild == nil, cleanupFailure == nil else { throw Failure("consumer cleanup unavailable") }
             var environment = ProcessInfo.processInfo.environment
             environment[ProjectRunner.delegationMarker] = destination.projectRoot.path
             environment.removeValue(forKey: "VERDICTUI_STOCK_DAEMON")
@@ -323,7 +329,7 @@ public enum ProjectRunnerBroker {
                 socketPath = path
                 arguments = ["daemon", "start", "--socket", path]
             }
-            let process = try OwnedCommandProcess.spawn(
+            let process = try GuardedProcess.spawn(
                 executable: destination.executable, arguments: arguments,
                 directory: destination.projectRoot, environment: environment,
                 standardInput: toChild?.fileHandleForReading.fileDescriptor,
@@ -396,12 +402,22 @@ public enum ProjectRunnerBroker {
             throw Failure("consumer request timed out; outcome unavailable")
         }
 
-        func stop() {
+        /// Teardown failures remain visible and retain ownership. A new host
+        /// cannot start until stopVerified has confirmed the old group is gone.
+        func stop(orderly: Bool = true) {
+            lock.lock()
+            defer { lock.unlock() }
+            do { try stopVerified(orderly: orderly) }
+            catch { cleanupFailure = "consumer cleanup unavailable: \(error)" }
+        }
+
+        private func stopVerified(orderly: Bool = true) throws {
             lock.lock()
             defer { lock.unlock() }
             try? input?.close()
             input = nil
-            if let child { _ = try? child.stop(grace: 2) }
+            let grace = orderly ? WebSession.consumerShutdownGrace : 2
+            if let child { try child.stop(grace: grace) }
             try? output?.close()
             output = nil
             ownedChild = nil
@@ -409,6 +425,7 @@ public enum ProjectRunnerBroker {
             generation = nil
             if let path = socketPath { try? FileManager.default.removeItem(atPath: path) }
             socketPath = nil
+            cleanupFailure = nil
         }
 
         private func failure(_ request: Data, reason: String) -> Data {

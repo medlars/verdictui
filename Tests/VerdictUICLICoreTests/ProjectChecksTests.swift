@@ -94,6 +94,10 @@ final class ProjectChecksTests: XCTestCase {
             #"{"name":"a","kind":"web","url":"file:///tmp/page.html","expectText":"   "}"#,
             #"{"name":"a","kind":"web","url":"https://user:secret@example.org"}"#,
             #"{"name":"a","kind":"web","url":"javascript:void(0)"}"#,
+            #"{"name":"a","kind":"web","runner":"consumer"}"#,
+            #"{"name":"a","kind":"web","subject":"owned"}"#,
+            #"{"name":"a","kind":"web","runner":"consumer","subject":"owned","url":"file:///tmp/page.html"}"#,
+            #"{"name":"a","kind":"web","runner":"consumer","subject":"owned","expectText":"ignored"}"#,
             #"{"name":"a","kind":"web","url":"file:///tmp/page.html","pid":10}"#,
             #"{"name":"a","kind":"live","pid":1}"#,
             #"{"name":"a","kind":"live","pid":2147483648}"#,
@@ -106,6 +110,7 @@ final class ProjectChecksTests: XCTestCase {
         for declaration in [#"{"name":"a","kind":"scenario","scenario":"settings"}"#,
             #"{"name":"a","kind":"appkit","runner":"consumer","subject":"settings"}"#,
             #"{"name":"a","kind":"web","url":"file:///tmp/page.html","expectText":"Ready"}"#,
+            #"{"name":"a","kind":"web","runner":"consumer","subject":"owned"}"#,
             #"{"name":"a","kind":"live","pid":123,"surface":"window:0","expectText":"Ready"}"#] {
             XCTAssertNoThrow(try ProjectChecks.decode(Data("{\"checks\":[\(declaration)]}".utf8)))
         }
@@ -151,8 +156,9 @@ final class ProjectChecksTests: XCTestCase {
         let operation = Task { try await BoundedCommand.run(executable: runner, arguments: [], root: root) }
         let leader = try await Self.pid("leader.pid", in: root)
         let child = try await Self.pid("child.pid", in: root)
-        defer { for pid in [child, leader] where getpgid(pid) == leader { kill(pid, SIGKILL) } }
-        XCTAssertEqual(getpgid(child), leader)
+        defer { operation.cancel() }
+        XCTAssertEqual(getpgid(child), getpgid(leader))
+        XCTAssertNotEqual(getpgid(leader), leader, "guardian, not command, anchors the group")
         XCTAssertNotEqual(leader, getpgrp(), "must never signal the test runner's group")
         operation.cancel()
         do { _ = try await operation.value; XCTFail("cancelled operation succeeded") }
@@ -169,7 +175,7 @@ final class ProjectChecksTests: XCTestCase {
         let operation = Task { await ProjectCheckRuntime.run(root: root, executable: runner, sessions: WebSessionManager(root: root)) }
         let leader = try await Self.pid("leader.pid", in: root)
         let child = try await Self.pid("child.pid", in: root)
-        defer { for pid in [child, leader] where getpgid(pid) == leader { kill(pid, SIGKILL) } }
+        defer { operation.cancel() }
         operation.cancel()
         let report = await operation.value
         XCTAssertEqual(report.status, "unavailable")
@@ -226,5 +232,88 @@ final class ProjectChecksTests: XCTestCase {
         catch BoundedCommand.Failure.invalidLimits {} catch { XCTFail("\(error)") }
         XCTAssertThrowsError(try OwnedCommandProcess.spawn(executable: URL(fileURLWithPath: "/usr/bin/true"),
             arguments: ["a\0b"], directory: root, environment: [:]))
+    }
+}
+
+/// Private executable/owner controls. Failed mutants are released by a file
+/// capability; tests never signal a captured descendant's numeric identity.
+final class ConsumerCrashFixture {
+    let root: URL
+    let owner = Process()
+    let sentinel = Process()
+    private var subject: proc_bsdinfo?
+    init() throws {
+        root = URL(fileURLWithPath: "/tmp/vui-owner-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root.appendingPathComponent(".verdictui"), withIntermediateDirectories: true)
+        sentinel.executableURL = URL(fileURLWithPath: "/bin/sleep"); sentinel.arguments = ["30"]
+        sentinel.standardOutput = FileHandle.nullDevice; sentinel.standardError = FileHandle.nullDevice
+        try sentinel.run()
+    }
+    func write(_ relative: String, _ text: String, executable: Bool = false) throws {
+        let file = root.appendingPathComponent(relative)
+        try Data(text.utf8).write(to: file)
+        if executable { try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: file.path) }
+    }
+    func launch(_ arguments: [String], input: Pipe? = nil) throws {
+        let repository = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        owner.executableURL = repository.appendingPathComponent(".build/debug/verdictui")
+        owner.arguments = arguments; owner.currentDirectoryURL = root
+        var environment = ProcessInfo.processInfo.environment
+        environment.removeValue(forKey: ProjectRunner.delegationMarker)
+        environment["PATH"] = root.path + ":" + (environment["PATH"] ?? "/usr/bin:/bin")
+        owner.environment = environment
+        owner.standardInput = input ?? Pipe(); owner.standardOutput = FileHandle.nullDevice; owner.standardError = FileHandle.nullDevice
+        try owner.run()
+    }
+    static let script = #"""
+    #!/usr/bin/env python3.14
+    import os,pathlib,signal,time
+    signal.signal(signal.SIGTERM,signal.SIG_IGN)
+    root=pathlib.Path.cwd()/'.verdictui'
+    (root/'ready').write_text(str(os.getpid()))
+    deadline=time.monotonic()+15
+    while not (root/'release').exists() and time.monotonic()<deadline:time.sleep(.01)
+    """#
+    private func current(_ pid: pid_t) -> proc_bsdinfo? {
+        var info = proc_bsdinfo(); let size = Int32(MemoryLayout<proc_bsdinfo>.size)
+        return proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size ? info : nil
+    }
+    private func sameSubjectAlive() -> Bool {
+        guard let subject, let info = current(pid_t(subject.pbi_pid)) else { return false }
+        return info.pbi_start_tvsec == subject.pbi_start_tvsec && info.pbi_start_tvusec == subject.pbi_start_tvusec && info.pbi_status != UInt32(SZOMB)
+    }
+    func assertCrashContained(file: StaticString = #filePath, line: UInt = #line) throws {
+        let deadline = ContinuousClock.now + .seconds(8)
+        while ContinuousClock.now < deadline {
+            if let value = try? String(contentsOf: root.appendingPathComponent(".verdictui/ready"), encoding: .utf8),
+               let pid = pid_t(value), let info = current(pid) { subject = info; break }
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+        XCTAssertNotNil(subject, "actual consumer did not become ready", file: file, line: line)
+        guard subject != nil else { return }
+        XCTAssertTrue(owner.isRunning, file: file, line: line)
+        XCTAssertEqual(kill(owner.processIdentifier, SIGKILL), 0, file: file, line: line)
+        let stopped = ContinuousClock.now + .seconds(4)
+        while sameSubjectAlive(), ContinuousClock.now < stopped { Thread.sleep(forTimeInterval: 0.01) }
+        XCTAssertFalse(sameSubjectAlive(), "consumer survived owner SIGKILL before controller cleanup", file: file, line: line)
+        XCTAssertTrue(sentinel.isRunning, "unrelated sentinel must survive", file: file, line: line)
+    }
+    deinit {
+        try? Data().write(to: root.appendingPathComponent(".verdictui/release"))
+        if owner.isRunning { owner.terminate() }
+        if sentinel.isRunning { sentinel.terminate() }
+        let deadline = ContinuousClock.now + .seconds(3)
+        while sameSubjectAlive(), ContinuousClock.now < deadline { Thread.sleep(forTimeInterval: 0.01) }
+        try? FileManager.default.removeItem(at: root)
+    }
+}
+
+extension ProjectChecksTests {
+    func testCheckOwnerSIGKILLContainsActualDelegatedCommand() throws {
+        let fixture = try ConsumerCrashFixture()
+        try fixture.write("runner", ConsumerCrashFixture.script, executable: true)
+        try fixture.write(".verdictui/checks.json", #"{"checks":[{"name":"private","kind":"appkit","runner":"runner","subject":"private"}]}"#)
+        try fixture.launch(["check", "--project", fixture.root.path])
+        try fixture.assertCrashContained()
     }
 }

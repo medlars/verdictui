@@ -1,16 +1,156 @@
 import Darwin
 import Foundation
+import VerdictUIProcessGuardian
 
 /// Owns one process group while retaining its unreaped leader as an identity
 /// anchor. A completed leader cannot have its PID recycled before cleanup.
 public final class OwnedCommandProcess: @unchecked Sendable {
-    public enum Failure: Error { case invalidLaunch, system(Int32) }
+    public enum Failure: Error { case invalidLaunch, system(Int32), guardianCleanupTimeout, guardianUnavailable }
     public let processIdentifier: pid_t
     private let lock = NSLock()
     private var reaped = false
     private var exitCode: Int32?
+    private var retentionFailure: Int32?
+    private enum Ownership { case command, guardian(groupReady: Bool), browser }
+    private let ownership: Ownership
 
-    private init(pid: pid_t) { processIdentifier = pid }
+    private init(pid: pid_t, ownership: Ownership = .command) {
+        processIdentifier = pid; self.ownership = ownership
+    }
+
+    struct GuardedLaunch {
+        let guardian: OwnedCommandProcess
+        let browser: OwnedCommandProcess
+        let lifetimeWriter: Int32
+    }
+
+    static func spawnGuardedBrowser(executable: URL, arguments: [String],
+                                    environment: [String: String]) throws -> GuardedLaunch {
+        try spawnGuardedCommand(executable: executable, arguments: arguments,
+            directory: URL(fileURLWithPath: FileManager.default.currentDirectoryPath), environment: environment)
+    }
+
+    /// Internal launch factory, never an arbitrary-PID adoption surface.
+    static func spawnGuardedCommand(executable: URL, arguments: [String], directory: URL,
+                                    environment: [String: String], standardInput: Int32? = nil,
+                                    standardOutput: Int32? = nil, standardError: Int32? = nil) throws -> GuardedLaunch {
+        let argv = [executable.path] + arguments
+        let env = environment.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }
+        let launchStrings = argv + env + [directory.path]
+        guard executable.isFileURL, directory.isFileURL,
+              [standardInput, standardOutput, standardError].allSatisfy({ $0 == nil || $0! >= 0 }),
+              !launchStrings.contains(where: { $0.contains("\0") }) else {
+            throw Failure.invalidLaunch
+        }
+        let argumentPointers = argv.map { strdup($0) }
+        let environmentPointers = env.map { strdup($0) }
+        defer { (argumentPointers + environmentPointers).forEach { free($0) } }
+        guard argumentPointers.allSatisfy({ $0 != nil }), environmentPointers.allSatisfy({ $0 != nil }) else {
+            throw Failure.system(ENOMEM)
+        }
+        var arguments = argumentPointers + [nil], environment = environmentPointers + [nil]
+        var launched = vui_guardian_launch_result()
+        let descriptors: [Int32] = [standardInput ?? -1, standardOutput ?? -1, standardError ?? -1]
+        let error = executable.path.withCString { executablePath in
+            directory.path.withCString { directoryPath in
+                vui_guardian_launch(executablePath, &arguments, &environment, directoryPath,
+                                    descriptors, 3000, 1000, &launched)
+            }
+        }
+        try checked(error)
+        guard launched.guardian_pid > 0, launched.lifetime_fd >= 0 else { throw Failure.invalidLaunch }
+        let guardian = OwnedCommandProcess(pid: launched.guardian_pid,
+            ownership: .guardian(groupReady: launched.group_ready != 0))
+        if launched.error != 0 || launched.group_ready == 0 || launched.browser_pid <= 0 {
+            close(launched.lifetime_fd)
+            try guardian.finishGuardian(grace: 2)
+            throw Failure.system(launched.error == 0 ? EPROTO : launched.error)
+        }
+        let browser = OwnedCommandProcess(pid: launched.browser_pid, ownership: .browser)
+        return GuardedLaunch(guardian: guardian, browser: browser, lifetimeWriter: launched.lifetime_fd)
+    }
+
+    /// Checks kernel ownership afresh even after a cached WNOWAIT observation.
+    /// ECHILD permanently revokes signal authority; a recycled PID is never used.
+    private func confirmRetainedChild() throws {
+        if let retentionFailure { throw Failure.system(retentionFailure) }
+        guard !reaped else { return }
+        _ = try observe(refresh: true)
+    }
+
+    /// Normal TERM lets the retained browser coordinate its helpers and flush
+    /// storage. This child is retained and rechecked while holding its reap lock;
+    /// the public numeric PID is never the authorization for a signal.
+    func requestBrowserTermination() throws {
+        lock.lock(); defer { lock.unlock() }
+        if let retentionFailure { throw Failure.system(retentionFailure) }
+        if reaped { return }
+        guard case .browser = ownership else { throw Failure.invalidLaunch }
+        try confirmRetainedChild()
+        if try observe(refresh: true) != nil { return }
+        if kill(processIdentifier, SIGTERM) != 0 {
+            let failure = errno
+            if (failure == ESRCH || failure == EPERM), try observe(refresh: true) != nil { return }
+            throw Failure.system(failure)
+        }
+    }
+
+    /// Guardian and browser cleanup use bounded waits, including destruction.
+    /// Before READY no browser has been spawned, so direct-child KILL is safe.
+    func finishGuardian(grace: TimeInterval = 0) throws {
+        lock.lock(); defer { lock.unlock() }
+        if let retentionFailure { throw Failure.system(retentionFailure) }
+        if reaped { return }
+        guard case .guardian(let groupReady) = ownership else { throw Failure.invalidLaunch }
+        try confirmRetainedChild()
+        if grace > 0 { _ = try waitForRetainedExit(timeout: grace) }
+        try confirmRetainedChild()
+        if groupReady {
+            // READY validated this group in the factory. Darwin can stop
+            // answering getpgid for its unreaped zombie; WNOWAIT retains the
+            // established identity until every descendant has stopped.
+            try signalGroup(SIGKILL)
+        } else if kill(processIdentifier, SIGKILL) != 0 && errno != ESRCH {
+            throw Failure.system(errno)
+        }
+        guard try waitForRetainedExit(timeout: 5) else { throw Failure.guardianCleanupTimeout }
+        let deadline = ContinuousClock.now + .seconds(2)
+        while groupReady && !groupHasOnlyExitedMembers() {
+            guard ContinuousClock.now < deadline else { throw Failure.guardianCleanupTimeout }
+            Thread.sleep(forTimeInterval: 0.01) // verdictui-os-cleanup:group-quiescence
+        }
+        try reapRetainedChild()
+    }
+
+    /// Called only after the guardian proved no active group members remain.
+    func finishBrowser() throws {
+        lock.lock(); defer { lock.unlock() }
+        if let retentionFailure { throw Failure.system(retentionFailure) }
+        if reaped { return }
+        guard case .browser = ownership else { throw Failure.invalidLaunch }
+        try confirmRetainedChild()
+        guard try waitForRetainedExit(timeout: 5) else { throw Failure.guardianCleanupTimeout }
+        try reapRetainedChild()
+    }
+
+    private func waitForRetainedExit(timeout: TimeInterval) throws -> Bool {
+        let deadline = ContinuousClock.now + .seconds(timeout)
+        repeat {
+            if try observe() != nil { return true }
+            // A process-exit event can precede waitid's exit record on Darwin.
+            // Retained-child cleanup needs the record, not only the event.
+            Thread.sleep(forTimeInterval: 0.01) // verdictui-os-cleanup:waitid-readiness
+        } while ContinuousClock.now < deadline
+        return try observe() != nil
+    }
+
+    private func reapRetainedChild() throws {
+        var status: Int32 = 0
+        var result: pid_t
+        repeat { result = waitpid(processIdentifier, &status, WNOHANG) } while result < 0 && errno == EINTR
+        guard result == processIdentifier else { throw Failure.system(result == 0 ? EBUSY : errno) }
+        reaped = true
+    }
 
     public static func spawn(executable: URL, arguments: [String], directory: URL,
                       environment: [String: String], standardInput: Int32? = nil,
@@ -104,15 +244,15 @@ public final class OwnedCommandProcess: @unchecked Sendable {
         return code
     }
 
-    private func observe() throws -> Int32? {
-        if reaped || exitCode != nil { return exitCode }
+    private func observe(refresh: Bool = false) throws -> Int32? {
+        if reaped || (exitCode != nil && !refresh) { return exitCode }
         var info = siginfo_t()
         var result: Int32
         repeat { result = waitid(P_PID, id_t(processIdentifier), &info, WEXITED | WNOHANG | WNOWAIT) } while result == -1 && errno == EINTR
         guard result == 0 else {
             // If another owner reaped the child, it is no longer safe to signal
             // this numeric process group. Refuse instead of guessing ownership.
-            if errno == ECHILD { reaped = true }
+            if errno == ECHILD { reaped = true; retentionFailure = ECHILD }
             throw Failure.system(errno)
         }
         guard info.si_pid == processIdentifier else { return nil }
@@ -141,6 +281,7 @@ public final class OwnedCommandProcess: @unchecked Sendable {
         for member in members.prefix(Int(count) / MemoryLayout<pid_t>.size) where member > 0 {
             var info = proc_bsdinfo()
             let size = Int32(MemoryLayout<proc_bsdinfo>.size)
+            errno = 0
             let read = proc_pidinfo(member, PROC_PIDTBSDINFO, 0, &info, size)
             if read == 0 && errno == ESRCH { continue }
             guard read == size else { return false }
@@ -167,5 +308,11 @@ public final class OwnedCommandProcess: @unchecked Sendable {
         guard result == 0 else { throw Failure.system(result) }
     }
 
-    deinit { _ = try? stop(grace: 0) }
+    deinit {
+        switch ownership {
+        case .command: _ = try? stop(grace: 0)
+        case .guardian: try? finishGuardian()
+        case .browser: try? finishBrowser()
+        }
+    }
 }

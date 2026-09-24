@@ -17,6 +17,33 @@ final class WebSessionIntegrationTests: XCTestCase {
         try XCTUnwrap(tree.flattened().first { $0.attributes["web.id"] == .string(id) }, "missing DOM id \(id)")
     }
 
+    private func persistedTaskState(root: URL) async throws -> [String: CDPValue] {
+        let endpoint = try XCTUnwrap(DevtoolsEndpoint.read(in: root.appendingPathComponent("login")))
+        let transport = try CDPTransport(endpoint: endpoint)
+        do {
+            let result = try await transport.send(method: "Target.getTargets")
+            guard case let .array(targets) = result["targetInfos"],
+                  let page = targets.compactMap({ value -> [String: CDPValue]? in
+                      if case let .object(row) = value, row["type"] == .string("page") { return row }
+                      return nil
+                  }).first, let targetID = page["targetId"]?.stringValue else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            let attached = try await transport.send(method: "Target.attachToTarget", params: [
+                "targetId": .string(targetID), "flatten": .bool(true)])
+            let session = try XCTUnwrap(attached["sessionId"]?.stringValue)
+            // Fixed read-only expression: never disclose credentials or query values.
+            let state = try await transport.send(method: "Runtime.evaluate", params: [
+                "expression": .string("({stored:localStorage.getItem('task-complete')==='yes',status:document.getElementById('status').textContent,protocol:location.protocol})"),
+                "returnByValue": .bool(true)], sessionID: session)
+            await transport.close()
+            guard case let .object(remote) = state["result"], case let .object(value) = remote["value"], state["exceptionDetails"] == nil else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            return value
+        } catch { await transport.close(); throw error }
+    }
+
     func testRealPageRendersJudgesAndTrustedClickChangesApplication() async throws {
         let root = try root()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -101,10 +128,21 @@ final class WebSessionIntegrationTests: XCTestCase {
             XCTAssertTrue(argv.contains("--headless=new"))
             XCTAssertFalse(argv.contains(secret)); XCTAssertFalse(argv.contains(badSecret))
             XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("login/launch-stderr.log").path))
+            let storedBefore = try await persistedTaskState(root: root)
+            XCTAssertEqual(storedBefore["stored"], .bool(true), "visible success must include actual storage write")
+            let closeStart = ContinuousClock.now
             try await manager.close(profile: "login")
+            let closeElapsed = closeStart.duration(to: .now)
             _ = try await manager.open(profile: "login", url: XCTUnwrap(url.url))
+            let storedAfter = try await persistedTaskState(root: root)
             let persisted = try await manager.verify(profile: "login", expectText: "Task complete")
-            XCTAssertEqual(persisted.status, .pass)
+            let persistedEvidence = String(decoding: try JSONEncoder().encode(persisted), as: UTF8.self)
+            XCTAssertFalse(persistedEvidence.contains(secret)); XCTAssertFalse(persistedEvidence.contains(badSecret))
+            let diagnostic: [String: CDPValue] = ["before": .object(storedBefore), "after": .object(storedAfter),
+                "closeDuration": .string(String(describing: closeElapsed))]
+            print("PROFILE-PERSISTENCE " + String(decoding: try JSONEncoder().encode(diagnostic), as: UTF8.self))
+            XCTAssertEqual(storedAfter["stored"], .bool(true), "storage must survive normal close/reopen")
+            XCTAssertEqual(persisted.status, .pass, persistedEvidence)
             await manager.closeAll()
         } catch { await manager.closeAll(); throw error }
     }

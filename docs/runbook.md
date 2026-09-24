@@ -221,3 +221,29 @@ python3.14 scripts/verdictui-pm.py --quick    # Grade A required
 | PM reports `INCONCLUSIVE — runner killed by SIGKILL` | the machine was loaded; the run was terminated, not failed | re-run on an unloaded machine; this is NOT a test regression |
 | mutation sweep prints UNNOTICED for a working guard | something wrote to the tree mid-run | run it in the foreground on an exclusive tree (no.md #14/#21) |
 | a mutation row scores INCONCLUSIVE | its `new` does not compile, or its test filter matches nothing | keep every binding live (no.md #31); re-point the filter after any test-file split (no.md #33) |
+
+## Repeated “VerdictUIWitnessHost.app is damaged” alerts
+
+Measured September 24, 2026: the crash record named `com.apple.echo`, with
+`SIGKILL (Code Signature Invalid)` and `CODESIGNING / Launch Constraint
+Violation`. Two legacy integration tests copied Apple's `/bin/echo` into a
+temporary witness app and attempted repeated LaunchServices launches. Their
+expected-error handling hid the launch rejection from test results while macOS
+showed an alert for each attempt.
+
+Use the built `verdictui-witness-host` with the test's unknown scenario. Its
+preflight must exit3 before constructing a window. The tests still exercise
+actual registration and repeated bundle reuse; a recreated bundle remains a
+mutation-detected failure. Never use a relocated Apple platform executable as
+a deliberately failing application fixture, and do not disable Gatekeeper or
+remove quarantine to make these controls pass.
+
+Focused check (requires a real login session for the registration control):
+
+```bash
+swift test --filter WitnessIntegrationTests/testRepeatedLaunches
+```
+
+Assert two executed tests and zero skips before calling the launch-path check
+complete. The repaired September24 run executed both with zero failures; macOS
+recorded successful witness launches and no matching signing/crash failures.

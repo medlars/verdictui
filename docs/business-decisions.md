@@ -223,3 +223,27 @@ and assistant recommendations are distinguishable from owner-selected decisions.
 This document remains a synthesis, not a verbatim transcript. Private retained
 exports carry source IDs, page totals and SHA-256 receipts; missing original
 interactive tool answers are explicitly unverified rather than invented.
+
+
+## 2026-09-24 — Deterministic settling and external OS cleanup
+
+The Wave 3 no-sleep rule governs UI readiness, not a claim that the kernel's
+process lifecycle can be advanced by VerdictClock. Actual Darwin measurements
+showed a process-exit event arriving before its waitid exit record; a leader's
+exit also cannot prove that its remaining process-group members have stopped.
+The two bounded cleanup retries therefore retain their existing 0.01-second
+backoff and unchanged monotonic deadlines. Neither retry admits success from
+elapsed time: it requires the relevant observed kernel condition. Normal
+direct-child exit waiting remains event-based.
+
+The source gate admits exactly one `verdictui-os-cleanup:group-quiescence` and
+one `verdictui-os-cleanup:waitid-readiness` marker, each on the exact statement
+`Thread.sleep(forTimeInterval: 0.01)` in
+`Sources/VerdictUIWeb/OwnedCommandProcess.swift`. All other real sleeps remain
+rejected, including elsewhere in that file. Missing, duplicate, moved, altered
+or unknown exceptions fail the same scanner used by the real source gate and
+its planted controls. Renaming a sleep to evade detection, exempting a whole
+module, or treating an exit event as proof of group death were rejected. This
+is an explicit classification of external OS cleanup, not a relaxed UI settle
+criterion or a change to production timeout budgets. The C guardian is also
+explicitly classified as SwiftSyntax-free in the package isolation gate.

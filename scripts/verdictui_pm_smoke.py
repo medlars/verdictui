@@ -5,6 +5,7 @@ Same mixin rule as `verdictui_pm_stages`: inherited, never re-exported.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import re
@@ -12,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from pathlib import Path
 
 import verdictui_pm_support as S
 import verdictui_pm_swift as SW
@@ -36,6 +38,52 @@ from verdictui_pm_swift import (
     _run_locked_swift_build_product,
     _swift_timing_environment,
 )
+
+_PYTEST_EVIDENCE_PATH = S.PROJECT_ROOT / "logs" / "pytest-latest.json"
+WORKBENCH_NATIVE_TIMEOUT = 40
+
+
+def _run_workbench_native(arguments, *, cwd, timeout):
+    """Share the acceptance wrapper's retained ownership and TERM-first boundary."""
+    path = Path(__file__).with_name("workbench-acceptance.py")
+    spec = importlib.util.spec_from_file_location("workbench_acceptance_owner", path)
+    if spec is None or spec.loader is None:
+        raise ValueError("native acceptance process owner unavailable")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.run_owned_command(arguments, cwd=cwd, timeout=timeout)
+
+
+def _save_pytest_evidence(
+    stdout: str, stderr: str, returncode: int | None, *, timed_out: bool
+) -> None:
+    """Retain the actual child output before reducing it to a dashboard line."""
+    path = _PYTEST_EVIDENCE_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=path.parent, prefix=".pytest-evidence-", delete=False
+        ) as stream:
+            temporary = stream.name
+            json.dump(
+                {
+                    "stdout": stdout,
+                    "stderr": stderr,
+                    "returncode": returncode,
+                    "timed_out": timed_out,
+                    "timeout_seconds": TIMEOUT_PYTEST,
+                },
+                stream,
+            )
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+        temporary = None
+    finally:
+        if temporary is not None:
+            os.unlink(temporary)
 
 
 class VerdictUISmokeMixin:
@@ -413,7 +461,7 @@ class VerdictUISmokeMixin:
         }
 
     def stage_workbench(self) -> dict:
-        """Require complete measured flows in both desktop rendering engines."""
+        """Require layout smoke plus the real packaged native bridge workflow."""
         result = subprocess.run(
             [
                 sys.executable,
@@ -433,6 +481,67 @@ class VerdictUISmokeMixin:
             re.MULTILINE,
         )
         passed = result.returncode == 0 and measured is not None
+        if passed:
+            try:
+                prepared = subprocess.run(
+                    [
+                        "bash",
+                        str(S.PROJECT_ROOT / "scripts/build-workbench-acceptance.sh"),
+                        "debug",
+                    ],
+                    cwd=S.PROJECT_ROOT,
+                    capture_output=True,
+                    text=True,
+                    timeout=900,
+                )
+                if prepared.returncode != 0:
+                    return {
+                        "passed": False,
+                        "detail": "native Workbench preparation failed: "
+                        + (prepared.stderr or prepared.stdout)[-700:],
+                    }
+                inputs = json.loads(
+                    (S.PROJECT_ROOT / "dist/workbench-acceptance-inputs.json").read_text()
+                )
+                log_root = S.PROJECT_ROOT / "logs"
+                log_root.mkdir(exist_ok=True)
+                attempt = tempfile.mkdtemp(prefix="workbench-native-", dir=log_root)
+                native = _run_workbench_native(
+                    [
+                        sys.executable,
+                        str(S.PROJECT_ROOT / "scripts/workbench-acceptance.py"),
+                        "--app",
+                        inputs["app"],
+                        "--consumer-runner",
+                        inputs["consumer_runner"],
+                        "--consumer-build-receipt",
+                        inputs["consumer_build_receipt"],
+                        "--output",
+                        attempt + "/run",
+                    ],
+                    cwd=S.PROJECT_ROOT,
+                    timeout=WORKBENCH_NATIVE_TIMEOUT,
+                )
+                observed = re.search(
+                    r"^WORKBENCH ACCEPTANCE PASS: ([1-9][0-9]*) assertions, 10/10 native phases complete$",
+                    native.stdout,
+                    re.MULTILINE,
+                )
+                if native.returncode != 0 or observed is None:
+                    return {
+                        "passed": False,
+                        "detail": "native Workbench acceptance unavailable or failed: "
+                        + (native.stderr + "\n" + native.stdout)[-700:],
+                    }
+                return {
+                    "passed": True,
+                    "detail": (measured.group(0) if measured else "") + "; " + observed.group(0),
+                }
+            except (OSError, ValueError, KeyError, subprocess.TimeoutExpired) as error:
+                return {
+                    "passed": False,
+                    "detail": f"native Workbench acceptance unavailable: {error}",
+                }
         return {
             "passed": passed,
             "detail": measured.group(0)
@@ -735,28 +844,62 @@ class VerdictUISmokeMixin:
         exits 0 when it collects NOTHING, so a broken marker or a moved test
         directory would otherwise read as a fast, clean suite.
         """
-        r = subprocess.run(  # noqa: S603 -- fixed argv built from constants
-            [sys.executable, "-m", "pytest", "Tests", "-q", "-p", "no:cacheprovider"],
-            cwd=S.PROJECT_ROOT,
-            capture_output=True,
-            env={**os.environ, "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1"},
-            text=True,
-            timeout=TIMEOUT_PYTEST,
-        )
+        timed_out = False
+        try:
+            r = subprocess.run(  # noqa: S603 -- fixed argv built from constants
+                [sys.executable, "-m", "pytest", "Tests", "-q", "-p", "no:cacheprovider"],
+                cwd=S.PROJECT_ROOT,
+                capture_output=True,
+                env={**os.environ, "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1"},
+                text=True,
+                timeout=TIMEOUT_PYTEST,
+            )
+        except subprocess.TimeoutExpired as exc:
+            timed_out = True
+
+            def decoded(value: bytes | str | None) -> str:
+                return (
+                    value.decode("utf-8", errors="replace")
+                    if isinstance(value, bytes)
+                    else value or ""
+                )
+
+            r = subprocess.CompletedProcess(exc.cmd, -1, decoded(exc.stdout), decoded(exc.stderr))
+        try:
+            _save_pytest_evidence(
+                r.stdout, r.stderr, None if timed_out else r.returncode, timed_out=timed_out
+            )
+        except OSError as exc:
+            return {
+                "passed": False,
+                "detail": f"pytest evidence could not be retained: {exc}"[:300],
+            }
+        evidence = {"evidence": str(_PYTEST_EVIDENCE_PATH)}
+        if timed_out:
+            return {
+                "passed": False,
+                "detail": f"pytest timed out after {TIMEOUT_PYTEST}s",
+                **evidence,
+            }
         output = r.stdout + r.stderr
         match = re.search(r"(\d+) passed", output)
         if match is None:
             tail = output.strip().splitlines()
             detail = tail[-1] if tail else NO_OUTPUT
-            return {"passed": False, "detail": f"no pytest summary line: {detail}"[:300]}
+            return {
+                "passed": False,
+                "detail": f"no pytest summary line: {detail}"[:300],
+                **evidence,
+            }
         passed = int(match.group(1))
         if r.returncode != 0:
             failing = [ln for ln in output.splitlines() if ln.startswith("FAILED")]
             first = failing[0] if failing else output.strip().splitlines()[-1]
-            return {"passed": False, "detail": first[:300]}
+            return {"passed": False, "detail": first[:300], **evidence}
         if passed == 0:
             return {
                 "passed": False,
                 "detail": "pytest collected 0 tests -- the suite is not being found",
+                **evidence,
             }
-        return {"passed": True, "detail": f"{passed} Python tests PASS"}
+        return {"passed": True, "detail": f"{passed} Python tests PASS", **evidence}

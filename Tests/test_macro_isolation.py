@@ -57,6 +57,7 @@ _MACRO_SUPPORT_TARGET = "VerdictUIMacroSupport"
 # SHOULD reach SwiftSyntax, since asserting expansion text is its job.
 _SWIFTSYNTAX_FREE_TARGETS = frozenset(
     {
+        "VerdictUIProcessGuardian",
         "VerdictUIKernel",
         "VerdictUIProbe",
         "VerdictUIDemoScenarios",

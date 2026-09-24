@@ -199,6 +199,16 @@ public enum MCPServer {
                 inputSchema: MCPSchema(properties: ["scenario": scenario], required: ["scenario"])
             ),
             MCPTool(
+                name: "judge_web",
+                description: "Run a developer-owned web consumer renderer and judge its observed DOM tree with browser layout rules. "
+                    + "Requires runner and subject; executes render <subject>. Paint uncertainty remains explicit. "
+                    + "A failing verdict is a successful call; unavailable rendering is a tool error.",
+                inputSchema: MCPSchema(properties: [
+                    "runner": MCPProperty(type: "string", description: "Path to the developer-owned executable that emits its observed DOM tree."),
+                    "subject": MCPProperty(type: "string", description: "Real consumer surface to render and judge."),
+                ], required: ["runner", "subject"])
+            ),
+            MCPTool(
                 name: "judge_appkit",
                 description:
                     "Judge an AppKit/Swift screen headlessly — no screenshot, no Automator, no "
@@ -263,6 +273,7 @@ public enum MCPServer {
         case "sweep": return "sweep"
         case "baseline_diff": return "baseline_diff"
         case "judge_appkit": return "judge_appkit"
+        case "judge_web": return "judge_web"
         case "live_inspect", "live_verify", "live_act": return tool
         case "web_list", "web_open", "web_render", "web_verify", "web_act", "web_close": return tool
         default: return nil

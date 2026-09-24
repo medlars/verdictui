@@ -1148,20 +1148,31 @@ class TestMCPInputSurfaceSurvivesHostileInput:
     _FINAL_PROBE = '{"jsonrpc":"2.0","id":999,"method":"tools/list"}'
 
     @_needs_dev_machine
-    def test_every_malformed_frame_is_answered_and_the_server_survives(self) -> None:
+    def test_every_malformed_frame_is_answered_and_the_server_survives(
+        self, tmp_path: Path
+    ) -> None:
         binary = _S.PROJECT_ROOT / ".build" / "release" / "verdictui"
         if not binary.exists():
             pytest.skip(f"{binary} absent — build with swift build -c release")
 
+        # This test targets the stock transport. A consumer-configured cwd
+        # intentionally selects a runner and emits its build diagnostics.
+        assert not any(
+            (path / ".verdictui" / "config.json").exists()
+            for path in (tmp_path.resolve(), *tmp_path.resolve().parents)
+        )
         frames = [self._HANDSHAKE, *[line for _label, line in self._HOSTILE], self._FINAL_PROBE]
         completed = subprocess.run(  # noqa: S603 - fixed argv, no shell
             [str(binary), "mcp"],
+            cwd=tmp_path,
             input="\n".join(frames) + "\n",
             capture_output=True,
             text=True,
             timeout=120,
             check=False,
         )
+
+        assert completed.returncode == 0, completed.stderr
 
         replies = [json.loads(line) for line in completed.stdout.splitlines() if line.strip()]
 

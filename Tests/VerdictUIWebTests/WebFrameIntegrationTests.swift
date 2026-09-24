@@ -476,14 +476,59 @@ final class WebFrameIntegrationTests: XCTestCase {
             XCTAssertEqual(broken.status, .fail)
             let collision = try XCTUnwrap(broken.tree?.flattened().first { $0.attributes["web.id"] == .string("border-collision") })
             XCTAssertTrue(broken.findings.contains { $0.rule == "sibling-overlap" && $0.nodeID == collision.structuralPath })
-            do {
-                _ = try await manager.open(profile: "inline", url: XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/inline-budget")))
-                XCTFail("over-limit inline geometry must not produce a partial tree")
-            } catch { XCTAssertTrue(String(describing: error).contains("inline element limit"), "\(error)") }
         } catch {
             await manager.closeAll(); try await server.stop(); throw error
         }
         await manager.closeAll(); try await server.stop()
+    }
+
+    func testRealInlineSnapshotHonorsCumulativeCandidateBoundaryBeforeRemoteWork() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("vui-inline-budget-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let (server, port) = try await server(root: root)
+        let session: WebSession
+        do {
+            session = try await WebSession.open(profile: "budget", url: XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/inline-budget")),
+                registry: ProfileRegistry(root: root.appendingPathComponent("profiles")), environment: [:], width: 800, height: 600)
+        } catch { try await server.stop(); throw error }
+        do {
+            // Obtain real browser bytes before testing the enrichment budget.
+            // A capture timeout is an infrastructure failure, never a limit witness.
+            let transport = await session.transport
+            let pageSession = await session.pageSessionID
+            let payload = try await transport.send(method: "DOMSnapshot.captureSnapshot", params: [
+                "computedStyles": .array(DOMSnapshotAssembly.computedStyles.map(CDPValue.string)),
+                "includePaintOrder": .bool(false), "includeDOMRects": .bool(true)], sessionID: pageSession)
+            let viewport = Rect(x: 0, y: 0, width: 800, height: 600)
+            let assembled = try DOMSnapshotAssembly.assemble(payload, viewport: viewport)
+            XCTAssertEqual(assembled.flattened().filter { $0.attributes["web.inlineCandidate"] == .bool(true) }.count, 3)
+
+            var exact = WebInlineGeometry.Budget()
+            try exact.reserveCandidates(4093)
+            let measured = try await WebInlineGeometry.enrich(payload, viewport: viewport, budget: &exact) { method, params, timeout in
+                try await transport.send(method: method, params: params, timeout: timeout, sessionID: pageSession)
+            }
+            XCTAssertEqual(exact.candidates, 0)
+            let measuredTree = try DOMSnapshotAssembly.assemble(measured, viewport: viewport)
+            XCTAssertEqual(measuredTree.flattened().filter { $0.attributes["web.inlineFragmentCount"] == .number(1) }.count, 3)
+
+            var over = WebInlineGeometry.Budget()
+            try over.reserveCandidates(4094)
+            let remoteCalls = CaptureSteps()
+            do {
+                _ = try await WebInlineGeometry.enrich(payload, viewport: viewport, budget: &over) { method, params, timeout in
+                    _ = await remoteCalls.next()
+                    return try await transport.send(method: method, params: params, timeout: timeout, sessionID: pageSession)
+                }
+                XCTFail("the cumulative 4097th candidate must not produce a partial tree")
+            } catch {
+                XCTAssertEqual(error as? WebBrowserError, .invalidCDPResponse(reason: "inline border geometry: inline element limit exceeded"))
+            }
+            let count = await remoteCalls.count
+            XCTAssertEqual(count, 0, "over-limit geometry must be refused before any remote work")
+        } catch { try await session.close(); try await server.stop(); throw error }
+        try await session.close(); try await server.stop()
     }
 
     func testLongDocumentsNestedPanelsAndFramesRemainScrollableAndActionable() async throws {

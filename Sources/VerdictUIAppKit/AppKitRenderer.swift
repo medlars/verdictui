@@ -130,13 +130,25 @@ public enum AppKitRenderer {
             )
         }
         let text = text(of: view)
+        let rawFrame = frame(of: view, in: root)
+        let alignmentFrame = nativeAlignmentFrame(of: view, in: root)
+        var attributes = attributes(of: view)
+        if alignmentFrame != nil {
+            // Keep the full view bounds as evidence for paint/hit comparisons.
+            // The logical layout rectangle does not redefine native hit testing.
+            attributes["appkit.geometry"] = .string("alignment-rect")
+            attributes["appkit.rawBounds.x"] = .number(rawFrame.x)
+            attributes["appkit.rawBounds.y"] = .number(rawFrame.y)
+            attributes["appkit.rawBounds.width"] = .number(rawFrame.width)
+            attributes["appkit.rawBounds.height"] = .number(rawFrame.height)
+        }
 
         return SemanticNode(
             id: identity(of: view, path: path),
             role: role,
-            frame: frame(of: view, in: root),
+            frame: alignmentFrame ?? rawFrame,
             text: text,
-            attributes: attributes(of: view),
+            attributes: attributes,
             isVisible: isVisible(view),
             textMetrics: textMetrics(of: view, role: role, text: text),
             children: children
@@ -318,7 +330,26 @@ public enum AppKitRenderer {
         // the WRONG rectangle for a view with a non-identity bounds transform
         // (a scaled or scrolled clip view), where `frame` and the drawn content
         // diverge.
-        let converted = view.convert(view.bounds, to: root)
+        rootFrame(view.convert(view.bounds, to: root), in: root)
+    }
+
+    /// Auto Layout constrains native buttons' alignment rectangles, excluding
+    /// bezel decoration. Using their full bounds creates false clipping and
+    /// overlap reports even when the constrained content fits. Restrict this to
+    /// exact platform leaf classes: custom subclasses may paint outside that
+    /// rectangle, and a root's bounds define the viewport.
+    private static func nativeAlignmentFrame(of view: NSView, in root: NSView) -> Rect? {
+        guard view !== root,
+            type(of: view) == NSButton.self || type(of: view) == NSPopUpButton.self,
+            let parent = view.superview
+        else { return nil }
+        // AppKit returns this rectangle in the SUPERVIEW's coordinates and
+        // accounts for that superview's flippedness itself.
+        let alignment = view.alignmentRect(forFrame: view.frame)
+        return rootFrame(parent.convert(alignment, to: root), in: root)
+    }
+
+    private static func rootFrame(_ converted: NSRect, in root: NSView) -> Rect {
         let rootHeight = root.bounds.height
         let y = root.isFlipped ? converted.origin.y : rootHeight - converted.maxY
         return Rect(

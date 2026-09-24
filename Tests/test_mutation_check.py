@@ -33,6 +33,23 @@ pytestmark = pytest.mark.quick
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
+def _missing_swift_tests(filters: list[tuple[str, str]], sources: list[str]) -> list[str]:
+    stale: list[str] = []
+    for name, expression in filters:
+        for alternative in expression.split("|"):
+            suite_part, _, method = alternative.rpartition("/")
+            klass = suite_part.split(".")[-1]
+            homes = [text for text in sources if f"func {method}(" in text]
+            if not homes:
+                stale.append(f"{name!r}: no test named {method!r} exists")
+            elif klass and not any(f"class {klass}" in text for text in homes):
+                stale.append(
+                    f"{name!r}: {method!r} exists but not in {klass!r} — "
+                    "the filter names a class that does not declare it"
+                )
+    return stale
+
+
 def _load_named(name: str, path: Path) -> Any:
     """Import a hyphen-named script as a module under `name`.
 
@@ -531,29 +548,40 @@ class TestClassify:
         }
         assert sources, "no Swift test sources found — this check would pass vacuously"
 
-        stale: list[str] = []
-        for mutation in swift_rows:
-            suite_part, _, method = mutation.test.rpartition("/")
-            klass = suite_part.split(".")[-1]
-
-            # The METHOD must exist, and it must exist in the class the filter
-            # names — a method that moved to a sibling class is exactly the
-            # failure this catches, and searching for the method alone would
-            # miss it.
-            homes = [text for text in sources.values() if f"func {method}(" in text]
-            if not homes:
-                stale.append(f"{mutation.name!r}: no test named {method!r} exists")
-                continue
-            if klass and not any(f"class {klass}" in text for text in homes):
-                stale.append(
-                    f"{mutation.name!r}: {method!r} exists but not in {klass!r} — "
-                    "the filter names a class that does not declare it"
-                )
+        # Every alternative must still select its declared class and method.
+        # Checking only the last method can silently lose earlier witnesses.
+        stale = _missing_swift_tests(
+            [(mutation.name, mutation.test) for mutation in swift_rows], list(sources.values())
+        )
 
         assert not stale, (
             "mutation rows name tests that cannot be selected, so they verify nothing:\n  "
             + "\n  ".join(stale)
         )
+
+    @pytest.mark.parametrize("qualified", [False, True])
+    @pytest.mark.parametrize("missing", [None, 0, 1, 2])
+    def test_every_filter_alternative_is_checked(self, qualified, missing) -> None:
+        prefix = "ProductTests." if qualified else ""
+        alternatives = [f"{prefix}Suite{i}/testWitness{i}" for i in range(3)]
+        sources = [
+            f"class Suite{i} {{ func testWitness{i}() {{}} }}" for i in range(3) if i != missing
+        ]
+        stale = _missing_swift_tests([("guard", "|".join(alternatives))], sources)
+        if missing is None:
+            assert stale == []
+        else:
+            assert len(stale) == 1 and f"testWitness{missing}" in stale[0]
+
+    @pytest.mark.parametrize("moved", [0, 1, 2])
+    def test_each_alternative_preserves_its_class(self, moved) -> None:
+        expression = "|".join(f"Suite{i}/testWitness{i}" for i in range(3))
+        sources = [
+            f"class {'Other' if i == moved else f'Suite{i}'} {{ func testWitness{i}() {{}} }}"
+            for i in range(3)
+        ]
+        stale = _missing_swift_tests([("guard", expression)], sources)
+        assert len(stale) == 1 and f"not in 'Suite{moved}'" in stale[0]
 
     def test_a_filter_matching_no_tests_is_stale_not_uncovered(self) -> None:
         # Exit 0 with zero tests run. Without the count check this reads as
