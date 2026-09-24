@@ -203,7 +203,9 @@ def test_runner_missing_prebuild_never_emits_a_tree(root, monkeypatch, tmp_path,
     assert capsys.readouterr().out == ""
 
 
-@pytest.mark.parametrize("code,status", [(0, "pass"), (1, "fail"), (2, "unavailable")])
+@pytest.mark.parametrize(
+    "code,status", [(0, "pass"), (1, "fail"), (2, "unavailable"), (0, "scalar")]
+)
 def test_observed_layout_failure_is_retained_and_paint_requires_review(
     root, attempt, tmp_path, monkeypatch, code, status
 ):
@@ -246,7 +248,9 @@ def test_observed_layout_failure_is_retained_and_paint_requires_review(
         return subprocess.CompletedProcess(
             args,
             code,
-            json.dumps(
+            b"null"
+            if status == "scalar"
+            else json.dumps(
                 {
                     "status": status.upper(),
                     "findings": [] if code == 0 else [{"severity": "error"}],
@@ -256,7 +260,7 @@ def test_observed_layout_failure_is_retained_and_paint_requires_review(
         )
 
     monkeypatch.setattr(coverage.subprocess, "run", judge)
-    if code == 2:
+    if code == 2 or status == "scalar":
         with pytest.raises(ValueError, match="layout judgment unavailable"):
             coverage.observe(root)
         assert not (root / ".verdictui/coverage-receipt.json").exists()

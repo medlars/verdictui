@@ -7,6 +7,14 @@ _TEST = "Tests/test_workbench_identity.py::"
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="Workbench scalar engine output bypasses unavailable handling",
+        path="scripts/workbench_coverage.py",
+        old="or not isinstance(verdict, dict)",
+        new="or False",
+        test="Tests/test_workbench_coverage.py::test_observed_layout_failure_is_retained_and_paint_requires_review[0-scalar]",
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
         name="Workbench dependency failure leaves an older passing attempt current",
         path="scripts/workbench_coverage.py",
         old='    identity._write(\n        state / "coverage-attempt.json",',

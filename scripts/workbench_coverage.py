@@ -198,6 +198,7 @@ def observe(root: Path = ROOT) -> tuple[bytes, Path]:
         status = "pass" if judged.returncode == 0 else "fail"
         if (
             judged.returncode not in {0, 1}
+            or not isinstance(verdict, dict)
             or verdict.get("status") != status.upper()
             or (not isinstance(verdict.get("findings"), list))
         ):
