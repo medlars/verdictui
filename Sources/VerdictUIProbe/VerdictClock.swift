@@ -21,8 +21,9 @@ import SwiftUI
 /// animation-correctness — those still flush Core Animation and pump the run
 /// loop so in-flight presentations can tick.
 public enum SettlePolicy: Equatable, Sendable {
-    /// Wrap the mutation in `Transaction(animation: nil)` so SwiftUI applies
-    /// the end state without an interpolating animation.
+    /// Disable animations on the mutation transaction. The hosted root also
+    /// clears an explicit animation supplied by nested `withAnimation`, so
+    /// native state transitions render their end state on the same host.
     case skipAnimations
     /// Allow the mutation's animations to run; flush `CATransaction` and pump
     /// the main run loop so presentation can advance.
@@ -261,7 +262,11 @@ public enum AnimationControl {
     ) -> Int {
         switch policy {
         case .skipAnimations:
-            withTransaction(Transaction(animation: nil), body)
+            var transaction = Transaction(animation: nil)
+            // Prevent view-local `.animation(_:value:)` from adding a curve;
+            // OracleHost also clears curves from nested `withAnimation` calls.
+            transaction.disablesAnimations = true
+            withTransaction(transaction, body)
             return 0
         case .runAnimations:
             withTransaction(Transaction(), body)

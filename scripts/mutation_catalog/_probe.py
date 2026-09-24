@@ -8,6 +8,27 @@ from mutation_catalog_types import Mutation, Runner  # noqa: F401
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="skip animation policy stops marking injected mutations",
+        path="Sources/VerdictUIProbe/VerdictClock.swift",
+        old="            transaction.disablesAnimations = true",
+        new="            transaction.disablesAnimations = false",
+        test="VerdictClockTests/testAnimationPolicySurvivesNestedAnimationAndCanChangeOnSameHost",
+    ),
+    Mutation(
+        name="hosted root preserves nested explicit animation in skip mode",
+        path="Sources/VerdictUIProbe/OracleHost.swift",
+        old="                        transaction.animation = nil",
+        new="                        _ = transaction.animation",
+        test="PixelCaptureTests/testSameHostPixelsFollowNestedAnimatedTransition",
+    ),
+    Mutation(
+        name="hosted root clears runAnimations explicit animation",
+        path="Sources/VerdictUIProbe/OracleHost.swift",
+        old="                    if transaction.disablesAnimations {",
+        new="                    if true {",
+        test="VerdictClockTests/testAnimationPolicySurvivesNestedAnimationAndCanChangeOnSameHost",
+    ),
+    Mutation(
         name="action discovery keeps removed probe handlers",
         path="Sources/VerdictUIProbe/OracleHost.swift",
         old="return state.actionableProbes.filter { present.contains($0.key) }",
