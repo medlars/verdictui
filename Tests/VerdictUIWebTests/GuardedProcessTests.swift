@@ -30,6 +30,10 @@ final class GuardedProcessTests: XCTestCase {
             standardOutput: output.fileHandleForWriting.fileDescriptor,
             standardError: errors.fileHandleForWriting.fileDescriptor)
         defer { _ = try? process.stop(grace: 0) }
+        for borrowed in [input.fileHandleForReading, output.fileHandleForWriting, errors.fileHandleForWriting] {
+            XCTAssertNotEqual(fcntl(borrowed.fileDescriptor, F_GETFD), -1,
+                              "launch borrows caller stdio; only its private descriptor snapshots may be closed")
+        }
         try input.fileHandleForReading.close(); try output.fileHandleForWriting.close(); try errors.fileHandleForWriting.close()
         let binary = Data([0, 255, 10, 13, 65])
         try input.fileHandleForWriting.write(contentsOf: binary); try input.fileHandleForWriting.close()
