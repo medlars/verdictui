@@ -8,6 +8,16 @@ import XCTest
 
 @MainActor
 final class ScenarioExpectationTests: XCTestCase {
+    func testOriginalInitializerFunctionValuePreservesEmptyPolicy() async throws {
+        let construct: (Size?, @escaping @Sendable () -> RequiredSupportScenario) -> ScenarioEntry =
+            ScenarioEntry.init(viewport:make:)
+        let entry = construct(Size(width: 240, height: 100), { RequiredSupportScenario() })
+        XCTAssertTrue(entry.expectations.expectations.isEmpty)
+        let verdict = try await engine([entry]).verify(scenario: entry.name)
+        XCTAssertEqual(verdict.status, .pass)
+        XCTAssertTrue(verdict.findings.isEmpty)
+    }
+
     private func engine(_ entries: [ScenarioEntry]) throws -> VerdictEngine {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("verdictui-expectations-\(UUID().uuidString)")

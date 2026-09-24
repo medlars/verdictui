@@ -41,6 +41,15 @@ public struct ScenarioEntry: Sendable {
     /// type exists only inside ``init(viewport:expectations:make:)``.
     private let makeHost: @Sendable @MainActor (Size?, TimeInterval, Variant?) -> OracleHost
 
+    /// Preserve the original public initializer, including its function-value
+    /// type and compiled symbol. Default arguments on a new signature do not.
+    public init<Scenario: VerdictScenario & Sendable>(
+        viewport: Size? = nil,
+        make: @escaping @Sendable () -> Scenario
+    ) {
+        self.init(viewport: viewport, expectations: [], make: make)
+    }
+
     /// - Parameters:
     ///   - viewport: value for ``viewport``.
     ///   - expectations: required elements and predicates for this scenario.
@@ -49,7 +58,7 @@ public struct ScenarioEntry: Sendable {
     ///     the render it was constructed for and two hosts must not share one.
     public init<Scenario: VerdictScenario & Sendable>(
         viewport: Size? = nil,
-        expectations: [Expectation] = [],
+        expectations: [Expectation],
         make: @escaping @Sendable () -> Scenario
     ) {
         self.name = make().name

@@ -79,7 +79,9 @@ let entry = ScenarioEntry(
 
 The entry stores an `ExpectationSet` named after its scenario. Omit
 `expectations` to preserve existing standard-lint behavior. These are compiled
-consumer declarations, not executable manifest configuration.
+consumer declarations, not executable manifest configuration. The original
+`init(viewport:make:)` overload remains available for source function references
+and existing compiled callers; explicit expectations use an additional overload.
 
 `verify` adds expectation findings to the requested rules. `act` evaluates them
 on the actually observed after-tree, preserving its before/after delta. `sweep`

@@ -51,6 +51,8 @@
 
 ## P1 — High Priority
 
+- [x] (P1) Preserve ScenarioEntry.init(viewport:make:) alongside explicit expectations. Root622973f aggregate D69.5 and independent source typecheck exposed removed public signature. Restored original overload;104 strict native tests including existing macro consumers pass, source factory typechecks,1 actual empty-policy mutant detected with exact restoration. Failed original aggregate retained; fresh committed aggregate acceptance is separate.
+
 - [x] (P1) CEO/stage_codewatch: the original new-checkout run observed 0/456 scans and failed. A fresh canonical scan and repairs now pass the scoped stage (448/456 currently scanned; five dirty paths excluded by its policy and separately scanned). Clean-commit full PM must re-admit the committed files; original failure retained.
 
 - [x] (2026-09-24) (P1) CEO/stage_pytest: repaired every-alternative Swift mutation filter validation in4c4aa32; actual Python stage654 pass,1 skip and11 subtests. Aggregate final PM remains a separate release gate.

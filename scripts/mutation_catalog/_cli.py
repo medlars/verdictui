@@ -8,6 +8,13 @@ from mutation_catalog_types import Mutation, Runner  # noqa: F401
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="original scenario initializer invents an expectation",
+        path="Sources/VerdictUIProbe/ScenarioRegistry.swift",
+        old="self.init(viewport: viewport, expectations: [], make: make)",
+        new='self.init(viewport: viewport, expectations: [Expectation("invented")], make: make)',
+        test="ScenarioExpectationTests/testOriginalInitializerFunctionValuePreservesEmptyPolicy",
+    ),
+    Mutation(
         name="scenario expectation presence guard is inverted",
         path="Sources/VerdictUICLICore/VerdictEngine.swift",
         old="guard !entry.expectations.expectations.isEmpty else { return requested }",
