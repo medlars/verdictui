@@ -130,7 +130,10 @@ public final class OracleHost {
     /// How ``applyStateChange(_:)`` wraps injected mutations. Defaults to
     /// ``SettlePolicy/skipAnimations`` — Wave 3's animation control, not the
     /// unwritable `accessibilityReduceMotion` pin.
-    public var settlePolicy: SettlePolicy
+    public var settlePolicy: SettlePolicy {
+        get { animationPolicy.current }
+        set { animationPolicy.current = newValue }
+    }
 
     /// Count of `CATransaction.flush` calls performed by ``applyStateChange(_:)``
     /// on this host. Tests pin the ``SettlePolicy/runAnimations`` path with it.
@@ -158,6 +161,17 @@ public final class OracleHost {
 
     /// Owned by the host so the scenario cannot install its own.
     private let sink: VerdictTreeSink
+
+    // The root transaction modifier reads this host's current policy without
+    // replacing rootView when the caller changes policy, preserving @State.
+    @MainActor
+    private final class AnimationPolicy {
+        var current: SettlePolicy
+
+        init(_ current: SettlePolicy) { self.current = current }
+    }
+
+    private let animationPolicy: AnimationPolicy
 
     /// Create a host for `scenario`.
     ///
@@ -193,7 +207,8 @@ public final class OracleHost {
     ) {
         scenarioName = scenario.name
         self.deadline = deadline
-        self.settlePolicy = settlePolicy
+        let animationPolicy = AnimationPolicy(settlePolicy)
+        self.animationPolicy = animationPolicy
         self.clock = clock
         // `nil` means "the pinned baseline", which IS a variant — recording it
         // as `.baseline` rather than leaving it optional means every consumer
@@ -216,6 +231,7 @@ public final class OracleHost {
                     sink: VerdictTreeSink(),
                     clock: clock,
                     state: ScenarioState(),
+                    animationPolicy: animationPolicy,
                     // The MEASURING pass needs the variant too: a scenario sized
                     // at `.medium` and then rendered at `.accessibility5` would
                     // be hosted in a box too small for its own content, so every
@@ -245,6 +261,7 @@ public final class OracleHost {
                 sink: sink,
                 clock: clock,
                 state: state,
+                animationPolicy: animationPolicy,
                 variant: variant
             )
         )
@@ -493,6 +510,7 @@ public final class OracleHost {
         sink: VerdictTreeSink,
         clock: VerdictClock,
         state: ScenarioState,
+        animationPolicy: AnimationPolicy,
         variant: Variant? = nil
     ) -> AnyView {
         // `AnyView` so the class can stay non-generic while `NSHostingView` cannot.
@@ -519,11 +537,11 @@ public final class OracleHost {
         AnyView(
             view
                 .transaction { transaction in
-                    // A nested `withAnimation` can replace the animation on
-                    // the injected transaction. Its disablesAnimations flag
-                    // survives, so enforce skip mode at the hosted root too.
-                    // Keep runAnimations transactions unchanged.
-                    if transaction.disablesAnimations {
+                    // A nested `withAnimation` can replace the injected curve.
+                    // Only enforce suppression when THIS host is skipping:
+                    // a consumer may disable implicit animations while keeping
+                    // its chosen explicit animation in runAnimations mode.
+                    if animationPolicy.current == .skipAnimations && transaction.disablesAnimations {
                         transaction.animation = nil
                     }
                 }
