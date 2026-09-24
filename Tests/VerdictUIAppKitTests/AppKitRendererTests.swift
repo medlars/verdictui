@@ -490,4 +490,183 @@ final class AppKitRendererTests: XCTestCase {
             "renderer created a window; it must lay out off-screen"
         )
     }
+
+    // MARK: - Native button layout rectangles versus decoration
+
+    private final class FlippedRoot: NSView {
+        override var isFlipped: Bool { true }
+    }
+
+    private final class CustomButton: NSButton {}
+
+    private func kernelRect(_ rectangle: NSRect, root: NSView) -> Rect {
+        Rect(
+            x: Double(rectangle.minX),
+            y: Double(root.isFlipped ? rectangle.minY : root.bounds.height - rectangle.maxY),
+            width: Double(rectangle.width), height: Double(rectangle.height))
+    }
+
+    private func judge(_ root: NSView) -> Verdict {
+        let tree = AppKitRenderer.tree(for: root)
+        return RuleEngine.run(
+            rules: RuleEngine.standardRules, on: tree,
+            context: .macOS(viewport: tree.frame, scenario: "native-alignment"))
+    }
+
+    func testNativePopupFitsItsAutoLayoutStackWithoutDecorativeOverflow() throws {
+        _ = NSApplication.shared
+        let root = NSView(frame: NSRect(x: 0, y: 0, width: 800, height: 480))
+        let search = NSSearchField()
+        let popup = NSPopUpButton()
+        popup.identifier = .init("filter")
+        popup.addItems(withTitles: ["All Permissions", "Full Disk Access", "Screen Recording"])
+        let stack = NSStackView(views: [search, popup])
+        stack.spacing = 8
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 12),
+            stack.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -12),
+            stack.topAnchor.constraint(equalTo: root.topAnchor, constant: 8),
+            search.widthAnchor.constraint(greaterThanOrEqualToConstant: 200),
+        ])
+        let tree = AppKitRenderer.tree(for: root)
+        let node = try XCTUnwrap(tree.flattened().first { $0.id == "filter" })
+        let alignment = stack.convert(popup.alignmentRect(forFrame: popup.frame), to: root)
+        XCTAssertEqual(node.frame, kernelRect(alignment, root: root))
+        XCTAssertEqual(node.attributes["appkit.geometry"], .string("alignment-rect"))
+        XCTAssertFalse(
+            judge(root).findings.contains { $0.rule == "clipped-content" },
+            "Auto Layout's own native popup must not fail on its decorative margins")
+    }
+
+    private func footerFixture(buttonOffset: CGFloat) -> NSView {
+        _ = NSApplication.shared
+        let root = NSView(frame: NSRect(x: 0, y: 0, width: 800, height: 480))
+        let scroll = NSScrollView()
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+        let table = NSTableView()
+        table.addTableColumn(NSTableColumn(identifier: .init("item")))
+        scroll.documentView = table
+        let status = NSTextField(labelWithString: "Loading...")
+        status.font = .systemFont(ofSize: 11)
+        status.translatesAutoresizingMaskIntoConstraints = false
+        let button = NSButton(title: "Load Login Items…", target: nil, action: nil)
+        button.bezelStyle = .rounded
+        button.controlSize = .small
+        button.identifier = .init("load")
+        button.translatesAutoresizingMaskIntoConstraints = false
+        [scroll, status, button].forEach(root.addSubview)
+        NSLayoutConstraint.activate([
+            scroll.topAnchor.constraint(equalTo: root.topAnchor, constant: 49),
+            scroll.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            scroll.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            scroll.bottomAnchor.constraint(equalTo: status.topAnchor, constant: -4),
+            status.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 12),
+            status.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -8),
+            button.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -12),
+            button.centerYAnchor.constraint(equalTo: status.centerYAnchor, constant: buttonOffset),
+        ])
+        return root
+    }
+
+    func testNativeFooterButtonDoesNotOverlapTableWhenOnlyDecorationTouches() {
+        let findings = judge(footerFixture(buttonOffset: 0)).findings
+        XCTAssertFalse(
+            findings.contains { $0.rule == "sibling-overlap" || $0.rule == "content-overlap" },
+            "Native control decoration is not content collision: \(findings)")
+    }
+
+    func testNativeButtonActualContentOverlapStillFails() {
+        let verdict = judge(footerFixture(buttonOffset: -10))
+        XCTAssertEqual(verdict.status, .fail)
+        XCTAssertTrue(verdict.findings.contains { $0.rule == "sibling-overlap" && $0.nodeID == "load" })
+        XCTAssertTrue(verdict.findings.contains { $0.rule == "content-overlap" && $0.nodeID == "load" })
+    }
+
+    func testNativeButtonDecorationMayExtendOutsideItsLogicalContainer() throws {
+        _ = NSApplication.shared
+        let root = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+        let container = NSView(frame: NSRect(x: 20, y: 40, width: 100, height: 60))
+        let button = NSButton(title: "Go", target: nil, action: nil)
+        button.bezelStyle = .texturedRounded
+        button.identifier = .init("fitting-button")
+        container.addSubview(button)
+        root.addSubview(container)
+        let logical = NSRect(x: 0, y: 10, width: 100, height: 24)
+        button.frame = button.frame(forAlignmentRect: logical)
+        XCTAssertNotEqual(button.frame, logical, "The native fixture must contain decorative margins")
+        let tree = AppKitRenderer.tree(for: root)
+        let node = try XCTUnwrap(tree.flattened().first { $0.id == "fitting-button" })
+        XCTAssertEqual(node.frame, kernelRect(container.convert(logical, to: root), root: root))
+        XCTAssertFalse(judge(root).findings.contains { $0.rule == "clipped-content" })
+    }
+
+    func testNativeButtonActualContentClippingStillFails() {
+        _ = NSApplication.shared
+        let root = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+        let container = NSView(frame: NSRect(x: 20, y: 40, width: 100, height: 60))
+        let button = NSButton(title: "Go", target: nil, action: nil)
+        button.identifier = .init("escaped")
+        button.frame = NSRect(x: 80, y: 10, width: 100, height: 30)
+        container.addSubview(button)
+        root.addSubview(container)
+        let verdict = judge(root)
+        XCTAssertEqual(verdict.status, .fail)
+        XCTAssertTrue(
+            verdict.findings.contains { $0.rule == "clipped-content" && $0.nodeID == "escaped" })
+    }
+
+    func testNativeButtonAlignmentKeepsRawBoundsEvidenceAndFlippedRootCoordinates() throws {
+        _ = NSApplication.shared
+        for flipped in [false, true] {
+            let root =
+                flipped
+                ? FlippedRoot(frame: NSRect(x: 0, y: 0, width: 400, height: 300))
+                : NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 300))
+            let parent = NSView(frame: NSRect(x: 30, y: 40, width: 300, height: 200))
+            let button = NSButton(title: "Go", target: nil, action: nil)
+            // This bezel has nonzero public alignment insets in both the
+            // XCTest host and standalone consumers; rounded buttons can have
+            // zero insets under the host's newer system appearance.
+            button.bezelStyle = .texturedRounded
+            button.frame = NSRect(x: 20, y: 30, width: 100, height: 30)
+            button.identifier = .init("button")
+            parent.addSubview(button)
+            root.addSubview(parent)
+            let tree = AppKitRenderer.tree(for: root)
+            let node = try XCTUnwrap(tree.flattened().first { $0.id == "button" })
+            let raw = kernelRect(button.convert(button.bounds, to: root), root: root)
+            let alignment = parent.convert(button.alignmentRect(forFrame: button.frame), to: root)
+            XCTAssertNotEqual(raw, kernelRect(alignment, root: root))
+            XCTAssertEqual(node.frame, kernelRect(alignment, root: root))
+            XCTAssertEqual(node.attributes["appkit.geometry"], .string("alignment-rect"))
+            XCTAssertEqual(node.attributes["appkit.rawBounds.x"], .number(raw.x))
+            XCTAssertEqual(node.attributes["appkit.rawBounds.y"], .number(raw.y))
+            XCTAssertEqual(node.attributes["appkit.rawBounds.width"], .number(raw.width))
+            XCTAssertEqual(node.attributes["appkit.rawBounds.height"], .number(raw.height))
+        }
+    }
+
+    func testCustomButtonAndRootKeepTheirFullBounds() throws {
+        _ = NSApplication.shared
+        let root = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 200))
+        let custom = CustomButton(title: "Custom", target: nil, action: nil)
+        custom.bezelStyle = .texturedRounded
+        custom.identifier = .init("custom")
+        custom.frame = NSRect(x: 20, y: 30, width: 100, height: 40)
+        root.addSubview(custom)
+        let node = try XCTUnwrap(AppKitRenderer.tree(for: root).flattened().first { $0.id == "custom" })
+        XCTAssertEqual(node.frame, kernelRect(custom.convert(custom.bounds, to: root), root: root))
+        XCTAssertNil(
+            node.attributes["appkit.geometry"], "A custom subclass may draw beyond the native bezel")
+
+        let buttonRoot = NSButton(title: "Viewport", target: nil, action: nil)
+        buttonRoot.bezelStyle = .texturedRounded
+        buttonRoot.frame = NSRect(x: 20, y: 30, width: 160, height: 60)
+        root.addSubview(buttonRoot)
+        let rootTree = AppKitRenderer.tree(for: buttonRoot)
+        XCTAssertEqual(rootTree.frame, Rect(x: 0, y: 0, width: 160, height: 60))
+        XCTAssertNil(rootTree.attributes["appkit.geometry"], "Root bounds define the viewport")
+    }
 }
