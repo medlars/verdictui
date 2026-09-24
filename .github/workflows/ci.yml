@@ -54,6 +54,10 @@ jobs:
         id: tests
         env:
           VERDICTUI_TEST_PYTHON: ${{ steps.fixture_python.outputs.python-path }}
+          # Hosted runners run live-browser captures ~2x slower than a developer
+          # Mac; the fixed 10 s/5 s budgets refused heavy fixtures with "deadline
+          # exceeded" instead of the verdict under test (CIS-4ADF5658).
+          VERDICTUI_WEB_TIMEOUT_SCALE: "3"
         run: swift test -Xswiftc -warnings-as-errors
 
       # DemoReportTests exercises the executable's body in-process; this catches
