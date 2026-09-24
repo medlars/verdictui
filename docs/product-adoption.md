@@ -126,3 +126,27 @@ and report project coverage.
 4. Re-run this gate against the final installed binary, and each consumer's
    independent acceptance, before claiming full adoption. Record unconfigured,
    unavailable and incomplete products rather than treating them as clean.
+
+## Workbench adoption follow-up
+
+The Workbench now declares `workbench-connected-workflow` in project-owned
+checks and coverage manifests. Its runner drives the actual packaged WKWebView,
+bridge and helper against freshly compiled private consumers. CLI/API/MCP share
+the explicit web-tree judge, including a real consumer runner; a native AppKit
+judge is not substituted for DOM rules. The source catalog now has 19 tools,
+including `judge_web`; the currently installed 1.1.3 clients still have 18.
+
+The integrated source passed 121 Python contracts, 31 focused Swift tests and
+the PM Workbench stage (108 browser assertions in two engines, 38 native
+assertions across 10 phases). The worker candidate also passed independent
+review of all eight native PNGs and the common reader admitted layout, paint
+and behavior for its declared scope. Its real cancellation probe observed all
+nine owned children exit after awaited cleanup. The integrated release must
+retain its own fresh observation and image review before admission.
+
+This scope covers project selection, editing and saving checks, actual consumer
+PASS/FAIL, running state, cancellation, history and reload. It does not certify
+OS file pickers, notifications, window management, other products or every
+possible state. Native captures measured the owner's enabled reduced-motion
+preference; normal native motion remains unmeasured. See
+[workbench-adoption.md](workbench-adoption.md) for reproducible admission.

@@ -336,3 +336,18 @@ PanoMac/installed acceptance questions remain pending. Final Workbench rendering
 found and is correcting two small-text contrast defects; fleet completion PM is
 running. No installed notification or fleet adoption claim is closed by these
 safeguards. See `docs/instruction-coverage.md` for receipt identities.
+
+### Popup repair and integrated Workbench — 2026-09-24
+
+The repeated damaged WitnessHost alerts came from two tests relocating Apple's
+`/bin/echo`; the actual crash identified `com.apple.echo` and a launch-constraint
+signing failure. The owned early-exit fixture repair passed both real tests
+with no skips, retained the original mutation witness and passed CI35951651770.
+The narrow test-only fix is active in the canonical checkout without changing
+HEAD, index or other tracked bytes.
+
+The full Workbench chain is integrated with the renderer fixes. Root focused
+contracts121/31 and PM Workbench108/38 pass; root-specific paint admission is
+next. PM Base PR222 is merged after A100/full tests and exact-head CI; exact
+merge CI precedes canonical/daemon activation. The two owner questions remain
+pending; do not restart PanoMac or access Codex settings without their answers.
