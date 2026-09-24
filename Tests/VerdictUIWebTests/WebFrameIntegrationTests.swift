@@ -608,7 +608,8 @@ final class WebFrameIntegrationTests: XCTestCase {
                 XCTAssertTrue(Self.isExpectedDocumentBudgetRefusal(error), "\(error)")
             }
         } catch { XCTFail("\(phase): \(error)") }
-        await manager.closeAll()
+        let retirementFailures = await manager.closeAll()
+        XCTAssertTrue(retirementFailures.isEmpty, "browser retirement failed: \(retirementFailures)")
         try await server.stop()
     }
 

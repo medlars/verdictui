@@ -7,6 +7,14 @@ _TEST = "VerdictUIWebTests."
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="web document budget witness ignores browser retirement failure",
+        path="Tests/VerdictUIWebTests/WebFrameIntegrationTests.swift",
+        old="let retirementFailures = await manager.closeAll()",
+        new='let retirementFailures = (await manager.closeAll()) + [WebBrowserError.invalidWebOperation(reason: "injected retirement failure")]',
+        test=_TEST
+        + "WebFrameIntegrationTests/testLongDocumentsNestedPanelsAndFramesRemainScrollableAndActionable",
+    ),
+    Mutation(
         name="web late-exit fixture silently drops its injected delay",
         path="Tests/VerdictUIWebTests/WebCredentialLifecycleTests.swift",
         old="            deadline=started+9",
