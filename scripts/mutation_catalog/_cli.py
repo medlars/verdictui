@@ -8,6 +8,13 @@ from mutation_catalog_types import Mutation, Runner  # noqa: F401
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="MCP initialize reports schema instead of software release",
+        path="Sources/VerdictUICLICore/MCPTransport.swift",
+        old="version: ReleaseVersion.current",
+        new="version: SchemaVersion.current",
+        test="MCPTransportTests/testInitializeReportsTheProtocolAndServerIdentity",
+    ),
+    Mutation(
         name="bounded command observes stale zero output size",
         path="Sources/VerdictUICLICore/BoundedCommand.swift",
         old="return Int(info.st_size)",

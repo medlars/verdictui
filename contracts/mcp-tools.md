@@ -115,8 +115,12 @@ nodes remain available; do not discard warnings when interpreting status.
 
 ```json
 {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"probe","version":"1"}}}
-→ {"id":1,"jsonrpc":"2.0","result":{"capabilities":{"tools":{}},"protocolVersion":"2024-11-05","serverInfo":{"name":"verdictui","version":"1.1"}}}
+→ {"id":1,"jsonrpc":"2.0","result":{"capabilities":{"tools":{}},"protocolVersion":"2024-11-05","serverInfo":{"name":"verdictui","version":"1.1.4"}}}
 ```
+
+`serverInfo.version` identifies the software release (`ReleaseVersion.current`).
+The verdict payload schema remains `1.1`; the MCP protocol version remains
+`2024-11-05`. Builds sharing a verdict schema can expose different tool catalogs.
 
 **`params` is free-form per method and must decode leniently.** It is typed here
 for `tools/call`, but `initialize` fills it with an entirely different shape. A

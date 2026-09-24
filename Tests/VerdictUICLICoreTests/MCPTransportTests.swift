@@ -71,7 +71,9 @@ final class MCPTransportTests: XCTestCase {
         XCTAssertEqual(result["protocolVersion"] as? String, MCPTransport.protocolVersion)
         let info = try XCTUnwrap(result["serverInfo"] as? [String: Any])
         XCTAssertEqual(info["name"] as? String, "verdictui")
-        XCTAssertEqual(info["version"] as? String, SchemaVersion.current)
+        XCTAssertEqual(info["version"] as? String, ReleaseVersion.current)
+        XCTAssertNotEqual(info["version"] as? String, SchemaVersion.current,
+                          "The server release must distinguish builds sharing the verdict schema")
     }
 
     /// The handshake a REAL client sends, params and all.
