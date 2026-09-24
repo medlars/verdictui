@@ -38,8 +38,15 @@ overlay in the canonical shared library, preserving its existing peer edits,
 Git index and HEAD. Fresh canonical imports and 215 focused checks passed.
 This does not claim that the canonical mixed checkout equals the complete
 published PM Base release or that already-running processes reloaded it.
-The later completion and dashboard guard is published in PR 222; runtime
-activation remains separately gated on a complete clean-source PM receipt.
+The later completion and dashboard guard is published in PR 222. On September
+24, all five existing CEO LaunchAgents were restored on qualified commit
+`0f48e38` after its clean-source full PM passed A100. Their arguments and calendar
+schedules were preserved. The running watcher explicitly reported 150 unavailable
+projects and withheld UI completion; the three scheduled jobs remained idle.
+Live dashboard checks passed at 1440px and 390px, including exact API-to-DOM
+coverage text, column alignment and overflow checks. Review of the four actual
+images exposed a separate watcher-status parsing defect: a stamped PID lock was
+displayed as stopped. That repair and final paint acceptance remain pending.
 
 ## Actual client and consumer checks
 
