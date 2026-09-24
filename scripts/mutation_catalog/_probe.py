@@ -8,6 +8,55 @@ from mutation_catalog_types import Mutation, Runner  # noqa: F401
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="skip animation policy stops marking injected mutations",
+        path="Sources/VerdictUIProbe/VerdictClock.swift",
+        old="            transaction.disablesAnimations = true",
+        new="            transaction.disablesAnimations = false",
+        test="VerdictClockTests/testAnimationPolicySurvivesNestedAnimationAndCanChangeOnSameHost",
+    ),
+    Mutation(
+        name="hosted root preserves nested explicit animation in skip mode",
+        path="Sources/VerdictUIProbe/OracleHost.swift",
+        old="                        transaction.animation = nil",
+        new="                        _ = transaction.animation",
+        test="PixelCaptureTests/testSameHostPixelsFollowNestedAnimatedTransition",
+    ),
+    Mutation(
+        name="hosted root clears runAnimations explicit animation",
+        path="Sources/VerdictUIProbe/OracleHost.swift",
+        old="                    if animationPolicy.current == .skipAnimations && transaction.disablesAnimations {",
+        new="                    if true {",
+        test="VerdictClockTests/testAnimationPolicySurvivesNestedAnimationAndCanChangeOnSameHost",
+    ),
+    Mutation(
+        name="hosted root treats a consumer disabled flag as the host skip policy",
+        path="Sources/VerdictUIProbe/OracleHost.swift",
+        old="animationPolicy.current == .skipAnimations && transaction.disablesAnimations",
+        new="transaction.disablesAnimations",
+        test="VerdictClockTests/testRunPolicyPreservesExplicitConsumerAnimationWithDisabledFlag",
+    ),
+    Mutation(
+        name="hosted root captures a detached copy of the initial animation policy",
+        path="Sources/VerdictUIProbe/OracleHost.swift",
+        old="                animationPolicy: animationPolicy,\n                variant: variant",
+        new="                animationPolicy: AnimationPolicy(animationPolicy.current),\n                variant: variant",
+        test="VerdictClockTests/testRunPolicyPreservesExplicitConsumerAnimationWithDisabledFlag",
+    ),
+    Mutation(
+        name="action discovery keeps removed probe handlers",
+        path="Sources/VerdictUIProbe/OracleHost.swift",
+        old="return state.actionableProbes.filter { present.contains($0.key) }",
+        new="return state.actionableProbes.filter { _ in !present.isEmpty }",
+        test="ActionDiscoveryTests/testRemovedActionCannotBeDiscoveredOrInvokedAndCanReappear",
+    ),
+    Mutation(
+        name="action injection accepts a removed probe",
+        path="Sources/VerdictUIProbe/OracleHost.swift",
+        old="guard sink.latestTree?.node(withID: action.probeID) != nil else {",
+        new="guard sink.latestTree != nil else {",
+        test="ActionDiscoveryTests/testRemovedActionCannotBeDiscoveredOrInvokedAndCanReappear",
+    ),
+    Mutation(
         name="scenario initial bool seed publishes during rendering",
         path="Sources/VerdictUIProbe/Scenario.swift",
         old="            bools[id] = defaultValue",

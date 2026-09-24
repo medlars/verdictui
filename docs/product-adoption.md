@@ -4,6 +4,36 @@ Updated September 24, 2026. A library import, a registered manifest, an executab
 runner, and a verified installed app are different evidence states. None implies
 complete product coverage.
 
+## September 24 final candidate checkpoint
+
+Framework `7928e90` passed local PM Grade A100 and exact CI `36064850073`.
+The packaged desktop passed 138 browser assertions and 48 quiet native bridge
+assertions. Nine original native screenshots were reviewed for readable state
+labels, consistent controls and compact layout. Apple accepted notarization
+`3482928b-201b-4b50-ae17-0ec4e34874fa`; signature, staple and Gatekeeper checks
+also passed after archive extraction. This artifact remains bound to `7928e90`.
+No installation followed. Native normal motion is unmeasured because macOS has
+reduced motion enabled; the captured progress frames correctly remain still.
+The later `0856d7d` changes test-only browser cleanup and its mutation controls,
+retaining profile and server evidence whenever retirement is uncertain.
+
+SagaMail's published `73b2d735` (only CI evidence after `3992d662`) was observed
+with dependency and signed helper `7928e90`. Its three real Junk Mail preset
+states pass declared checks and original screenshot review; the planted
+offscreen control fails. The source-bound local receipt admits layout and paint
+only. Behavior remains unavailable, and other tabs, live accounts, themes,
+viewports and installed operation remain outside these observations. The fleet's
+canonical checkout does not inherit a verification clone's receipt automatically.
+
+Sentinel `8820a47` passed 20 consumer controls, 29 strict native tests and two
+additional checks through the signed `7928e90` helper. The 20-control run retains
+its older launcher identity separately. Aggregate qualification was stopped
+before a legacy engine smoke that would start real scanner/sync loops. A test-only
+isolation repair is required before the genuine quick pipeline can run.
+LaunchGate `5ae0108` with dependency and helper `7928e90` passed 19 strict native
+checks and six actual CLI/MCP controls. Its final same-host pixel evidence covers
+both Welcome themes and Activity states; broader installed behavior is unmeasured.
+
 ## Registry coverage census
 
 The follow-up census reads every row of `shared/pm-registry.json`, including
@@ -105,10 +135,43 @@ that failed receipt remains intact. A separate reconciliation and subsequent
 controls establish the consumer result. These are source-candidate results;
 installed 1.1.3 and the earlier signed 1.1.4 archive have not gained this feature.
 
-Current layout and paint admission is being refreshed after the final consumer
-documentation commit. Behavior remains unavailable: these preset view states
+PR44 published the consumer build budget and diagnostic-safe integration harness
+as `3992d662`. Both candidate CI `36059158162` and published CI `36061062514`
+passed six jobs, including native render snapshots; two dispatch-only GUI jobs
+were skipped. The final harness measured seventeen controls without skips.
+Current layout and paint admission must now be refreshed against the published
+consumer and final dependency. Behavior remains unavailable: these preset view states
 do not exercise actual user actions. See SagaMail's `docs/verdictui-adoption.md`
 for reproduction and the complete evidence boundary.
+
+## Sentinel and LaunchGate source checkpoints — September 24
+
+Sentinel's isolated candidate `05645bdf` supplies its real onboarding registry
+and compiled expectations to the shared runner. The normal support view passes;
+missing and squeezed real controls fail and remain outside normal checks.
+Twenty final CLI/MCP/daemon and harness controls passed without skips, including
+same-broker source reload and failed-build refusal. Four final brokers exited
+normally and retired their sockets. Fourteen harness mutations were detected
+with exact restoration. Raw compiler diagnostics are retained before strict
+protocol decoding; forced child cleanup remains a failure, and escaped
+descendant containment remains unverified. Three static PNGs from the preceding
+Swift-equivalent candidate were reviewed. Publication, current admitted paint,
+full product coverage and installed acceptance remain separate.
+
+LaunchGate candidate `5ae0108` exposes three actual Activity states and the real
+three-page Welcome view through its executable. It uses the original mark and
+real callbacks. Native and actual CLI/MCP controls distinguish the normal views
+from a planted offscreen control and reject actions absent from the current tree.
+Independent visual report `UIV-20260924-005` found a shared animation defect:
+semantic pages changed while pixels remained on the first page. The original
+FAIL remains intact. After the shared skip-animation repair, report
+`UIV-20260924-006` verified distinct pages, exact Back/repeat restoration and
+expected action states in both themes, with 317 measurements. Root directly
+inspected all six distinct Welcome images and six clearly derived Activity
+background views. This is windowless scene evidence, not installed/live input.
+The preexisting light-theme gold link contrast is separately recorded as
+`CIS-FB44A379`; the report does not certify complete accessibility. Final framework
+policy review, consumer publication and admitted receipts remain pending.
 
 ## Earlier read-only directory census
 
@@ -171,8 +234,8 @@ and report project coverage.
 
 ## Required adoption work
 
-1. Admit current layout and paint receipts for SagaMail's three-state consumer,
-   publish its verified cold-build configuration, and audit remaining settings and
+1. Admit current layout and paint receipts for SagaMail's published three-state
+   consumer and audit remaining settings and
    installed account flows separately from synthetic controls.
 2. Add project-owned checks for each actual product surface. Web targets need a
    reachable app URL and an expected rendered result. AppKit targets need their

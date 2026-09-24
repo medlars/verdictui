@@ -534,7 +534,6 @@ final class WebFrameIntegrationTests: XCTestCase {
     func testLongDocumentsNestedPanelsAndFramesRemainScrollableAndActionable() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("vui-scroll-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
         let (server, port) = try await server(root: root)
         let manager = WebSessionManager(root: root.appendingPathComponent("profiles"), environment: [:])
         var phase = "starting"
@@ -598,16 +597,105 @@ final class WebFrameIntegrationTests: XCTestCase {
             let longText = try await manager.verify(profile: "scroll", expectText: "Measured line 9999")
             XCTAssertEqual(longText.status, .pass, "\(longText.findings)")
             phase = "overlap budget refusal"
-            _ = try await manager.open(profile: "scroll", url: XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/overlap-budget")))
             do {
+                // Opening also observes the page. A bounded capture refusal
+                // can precede overlap lint on a heavily loaded host.
+                _ = try await manager.open(profile: "scroll", url: XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/overlap-budget")))
                 _ = try await manager.verify(profile: "scroll")
                 XCTFail("exhausted overlap inspection must not return a partial verdict")
             } catch {
-                XCTAssertTrue(String(describing: error).contains("bounded work budget"), "\(error)")
+                XCTAssertTrue(Self.isExpectedDocumentBudgetRefusal(error), "\(error)")
             }
         } catch { XCTFail("\(phase): \(error)") }
-        await manager.closeAll()
-        try await server.stop()
+        let retirementFailures = await manager.closeAll()
+        XCTAssertTrue(retirementFailures.isEmpty, "browser retirement failed: \(retirementFailures); fixture retained at \(root.path)")
+        try await Self.retireDocumentFixture(root: root, retirementFailures: retirementFailures) {
+            try await server.stop()
+        }
+    }
+
+    private static func retireDocumentFixture(
+        root: URL,
+        retirementFailures: [WebBrowserError],
+        stopServer: () async throws -> Void
+    ) async throws {
+        // Keep profiles and diagnostics until both process owners confirm exit.
+        // Still stop the server when browser retirement failed.
+        try await stopServer()
+        guard retirementFailures.isEmpty else { return }
+        try FileManager.default.removeItem(at: root)
+    }
+
+    private func documentCleanupFixture() throws -> (root: URL, evidence: URL, bytes: Data) {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("vui-retention-\(UUID().uuidString)")
+        let profile = root.appendingPathComponent("profiles/scroll")
+        try FileManager.default.createDirectory(at: profile, withIntermediateDirectories: true)
+        let evidence = profile.appendingPathComponent("retirement-evidence.json")
+        let bytes = Data("{\"retirement\":\"unverified\"}".utf8)
+        try bytes.write(to: evidence)
+        return (root, evidence, bytes)
+    }
+
+    func testDocumentFixtureRetainsEvidenceWhenBrowserRetirementFails() async throws {
+        let fixture = try documentCleanupFixture()
+        // These filesystem-only fixtures never start a process and remain ours.
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        var serverStopAttempted = false
+        try await Self.retireDocumentFixture(
+            root: fixture.root,
+            retirementFailures: [.invalidWebOperation(reason: "browser retirement unverified")]
+        ) {
+            serverStopAttempted = true
+        }
+        XCTAssertTrue(serverStopAttempted, "a browser failure must not bypass fixture-server retirement")
+        XCTAssertEqual(try? Data(contentsOf: fixture.evidence), fixture.bytes, "uncertain browser retirement must retain profile evidence")
+    }
+
+    func testDocumentFixtureRetainsEvidenceWhenServerRetirementFails() async throws {
+        let fixture = try documentCleanupFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let failure = WebBrowserError.invalidWebOperation(reason: "fixture-server retirement unverified")
+        do {
+            try await Self.retireDocumentFixture(root: fixture.root, retirementFailures: []) {
+                throw failure
+            }
+            XCTFail("fixture-server retirement failure must propagate")
+        } catch {
+            XCTAssertEqual(error as? WebBrowserError, failure)
+        }
+        XCTAssertEqual(try? Data(contentsOf: fixture.evidence), fixture.bytes, "uncertain server retirement must retain profile evidence")
+    }
+
+    func testDocumentFixtureRemovesRootOnlyAfterBothRetirementsSucceed() async throws {
+        let fixture = try documentCleanupFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        var serverStopAttempted = false
+        try await Self.retireDocumentFixture(root: fixture.root, retirementFailures: []) {
+            XCTAssertEqual(try? Data(contentsOf: fixture.evidence), fixture.bytes, "profile evidence must survive until server retirement completes")
+            serverStopAttempted = true
+        }
+        XCTAssertTrue(serverStopAttempted)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.path), "confirmed retirement must remove the private fixture")
+    }
+
+    func testDocumentBudgetRefusalRejectsUnrelatedErrors() {
+        XCTAssertTrue(Self.isExpectedDocumentBudgetRefusal(WebBrowserError.invalidCDPResponse(
+            reason: "inline border geometry: inline geometry capture deadline exceeded")))
+        XCTAssertTrue(Self.isExpectedDocumentBudgetRefusal(WebBrowserError.invalidWebOperation(
+            reason: "web overlap inspection exceeded its bounded work budget")))
+        for error: any Error in [
+            WebBrowserError.invalidCDPResponse(reason: "missing inline border fragments"),
+            WebBrowserError.invalidWebOperation(reason: "session is closed"),
+            CocoaError(.fileReadNoSuchFile),
+        ] {
+            XCTAssertFalse(Self.isExpectedDocumentBudgetRefusal(error), "\(error)")
+        }
+    }
+
+    private static func isExpectedDocumentBudgetRefusal(_ error: any Error) -> Bool {
+        guard let browserError = error as? WebBrowserError else { return false }
+        return browserError == .invalidCDPResponse(reason: "inline border geometry: inline geometry capture deadline exceeded")
+            || browserError == .invalidWebOperation(reason: "web overlap inspection exceeded its bounded work budget")
     }
 
 }

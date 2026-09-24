@@ -26,6 +26,31 @@ Exit codes are three-valued and the third is load-bearing:
 
 Never treat 2 as a product defect: it means the tool could not look.
 
+### Same-host pixels after actions
+
+Use the default `cacheDisplay` pixel backend after `OracleHost.settle()` and
+check the resulting tree and pixels on the same host. `skipAnimations` marks
+injected mutations with `disablesAnimations`; the hosted root's transaction
+modifier clears any explicit curve added by a nested `withAnimation` only
+while that host's current policy is `skipAnimations`, before the transaction
+reaches the scenario. The flag also prevents ordinary
+view-local `.animation(_:value:)` modifiers from adding a curve. This keeps
+native `@State` and registered actions intact while painting the final state.
+The root reads a private per-host policy reference, so changing policy does
+not replace the view or reset native state. A consumer can intentionally combine
+an explicit animation with `disablesAnimations=true` to prevent implicit
+modifiers from replacing its curve; the flag alone is not a host-policy signal.
+`runAnimations` preserves this combination and its existing
+Core Animation flush/run-loop behavior; semantic settling does not certify
+that every uninstrumented presentation animation has completed.
+
+If the tree advances but pixels stay unchanged, retain both artifacts and
+compare repeated forward/back actions. Do not substitute a fresh host or
+`ImageRenderer`: it re-evaluates the view value and may recreate initial state.
+The regression controls are `PixelCaptureTests/testSameHost`,
+`VerdictClockTests/testAnimationPolicySurvivesNestedAnimationAndCanChangeOnSameHost`
+and `VerdictClockTests/testRunPolicyPreservesExplicitConsumerAnimationWithDisabledFlag`.
+
 ### Consumer build deadline
 
 Automatic CLI, daemon and MCP consumer builds default to 300 seconds. A project
@@ -58,6 +83,44 @@ the `runner` path remains relative to the consumer root (for example,
 `app/.build/debug/MyVerdictRunner`, or a wrapper that adds a verification flag).
 The same build path serves standalone and broker commands. This does not
 assert that a consumer runner implements MCP, or expand process containment.
+
+### Compiled scenario expectations
+
+A consumer can attach its required elements to the registry entry, using the
+existing expectation DSL rather than replacing the shared runner's judgment:
+
+```swift
+let entry = ScenarioEntry(
+    viewport: Size(width: 400, height: 240),
+    expectations: [
+        Expectation("support-button")
+            .text("Contact Support")
+            .width(.atLeast(Double.leastNonzeroMagnitude))
+            .height(.atLeast(Double.leastNonzeroMagnitude))
+            .onscreen
+    ]
+) { SupportScenario() }
+```
+
+The entry stores an `ExpectationSet` named after its scenario. Omit
+`expectations` to preserve existing standard-lint behavior. These are compiled
+consumer declarations, not executable manifest configuration. The original
+`init(viewport:make:)` overload remains available for source function references
+and existing compiled callers; explicit expectations use an additional overload.
+
+`verify` adds expectation findings to the requested rules. `act` evaluates them
+on the actually observed after-tree, preserving its before/after delta. `sweep`
+evaluates each measured cell against that cell's viewport. CLI, MCP and daemon
+use those same engine methods. Missing nodes produce `expectation` errors;
+present-node predicate failures retain the DSL's `verdict.suppress` behavior.
+Positive-dimension predicates reject non-finite measurements; `.onscreen` means
+complete viewport containment, not merely `isVisible`.
+
+`render` and pixel capture remain observational even if a required node is
+missing. A failed capture or unmeasured sweep cell does not become a fabricated
+missing-node verdict. Failed actions retain their action/capture/settle evidence
+without evaluating expectations on an unobserved after-state. No verdict or
+semantic-tree wire schema changes are required.
 
 ### Daemon
 
@@ -168,6 +231,38 @@ printf '%s\n' \
 Send the handshake **with its params**, as above. `initialize` with no `params`
 key is the one spelling that decodes even when the envelope is broken, so it
 cannot tell a working server from one no client can connect to (`no.md` #37).
+
+## Browser profile persistence acceptance
+
+The login/task persistence control serves the existing login page from one
+launch-owned loopback HTTP server. Its host and port stay fixed while the browser
+closes and reopens the named profile. It still verifies rejected passwords,
+literal-secret refusal, credential redaction, browser arguments, no diagnostic
+credential file, trusted task completion, the acknowledged storage write, and
+the saved task after reopening. A separate fresh profile on that same origin
+must remain empty. The immediate-write lifecycle control uses the same guarded
+fixture, with no persistence delay or retry.
+
+This fixture follows the [URL Standard's origin contract](https://url.spec.whatwg.org/#origin):
+HTTP origins have a scheme/host/port tuple, while file-origin behavior is left to
+implementations. File URLs remain covered by the other rendering and action
+tests; their storage persistence is not a portable acceptance promise.
+
+The original file-origin failures remain preserved, including published CI
+`36053472005` at `d9952fb5`: storage was true before normal close and false after
+reopening, while the paired HTTP lifecycle control passed. Changing the
+acceptance origin does not establish Chrome's internal failure mechanism or
+claim a production browser fix. CIS-B1FB43A2 retains that diagnostic uncertainty.
+
+```bash
+swift test --build-system native --disable-sandbox --jobs 2 \
+  -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete \
+  --filter 'WebSessionIntegrationTests|WebSessionLifecycleTests'
+```
+
+Require a nonzero test summary with no skips. The saved-task mutation clears the
+fixture's storage when a page loads; the full login flow must fail on reopen
+even though its initial login and task-completion assertions succeed.
 
 ## Baselines (destructive — read before running)
 
@@ -280,3 +375,11 @@ swift test --filter WitnessIntegrationTests/testRepeatedLaunches
 Assert two executed tests and zero skips before calling the launch-path check
 complete. The repaired September24 run executed both with zero failures; macOS
 recorded successful witness launches and no matching signing/crash failures.
+
+### Removed scenario controls
+
+The host intersects action registrations with the latest observed tree before
+reporting actions and refuses built-in acts on absent probe IDs. Scenario storage
+remains available when a view reappears. Explicit in-process custom mutations
+retain their existing ability to name a non-rendered evidence ID. This presence
+check does not infer hidden/disabled state that a consumer has not instrumented.

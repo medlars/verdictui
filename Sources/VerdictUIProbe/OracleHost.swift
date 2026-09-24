@@ -130,7 +130,10 @@ public final class OracleHost {
     /// How ``applyStateChange(_:)`` wraps injected mutations. Defaults to
     /// ``SettlePolicy/skipAnimations`` — Wave 3's animation control, not the
     /// unwritable `accessibilityReduceMotion` pin.
-    public var settlePolicy: SettlePolicy
+    public var settlePolicy: SettlePolicy {
+        get { animationPolicy.current }
+        set { animationPolicy.current = newValue }
+    }
 
     /// Count of `CATransaction.flush` calls performed by ``applyStateChange(_:)``
     /// on this host. Tests pin the ``SettlePolicy/runAnimations`` path with it.
@@ -158,6 +161,17 @@ public final class OracleHost {
 
     /// Owned by the host so the scenario cannot install its own.
     private let sink: VerdictTreeSink
+
+    // The root transaction modifier reads this host's current policy without
+    // replacing rootView when the caller changes policy, preserving @State.
+    @MainActor
+    private final class AnimationPolicy {
+        var current: SettlePolicy
+
+        init(_ current: SettlePolicy) { self.current = current }
+    }
+
+    private let animationPolicy: AnimationPolicy
 
     /// Create a host for `scenario`.
     ///
@@ -193,7 +207,8 @@ public final class OracleHost {
     ) {
         scenarioName = scenario.name
         self.deadline = deadline
-        self.settlePolicy = settlePolicy
+        let animationPolicy = AnimationPolicy(settlePolicy)
+        self.animationPolicy = animationPolicy
         self.clock = clock
         // `nil` means "the pinned baseline", which IS a variant — recording it
         // as `.baseline` rather than leaving it optional means every consumer
@@ -216,6 +231,7 @@ public final class OracleHost {
                     sink: VerdictTreeSink(),
                     clock: clock,
                     state: ScenarioState(),
+                    animationPolicy: animationPolicy,
                     // The MEASURING pass needs the variant too: a scenario sized
                     // at `.medium` and then rendered at `.accessibility5` would
                     // be hosted in a box too small for its own content, so every
@@ -245,6 +261,7 @@ public final class OracleHost {
                 sink: sink,
                 clock: clock,
                 state: state,
+                animationPolicy: animationPolicy,
                 variant: variant
             )
         )
@@ -369,13 +386,18 @@ public final class OracleHost {
     /// The discovery half of ``apply(_:)``: a caller holding a tree can ask
     /// which of its probes are drivable instead of learning it from a refusal.
     ///
+    /// Registrations retain scenario state across view changes. A removed probe
+    /// may therefore still own storage, but it is not a currently rendered action.
+    /// Discovery intersects those registrations with the latest observed tree.
+    ///
     /// Forces a layout pass for the SAME reason ``apply(_:)`` does — bindings
     /// register during view evaluation, so asking before any render would
     /// report an empty set and read as "nothing here is actionable", which is
     /// a wrong answer rather than an absent one.
     public var actionableProbes: [String: [String]] {
         hostingView.layoutSubtreeIfNeeded()
-        return state.actionableProbes
+        let present = Set(sink.latestTree?.flattened().map(\.id) ?? [])
+        return state.actionableProbes.filter { present.contains($0.key) }
     }
 
     /// Apply a ``ProbeAction`` to ``state`` under ``settlePolicy``.
@@ -388,6 +410,14 @@ public final class OracleHost {
     /// no compatible binding.
     public func apply(_ action: ProbeAction) throws {
         hostingView.layoutSubtreeIfNeeded()
+        switch action {
+        case .custom:
+            break // Explicit scenario mutations need not name a rendered control.
+        default:
+            guard sink.latestTree?.node(withID: action.probeID) != nil else {
+                throw ProbeActionError.unknownProbe(action.probeID)
+            }
+        }
         var thrown: (any Error)?
         applyStateChange {
             do {
@@ -480,6 +510,7 @@ public final class OracleHost {
         sink: VerdictTreeSink,
         clock: VerdictClock,
         state: ScenarioState,
+        animationPolicy: AnimationPolicy,
         variant: Variant? = nil
     ) -> AnyView {
         // `AnyView` so the class can stay non-generic while `NSHostingView` cannot.
@@ -505,6 +536,15 @@ public final class OracleHost {
         // sweep would be silently inert again.
         AnyView(
             view
+                .transaction { transaction in
+                    // A nested `withAnimation` can replace the injected curve.
+                    // Only enforce suppression when THIS host is skipping:
+                    // a consumer may disable implicit animations while keeping
+                    // its chosen explicit animation in runAnimations mode.
+                    if animationPolicy.current == .skipAnimations && transaction.disablesAnimations {
+                        transaction.animation = nil
+                    }
+                }
                 .verdictRoot(into: sink)
                 .verdictPinnedEnvironment(overriding: variant)
                 .environment(\.verdictClock, clock)

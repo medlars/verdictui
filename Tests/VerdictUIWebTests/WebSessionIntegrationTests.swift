@@ -17,8 +17,8 @@ final class WebSessionIntegrationTests: XCTestCase {
         try XCTUnwrap(tree.flattened().first { $0.attributes["web.id"] == .string(id) }, "missing DOM id \(id)")
     }
 
-    private func persistedTaskState(root: URL) async throws -> [String: CDPValue] {
-        let endpoint = try XCTUnwrap(DevtoolsEndpoint.read(in: root.appendingPathComponent("login")))
+    private func persistedTaskState(root: URL, profile: String = "login") async throws -> [String: CDPValue] {
+        let endpoint = try XCTUnwrap(DevtoolsEndpoint.read(in: root.appendingPathComponent(profile)))
         let transport = try CDPTransport(endpoint: endpoint)
         do {
             let result = try await transport.send(method: "Target.getTargets")
@@ -109,52 +109,23 @@ final class WebSessionIntegrationTests: XCTestCase {
         } catch { await manager.closeAll(); throw error }
     }
 
-    /// Serves the fixture directory on loopback; the caller stops the returned process.
-    private func loopbackServer(root: URL) async throws -> (GuardedProcess, Int) {
-        let environment = ProcessInfo.processInfo.environment
-        let python: URL
-        if let configured = environment["VERDICTUI_TEST_PYTHON"] {
-            python = URL(fileURLWithPath: configured)
-        } else {
-            python = try XCTUnwrap((environment["PATH"] ?? "").split(separator: ":")
-                .map { URL(fileURLWithPath: String($0)).appendingPathComponent("python3.14") }
-                .first { FileManager.default.isExecutableFile(atPath: $0.path) }, "fixture requires python3.14")
-        }
-        let fixture = try XCTUnwrap(Bundle.module.url(forResource: "server", withExtension: "py", subdirectory: "Fixtures"))
-        let portFile = root.appendingPathComponent("server.port")
-        let server = try GuardedProcess.spawn(executable: python,
-            arguments: [fixture.path, fixture.deletingLastPathComponent().path, portFile.path],
-            directory: root, environment: environment)
-        let deadline = ContinuousClock.now + .seconds(5)
-        while ContinuousClock.now < deadline {
-            if let text = try? String(contentsOf: portFile, encoding: .utf8), let port = Int(text) { return (server, port) }
-            guard try server.status() == nil else { break }
-            try await Task.sleep(for: .milliseconds(25))
-        }
-        _ = try? server.stop()
-        throw WebBrowserError.invalidWebOperation(reason: "loopback fixture server did not publish a port")
-    }
-
-    /// Persistence is asserted on an HTTP origin, never file://. Chrome does not
-    /// reliably reload file:// localStorage: identical copies of one closed profile
-    /// read it back in some launches and not others, while the same page over
-    /// loopback HTTP read back 48/48 (2026-09-24). CI run 36053472005 closed with
-    /// a 30-byte Local Storage log for file:// while the HTTP control passed.
     func testLoginTaskBadPasswordSecretRedactionAndProfilePersistence() async throws {
         let root = try root()
-        defer { try? FileManager.default.removeItem(at: root) }
-        let (server, port) = try await loopbackServer(root: root)
-        defer { _ = try? server.stop() }
+        let server = try await LocalHTTPFixture.start(root: root)
         let secret = UUID().uuidString + UUID().uuidString
         let badSecret = UUID().uuidString
         let hash = SHA256.hash(data: Data(secret.utf8)).map { String(format: "%02x", $0) }.joined()
-        var url = try XCTUnwrap(URLComponents(string: "http://127.0.0.1:\(port)/login.html"))
+        var url = URLComponents(url: server.origin.appendingPathComponent("login.html"), resolvingAgainstBaseURL: false)!
         url.queryItems = [URLQueryItem(name: "hash", value: hash)]
         let manager = WebSessionManager(root: root, environment: [
             "VERDICTUI_WEB_CRED_GOOD": secret, "VERDICTUI_WEB_CRED_BAD": badSecret, "VERDICTUI_WEB_OP": ""])
         do {
             let info = try await manager.open(profile: "login", url: XCTUnwrap(url.url))
             XCTAssertFalse(info.url.contains(hash))
+            let fresh = try await persistedTaskState(root: root)
+            XCTAssertEqual(fresh["protocol"], .string("http:"))
+            XCTAssertEqual(fresh["origin"], .string(server.origin.absoluteString))
+            XCTAssertEqual(fresh["stored"], .bool(false), "a fresh profile must begin without a saved task")
             let initial = try await manager.render(profile: "login")
             let password = try node(initial, id: "password")
             XCTAssertEqual(password.text, "Password")
@@ -191,7 +162,8 @@ final class WebSessionIntegrationTests: XCTestCase {
             XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("login/launch-stderr.log").path))
             let storedBefore = try await persistedTaskState(root: root)
             XCTAssertEqual(storedBefore["stored"], .bool(true), "visible success must include actual storage write")
-            XCTAssertEqual(storedBefore["protocol"], .string("http:"), "persistence must be measured on an HTTP origin")
+            XCTAssertEqual(storedBefore["protocol"], .string("http:"))
+            XCTAssertEqual(storedBefore["origin"], .string(server.origin.absoluteString))
             let closeStart = ContinuousClock.now
             try await manager.close(profile: "login")
             let closeElapsed = closeStart.duration(to: .now)
@@ -205,10 +177,28 @@ final class WebSessionIntegrationTests: XCTestCase {
                 "closeDuration": .string(String(describing: closeElapsed)), "diskAfterClose": .object(diskAfterClose)]
             print("PROFILE-PERSISTENCE " + String(decoding: try JSONEncoder().encode(diagnostic), as: UTF8.self))
             XCTAssertEqual(storedAfter["origin"], storedBefore["origin"], "reopen must retain the same storage origin")
+            XCTAssertEqual(storedAfter["protocol"], .string("http:"))
             XCTAssertEqual(storedAfter["stored"], .bool(true), "storage must survive normal close/reopen")
             XCTAssertEqual(persisted.status, .pass, persistedEvidence)
-            await manager.closeAll()
-        } catch { await manager.closeAll(); throw error }
+            try await manager.close(profile: "login")
+            _ = try await manager.open(profile: "isolated", url: XCTUnwrap(url.url))
+            let isolated = try await persistedTaskState(root: root, profile: "isolated")
+            XCTAssertEqual(isolated["origin"], storedBefore["origin"])
+            XCTAssertEqual(isolated["protocol"], .string("http:"))
+            XCTAssertEqual(isolated["stored"], .bool(false), "another profile must not inherit the saved task")
+            let untouched = try await manager.verify(profile: "isolated", expectText: "Sign in to continue")
+            XCTAssertEqual(untouched.status, .pass, "\(untouched.findings)")
+            try await manager.close(profile: "isolated")
+            try server.stop()
+            try FileManager.default.removeItem(at: root)
+        } catch {
+            let original = error
+            let failures = await manager.closeAll()
+            for failure in failures { XCTFail("browser cleanup failed: \(failure)") }
+            do { try server.stop() }
+            catch { XCTFail("HTTP fixture cleanup failed: \(error)") }
+            throw original
+        }
     }
 
     func testConcurrentProfilesAreIsolatedAndSameProfileRefusesAttach() async throws {
