@@ -7,6 +7,38 @@ _TEST = "VerdictUIWebTests."
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="web credential resolver loses owner crash containment",
+        path=_BASE + "WebCredentials.swift",
+        old="private typealias CredentialProcess = GuardedProcess",
+        new="private typealias CredentialProcess = OwnedCommandProcess",
+        test=_TEST
+        + "WebCredentialLifecycleTests/testMCPSIGKILLContainsCredentialDescendantAndPreservesSentinel",
+    ),
+    Mutation(
+        name="web concurrent resolver close skips shared cleanup",
+        path=_BASE + "WebCredentials.swift",
+        old="if await closingTask.value.values.contains(false) { throw WebBrowserError.credentialUnavailable }",
+        new="_ = closingTask",
+        test=_TEST
+        + "WebCredentialLifecycleTests/testCloseAndCancellationAwaitOwnedResolverGroupAndRefuseFallback",
+    ),
+    Mutation(
+        name="web manager concurrent shutdown returns before shared cleanup",
+        path=_BASE + "WebSessionManager.swift",
+        old="if let closingTask { return await closingTask.value.compactMap(\\.failure) }",
+        new="if closingTask != nil { return [] }",
+        test=_TEST
+        + "WebCredentialLifecycleTests/testManagerCoalescesConcurrentShutdownAndDrainsPendingAndOpenSessionsTogether",
+    ),
+    Mutation(
+        name="web manager serializes independent profile close deadlines",
+        path=_BASE + "WebSessionManager.swift",
+        old="group.addTask { await Self.closeOutcome(profile: profile, session: session) }",
+        new="let outcome = await Self.closeOutcome(profile: profile, session: session); group.addTask { outcome }",
+        test=_TEST
+        + "WebCredentialLifecycleTests/testManagerCoalescesConcurrentShutdownAndDrainsPendingAndOpenSessionsTogether",
+    ),
+    Mutation(
         name="guarded command silently truncates NUL arguments",
         path=_BASE + "OwnedCommandProcess.swift",
         old='!launchStrings.contains(where: { $0.contains("\\0") })',
@@ -426,8 +458,8 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="web reopen navigates a dead session",
         path=_BASE + "WebSessionManager.swift",
-        old="if await session.isAvailable() {\n                try await session.navigate",
-        new="if !profile.isEmpty {\n                try await session.navigate",
+        old="if await session.isAvailable() {\n                guard !stopping else",
+        new="if !profile.isEmpty {\n                guard !stopping else",
         test=_TEST + "WebSessionIntegrationTests/testBrowserDownIsUnavailableAndReleasesProfile",
     ),
     Mutation(

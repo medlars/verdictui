@@ -4,6 +4,12 @@ import VerdictUIKernel
 /// Owned by the shared daemon handler, not individual CLI invocations. The
 /// profile lock prevents a second daemon/session from borrowing the browser.
 public actor WebSessionManager {
+    typealias Opener = @Sendable (String, URL, URL, [String: String], Int, Int) async throws -> WebSession
+    private struct CloseOutcome: Sendable {
+        let profile: String
+        let session: WebSession?
+        let failure: WebBrowserError?
+    }
     private let root: URL
     private let invalidRootOverride: Bool
     private let environment: [String: String]
@@ -11,6 +17,8 @@ public actor WebSessionManager {
     private var opening: Set<String> = []
     private var launches: [String: Task<WebSession, Error>] = [:]
     private var stopping = false
+    private var closingTask: Task<[CloseOutcome], Never>?
+    private let opener: Opener
 
     public init(root: URL? = nil,
                 environment: [String: String] = ProcessInfo.processInfo.environment) {
@@ -18,6 +26,15 @@ public actor WebSessionManager {
         invalidRootOverride = root == nil && override != nil && !(override?.hasPrefix("/") == true)
         self.root = root ?? override.map(URL.init(fileURLWithPath:)) ?? ProfileRegistry.defaultRoot()
         self.environment = environment
+        opener = { profile, url, root, environment, width, height in
+            try await WebSession.open(profile: profile, url: url, registry: ProfileRegistry(root: root),
+                                      environment: environment, width: width, height: height)
+        }
+    }
+
+    /// Internal lifecycle seam; production always uses the real browser opener.
+    init(root: URL, opener: @escaping Opener) {
+        self.root = root; environment = [:]; invalidRootOverride = false; self.opener = opener
     }
 
     public func list() async -> [WebSessionInfo] {
@@ -41,14 +58,17 @@ public actor WebSessionManager {
         defer { opening.remove(profile) }
         if let session = sessions[profile] {
             if await session.isAvailable() {
+                guard !stopping else { throw WebBrowserError.invalidWebOperation(reason: "session manager is closing") }
                 try await session.navigate(url: url)
-                return await session.info()
+                let info = await session.info()
+                guard !stopping else { throw WebBrowserError.invalidWebOperation(reason: "session manager is closing") }
+                return info
             }
             if sessions[profile] === session { sessions.removeValue(forKey: profile) }
         }
-        let launch = Task { [root, environment] in
-            try await WebSession.open(profile: profile, url: url, registry: ProfileRegistry(root: root),
-                                      environment: environment, width: width, height: height)
+        guard !stopping else { throw WebBrowserError.invalidWebOperation(reason: "session manager is closing") }
+        let launch = Task { [root, environment, opener] in
+            try await opener(profile, url, root, environment, width, height)
         }
         launches[profile] = launch
         defer { launches.removeValue(forKey: profile) }
@@ -60,7 +80,9 @@ public actor WebSessionManager {
             throw WebBrowserError.invalidWebOperation(reason: "session manager closed while opening")
         }
         sessions[profile] = session
-        return await session.info()
+        let info = await session.info()
+        guard !stopping else { throw WebBrowserError.invalidWebOperation(reason: "session manager is closing") }
+        return info
     }
 
     public func navigate(profile: String, url: URL) async throws {
@@ -80,23 +102,57 @@ public actor WebSessionManager {
     }
     @discardableResult
     public func closeAll() async -> [WebBrowserError] {
+        if let closingTask { return await closingTask.value.compactMap(\.failure) }
         stopping = true
-        var failures: [WebBrowserError] = []
         // Opening browsers are owned before they publish an endpoint. Await
         // cancellation cleanup before a signal handler may exit the daemon.
         let pending = launches
+        let existing = sessions
         pending.values.forEach { $0.cancel() }
-        for launch in pending.values {
-            do { try await launch.value.close() }
-            catch let error as WebBrowserError {
-                if case .processRefusedToDie = error { failures.append(error) }
-            } catch { /* A cancelled launch has already awaited child cleanup. */ }
+        // Start BOTH sets together. Serial batches multiply valid per-session
+        // flush deadlines and let a slow launch delay already open profiles.
+        let task = Task {
+            await withTaskGroup(of: CloseOutcome.self) { group in
+                for (profile, launch) in pending {
+                    group.addTask {
+                        let session: WebSession
+                        do { session = try await launch.value }
+                        catch let error as WebBrowserError {
+                            if case .processRefusedToDie = error {
+                                return CloseOutcome(profile: profile, session: nil, failure: error)
+                            }
+                            return CloseOutcome(profile: profile, session: nil, failure: nil)
+                        } catch { return CloseOutcome(profile: profile, session: nil, failure: nil) }
+                        return await Self.closeOutcome(profile: profile, session: session)
+                    }
+                }
+                for (profile, session) in existing {
+                    group.addTask { await Self.closeOutcome(profile: profile, session: session) }
+                }
+                var result: [CloseOutcome] = []
+                for await outcome in group { result.append(outcome) }
+                return result
+            }
         }
-        for profile in Array(sessions.keys) {
-            do { try await close(profile: profile) }
-            catch { failures.append(WebSession.sanitized(error)) }
+        closingTask = task
+        let outcomes = await task.value
+        for outcome in outcomes {
+            guard let session = outcome.session else { continue }
+            if outcome.failure == nil, sessions[outcome.profile] === session {
+                sessions.removeValue(forKey: outcome.profile)
+            } else if outcome.failure != nil, sessions[outcome.profile] == nil {
+                sessions[outcome.profile] = session
+            }
         }
-        return failures
+        closingTask = nil
+        return outcomes.compactMap(\.failure)
+    }
+
+    private static func closeOutcome(profile: String, session: WebSession) async -> CloseOutcome {
+        do {
+            try await session.close()
+            return CloseOutcome(profile: profile, session: session, failure: nil)
+        } catch { return CloseOutcome(profile: profile, session: session, failure: WebSession.sanitized(error)) }
     }
     private func session(_ profile: String) async throws -> WebSession {
         guard let session = sessions[profile] else { throw WebBrowserError.unknownSession(profile: profile) }

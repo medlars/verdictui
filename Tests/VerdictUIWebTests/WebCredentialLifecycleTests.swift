@@ -3,6 +3,23 @@ import XCTest
 import VerdictUIKernel
 @testable import VerdictUIWeb
 
+private actor CloseBarrier {
+    private var labels: Set<String> = []
+    private var waiting: [CheckedContinuation<Void, Never>] = []
+    private var released = false
+    func arrive(_ label: String) async {
+        labels.insert(label)
+        if released { return }
+        await withCheckedContinuation { waiting.append($0) }
+    }
+    func count() -> Int { labels.count }
+    func mark(_ label: String) { labels.insert(label) }
+    func release() {
+        released = true
+        waiting.forEach { $0.resume() }; waiting.removeAll()
+    }
+}
+
 private final class OrderlyBrowserIdentity: BrowserProcessIdentity, @unchecked Sendable {
     // Deliberately names a live unrelated process after our owned identity exits.
     let pid = ProcessInfo.processInfo.processIdentifier
@@ -30,12 +47,19 @@ private actor OrderlyBrowserSocket: CDPSocket {
     private let identity: OrderlyBrowserIdentity
     private var waiting: CheckedContinuation<String, any Error>?
     private var ended = false
-    init(identity: OrderlyBrowserIdentity) { self.identity = identity }
-    func send(text: String) throws {
+    private let barrier: CloseBarrier?
+    private let label: String
+    init(identity: OrderlyBrowserIdentity, barrier: CloseBarrier? = nil, label: String = "") {
+        self.identity = identity; self.barrier = barrier; self.label = label
+    }
+    func send(text: String) async throws {
         let request = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
         let method = try XCTUnwrap(request["method"] as? String)
         identity.record(method)
-        if method == "Browser.close" { identity.orderlyExit() }
+        if method == "Browser.close" {
+            if let barrier { await barrier.arrive(label) }
+            identity.orderlyExit()
+        }
         // Chrome is allowed to close its socket without acknowledging Browser.close.
         ended = true
         waiting?.resume(throwing: Closed.socket); waiting = nil
@@ -53,6 +77,67 @@ private actor OrderlyBrowserSocket: CDPSocket {
 
 @MainActor
 final class WebCredentialLifecycleTests: XCTestCase {
+    func testManagerCoalescesConcurrentShutdownAndDrainsPendingAndOpenSessionsTogether() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("verdictui-manager-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let barrier = CloseBarrier(), started = CloseBarrier(), finished = CloseBarrier()
+        let registry = ProfileRegistry(root: root)
+        let url = URL(fileURLWithPath: "/fixture")
+        var sessions: [String: WebSession] = [:]
+        var identities: [OrderlyBrowserIdentity] = []
+        for name in ["one", "two", "pending"] {
+            let lock = try ProfileLock.acquire(profile: name, registry: registry)
+            let identity = OrderlyBrowserIdentity(profileLockPath: lock.path)
+            identities.append(identity)
+            let browser = HeadlessBrowser(process: identity,
+                endpoint: DevtoolsEndpoint(port: 12345, browserPath: "/devtools/browser/fixture"), profileDirectory: root)
+            sessions[name] = WebSession(profile: name, browser: browser,
+                transport: CDPTransport(socket: OrderlyBrowserSocket(identity: identity, barrier: barrier, label: name)),
+                pageSessionID: "fixture", lock: lock, credentials: WebCredentials(environment: [:], onePassword: nil),
+                viewport: Rect(x: 0, y: 0, width: 1280, height: 800), url: url)
+        }
+        let ready = sessions
+        let manager = WebSessionManager(root: root) { name, _, _, _, _, _ in
+            if name == "pending" {
+                await started.arrive("opening")
+                // Model a launch publishing just as cancellation reaches it.
+            }
+            return try XCTUnwrap(ready[name])
+        }
+        _ = try await manager.open(profile: "one", url: url)
+        _ = try await manager.open(profile: "two", url: url)
+        let opening = Task { try await manager.open(profile: "pending", url: url) }
+        let deadline = ContinuousClock.now + .seconds(2)
+        while await started.count() == 0, ContinuousClock.now < deadline { await Task.yield() }
+        let startedCount = await started.count()
+        XCTAssertEqual(startedCount, 1)
+        let first = Task { let failures = await manager.closeAll(); await finished.mark("first"); return failures }
+        let second = Task { let failures = await manager.closeAll(); await finished.mark("second"); return failures }
+        let existingDeadline = ContinuousClock.now + .seconds(1.5)
+        while await barrier.count() < 2, ContinuousClock.now < existingDeadline { await Task.yield() }
+        let existingCount = await barrier.count()
+        XCTAssertEqual(existingCount, 2, "a pending launch must not delay existing profile close")
+        await started.release()
+        let closingDeadline = ContinuousClock.now + .seconds(1.5)
+        while await barrier.count() < 3, ContinuousClock.now < closingDeadline { await Task.yield() }
+        let closingCount = await barrier.count()
+        XCTAssertEqual(closingCount, 3, "pending launch and every open session must begin closing together")
+        let prematureReturns = await finished.count()
+        XCTAssertEqual(prematureReturns, 0, "a concurrent closeAll returned before shared cleanup finished")
+        await barrier.release()
+        let firstFailures = await first.value, secondFailures = await second.value
+        XCTAssertTrue(firstFailures.isEmpty && secondFailures.isEmpty)
+        do { _ = try await opening.value; XCTFail("shutdown published a pending session") } catch {}
+        for identity in identities {
+            XCTAssertEqual(identity.events.filter { $0 == "Browser.close" }.count, 1)
+            XCTAssertTrue(identity.events.contains("finish-locked"))
+            XCTAssertFalse(identity.events.contains { $0.hasPrefix("signal-") })
+        }
+        let remaining = await manager.list()
+        XCTAssertTrue(remaining.isEmpty)
+        do { _ = try await manager.open(profile: "one", url: url); XCTFail("stopped manager opened again") } catch {}
+    }
+
     func testSessionCloseFlushesBeforeDisconnectAndProfileReleaseWithoutAReply() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("verdictui-close-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }
@@ -86,9 +171,34 @@ final class WebCredentialLifecycleTests: XCTestCase {
     private func fixture() throws -> (URL, URL) {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("verdictui-resolver-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        addTeardownBlock {
+            // Private capability cleanup works even for the unguarded RED control.
+            // The fixture owns/reaps its child; observed PIDs never authorize signals.
+            try Data().write(to: root.appendingPathComponent("release"))
+            let deadline = ContinuousClock.now + .seconds(5)
+            while ContinuousClock.now < deadline {
+                let text = try? String(contentsOf: root.appendingPathComponent("leader.pid"), encoding: .utf8)
+                guard let text, let value = pid_t(text.trimmingCharacters(in: .whitespacesAndNewlines)),
+                      ProcessLiveness.isAlive(value) else { break }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            try? FileManager.default.removeItem(at: root)
+        }
         let executable = root.appendingPathComponent("op")
-        let script = "#!/bin/sh\ntrap '' TERM\necho $$ > \"$RESOLVER_ROOT/leader.pid\"\n/bin/sleep 60 &\necho $! > \"$RESOLVER_ROOT/child.pid\"\nwait\n"
+        let script = #"""
+        #!/usr/bin/env python3
+        import os,pathlib,signal,subprocess,time
+        root=pathlib.Path(os.environ['RESOLVER_ROOT'])
+        signal.signal(signal.SIGTERM,signal.SIG_IGN)
+        child=subprocess.Popen(['/bin/sleep','60'])
+        (root/'leader.pid').write_text(str(os.getpid()))
+        (root/'child.pid').write_text(str(child.pid))
+        try:
+            deadline=time.monotonic()+60
+            while not (root/'release').exists() and time.monotonic()<deadline:time.sleep(.02)
+        finally:
+            child.kill();child.wait()
+        """#
         try script.write(to: executable, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executable.path)
         return (root, executable)
@@ -120,10 +230,17 @@ final class WebCredentialLifecycleTests: XCTestCase {
             let operation = Task { try await resolver.resolve("test") }
             let leader = try await pid("leader", root: root)
             let child = try await pid("child", root: root)
-            defer { for value in [child, leader] where getpgid(value) == leader { kill(value, SIGKILL) } }
-            XCTAssertEqual(getpgid(child), leader)
+            XCTAssertEqual(getpgid(child), getpgid(leader))
+            XCTAssertNotEqual(getpgid(leader), getpgrp())
             let cancellationStart = ContinuousClock.now
-            if cancel { operation.cancel() } else { try await resolver.close() }
+            if cancel { operation.cancel() }
+            else {
+                let firstClose = Task { try await resolver.close() }
+                try await Task.sleep(for: .milliseconds(50))
+                try await resolver.close()
+                XCTAssertFalse(ProcessLiveness.isAlive(leader), "concurrent resolver close returned before cleanup")
+                try await firstClose.value
+            }
             do { _ = try await operation.value; XCTFail("cancelled/closed resolver returned a fallback credential") }
             catch { XCTAssertEqual(error as? WebBrowserError, .credentialUnavailable) }
             XCTAssertLessThan(cancellationStart.duration(to: .now), .seconds(3), "cancellation must interrupt the resolver deadline")
@@ -147,7 +264,6 @@ final class WebCredentialLifecycleTests: XCTestCase {
             let operation = Task { try await manager.act(profile: "owned", action: .credential(nodeID: password.id, reference: "test")) }
             let leader = try await pid("leader", root: root)
             let child = try await pid("child", root: root)
-            defer { for value in [child, leader] where getpgid(value) == leader { kill(value, SIGKILL) } }
             let firstClose = Task { try await manager.close(profile: "owned") }
             try await Task.sleep(for: .milliseconds(50))
             try await manager.close(profile: "owned")
@@ -207,7 +323,20 @@ final class WebCredentialLifecycleTests: XCTestCase {
     }
 
     func testMCPSIGTERMAwaitsInFlightCredentialGroupBeforeExit() async throws {
+        try await exerciseMCPShutdown(crash: false)
+    }
+
+    func testMCPSIGKILLContainsCredentialDescendantAndPreservesSentinel() async throws {
+        try await exerciseMCPShutdown(crash: true)
+    }
+
+    private func exerciseMCPShutdown(crash: Bool) async throws {
         let (root, executable) = try fixture()
+        let sentinel = Process()
+        sentinel.executableURL = URL(fileURLWithPath: "/bin/sleep")
+        sentinel.arguments = ["60"]
+        try sentinel.run()
+        defer { if sentinel.isRunning { sentinel.terminate() }; sentinel.waitUntilExit() }
         let repository = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let page = try XCTUnwrap(Bundle.module.url(forResource: "login", withExtension: "html", subdirectory: "Fixtures"))
         let process = Process(), input = Pipe(), output = Pipe()
@@ -240,12 +369,13 @@ final class WebCredentialLifecycleTests: XCTestCase {
         try send(3, tool: "web_act", arguments: ["profile": "owned", "action": "credential", "node": ids[password], "credential": "test"], input: input.fileHandleForWriting)
         let leader = try await pid("leader", root: root)
         let child = try await pid("child", root: root)
-        defer { for value in [child, leader] where getpgid(value) == leader { kill(value, SIGKILL) } }
-        process.terminate()
+        if crash { XCTAssertEqual(kill(process.processIdentifier, SIGKILL), 0) }
+        else { process.terminate() }
         let deadline = ContinuousClock.now + .seconds(8)
         while process.isRunning, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(20)) }
         XCTAssertFalse(process.isRunning)
-        if !process.isRunning { XCTAssertEqual(process.terminationStatus, 128 + SIGTERM) }
+        if !process.isRunning { XCTAssertEqual(process.terminationStatus, crash ? SIGKILL : 128 + SIGTERM) }
         try await assertGone([leader, child, browserPID])
+        XCTAssertTrue(sentinel.isRunning, "resolver cleanup touched an unrelated retained sentinel")
     }
 }

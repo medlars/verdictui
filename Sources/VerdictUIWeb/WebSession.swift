@@ -22,6 +22,16 @@ public enum WebAction: Sendable {
 public actor WebSession {
     /// Chrome's orderly exit after Browser.close; measured ~5 s for SIGTERM on macOS.
     static let orderlyExitGrace: TimeInterval = 10
+    /// Normal consumer exit allowance, independent of the number of profiles:
+    /// the manager drains pending launches and sessions together, and credential
+    /// operations drain concurrently. Existing process waits are guardian exit
+    /// 5s + group quiescence 2s + retained child exit 5s. A pending launch can
+    /// spend 3s in READY; credentials stop with 1s grace; Browser.close gets 2s,
+    /// orderly exit 10s, then TERM 1s and normal guardian finish 2s plus waits.
+    /// The initial 2s permits signal dispatch; it is not an OS scheduling guarantee.
+    /// Broker escalation can add another 12s after this graceful-exit allowance.
+    public static let consumerShutdownGrace: TimeInterval =
+        2 + 3 + (1 + 5 + 2 + 5) + 2 + orderlyExitGrace + (1 + 2 + 5 + 2 + 5)
     let profile: String
     let browser: HeadlessBrowser
     let transport: CDPTransport

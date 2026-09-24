@@ -87,9 +87,30 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="consumer broker discards failed cleanup ownership",
         path="Sources/VerdictUICLICore/ProjectRunnerBroker.swift",
-        old="if let child { try child.stop(grace: 2) }",
-        new="if let child { _ = try? child.stop(grace: 2) }",
+        old="if let child { try child.stop(grace: grace) }",
+        new="if let child { _ = try? child.stop(grace: grace) }",
         test="ProjectRunnerBrokerTests/testLostChildOwnershipRetainsUnavailableHostAndRefusesReplacement",
+    ),
+    Mutation(
+        name="consumer normal reload truncates persistent profile shutdown",
+        path="Sources/VerdictUICLICore/ProjectRunnerBroker.swift",
+        old="let grace = orderly ? WebSession.consumerShutdownGrace : 2",
+        new="let grace: TimeInterval = 2",
+        test="ProjectRunnerBrokerTests/testNormalReloadAwaitsDelayedPersistentState",
+    ),
+    Mutation(
+        name="consumer shutdown signal is mistaken for a protocol failure",
+        path="Sources/VerdictUICLICore/ProjectRunnerBroker.swift",
+        old="stop(orderly: shouldStop())",
+        new="stop(orderly: false)",
+        test="ProjectRunnerBrokerTests/testShutdownDuringRequestRetainsNormalFlushAllowance",
+    ),
+    Mutation(
+        name="consumer protocol failure receives normal shutdown allowance",
+        path="Sources/VerdictUICLICore/ProjectRunnerBroker.swift",
+        old="let grace = orderly ? WebSession.consumerShutdownGrace : 2",
+        new="let grace = WebSession.consumerShutdownGrace",
+        test="ProjectRunnerBrokerTests/testProtocolFailureKeepsShortEscalation",
     ),
     Mutation(
         name="consumer daemon byte drips evade the absolute frame deadline",

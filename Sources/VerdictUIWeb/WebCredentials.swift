@@ -1,16 +1,19 @@
 import Darwin
 import Foundation
 
+private typealias CredentialProcess = GuardedProcess
+
 /// A reference resolver, never a command-line password channel. 1Password reads
 /// receive only an op:// reference in argv; fallback values come from the shared
 /// environment. Child output is kept in memory and never included in an error.
 public actor WebCredentials {
     private struct Operation {
-        let process: OwnedCommandProcess
+        let process: CredentialProcess
         let worker: Task<String, Error>
     }
     private var operations: [UUID: Operation] = [:]
     private var closed = false
+    private var closingTask: Task<[UUID: Bool], Never>?
     let environment: [String: String]
     let sharedFile: URL
     let onePassword: URL?
@@ -32,18 +35,34 @@ public actor WebCredentials {
 
     /// Cancels and awaits every resolver before the browser profile is released.
     public func close() async throws {
+        if let closingTask {
+            if await closingTask.value.values.contains(false) { throw WebBrowserError.credentialUnavailable }
+            return
+        }
         closed = true
         let pending = operations
         pending.values.forEach { $0.worker.cancel() }
-        var failed = false
-        for (id, operation) in pending {
-            do {
-                _ = try await Task.detached { try operation.process.stop() }.value
-                _ = await operation.worker.result
-                operations.removeValue(forKey: id)
-            } catch { failed = true }
+        let task = Task {
+            await withTaskGroup(of: (UUID, Bool).self) { group in
+                for (id, operation) in pending {
+                    group.addTask {
+                        do {
+                            _ = try await Task.detached { try operation.process.stop() }.value
+                            _ = await operation.worker.result
+                            return (id, true)
+                        } catch { return (id, false) }
+                    }
+                }
+                var result: [UUID: Bool] = [:]
+                for await (id, completed) in group { result[id] = completed }
+                return result
+            }
         }
-        if failed { throw WebBrowserError.credentialUnavailable }
+        closingTask = task
+        let results = await task.value
+        for (id, completed) in results where completed { operations.removeValue(forKey: id) }
+        closingTask = nil
+        if results.values.contains(false) { throw WebBrowserError.credentialUnavailable }
     }
 
     public func resolve(_ reference: String) async throws -> String {
@@ -94,9 +113,9 @@ public actor WebCredentials {
     private func runOnePassword(_ arguments: [String], executable: URL) async throws -> String {
         guard !closed, !Task.isCancelled else { throw WebBrowserError.credentialUnavailable }
         let pipe = Pipe()
-        let process: OwnedCommandProcess
+        let process: CredentialProcess
         do {
-            process = try OwnedCommandProcess.spawn(executable: executable, arguments: arguments,
+            process = try CredentialProcess.spawn(executable: executable, arguments: arguments,
                 directory: FileManager.default.temporaryDirectory, environment: environment,
                 standardOutput: pipe.fileHandleForWriting.fileDescriptor)
         } catch {
@@ -147,7 +166,8 @@ public actor WebCredentials {
             guard !closed, !Task.isCancelled else { throw WebBrowserError.credentialUnavailable }
             return value
         } catch {
-            if (try? process.status()) != nil { operations.removeValue(forKey: id) }
+            // Direct-child exit is not proof that its guardian/group finished.
+            // close() retains and retries every failed worker's cleanup owner.
             throw WebBrowserError.credentialUnavailable
         }
     }

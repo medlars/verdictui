@@ -1,6 +1,7 @@
 import CryptoKit
 import Darwin
 import Foundation
+import VerdictUIWeb
 
 /// A process boundary, not a second verdict engine. The consumer keeps owning
 /// its registry and all handlers; this broker owns stable transport and rebuilds.
@@ -234,7 +235,9 @@ public enum ProjectRunnerBroker {
                 return response
             } catch {
                 // Never replay a failed action: its side effects may have happened.
-                stop()
+                // A signal received during exchange/build is still an orderly
+                // host shutdown. Genuine protocol/build failures keep short escalation.
+                stop(orderly: shouldStop())
                 guard !notification else { return nil }
                 return failure(line, reason: String(describing: error))
             }
@@ -401,19 +404,20 @@ public enum ProjectRunnerBroker {
 
         /// Teardown failures remain visible and retain ownership. A new host
         /// cannot start until stopVerified has confirmed the old group is gone.
-        func stop() {
+        func stop(orderly: Bool = true) {
             lock.lock()
             defer { lock.unlock() }
-            do { try stopVerified() }
+            do { try stopVerified(orderly: orderly) }
             catch { cleanupFailure = "consumer cleanup unavailable: \(error)" }
         }
 
-        private func stopVerified() throws {
+        private func stopVerified(orderly: Bool = true) throws {
             lock.lock()
             defer { lock.unlock() }
             try? input?.close()
             input = nil
-            if let child { try child.stop(grace: 2) }
+            let grace = orderly ? WebSession.consumerShutdownGrace : 2
+            if let child { try child.stop(grace: grace) }
             try? output?.close()
             output = nil
             ownedChild = nil

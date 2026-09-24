@@ -3,9 +3,17 @@ import XCTest
 
 @testable import VerdictUICLICore
 
+private final class BrokerStopFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stopped = false
+    var value: Bool { lock.withLock { stopped } }
+    func stop() { lock.withLock { stopped = true } }
+}
+
 final class ProjectRunnerBrokerTests: XCTestCase {
     private func fixture(
-        _ wire: ProjectRunnerBroker.Wire = .mcp, build: ProjectRunnerBroker.Session.Build? = nil
+        _ wire: ProjectRunnerBroker.Wire = .mcp, build: ProjectRunnerBroker.Session.Build? = nil,
+        shouldStop: @escaping () -> Bool = { false }
     ) throws -> (
         URL, ProjectRunnerBroker.Session
     ) {
@@ -51,7 +59,7 @@ final class ProjectRunnerBrokerTests: XCTestCase {
         try Data(script.utf8).write(to: runner)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: runner.path)
         let session = ProjectRunnerBroker.Session(
-            destination: .init(executable: runner, projectRoot: root), wire: wire, build: build)
+            destination: .init(executable: runner, projectRoot: root), wire: wire, shouldStop: shouldStop, build: build)
         addTeardownBlock {
             session.stop()
             try? FileManager.default.removeItem(at: root)
@@ -81,6 +89,71 @@ final class ProjectRunnerBrokerTests: XCTestCase {
         XCTAssertEqual(value(reloaded), "two")
         XCTAssertEqual((reloaded["result"] as? [String: Any])?["initialized"] as? Bool, true)
         XCTAssertNotEqual(session.child?.processIdentifier, pid)
+    }
+
+    private func delayedFixture(_ wire: ProjectRunnerBroker.Wire = .mcp, shouldStop: @escaping () -> Bool = { false }) throws -> (URL, ProjectRunnerBroker.Session) {
+        let (root, session) = try fixture(wire, shouldStop: shouldStop)
+        let runner = root.appendingPathComponent(".verdictui/runner")
+        var script = try String(contentsOf: runner, encoding: .utf8)
+        script = script.replacingOccurrences(of: "value=open('source.txt').read()", with: #"""
+            import signal,time,pathlib
+            value=open('source.txt').read()
+            def flush(*_args):
+                signal.signal(signal.SIGTERM,signal.SIG_IGN)
+                time.sleep(3)
+                pathlib.Path('.verdictui/flushed').write_text(value)
+                sys.exit(0)
+            signal.signal(signal.SIGTERM,flush)
+            """#)
+        script = script.replacingOccurrences(of: "    request=json.loads(line)", with: #"""
+                request=json.loads(line)
+                if request.get('method')=='blocked':
+                    pathlib.Path('.verdictui/blocked').write_text('ready')
+                    time.sleep(30)
+            """#)
+        script += "\nif sys.argv[1]=='mcp':flush()\n"
+        try script.write(to: runner, atomically: true, encoding: .utf8)
+        return (root, session)
+    }
+
+    func testNormalReloadAwaitsDelayedPersistentState() throws {
+        for wire in [ProjectRunnerBroker.Wire.mcp, .daemon] {
+            let (root, session) = try delayedFixture(wire)
+            XCTAssertEqual(value(try answer(session)), "one")
+            try Data("two".utf8).write(to: root.appendingPathComponent("source.txt"))
+            XCTAssertEqual(value(try answer(session)), "two")
+            XCTAssertEqual(try? String(contentsOf: root.appendingPathComponent(".verdictui/flushed"), encoding: .utf8), "one",
+                           "normal reload killed the consumer before it persisted its state")
+        }
+    }
+
+    func testProtocolFailureKeepsShortEscalation() throws {
+        let (root, session) = try delayedFixture()
+        XCTAssertEqual(value(try answer(session)), "one")
+        XCTAssertNotNil(try answer(session, method: "malformed")["error"])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(".verdictui/flushed").path),
+                       "protocol failure incorrectly waited for the normal delayed flush")
+        XCTAssertNil(session.child)
+    }
+
+    @MainActor
+    func testShutdownDuringRequestRetainsNormalFlushAllowance() async throws {
+        let stop = BrokerStopFlag()
+        let (root, session) = try delayedFixture(shouldStop: { stop.value })
+        XCTAssertEqual(value(try answer(session)), "one")
+        let request = Data(#"{"id":2,"method":"blocked"}"#.utf8)
+        let worker = Task.detached { session.answer(request) }
+        let deadline = ContinuousClock.now + .seconds(3)
+        let marker = root.appendingPathComponent(".verdictui/blocked")
+        while !FileManager.default.fileExists(atPath: marker.path), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path))
+        stop.stop()
+        _ = await worker.value
+        XCTAssertEqual(try? String(contentsOf: root.appendingPathComponent(".verdictui/flushed"), encoding: .utf8), "one",
+                       "signal cancellation was misclassified as a short protocol failure")
+        XCTAssertNil(session.child)
     }
 
     func testKilledChildReportsUnavailableThenNextRequestRecovers() throws {
