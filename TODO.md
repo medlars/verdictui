@@ -1,5 +1,7 @@
 # VerdictUI TODO
 
+- [ ] (2026-09-24) Repair the integrated mutation-filter gate: validate each Swift test alternative independently, including missing first/middle alternatives. The quick PM caught the consumer guard's multi-class filter; retain the failing evidence and rerun the complete Python gate.
+
 - [x] (2026-09-24) (P1) Profile-close regression protection: reused peer07848a4 CDP Browser.close repair; added actual pre/post storage readback, sanitized failure verdicts, no-reply orderly-close/lock lifecycle control, and retained-child exit observation. Strict web suite200/200 (no skips),2/2 mutation controls noticed with exact restores, and PM architecture/lint/catalog stages passed. Measured on installed Swift6.4/Chrome153; integrated release gates remain separate. Private evidence: `/Users/eiman/Temp/verdictui-profile-persistence-20260924/`.
 - [x] (2026-09-24) Share the launch-owned crash guardian across browser and consumer check/build/MCP/daemon boundaries. Preserve cwd, binary stdio, actual exit status, caller grace and failed broker cleanup ownership. Strict focused controls: 85 tests, zero failures; ten C SDK/architecture/deployment-target compile checks passed, including the actual macOS 13 floor. Real compiled scenario and busy MCP plus idle/busy daemon owner-death evidence is retained under `/Users/eiman/Temp/verdictui-consumer-crash-20260924`. Release integration and mutation review remain with the owning task.
 - [ ] (2026-09-24) Close the measured SwiftPM build descendant escape: the real evaluated package manifest starts its own process group and survives both CLI SIGKILL and direct SwiftPM SIGINT. The configured-build boundary test covers an inherited-group command only; it does not prove actual SwiftPM child containment. Retained controls: `fixed-configured-build-e25b6e5e/receipt.json` and `baseline-configured-build-sigint-ca0632c1/receipt.json` beneath the private consumer crash evidence directory. Do not use guessed descendant PID kills or report this build gap as solved.
@@ -12,6 +14,8 @@
 - [x] (2026-09-23) Initial saved-plan delivery (subsequently reopened above): custom scenario runner, live-app MCP and verified input, web semantic verification and trusted input, isolated sessions, artifact smoke, truthful documentation and installed release. Plan: `docs/finalization-plan.md`. Delivered in v1.1.0; signed/notarized desktop and both installed CLI copies verified.
 
 ## P1 — High Priority
+
+- [ ] (P1) CEO/stage_pytest: FAILED Tests/test_mutation_check.py::TestClassify::test_every_swift_mutation_names_a_test_that_still_exists
 
 - [x] (2026-09-24) Preserve the deterministic UI no-sleep gate with one actual-source/control scanner and exact path, statement, unique marker counts for two external OS cleanup retries. Explicit C guardian SwiftSyntax-free classification. Verified 52 focused tests and 7/7 mutation witnesses with exact restores; ruff clean.
 - [ ] (2026-09-24) Integrate the consumer worker's two exact Swift cleanup markers and rerun the actual-source no-sleep gate; base fc1128a intentionally fails only the two unmarked waits and missing markers. No runtime deadline changes in this gate repair.

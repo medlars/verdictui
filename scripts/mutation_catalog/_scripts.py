@@ -8,6 +8,14 @@ from mutation_catalog_types import Mutation, Runner  # noqa: F401
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="Swift mutation filter validator ignores earlier alternatives",
+        path="Tests/test_mutation_check.py",
+        old='for alternative in expression.split("|"):',
+        new='for alternative in expression.split("|")[-1:]:',
+        test="Tests/test_mutation_check.py::TestClassify::test_every_filter_alternative_is_checked",
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
         name="OS wait exception admits a missing site",
         path="Tests/test_verdictui_bench.py",
         old="if count != 1:",
