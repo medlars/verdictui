@@ -148,7 +148,12 @@ extension ScenarioExpectationTests {
         let entry = ScenarioEntry(viewport: Size(width: 240, height: 100), expectations: [Expectation("support").onscreen]) {
             PresentSupportScenario(name: "sized", text: "Contact Support")
         }
-        let report = try await engine([entry]).sweep(scenario: entry.name, variants: [
+        let subject = try engine([entry])
+        let narrow = try await subject.render(scenario: entry.name, viewport: Size(width: 100, height: 100))
+        let frame = try XCTUnwrap(narrow.node(withID: "support")).frame
+        XCTAssertGreaterThanOrEqual(frame.x, 0, "Width, not a negative origin, must cause the planted overflow")
+        XCTAssertGreaterThan(frame.maxX, narrow.frame.maxX)
+        let report = try await subject.sweep(scenario: entry.name, variants: [
             Variant(viewport: Size(width: 240, height: 100)),
             Variant(viewport: Size(width: 100, height: 100)),
         ], rules: [])
@@ -268,9 +273,11 @@ private struct PresentSupportScenario: VerdictScenario, Sendable {
     var suppress = false
 
     func body(state _: ScenarioState) -> some View {
-        Text(text).frame(width: 160, height: 24).fixedSize()
-            .verdictProbe("support", role: .text, text: text,
-                          attributes: suppress ? [LintContext.suppressionKey: .string(Expectation.id)] : [:])
+        GeometryReader { _ in
+            Text(text).frame(width: 160, height: 24).fixedSize()
+                .verdictProbe("support", role: .text, text: text,
+                              attributes: suppress ? [LintContext.suppressionKey: .string(Expectation.id)] : [:])
+        }
     }
 }
 
