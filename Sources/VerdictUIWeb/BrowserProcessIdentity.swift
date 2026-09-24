@@ -58,8 +58,9 @@ final class LaunchedBrowserProcess: BrowserProcessIdentity, @unchecked Sendable 
     }
 
     func signal(_ value: Int32) throws {
-        lifetime.closeWriter()
-        if value == SIGKILL { try finish(grace: 0) }
+        if value == SIGTERM { try browser.requestBrowserTermination() }
+        else if value == SIGKILL { try finish(grace: 0) }
+        else { throw OwnedCommandProcess.Failure.invalidLaunch }
     }
 
     private func finish(grace: TimeInterval) throws {

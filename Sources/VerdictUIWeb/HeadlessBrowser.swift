@@ -202,7 +202,7 @@ public actor HeadlessBrowser {
         return !ProcessLiveness.isAlive(pid)
     }
 
-    /// Graceful-then-kill, tied to the retained guardian, never the browser PID.
+    /// Graceful TERM uses the retained browser child; escalation uses the guardian group.
     public func terminate(grace: TimeInterval = 10) async throws {
         guard process.isRunning else { try process.finish(); return }
         try process.signal(SIGTERM)

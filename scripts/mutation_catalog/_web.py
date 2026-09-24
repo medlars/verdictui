@@ -7,6 +7,16 @@ _TEST = "VerdictUIWebTests."
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="guardian truncates requested graceful shutdown",
+        path=_BASE + "BrowserProcessIdentity.swift",
+        old="if value == SIGTERM { try browser.requestBrowserTermination() }",
+        new="if value == SIGTERM { lifetime.closeWriter() }",
+        test=_TEST
+        + "BrowserCrashGuardianTests/testRequestedGraceAllowsBrowserToFlushBeforeGroupCleanup|"
+        + _TEST
+        + "BrowserCrashGuardianTests/testNormalTERMAllowsBrowserToCoordinateChildFlush",
+    ),
+    Mutation(
         name="guardian ignores parent death with leaked writer",
         path="Sources/VerdictUIProcessGuardian/ProcessGuardian.c",
         old="if (getppid() != parent) return 1;",
@@ -75,7 +85,9 @@ MUTATIONS: list[Mutation] = [
         old="if errno == ECHILD { reaped = true; retentionFailure = ECHILD }",
         new="if errno == ECHILD { reaped = true }",
         test=_TEST
-        + "BrowserCrashGuardianTests/testAlreadyReapedGuardianRevokesSignalAuthorityEvenWithCachedExit",
+        + "BrowserCrashGuardianTests/testAlreadyReapedGuardianRevokesSignalAuthorityEvenWithCachedExit|"
+        + _TEST
+        + "BrowserCrashGuardianTests/testAlreadyReapedBrowserRefusesNormalTERMDespiteCachedExit",
     ),
     Mutation(
         name="guardian hides failed cleanup after browser exit",

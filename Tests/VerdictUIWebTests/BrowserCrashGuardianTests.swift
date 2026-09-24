@@ -106,6 +106,36 @@ final class BrowserCrashGuardianTests: XCTestCase {
         XCTAssertFalse(active(leaf[0]), "successful close cannot release a profile while descendants are active")
     }
 
+    func testNormalTERMAllowsBrowserToCoordinateChildFlush() async throws {
+        let fixture = try Fixture(); defer { fixture.remove() }
+        let process = try LaunchedBrowserProcess.launch(executable: fixture.executable,
+            arguments: ["coordinated", fixture.directory.path], environment: [:])
+        defer { try? process.finish() }
+        let leaf = try fixture.record("leaf")
+        let browser = HeadlessBrowser(process: process,
+            endpoint: DevtoolsEndpoint(port: 12345, browserPath: "/devtools/browser/fixture"),
+            profileDirectory: fixture.directory)
+        try await browser.terminate(grace: 3)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.file("flushed").path),
+                      "Chrome must coordinate helper storage flush before group cleanup")
+        XCTAssertFalse(active(leaf[0]))
+    }
+
+    func testRequestedGraceAllowsBrowserToFlushBeforeGroupCleanup() async throws {
+        let fixture = try Fixture(); defer { fixture.remove() }
+        let process = try LaunchedBrowserProcess.launch(executable: fixture.executable,
+            arguments: ["graceful", fixture.directory.path], environment: [:])
+        defer { try? process.finish() }
+        let leaf = try fixture.record("leaf")
+        let browser = HeadlessBrowser(process: process,
+            endpoint: DevtoolsEndpoint(port: 12345, browserPath: "/devtools/browser/fixture"),
+            profileDirectory: fixture.directory)
+        try await browser.terminate(grace: 3)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.file("flushed").path),
+                      "normal termination must preserve caller grace beyond the crash guardian's 1s deadline")
+        XCTAssertFalse(active(leaf[0]))
+    }
+
     func testDiscoveryTimeoutCleansStartedBrowserAndDescendant() async throws {
         let fixture = try Fixture(); defer { fixture.remove() }
         do {
@@ -152,6 +182,25 @@ final class BrowserCrashGuardianTests: XCTestCase {
         XCTAssertFalse(descriptors.prefix(Int(count) / MemoryLayout<proc_fdinfo>.size).contains { $0.proc_fd == 7000 })
         XCTAssertEqual(kill(owner.processIdentifier, SIGKILL), 0)
         XCTAssertTrue(waitUntil(4, { !active(browser[0]) && !active(launch[0]) }))
+    }
+
+    func testAlreadyReapedBrowserRefusesNormalTERMDespiteCachedExit() throws {
+        let fixture = try Fixture(); defer { fixture.remove() }
+        let launched = try OwnedCommandProcess.spawnGuardedBrowser(executable: fixture.executable,
+            arguments: ["browser", fixture.directory.path], environment: [:])
+        defer { try? launched.guardian.finishGuardian() }
+        _ = try fixture.record("leaf")
+        close(launched.lifetimeWriter)
+        XCTAssertTrue(launched.browser.waitForExitEvent(timeout: 4))
+        _ = try launched.browser.status()
+        var status: Int32 = 0
+        XCTAssertEqual(waitpid(launched.browser.processIdentifier, &status, WNOHANG), launched.browser.processIdentifier)
+        for _ in 0..<2 {
+            XCTAssertThrowsError(try launched.browser.requestBrowserTermination()) { error in
+                guard case OwnedCommandProcess.Failure.system(let code) = error else { return XCTFail("unexpected \(error)") }
+                XCTAssertEqual(code, ECHILD)
+            }
+        }
     }
 
     func testAlreadyReapedGuardianRevokesSignalAuthorityEvenWithCachedExit() throws {
@@ -205,6 +254,8 @@ private let fixtureSource = #"""
 #include <poll.h>
 extern char **environ;
 static int marker = -1;
+static volatile sig_atomic_t term_seen = 0;
+static void graceful_term(int number) { (void)number; term_seen = 1; }
 static void stalled_child(void) {
     char value[32]; int count = 31; value[count] = '\n';
     pid_t pid = getpid(); do { value[--count] = (char)('0' + pid % 10); pid /= 10; } while (pid);
@@ -229,7 +280,7 @@ int main(int argc, char **argv) {
             if (strncmp(argv[i], "--user-data-dir=", 16) == 0) root = argv[i] + 16;
     }
     if (!strcmp(mode, "sentinel")) { sleep(10); return 0; }
-    if (!strcmp(mode, "browser")) {
+    if (!strcmp(mode, "browser") || !strcmp(mode, "graceful") || !strcmp(mode, "coordinated")) {
         int clean = 1; struct sigaction action; sigset_t mask;
         sigprocmask(SIG_SETMASK, NULL, &mask);
         int signals[] = {SIGTERM, SIGINT, SIGPIPE, SIGUSR1};
@@ -238,9 +289,29 @@ int main(int argc, char **argv) {
             if (action.sa_handler != SIG_DFL || sigismember(&mask, signals[i])) clean = 0;
         }
         record(root, "browser", getpid(), getpgrp(), fcntl(7000, F_GETFD) >= 0, clean);
-        signal(SIGTERM, SIG_IGN);
+        signal(SIGTERM, strcmp(mode, "browser") ? graceful_term : SIG_IGN);
         pid_t leaf = fork();
-        if (leaf == 0) { record(root, "leaf", getpid(), getpgrp(), 0, 0); sleep(8); return 0; }
+        if (leaf == 0) {
+            signal(SIGTERM, !strcmp(mode, "coordinated") ? SIG_DFL : SIG_IGN);
+            record(root, "leaf", getpid(), getpgrp(), 0, 0);
+            if (!strcmp(mode, "coordinated")) {
+                for (int i = 0; i < 800 && !exists(root, "flush-request"); ++i) usleep(10000);
+                record(root, "child-flushed", getpid(), getpgrp(), 0, 0);
+            }
+            sleep(8); return 0;
+        }
+        if (!strcmp(mode, "coordinated")) {
+            for (int i = 0; i < 800 && !term_seen; ++i) usleep(10000);
+            record(root, "flush-request", getpid(), getpgrp(), 0, 0);
+            for (int i = 0; i < 150 && !exists(root, "child-flushed"); ++i) usleep(10000);
+            if (exists(root, "child-flushed")) record(root, "flushed", getpid(), getpgrp(), 0, 0);
+            return 0;
+        }
+        if (!strcmp(mode, "graceful")) {
+            for (int i = 0; i < 800 && !term_seen; ++i) usleep(10000);
+            for (int i = 0; i < 150; ++i) usleep(10000);
+            record(root, "flushed", getpid(), getpgrp(), 0, 0); return 0;
+        }
         for (int i = 0; i < 800 && !exists(root, "exit-browser"); ++i) usleep(10000);
         return 0;
     }

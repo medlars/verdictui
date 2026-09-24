@@ -64,6 +64,23 @@ public final class OwnedCommandProcess: @unchecked Sendable {
         _ = try observe(refresh: true)
     }
 
+    /// Normal TERM lets the retained browser coordinate its helpers and flush
+    /// storage. This child is retained and rechecked while holding its reap lock;
+    /// the public numeric PID is never the authorization for a signal.
+    func requestBrowserTermination() throws {
+        lock.lock(); defer { lock.unlock() }
+        if let retentionFailure { throw Failure.system(retentionFailure) }
+        if reaped { return }
+        guard case .browser = ownership else { throw Failure.invalidLaunch }
+        try confirmRetainedChild()
+        if try observe(refresh: true) != nil { return }
+        if kill(processIdentifier, SIGTERM) != 0 {
+            let failure = errno
+            if (failure == ESRCH || failure == EPERM), try observe(refresh: true) != nil { return }
+            throw Failure.system(failure)
+        }
+    }
+
     /// Guardian and browser cleanup use bounded waits, including destruction.
     /// Before READY no browser has been spawned, so direct-child KILL is safe.
     func finishGuardian(grace: TimeInterval = 0) throws {

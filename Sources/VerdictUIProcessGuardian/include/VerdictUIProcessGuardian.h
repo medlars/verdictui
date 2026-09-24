@@ -10,7 +10,7 @@
  * the controlled child path after fork returns calls only async-safe functions. */
 typedef struct {
     pid_t guardian_pid;
-    pid_t browser_pid; /* discovery only; never signal authority */
+    pid_t browser_pid; /* direct child; this number alone is not signal authority */
     int lifetime_fd;
     int group_ready;
     int error;
