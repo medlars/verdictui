@@ -8,6 +8,20 @@ from mutation_catalog_types import Mutation, Runner  # noqa: F401
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="action discovery keeps removed probe handlers",
+        path="Sources/VerdictUIProbe/OracleHost.swift",
+        old="return state.actionableProbes.filter { present.contains($0.key) }",
+        new="return state.actionableProbes.filter { _ in !present.isEmpty }",
+        test="ActionDiscoveryTests/testRemovedActionCannotBeDiscoveredOrInvokedAndCanReappear",
+    ),
+    Mutation(
+        name="action injection accepts a removed probe",
+        path="Sources/VerdictUIProbe/OracleHost.swift",
+        old="guard sink.latestTree?.node(withID: action.probeID) != nil else {",
+        new="guard sink.latestTree != nil else {",
+        test="ActionDiscoveryTests/testRemovedActionCannotBeDiscoveredOrInvokedAndCanReappear",
+    ),
+    Mutation(
         name="scenario initial bool seed publishes during rendering",
         path="Sources/VerdictUIProbe/Scenario.swift",
         old="            bools[id] = defaultValue",
