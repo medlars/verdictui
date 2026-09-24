@@ -22,6 +22,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
     server: http.server.HTTPServer
 
     def do_GET(self):
+        path = urllib.parse.urlsplit(self.path).path
         if self.path in ("/long-same", "/long-cross"):
             host = "localhost" if self.path == "/long-cross" else "127.0.0.1"
             body = (
@@ -252,9 +253,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         elif self.path == "/slow":
             time.sleep(0.6)
             body = b"Network task complete"
-        elif urllib.parse.urlsplit(self.path).path in ("/clean.html", "/login.html"):
-            # login.html reads its credential digest from the query string.
-            body = (fixture_root / urllib.parse.urlsplit(self.path).path[1:]).read_bytes()
+        elif path in ("/clean.html", "/login.html"):
+            body = (fixture_root / path[1:]).read_bytes()
         else:
             self.send_error(404)
             return

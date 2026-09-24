@@ -45,6 +45,32 @@ final class ActionDiscoveryTests: XCTestCase {
         return host.actionableProbes
     }
 
+    @MainActor
+    func testRemovedActionCannotBeDiscoveredOrInvokedAndCanReappear() async throws {
+        let witness = RemovalWitness()
+        let host = OracleHost(scenario: DisappearingActionScenario(witness: witness),
+                              viewport: Size(width: 260, height: 180))
+        _ = try await host.currentTree()
+        XCTAssertEqual(host.actionableProbes["remove-me"], ["tap"])
+        try host.apply(.tap("remove-me"))
+        _ = try await host.currentTree()
+        XCTAssertEqual(witness.count, 1)
+        try host.apply(.toggle("show-control"))
+        let hidden = try await host.currentTree()
+        XCTAssertNil(hidden.node(withID: "remove-me"))
+        XCTAssertNil(host.actionableProbes["remove-me"])
+        XCTAssertThrowsError(try host.apply(.tap("remove-me"))) { error in
+            XCTAssertEqual(error as? ProbeActionError, .unknownProbe("remove-me"))
+        }
+        XCTAssertEqual(witness.count, 1)
+        try host.apply(.toggle("show-control"))
+        let restored = try await host.currentTree()
+        XCTAssertNotNil(restored.node(withID: "remove-me"))
+        XCTAssertEqual(host.actionableProbes["remove-me"], ["tap"])
+        try host.apply(.tap("remove-me"))
+        XCTAssertEqual(witness.count, 2)
+    }
+
     // MARK: - The capability, at its source
 
     /// `ScenarioState` already holds every registration, so it is the only place
@@ -208,6 +234,29 @@ final class ActionDiscoveryTests: XCTestCase {
                 error as? ProbeActionError,
                 .unknownProbe("collapsed-summary")
             )
+        }
+    }
+}
+
+@MainActor
+private final class RemovalWitness {
+    var count = 0
+}
+
+private struct DisappearingActionScenario: VerdictScenario {
+    let name = "disappearing-action"
+    let witness: RemovalWitness
+
+    @MainActor
+    func body(state: ScenarioState) -> some View {
+        let shown = state.boolBinding("show-control", default: true)
+        return VStack {
+            Toggle("Show", isOn: shown)
+                .verdictProbe("show-control", role: .toggle)
+            if shown.wrappedValue {
+                Button("Action") { witness.count += 1 }
+                    .verdictProbe("remove-me", role: .button, action: .tap { witness.count += 1 })
+            }
         }
     }
 }

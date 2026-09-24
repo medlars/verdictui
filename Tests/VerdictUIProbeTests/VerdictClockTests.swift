@@ -336,6 +336,73 @@ final class VerdictClockTests: XCTestCase {
         XCTAssertEqual(flips, 2)
     }
 
+    @MainActor
+    func testAnimationPolicySurvivesNestedAnimationAndCanChangeOnSameHost() async throws {
+        for implicitAnimation in [false, true] {
+            try await assertAnimationPolicyCanChange(implicitAnimation: implicitAnimation)
+        }
+    }
+
+    @MainActor
+    private func assertAnimationPolicyCanChange(implicitAnimation: Bool) async throws {
+        let model = TransactionRecordingModel()
+        let host = OracleHost(
+            scenario: TransactionRecordingScenario(model: model, implicitAnimation: implicitAnimation),
+            viewport: Size(width: 120, height: 40)
+        )
+        _ = try await host.currentTree()
+
+        for policy in [SettlePolicy.runAnimations, .skipAnimations, .runAnimations] {
+            host.settlePolicy = policy
+            model.transactions.removeAll()
+            host.applyStateChange {
+                if implicitAnimation {
+                    model.expanded.toggle()
+                } else {
+                    withAnimation(.linear(duration: 10)) { model.expanded.toggle() }
+                }
+            }
+            _ = try await host.currentTree()
+            XCTAssertFalse(model.transactions.isEmpty, "must observe the transaction in the hosted view")
+            if policy == .skipAnimations {
+                XCTAssertFalse(model.transactions.contains { $0.animated })
+                XCTAssertTrue(model.transactions.contains { $0.disabled })
+            } else {
+                XCTAssertTrue(model.transactions.contains { $0.animated && !$0.disabled })
+                XCTAssertFalse(model.transactions.contains { $0.disabled })
+            }
+        }
+        XCTAssertTrue(model.expanded, "policy changes must retain the scenario's state")
+        XCTAssertEqual(host.caTransactionFlushCount, 2)
+    }
+
+    @MainActor
+    func testRunPolicyPreservesExplicitConsumerAnimationWithDisabledFlag() async throws {
+        let recorder = ConsumerTransactionRecorder()
+        let host = OracleHost(
+            scenario: ConsumerTransactionScenario(recorder: recorder),
+            viewport: Size(width: 160, height: 80),
+            settlePolicy: .runAnimations
+        )
+        XCTAssertEqual(host.settlePolicy, .runAnimations)
+        _ = try await host.currentTree()
+
+        for (offset, policy) in [SettlePolicy.runAnimations, .skipAnimations, .runAnimations].enumerated() {
+            host.settlePolicy = policy
+            recorder.transactions.removeAll()
+            try host.apply(.tap("consumer-next"))
+            let tree = try await host.currentTree()
+            XCTAssertEqual(tree.node(withID: "consumer-count")?.text, "Count \(offset + 1)")
+            let consumerTransactions = recorder.transactions.filter { $0.disabled }
+            XCTAssertFalse(consumerTransactions.isEmpty, "observe the consumer-owned disabled flag")
+            let expected: Animation? = policy == .runAnimations ? .linear(duration: 10) : nil
+            for transaction in consumerTransactions {
+                XCTAssertEqual(transaction.animation, expected, "\(policy) must respect transaction ownership")
+            }
+        }
+        XCTAssertEqual(host.caTransactionFlushCount, 2)
+    }
+
     // MARK: - Helpers
 
     private static func boxWidth(in tree: SemanticNode) -> Double {
@@ -348,6 +415,83 @@ final class VerdictClockTests: XCTestCase {
 }
 
 // MARK: - Fixtures
+
+@MainActor
+private final class ConsumerTransactionRecorder {
+    var transactions: [(animation: Animation?, disabled: Bool)] = []
+}
+
+private struct ConsumerTransactionScenario: VerdictScenario {
+    let recorder: ConsumerTransactionRecorder
+    var name: String { "consumer-owned-transaction" }
+
+    func body(state: ScenarioState) -> some View {
+        ConsumerTransactionView(recorder: recorder)
+    }
+}
+
+private struct ConsumerTransactionView: View {
+    let recorder: ConsumerTransactionRecorder
+    @State private var count = 0
+
+    private func advance() {
+        // Consumers use the flag to prevent implicit modifiers replacing their
+        // chosen explicit curve. It is not an instruction to erase that curve.
+        var transaction = Transaction(animation: .linear(duration: 10))
+        transaction.disablesAnimations = true
+        withTransaction(transaction) { count += 1 }
+    }
+
+    var body: some View {
+        VStack {
+            Text("Count \(count)")
+                .verdictProbe("consumer-count", role: .text, text: "Count \(count)")
+            Button("Next", action: advance)
+                .verdictProbe("consumer-next", role: .button, action: .tap(advance))
+        }
+        .transaction { transaction in
+            recorder.transactions.append((transaction.animation, transaction.disablesAnimations))
+        }
+    }
+}
+
+@MainActor
+private final class TransactionRecordingModel: ObservableObject {
+    @Published var expanded = false
+    var transactions: [(animated: Bool, disabled: Bool)] = []
+}
+
+private struct TransactionRecordingScenario: VerdictScenario {
+    let model: TransactionRecordingModel
+    let implicitAnimation: Bool
+    var name: String { "transaction-recording" }
+
+    func body(state: ScenarioState) -> some View {
+        TransactionRecordingView(model: model, implicitAnimation: implicitAnimation)
+    }
+}
+
+private struct TransactionRecordingView: View {
+    @ObservedObject var model: TransactionRecordingModel
+    let implicitAnimation: Bool
+
+    private var content: some View {
+        Color.red
+            .frame(width: model.expanded ? 100 : 10, height: 10)
+            .transaction { transaction in
+                model.transactions.append((transaction.animation != nil, transaction.disablesAnimations))
+            }
+            .verdictProbe("transaction-box", role: .image)
+    }
+
+    var body: some View {
+        if implicitAnimation {
+            content.animation(.linear(duration: 10), value: model.expanded)
+        } else {
+            content
+        }
+    }
+}
 
 private actor WakeFlag {
     private var isSet = false

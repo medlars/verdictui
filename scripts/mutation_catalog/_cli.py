@@ -8,6 +8,62 @@ from mutation_catalog_types import Mutation, Runner  # noqa: F401
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="original scenario initializer invents an expectation",
+        path="Sources/VerdictUIProbe/ScenarioRegistry.swift",
+        old="self.init(viewport: viewport, expectations: [], make: make)",
+        new='self.init(viewport: viewport, expectations: [Expectation("invented")], make: make)',
+        test="ScenarioExpectationTests/testOriginalInitializerFunctionValuePreservesEmptyPolicy",
+    ),
+    Mutation(
+        name="scenario expectation presence guard is inverted",
+        path="Sources/VerdictUICLICore/VerdictEngine.swift",
+        old="guard !entry.expectations.expectations.isEmpty else { return requested }",
+        new="guard entry.expectations.expectations.isEmpty else { return requested }",
+        test="ScenarioExpectationTests/testVerifyReportsMissingRequiredNodeInsteadOfFalsePass",
+    ),
+    Mutation(
+        name="scenario entry discards compiled expectations",
+        path="Sources/VerdictUIProbe/ScenarioRegistry.swift",
+        old="self.expectations = ExpectationSet(name, expectations)",
+        new="self.expectations = ExpectationSet(name, [])",
+        test="ScenarioExpectationTests/testVerifyReportsMissingRequiredNodeInsteadOfFalsePass",
+    ),
+    Mutation(
+        name="scenario verify bypasses compiled expectations",
+        path="Sources/VerdictUICLICore/VerdictEngine.swift",
+        old="var verdict = RuleEngine.run(\n            rules: judgmentRules(for: entry, requested: rules)",
+        new="var verdict = RuleEngine.run(\n            rules: { _ = entry; return rules }()",
+        test="ScenarioExpectationTests/testVerifyReportsMissingRequiredNodeInsteadOfFalsePass",
+    ),
+    Mutation(
+        name="scenario action bypasses after-state expectations",
+        path="Sources/VerdictUICLICore/VerdictEngine.swift",
+        old="host: entry.host(viewport: viewport, deadline: deadline),\n            rules: judgmentRules(for: entry, requested: rules)",
+        new="host: entry.host(viewport: viewport, deadline: deadline),\n            rules: rules",
+        test="ScenarioExpectationTests/testActionExpectationsJudgeObservedAfterTreeAndPreserveDelta",
+    ),
+    Mutation(
+        name="scenario sweep bypasses per-cell expectations",
+        path="Sources/VerdictUICLICore/VerdictEngine.swift",
+        old="let verdict = RuleEngine.run(\n                    rules: judgmentRules(for: entry, requested: rules)",
+        new="let verdict = RuleEngine.run(\n                    rules: rules",
+        test="ScenarioExpectationTests/testSweepUsesEachObservedViewportForExpectations",
+    ),
+    Mutation(
+        name="scenario expectations replace requested lint rules",
+        path="Sources/VerdictUICLICore/VerdictEngine.swift",
+        old="return requested + [ScenarioExpectationRule(set: entry.expectations)]",
+        new="return [ScenarioExpectationRule(set: entry.expectations)]",
+        test="ScenarioExpectationTests/testConsumerExpectationsSupplementRequestedRules",
+    ),
+    Mutation(
+        name="scenario expectation adapter discards observed viewport",
+        path="Sources/VerdictUICLICore/VerdictEngine.swift",
+        old="set.evaluate(in: root, context: context)",
+        new="set.evaluate(in: root, context: .macOS(viewport: Rect(x: 0, y: 0, width: 4096, height: 4096), scenario: context.scenario))",
+        test="ScenarioExpectationTests/testSweepUsesEachObservedViewportForExpectations",
+    ),
+    Mutation(
         name="nested consumer package path is ignored by Swift",
         path="Sources/VerdictUICLICore/ProjectRunner.swift",
         old='"--package-path", build.packageRoot.path',

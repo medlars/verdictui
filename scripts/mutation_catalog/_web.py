@@ -7,6 +7,76 @@ _TEST = "VerdictUIWebTests."
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="web document fixture deletes evidence after browser retirement failure",
+        path="Tests/VerdictUIWebTests/WebFrameIntegrationTests.swift",
+        old="guard retirementFailures.isEmpty else { return }",
+        new="// browser retirement evidence ignored",
+        test=_TEST
+        + "WebFrameIntegrationTests/testDocumentFixtureRetainsEvidenceWhenBrowserRetirementFails",
+    ),
+    Mutation(
+        name="web document fixture deletes evidence after server retirement failure",
+        path="Tests/VerdictUIWebTests/WebFrameIntegrationTests.swift",
+        old="try await stopServer()",
+        new="try? await stopServer()",
+        test=_TEST
+        + "WebFrameIntegrationTests/testDocumentFixtureRetainsEvidenceWhenServerRetirementFails",
+    ),
+    Mutation(
+        name="web document fixture deletes evidence before server retirement completes",
+        path="Tests/VerdictUIWebTests/WebFrameIntegrationTests.swift",
+        old="try await stopServer()\n        guard retirementFailures.isEmpty else { return }\n        try FileManager.default.removeItem(at: root)",
+        new="guard retirementFailures.isEmpty else { return }\n        try FileManager.default.removeItem(at: root)\n        try await stopServer()",
+        test=_TEST
+        + "WebFrameIntegrationTests/testDocumentFixtureRemovesRootOnlyAfterBothRetirementsSucceed",
+    ),
+    Mutation(
+        name="web document fixture bypasses server retirement after browser failure",
+        path="Tests/VerdictUIWebTests/WebFrameIntegrationTests.swift",
+        old="try await stopServer()\n        guard retirementFailures.isEmpty else { return }",
+        new="guard retirementFailures.isEmpty else { return }\n        try await stopServer()",
+        test=_TEST
+        + "WebFrameIntegrationTests/testDocumentFixtureRetainsEvidenceWhenBrowserRetirementFails",
+    ),
+    Mutation(
+        name="web document budget witness ignores browser retirement failure",
+        path="Tests/VerdictUIWebTests/WebFrameIntegrationTests.swift",
+        old="let retirementFailures = await manager.closeAll()",
+        new='let retirementFailures = (await manager.closeAll()) + [WebBrowserError.invalidWebOperation(reason: "injected retirement failure")]',
+        test=_TEST
+        + "WebFrameIntegrationTests/testLongDocumentsNestedPanelsAndFramesRemainScrollableAndActionable",
+    ),
+    Mutation(
+        name="web late-exit fixture silently drops its injected delay",
+        path="Tests/VerdictUIWebTests/WebCredentialLifecycleTests.swift",
+        old="            deadline=started+9",
+        new="            deadline=started",
+        test=_TEST + "WebCredentialLifecycleTests/testMCPSIGTERMAwaitsPermittedLateBrowserExit",
+    ),
+    Mutation(
+        name="web document budget witness accepts unrelated browser errors",
+        path="Tests/VerdictUIWebTests/WebFrameIntegrationTests.swift",
+        old='return browserError == .invalidCDPResponse(reason: "inline border geometry: inline geometry capture deadline exceeded")',
+        new='return true || browserError == .invalidCDPResponse(reason: "inline border geometry: inline geometry capture deadline exceeded")',
+        test=_TEST + "WebFrameIntegrationTests/testDocumentBudgetRefusalRejectsUnrelatedErrors",
+    ),
+    Mutation(
+        name="web login loses the saved task when the page reopens",
+        path="Tests/VerdictUIWebTests/Fixtures/server.py",
+        old="body = (fixture_root / path[1:]).read_bytes()",
+        new="body = (fixture_root / path[1:]).read_bytes().replace(b'<script>', b\"<script>localStorage.removeItem('task-complete');\")",
+        test=_TEST
+        + "WebSessionIntegrationTests/testLoginTaskBadPasswordSecretRedactionAndProfilePersistence",
+    ),
+    Mutation(
+        name="web HTTP login fixture mistakes its query for a route",
+        path="Tests/VerdictUIWebTests/Fixtures/server.py",
+        old="path = urllib.parse.urlsplit(self.path).path",
+        new="path = self.path",
+        test="Tests/test_web_fixture.py::test_loopback_fixture_starts_and_serves_without_reverse_dns",
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
         name="web orderly MCP witness truncates the valid shutdown allowance",
         path="Tests/VerdictUIWebTests/WebCredentialLifecycleTests.swift",
         old="let shutdownAllowance = crash ? 8 : WebSession.consumerShutdownGrace",

@@ -40,6 +40,64 @@ private struct PixelFixtureScenario: VerdictScenario {
     }
 }
 
+private struct TransitionPixelScenario: VerdictScenario {
+    let animated: Bool
+    var implicitAnimation = false
+    var name: String { "transition-pixels" }
+
+    func body(state: ScenarioState) -> some View {
+        TransitionPixelView(animated: animated, implicitAnimation: implicitAnimation)
+    }
+}
+
+private struct TransitionPixelView: View {
+    let animated: Bool
+    let implicitAnimation: Bool
+    @State private var page = 0
+
+    private func move(by offset: Int) {
+        if animated {
+            withAnimation(.easeInOut(duration: 1)) { page += offset }
+        } else {
+            page += offset
+        }
+    }
+
+    private var pageContent: some View {
+        VStack(spacing: 0) {
+            Rectangle().fill(Color(
+                .sRGB,
+                red: page == 0 ? 1 : 0,
+                green: page == 1 ? 1 : 0,
+                blue: page == 2 ? 1 : 0
+            ))
+                .frame(width: 120, height: 40)
+            Text("Page \(page)")
+                .verdictProbe("title", role: .text, text: "Page \(page)")
+        }
+        .id(page)
+        .transition(.opacity)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if implicitAnimation {
+                pageContent.animation(.linear(duration: 1), value: page)
+            } else {
+                pageContent
+            }
+            HStack {
+                Button("Back") { move(by: -1) }
+                    .verdictProbe("back", role: .button, action: .tap { move(by: -1) })
+                Button("Next") { move(by: 1) }
+                    .verdictProbe("next", role: .button, action: .tap { move(by: 1) })
+            }
+        }
+        .frame(width: 160, height: 100)
+        .background(Color.white)
+    }
+}
+
 /// The pixel channel's capture half, held to the promises the semantic channel
 /// cannot make for it: a pinned scale, a recorded backend, and bytes that are
 /// the same on two renders of the same screen.
@@ -94,6 +152,60 @@ final class PixelCaptureTests: XCTestCase {
     }
 
     // MARK: - Determinism
+
+    @MainActor
+    func testSameHostPixelsFollowNativeStateWithoutAnimation() async throws {
+        try await assertSameHostPixelsFollowNativeState(animated: false)
+    }
+
+    @MainActor
+    func testSameHostPixelsFollowNestedAnimatedTransition() async throws {
+        try await assertSameHostPixelsFollowNativeState(animated: true)
+    }
+
+    @MainActor
+    func testSameHostPixelsFollowViewLocalAnimatedTransition() async throws {
+        try await assertSameHostPixelsFollowNativeState(animated: false, implicitAnimation: true)
+    }
+
+    @MainActor
+    private func assertSameHostPixelsFollowNativeState(
+        animated: Bool, implicitAnimation: Bool = false
+    ) async throws {
+        let host = OracleHost(
+            scenario: TransitionPixelScenario(
+                animated: animated, implicitAnimation: implicitAnimation
+            ),
+            viewport: Size(width: 160, height: 100)
+        )
+        var captures: [Int: Data] = [:]
+        let steps: [(Int, String?)] = [(0, nil), (1, "next"), (0, "back"),
+                                      (1, "next"), (2, "next"), (1, "back")]
+        for (page, actionID) in steps {
+            if let actionID { try host.apply(.tap(actionID)) }
+            let settled = await host.settle()
+            guard case .settled = settled else {
+                return XCTFail("transition did not settle: \(settled)")
+            }
+            let tree = try await host.currentTree()
+            XCTAssertEqual(tree.node(withID: "title")?.text, "Page \(page)")
+            let capture = try host.capturePixels()
+            let bitmap = try XCTUnwrap(NSBitmapImageRep(data: capture.png))
+            let color = try XCTUnwrap(bitmap.colorAt(x: 80, y: 30)?.usingColorSpace(.deviceRGB))
+            let channels = [color.redComponent, color.greenComponent, color.blueComponent]
+            XCTAssertGreaterThan(channels[page], 0.7, "expected page \(page) color: \(color)")
+            for other in 0..<3 where other != page {
+                XCTAssertLessThan(channels[other], 0.5, "stale/wrong page \(page) color: \(color)")
+            }
+            if let previous = captures[page] {
+                XCTAssertEqual(capture.png, previous, "returning to a state must restore its pixels")
+            }
+            for (otherPage, otherCapture) in captures where otherPage != page {
+                XCTAssertNotEqual(capture.png, otherCapture, "the native state change must repaint")
+            }
+            captures[page] = capture.png
+        }
+    }
 
     /// Two captures of an unchanged host are byte-identical.
     ///

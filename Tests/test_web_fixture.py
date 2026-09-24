@@ -60,6 +60,7 @@ def test_loopback_fixture_starts_and_serves_without_reverse_dns(tmp_path, dns_mo
                     ("/same", b"http://127.0.0.1:"),
                     ("/cross", b"http://localhost:"),
                     ("/clean.html", b'id="save"'),
+                    ("/login.html?hash=synthetic", b'id="password"'),
                     ("/slow", b"Network task complete"),
                 ):
                     connection.request("GET", route)
