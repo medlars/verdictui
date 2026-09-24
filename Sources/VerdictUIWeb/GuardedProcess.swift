@@ -16,7 +16,8 @@ private final class ProcessLifetime: @unchecked Sendable {
 /// A launch-owned command and its crash guardian. The public PID and exit code
 /// describe the command; only retained child identities authorize termination.
 /// Inherited groups are contained, including after the launching host dies.
-/// A command deliberately creating another session/group is outside this contract.
+/// Descendants creating another session/group are outside this contract,
+/// including some standard SwiftPM build subprocesses.
 public final class GuardedProcess: @unchecked Sendable {
     private let lock = NSRecursiveLock()
     private let guardian: OwnedCommandProcess
