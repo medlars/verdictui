@@ -63,7 +63,9 @@ _NON_SOURCE_SUFFIXES = frozenset({".md", ".yml", ".example", ".resolved", ".svg"
 # its content is a verbatim third-party template that a registry row describing
 # its "purpose" would only restate. It arrived extensionless in Wave 10, which is
 # the case the note above predicted.
-_NON_SOURCE_FILENAMES = frozenset({".gitignore", ".gitkeep", "LICENSE"})
+# swift-toolchain-version is data: the MAJOR.MINOR the CI step and
+# Tests/test_swift_toolchain_pin.py compare against (CTS-6D1E7A0F).
+_NON_SOURCE_FILENAMES = frozenset({".gitignore", ".gitkeep", "LICENSE", "swift-toolchain-version"})
 
 
 def _text() -> str:
