@@ -9,6 +9,8 @@
 
 ## P1 — High Priority
 
+- [x] (2026-09-24) Repair repeated damaged-app alerts caused by witness fixtures copying `/bin/echo`: actual crash receipt identifies `com.apple.echo` and CODESIGNING Launch Constraint Violation. Both fixtures now launch the built witness in its verified pre-window exit3 path, require expected failure types, and retain bundle reuse plus actual registration. Two real tests pass with zero skips; the original per-launch regression is detected (1/1 mutation, exact restore). macOS logs show10 successful launches and zero matching signing/crash failures for focused controls. Independent source review: no findings. Canonical activation/publication tracked by the follow-up release.
+
 - [ ] (P1) Final 1.1.4 full PM: native fixture reported changed foreground application or global cursor; other technical stages passed (B99.4). Await the requested quiet window and remeasure without weakening noninterference checks. measured: 2026-09-23; falsify: `python3.14 scripts/product-smoke.py --binary .build/debug/verdictui`.
 
 - [ ] (P1) Isolate the stock MCP malformed-input test from consumer runner discovery; preserve full pytest failure/timeout evidence. Replace the oversized browser fixture with a real three-candidate snapshot tested on both sides of the unchanged cumulative 4096-candidate budget; retain the direct enrichment witness and exact refusal before remote work. Re-run focused controls, mutations, and the full PM/CI before 1.1.4 publication.
