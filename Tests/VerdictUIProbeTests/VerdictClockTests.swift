@@ -376,6 +376,33 @@ final class VerdictClockTests: XCTestCase {
         XCTAssertEqual(host.caTransactionFlushCount, 2)
     }
 
+    @MainActor
+    func testRunPolicyPreservesExplicitConsumerAnimationWithDisabledFlag() async throws {
+        let recorder = ConsumerTransactionRecorder()
+        let host = OracleHost(
+            scenario: ConsumerTransactionScenario(recorder: recorder),
+            viewport: Size(width: 160, height: 80),
+            settlePolicy: .runAnimations
+        )
+        XCTAssertEqual(host.settlePolicy, .runAnimations)
+        _ = try await host.currentTree()
+
+        for (offset, policy) in [SettlePolicy.runAnimations, .skipAnimations, .runAnimations].enumerated() {
+            host.settlePolicy = policy
+            recorder.transactions.removeAll()
+            try host.apply(.tap("consumer-next"))
+            let tree = try await host.currentTree()
+            XCTAssertEqual(tree.node(withID: "consumer-count")?.text, "Count \(offset + 1)")
+            let consumerTransactions = recorder.transactions.filter { $0.disabled }
+            XCTAssertFalse(consumerTransactions.isEmpty, "observe the consumer-owned disabled flag")
+            let expected: Animation? = policy == .runAnimations ? .linear(duration: 10) : nil
+            for transaction in consumerTransactions {
+                XCTAssertEqual(transaction.animation, expected, "\(policy) must respect transaction ownership")
+            }
+        }
+        XCTAssertEqual(host.caTransactionFlushCount, 2)
+    }
+
     // MARK: - Helpers
 
     private static func boxWidth(in tree: SemanticNode) -> Double {
@@ -388,6 +415,45 @@ final class VerdictClockTests: XCTestCase {
 }
 
 // MARK: - Fixtures
+
+@MainActor
+private final class ConsumerTransactionRecorder {
+    var transactions: [(animation: Animation?, disabled: Bool)] = []
+}
+
+private struct ConsumerTransactionScenario: VerdictScenario {
+    let recorder: ConsumerTransactionRecorder
+    var name: String { "consumer-owned-transaction" }
+
+    func body(state: ScenarioState) -> some View {
+        ConsumerTransactionView(recorder: recorder)
+    }
+}
+
+private struct ConsumerTransactionView: View {
+    let recorder: ConsumerTransactionRecorder
+    @State private var count = 0
+
+    private func advance() {
+        // Consumers use the flag to prevent implicit modifiers replacing their
+        // chosen explicit curve. It is not an instruction to erase that curve.
+        var transaction = Transaction(animation: .linear(duration: 10))
+        transaction.disablesAnimations = true
+        withTransaction(transaction) { count += 1 }
+    }
+
+    var body: some View {
+        VStack {
+            Text("Count \(count)")
+                .verdictProbe("consumer-count", role: .text, text: "Count \(count)")
+            Button("Next", action: advance)
+                .verdictProbe("consumer-next", role: .button, action: .tap(advance))
+        }
+        .transaction { transaction in
+            recorder.transactions.append((transaction.animation, transaction.disablesAnimations))
+        }
+    }
+}
 
 @MainActor
 private final class TransactionRecordingModel: ObservableObject {

@@ -31,19 +31,25 @@ Never treat 2 as a product defect: it means the tool could not look.
 Use the default `cacheDisplay` pixel backend after `OracleHost.settle()` and
 check the resulting tree and pixels on the same host. `skipAnimations` marks
 injected mutations with `disablesAnimations`; the hosted root's transaction
-modifier clears any explicit curve added by a nested `withAnimation` before
-the transaction reaches the scenario. The flag also prevents ordinary
+modifier clears any explicit curve added by a nested `withAnimation` only
+while that host's current policy is `skipAnimations`, before the transaction
+reaches the scenario. The flag also prevents ordinary
 view-local `.animation(_:value:)` modifiers from adding a curve. This keeps
 native `@State` and registered actions intact while painting the final state.
-`runAnimations` retains consumer animation transactions and its existing
+The root reads a private per-host policy reference, so changing policy does
+not replace the view or reset native state. A consumer can intentionally combine
+an explicit animation with `disablesAnimations=true` to prevent implicit
+modifiers from replacing its curve; the flag alone is not a host-policy signal.
+`runAnimations` preserves this combination and its existing
 Core Animation flush/run-loop behavior; semantic settling does not certify
 that every uninstrumented presentation animation has completed.
 
 If the tree advances but pixels stay unchanged, retain both artifacts and
 compare repeated forward/back actions. Do not substitute a fresh host or
 `ImageRenderer`: it re-evaluates the view value and may recreate initial state.
-The regression controls are `PixelCaptureTests/testSameHost` and
-`VerdictClockTests/testAnimationPolicySurvivesNestedAnimationAndCanChangeOnSameHost`.
+The regression controls are `PixelCaptureTests/testSameHost`,
+`VerdictClockTests/testAnimationPolicySurvivesNestedAnimationAndCanChangeOnSameHost`
+and `VerdictClockTests/testRunPolicyPreservesExplicitConsumerAnimationWithDisabledFlag`.
 
 ### Consumer build deadline
 

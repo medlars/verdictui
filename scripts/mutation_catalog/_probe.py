@@ -24,9 +24,23 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="hosted root clears runAnimations explicit animation",
         path="Sources/VerdictUIProbe/OracleHost.swift",
-        old="                    if transaction.disablesAnimations {",
+        old="                    if animationPolicy.current == .skipAnimations && transaction.disablesAnimations {",
         new="                    if true {",
         test="VerdictClockTests/testAnimationPolicySurvivesNestedAnimationAndCanChangeOnSameHost",
+    ),
+    Mutation(
+        name="hosted root treats a consumer disabled flag as the host skip policy",
+        path="Sources/VerdictUIProbe/OracleHost.swift",
+        old="animationPolicy.current == .skipAnimations && transaction.disablesAnimations",
+        new="transaction.disablesAnimations",
+        test="VerdictClockTests/testRunPolicyPreservesExplicitConsumerAnimationWithDisabledFlag",
+    ),
+    Mutation(
+        name="hosted root captures a detached copy of the initial animation policy",
+        path="Sources/VerdictUIProbe/OracleHost.swift",
+        old="                animationPolicy: animationPolicy,\n                variant: variant",
+        new="                animationPolicy: AnimationPolicy(animationPolicy.current),\n                variant: variant",
+        test="VerdictClockTests/testRunPolicyPreservesExplicitConsumerAnimationWithDisabledFlag",
     ),
     Mutation(
         name="action discovery keeps removed probe handlers",
