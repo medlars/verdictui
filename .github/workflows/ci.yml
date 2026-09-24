@@ -14,7 +14,11 @@ concurrency:
 jobs:
   swift:
     name: Build & Test (macOS)
-    runs-on: macos-15
+    # xcode-27 (macOS 27 base, Xcode 27) is the only hosted image that ships the
+    # Swift developers compile with; macos-15 ran 6.1.2 while local ran 6.3/6.4,
+    # so errors only the older compiler reports reddened main after a green local
+    # build (CTS-6D1E7A0F). The step below FAILS if the two ever drift again.
+    runs-on: xcode-27
     # `contents: write` for the evidence-persist step below, scoped to this
     # job only. Declaring permissions is absolute -- every scope not listed
     # becomes `none` -- so this job is checked to need nothing else.
@@ -32,8 +36,15 @@ jobs:
         with:
           python-version: '3.14'
 
-      - name: Swift version
-        run: swift --version
+      - name: Swift version (must equal .github/swift-toolchain-version)
+        run: |
+          swift --version
+          want="$(tr -d '[:space:]' < .github/swift-toolchain-version)"
+          got="$(swift --version 2>&1 | sed -nE 's/.*Apple Swift version ([0-9]+[.][0-9]+).*/\1/p' | head -n 1)"
+          if [ "$got" != "$want" ]; then
+            echo "::error::runner Swift '$got' != pinned '$want' (.github/swift-toolchain-version); local and CI must compile with one toolchain"
+            exit 1
+          fi
 
       # Warnings-as-errors mirrors the PM's SWIFT_STRICT_FLAGS — keep in sync.
       - name: Build (including test targets, zero-warning)
