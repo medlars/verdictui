@@ -207,6 +207,38 @@ Send the handshake **with its params**, as above. `initialize` with no `params`
 key is the one spelling that decodes even when the envelope is broken, so it
 cannot tell a working server from one no client can connect to (`no.md` #37).
 
+## Browser profile persistence acceptance
+
+The login/task persistence control serves the existing login page from one
+launch-owned loopback HTTP server. Its host and port stay fixed while the browser
+closes and reopens the named profile. It still verifies rejected passwords,
+literal-secret refusal, credential redaction, browser arguments, no diagnostic
+credential file, trusted task completion, the acknowledged storage write, and
+the saved task after reopening. A separate fresh profile on that same origin
+must remain empty. The immediate-write lifecycle control uses the same guarded
+fixture, with no persistence delay or retry.
+
+This fixture follows the [URL Standard's origin contract](https://url.spec.whatwg.org/#origin):
+HTTP origins have a scheme/host/port tuple, while file-origin behavior is left to
+implementations. File URLs remain covered by the other rendering and action
+tests; their storage persistence is not a portable acceptance promise.
+
+The original file-origin failures remain preserved, including published CI
+`36053472005` at `d9952fb5`: storage was true before normal close and false after
+reopening, while the paired HTTP lifecycle control passed. Changing the
+acceptance origin does not establish Chrome's internal failure mechanism or
+claim a production browser fix. CIS-B1FB43A2 retains that diagnostic uncertainty.
+
+```bash
+swift test --build-system native --disable-sandbox --jobs 2 \
+  -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete \
+  --filter 'WebSessionIntegrationTests|WebSessionLifecycleTests'
+```
+
+Require a nonzero test summary with no skips. The saved-task mutation clears the
+fixture's storage when a page loads; the full login flow must fail on reopen
+even though its initial login and task-completion assertions succeed.
+
 ## Baselines (destructive — read before running)
 
 ```bash
