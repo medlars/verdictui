@@ -9,7 +9,8 @@
 
 ## P1 — High Priority
 
-- [ ] (2026-09-24) Contain native Workbench acceptance failures: TERM-first PM timeout with bounded cleanup, unreaped ownership anchors for exited leaders, and real process controls for timeout, surviving descendants, and lost ownership. Preserve unknown process ownership rather than signalling reused identifiers.
+- [x] (2026-09-24) Contain the PM/CI native-wrapper timeout: both callers share TERM-first shutdown with bounded cleanup; unreaped child anchors prevent signalling recycled process groups. Actual stalled-operation PM control and outer-SIGTERM control close the detached native fixture; exited-leader control closes same-group descendants. Already-reaped/ECHILD/unowned-group controls refuse signalling. Numeric loopback binding removes an unnecessary unbounded reverse-DNS call; monotonic phase markers diagnose future timeouts without private paths. Focused Python tests 76 passed; nine new mutation witnesses detected their guards with exact restores. Native operation remains 25 seconds; outer operation remains 40 seconds plus explicit cleanup grace.
+- [ ] (2026-09-24) Measure abrupt native crashes during real browser and consumer work before claiming complete descendant containment. The repaired Python owner covers its retained process group, while Swift command owners create separate groups; SIGKILL cannot run their native shutdown handlers. Same-group fixture evidence does not establish cleanup of those separate groups. If actual children persist, ownership must move to a launch-time guardian or parent-liveness channel, never a post-crash numeric PID/tree kill.
 
 - [ ] (2026-09-24) Repair the CI SwiftPM resource-layout assumption and bind actual native loaded-page URLs to the packaged assets. Support nested and flat bundles while rejecting ambiguous trees and symlinked parents; packaged apps must never fall back to build-folder resources. Three focused controls reproduced the old defects before repair.
 
