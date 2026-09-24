@@ -7,6 +7,20 @@ _TEST = "VerdictUIWebTests."
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="web late-exit fixture silently drops its injected delay",
+        path="Tests/VerdictUIWebTests/WebCredentialLifecycleTests.swift",
+        old="            deadline=started+9",
+        new="            deadline=started",
+        test=_TEST + "WebCredentialLifecycleTests/testMCPSIGTERMAwaitsPermittedLateBrowserExit",
+    ),
+    Mutation(
+        name="web document budget witness accepts unrelated browser errors",
+        path="Tests/VerdictUIWebTests/WebFrameIntegrationTests.swift",
+        old='return browserError == .invalidCDPResponse(reason: "inline border geometry: inline geometry capture deadline exceeded")',
+        new='return true || browserError == .invalidCDPResponse(reason: "inline border geometry: inline geometry capture deadline exceeded")',
+        test=_TEST + "WebFrameIntegrationTests/testDocumentBudgetRefusalRejectsUnrelatedErrors",
+    ),
+    Mutation(
         name="web login loses the saved task when the page reopens",
         path="Tests/VerdictUIWebTests/Fixtures/server.py",
         old="body = (fixture_root / path[1:]).read_bytes()",

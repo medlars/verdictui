@@ -407,13 +407,20 @@ final class WebCredentialLifecycleTests: XCTestCase {
             let wrapper = root.appendingPathComponent("delayed-browser")
             let script = #"""
             #!/usr/bin/env python3
-            import json,os,pathlib,subprocess,sys,threading
+            import json,os,pathlib,subprocess,sys,threading,time
             root=pathlib.Path(os.environ['RESOLVER_ROOT'])
             browser=subprocess.Popen([os.environ['LIFECYCLE_REAL_BROWSER'],*sys.argv[1:]])
             code=browser.wait()
-            (root/'browser-exit.json').write_text(json.dumps({'code':code}))
-            # Explicit late-exit fault injection, below the production 10s allowance.
-            threading.Event().wait(9)
+            exited=time.clock_gettime(time.CLOCK_MONOTONIC)
+            (root/'browser-exit.json').write_text(json.dumps({'code':code,'at':exited}))
+            # Bound the injected total delay, rather than adding nine seconds
+            # after Chrome's variable exit latency. Swift publishes this start
+            # atomically before SIGTERM using the same monotonic clock.
+            started=float((root/'shutdown-requested').read_text())
+            deadline=started+9
+            threading.Event().wait(max(0,deadline-time.clock_gettime(time.CLOCK_MONOTONIC)))
+            finished=time.clock_gettime(time.CLOCK_MONOTONIC)
+            (root/'wrapper-timing.json').write_text(json.dumps({'started':started,'deadline':deadline,'finished':finished}))
             (root/'wrapper-exited').write_text('normal')
             raise SystemExit(code)
             """#
@@ -443,22 +450,42 @@ final class WebCredentialLifecycleTests: XCTestCase {
         try send(3, tool: "web_act", arguments: ["profile": "owned", "action": "credential", "node": ids[password], "credential": "test"], input: input.fileHandleForWriting)
         let leader = try await pid("leader", root: root)
         let child = try await pid("child", root: root)
+        let shutdownStart = try monotonicTime()
+        if delayedBrowserExit {
+            try String(shutdownStart).write(to: root.appendingPathComponent("shutdown-requested"), atomically: true, encoding: .utf8)
+        }
         if crash { XCTAssertEqual(kill(process.processIdentifier, SIGKILL), 0) }
         else { process.terminate() }
         // Orderly exit includes credentials, Chrome's own close and retained
         // guardian cleanup. The crash witness keeps its separate short bound.
         let shutdownAllowance = crash ? 8 : WebSession.consumerShutdownGrace
-        let deadline = ContinuousClock.now + .seconds(shutdownAllowance)
-        while process.isRunning, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(20)) }
+        let deadline = shutdownStart + shutdownAllowance
+        while process.isRunning {
+            if try monotonicTime() >= deadline { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
         XCTAssertFalse(process.isRunning)
         if !process.isRunning { XCTAssertEqual(process.terminationStatus, crash ? SIGKILL : 128 + SIGTERM) }
         try await assertGone([leader, child, browserPID])
         if delayedBrowserExit {
-            let observed = try JSONSerialization.jsonObject(with: Data(contentsOf: root.appendingPathComponent("browser-exit.json"))) as? [String: Int]
-            XCTAssertEqual(observed?["code"], 0, "real Chrome must complete its own shutdown")
+            let observed = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: root.appendingPathComponent("browser-exit.json"))) as? [String: Double])
+            XCTAssertEqual(observed["code"], 0, "real Chrome must complete its own shutdown")
+            let browserExit = try XCTUnwrap(observed["at"])
+            let timing = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: root.appendingPathComponent("wrapper-timing.json"))) as? [String: Double])
+            XCTAssertEqual(timing["started"], shutdownStart)
+            XCTAssertEqual(timing["deadline"], shutdownStart + 9)
+            XCTAssertLessThan(browserExit, shutdownStart + 9, "Chrome must exit before the injected late-exit deadline")
+            XCTAssertGreaterThanOrEqual(try XCTUnwrap(timing["finished"]), shutdownStart + 9,
+                "the wrapper must actually exercise late orderly exit")
             XCTAssertEqual(try String(contentsOf: root.appendingPathComponent("wrapper-exited"), encoding: .utf8), "normal",
                 "the permitted late-exit wrapper must finish without forced termination")
         }
         XCTAssertTrue(sentinel.isRunning, "resolver cleanup touched an unrelated retained sentinel")
+    }
+
+    private func monotonicTime() throws -> TimeInterval {
+        var value = timespec()
+        guard clock_gettime(CLOCK_MONOTONIC, &value) == 0 else { throw POSIXError(.EIO) }
+        return Double(value.tv_sec) + Double(value.tv_nsec) / 1_000_000_000
     }
 }
