@@ -193,13 +193,75 @@ extension ProjectRunnerTests {
             let arguments = try String(contentsOf: root.appendingPathComponent("arguments.txt"), encoding: .utf8)
             XCTAssertTrue(arguments.contains("--product=Consumer;echo-not-a-shell\n"))
             XCTAssertTrue(arguments.contains("--configuration=release\n"))
-            XCTAssertTrue(arguments.contains("--package-path\n\(root.path)\n"))
+            XCTAssertTrue(arguments.contains("--package-path\n\(root.resolvingSymlinksInPath().path)\n"))
             let cwd = try String(contentsOf: root.appendingPathComponent("cwd.txt"), encoding: .utf8)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             let actual = try FileManager.default.attributesOfItem(atPath: cwd)
             let expected = try FileManager.default.attributesOfItem(atPath: root.path)
             XCTAssertEqual(actual[.systemFileNumber] as? NSNumber, expected[.systemFileNumber] as? NSNumber)
             XCTAssertEqual(actual[.systemNumber] as? NSNumber, expected[.systemNumber] as? NSNumber)
+        }
+    }
+
+    func testNestedBuildPackageUsesResolvedPathAndKeepsRunnerRootRelative() throws {
+        try buildProject(settings: ["buildProduct": "Consumer", "buildPackagePath": "linked"],
+                         script: "printf '%s\\n' \"$@\" > arguments.txt") { root, executable in
+            let package = root.appendingPathComponent("app", isDirectory: true)
+            try FileManager.default.createDirectory(at: package, withIntermediateDirectories: true)
+            try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("linked"), withDestinationURL: package)
+            try ProjectRunner.buildIfConfigured(projectRoot: root, swiftExecutable: executable)
+            let arguments = try String(contentsOf: root.appendingPathComponent("arguments.txt"), encoding: .utf8)
+            XCTAssertTrue(arguments.contains("--package-path\n\(package.resolvingSymlinksInPath().path)\n"))
+            XCTAssertEqual(try ProjectScenarios.declaredRunnerStrict(projectRoot: root)?.path,
+                           root.appendingPathComponent("runner").path)
+        }
+    }
+
+    func testInvalidBuildPackagePathsRejectBeforeProcessLaunch() throws {
+        let invalid: [Any] = ["", " ", "a\0b", "/", "..", "../sibling", "missing", "file", "escape", true, false, 3, NSNull()]
+        for path in invalid {
+            try buildProject(settings: ["buildProduct": "Consumer", "buildPackagePath": path],
+                             script: "echo launched > launched.txt") { root, executable in
+                try Data().write(to: root.appendingPathComponent("file"))
+                try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("escape"),
+                                                          withDestinationURL: root.deletingLastPathComponent())
+                XCTAssertThrowsError(try ProjectRunner.buildIfConfigured(projectRoot: root, swiftExecutable: executable)) { error in
+                    XCTAssertTrue(error is ProjectScenarios.MalformedManifest)
+                }
+                XCTAssertThrowsError(try ProjectScenarios.declaredRunnerStrict(projectRoot: root))
+                XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("launched.txt").path))
+            }
+        }
+        try buildProject(settings: ["buildPackagePath": "."], script: "echo launched > launched.txt") { root, executable in
+            XCTAssertThrowsError(try ProjectRunner.buildIfConfigured(projectRoot: root, swiftExecutable: executable))
+            XCTAssertThrowsError(try ProjectScenarios.declaredRunnerStrict(projectRoot: root))
+            XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("launched.txt").path))
+        }
+    }
+
+    func testRealNestedSwiftPackageBuildProducesItsOwnExecutable() throws {
+        try buildProject(settings: ["buildProduct": "NestedConsumer", "buildPackagePath": "app", "buildTimeoutSeconds": 90]) { root, _ in
+            let package = root.appendingPathComponent("app", isDirectory: true)
+            let source = package.appendingPathComponent("Sources/NestedConsumer", isDirectory: true)
+            try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+            try """
+                // swift-tools-version: 6.0
+                import PackageDescription
+                let package = Package(name: "NestedConsumer", targets: [.executableTarget(name: "NestedConsumer")])
+                """.write(to: package.appendingPathComponent("Package.swift"), atomically: true, encoding: .utf8)
+            try "print(\"nested-consumer-built\")".write(to: source.appendingPathComponent("main.swift"), atomically: true, encoding: .utf8)
+            try ProjectRunner.buildIfConfigured(projectRoot: root)
+            let binary = package.appendingPathComponent(".build/debug/NestedConsumer")
+            XCTAssertTrue(FileManager.default.isExecutableFile(atPath: binary.path))
+            let process = Process()
+            process.executableURL = binary
+            let output = Pipe()
+            process.standardOutput = output
+            try process.run()
+            process.waitUntilExit()
+            XCTAssertEqual(process.terminationStatus, 0)
+            XCTAssertEqual(String(data: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8), "nested-consumer-built\n")
+            XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(".build/debug/NestedConsumer").path))
         }
     }
 

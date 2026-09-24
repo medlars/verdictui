@@ -48,6 +48,17 @@ stderr includes the effective `buildTimeoutSeconds` alongside `product` and
 a stale runner. The deadline changes neither Swift build arguments nor process
 ownership; separate-group SwiftPM containment (CIS-4F278A0F) remains open.
 
+A consumer whose Swift package is nested can additionally set `"buildPackagePath":
+"app"` alongside `buildProduct`. The default is `"."`. The path must be a
+nonempty relative path to an existing directory inside the consumer project,
+after resolving symlinks; absolute paths, escapes, files, null and non-string
+values are rejected before starting a process. A path without `buildProduct`
+is also invalid. Swift receives the resolved directory as `--package-path`;
+the `runner` path remains relative to the consumer root (for example,
+`app/.build/debug/MyVerdictRunner`, or a wrapper that adds a verification flag).
+The same build path serves standalone and broker commands. This does not
+assert that a consumer runner implements MCP, or expand process containment.
+
 ### Daemon
 
 Keeps scenario hosts warm so a repeat verify pays only the render. Answers
