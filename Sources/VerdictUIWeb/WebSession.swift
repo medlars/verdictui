@@ -37,7 +37,9 @@ public actor WebSession {
     private var closed = false
     private var closingTask: Task<Void, Error>?
 
-    private init(profile: String, browser: HeadlessBrowser, transport: CDPTransport,
+    // Internal so lifecycle tests exercise the real session close path with
+    // retained process and socket identities; public callers must use open().
+    init(profile: String, browser: HeadlessBrowser, transport: CDPTransport,
                  pageSessionID: String, lock: ProfileLock, credentials: WebCredentials,
                  viewport: Rect, url: URL) {
         self.profile = profile; self.browser = browser; self.transport = transport
@@ -206,7 +208,7 @@ public actor WebSession {
             // loaded CI runners, CIS-4ADF5658). Browser.close runs Chrome's own
             // orderly exit; the reply may never arrive because the socket closes.
             _ = try? await transport.send(method: "Browser.close", timeout: .seconds(2))
-            _ = await HeadlessBrowser.awaitDeath(pid: browser.pid, within: Self.orderlyExitGrace)
+            _ = await browser.awaitExit(within: Self.orderlyExitGrace)
             await transport.close()
             try await browser.terminate(grace: 1)
             lock.release()

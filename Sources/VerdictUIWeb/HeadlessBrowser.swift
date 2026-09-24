@@ -212,6 +212,12 @@ public actor HeadlessBrowser {
         throw WebBrowserError.processRefusedToDie(pid: pid)
     }
 
+    /// Observe the retained child after Chrome's orderly close request. Cleanup
+    /// still yields under caller cancellation and never waits on a recycled PID.
+    func awaitExit(within grace: TimeInterval) async -> Bool {
+        await Self.awaitOwnedDeath(process: process, within: grace)
+    }
+
     private static func awaitOwnedDeath(process: any BrowserProcessIdentity, within grace: TimeInterval) async -> Bool {
         let deadline = ContinuousClock.now + .seconds(grace)
         while ContinuousClock.now < deadline {

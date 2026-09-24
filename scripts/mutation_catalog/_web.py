@@ -285,6 +285,22 @@ MUTATIONS: list[Mutation] = [
         + "WebSessionIntegrationTests/testLoginTaskBadPasswordSecretRedactionAndProfilePersistence",
     ),
     Mutation(
+        name="web normal session close omits Chrome profile flush",
+        path=_BASE + "WebSession.swift",
+        old='transport.send(method: "Browser.close", timeout: .seconds(2))',
+        new='transport.send(method: "Browser.getVersion", timeout: .seconds(2))',
+        test=_TEST
+        + "WebCredentialLifecycleTests/testSessionCloseFlushesBeforeDisconnectAndProfileReleaseWithoutAReply",
+    ),
+    Mutation(
+        name="web orderly exit waits on recycled pid instead of owned child",
+        path=_BASE + "HeadlessBrowser.swift",
+        old="await Self.awaitOwnedDeath(process: process, within: grace)\n    }",
+        new="await Self.awaitDeath(pid: pid, within: grace)\n    }",
+        test=_TEST
+        + "WebCredentialLifecycleTests/testSessionCloseFlushesBeforeDisconnectAndProfileReleaseWithoutAReply",
+    ),
+    Mutation(
         name="web unmet action expectation is accepted",
         path=_BASE + "WebSession.swift",
         old='rule: "web-expectation", severity: .error',

@@ -1,5 +1,7 @@
 # VerdictUI TODO
 
+- [x] (2026-09-24) (P1) Profile-close regression protection: reused peer07848a4 CDP Browser.close repair; added actual pre/post storage readback, sanitized failure verdicts, no-reply orderly-close/lock lifecycle control, and retained-child exit observation. Strict web suite200/200 (no skips),2/2 mutation controls noticed with exact restores, and PM architecture/lint/catalog stages passed. Measured on installed Swift6.4/Chrome153; integrated release gates remain separate. Private evidence: `/Users/eiman/Temp/verdictui-profile-persistence-20260924/`.
+
 
 ## P0 — Blocking
 - [x] (2026-09-23) Browser acceptance blockers repaired: raw containing-block ancestry preserves real clipping and detects control-bound collisions; inline inventory preserves editor redaction; typed bounded capture retry handles remote-frame insertion. Actual 13-case CLI controls passed; homepage passed three fresh captures and both product URLs passed. Targeted parser/editor14, paint43 and capture7 mutation witnesses detected all distinct guards with exact restores. Required publication/installed acceptance remains CTS-B70C5383.

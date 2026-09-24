@@ -3,8 +3,86 @@ import XCTest
 import VerdictUIKernel
 @testable import VerdictUIWeb
 
+private final class OrderlyBrowserIdentity: BrowserProcessIdentity, @unchecked Sendable {
+    // Deliberately names a live unrelated process after our owned identity exits.
+    let pid = ProcessInfo.processInfo.processIdentifier
+    private let mutex = NSLock()
+    private var running = true
+    private var recorded: [String] = []
+    private let profileLockPath: URL
+    init(profileLockPath: URL) { self.profileLockPath = profileLockPath }
+    var isRunning: Bool { mutex.withLock { running } }
+    var events: [String] { mutex.withLock { recorded } }
+    func orderlyExit() {
+        mutex.withLock { recorded.append("profile-flushed"); running = false }
+    }
+    func record(_ event: String) { mutex.withLock { recorded.append(event) } }
+    func signal(_ value: Int32) {
+        mutex.withLock { recorded.append("signal-\(value)"); running = false }
+    }
+    func finish() {
+        record(FileManager.default.fileExists(atPath: profileLockPath.path) ? "finish-locked" : "finish-unlocked")
+    }
+}
+
+private actor OrderlyBrowserSocket: CDPSocket {
+    enum Closed: Error { case socket }
+    private let identity: OrderlyBrowserIdentity
+    private var waiting: CheckedContinuation<String, any Error>?
+    private var ended = false
+    init(identity: OrderlyBrowserIdentity) { self.identity = identity }
+    func send(text: String) throws {
+        let request = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
+        let method = try XCTUnwrap(request["method"] as? String)
+        identity.record(method)
+        if method == "Browser.close" { identity.orderlyExit() }
+        // Chrome is allowed to close its socket without acknowledging Browser.close.
+        ended = true
+        waiting?.resume(throwing: Closed.socket); waiting = nil
+    }
+    func receive() async throws -> String {
+        if ended { throw Closed.socket }
+        return try await withCheckedThrowingContinuation { waiting = $0 }
+    }
+    func close() {
+        identity.record("socket-closed")
+        ended = true
+        waiting?.resume(throwing: Closed.socket); waiting = nil
+    }
+}
+
 @MainActor
 final class WebCredentialLifecycleTests: XCTestCase {
+    func testSessionCloseFlushesBeforeDisconnectAndProfileReleaseWithoutAReply() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("verdictui-close-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let registry = ProfileRegistry(root: root)
+        let lock = try ProfileLock.acquire(profile: "orderly", registry: registry)
+        let identity = OrderlyBrowserIdentity(profileLockPath: lock.path)
+        let browser = HeadlessBrowser(process: identity,
+            endpoint: DevtoolsEndpoint(port: 12345, browserPath: "/devtools/browser/fixture"), profileDirectory: root)
+        let transport = CDPTransport(socket: OrderlyBrowserSocket(identity: identity))
+        let session = WebSession(profile: "orderly", browser: browser, transport: transport,
+            pageSessionID: "fixture", lock: lock, credentials: WebCredentials(environment: [:], onePassword: nil),
+            viewport: Rect(x: 0, y: 0, width: 1280, height: 800), url: URL(fileURLWithPath: "/fixture"))
+        try await session.close()
+        let events = identity.events
+        XCTAssertEqual(events.first, "Browser.close")
+        XCTAssertTrue(events.contains("profile-flushed"), "normal close must request Chrome's storage flush")
+        XCTAssertFalse(events.contains { $0.hasPrefix("signal-") }, "an orderly exited child needs no signal")
+        let flushed = try XCTUnwrap(events.firstIndex(of: "profile-flushed"))
+        let disconnected = try XCTUnwrap(events.firstIndex(of: "socket-closed"))
+        XCTAssertLessThan(flushed, disconnected, "closing the transport first prevents orderly shutdown")
+        XCTAssertTrue(events.contains("finish-locked"), "retain profile ownership through descendant cleanup")
+        XCTAssertFalse(events.contains("finish-unlocked"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: lock.path.path))
+        let reopened = try ProfileLock.acquire(profile: "orderly", registry: registry)
+        reopened.release()
+        XCTAssertTrue(ProcessLiveness.isAlive(identity.pid), "the unrelated recycled PID remains live")
+        let exited = await browser.awaitExit(within: 0)
+        XCTAssertTrue(exited, "exit observation must consult the retained child, not the live recycled PID")
+    }
+
     private func fixture() throws -> (URL, URL) {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("verdictui-resolver-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
