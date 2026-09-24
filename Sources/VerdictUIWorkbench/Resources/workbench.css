@@ -468,11 +468,11 @@ main {
 }
 .lens-caption {
   position:absolute;
-  bottom:16px;
+  bottom:4px;
   font-size:8px;
   letter-spacing:2.4px;
   font-weight:650;
-  color:#9b8aa9
+  color:var(--muted)
 }
 .verification-copy {
   padding:24px 30px 24px 8px;
@@ -482,7 +482,7 @@ main {
   display:flex;
   gap:7px;
   align-items:center;
-  color:#817092;
+  color:var(--muted);
   font-size:10px;
   font-weight:650;
   margin-bottom:13px
@@ -499,7 +499,7 @@ main {
   font-size:35px;
   font-weight:650;
   letter-spacing:-1.5px;
-  line-height:1.07;
+  line-height:1.2;
   margin:0 0 14px
 }
 .verification-copy>p {
@@ -949,7 +949,7 @@ progress::-webkit-progress-value {
     bottom:48px
   }
   .lens-caption {
-    bottom:23px
+    bottom:11px
   }
   .verification-copy h2 {
     font-size:42px
@@ -1351,3 +1351,8 @@ progress::-webkit-progress-value {
   background-position:right 10px center;
   background-size:16px;
 }
+
+/* Composed brand/lens artwork is inert; controls and labels retain hit testing. */
+.brand-mark,.brand-mark *, .lens-scene,.lens-scene * { pointer-events:none }
+/* The dot is an intentional layer of the brand mark. */
+.brand-mark span { z-index:1 }

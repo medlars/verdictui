@@ -30,7 +30,18 @@ final class WorkbenchAcceptance {
             }
             let value = try WorkbenchAcceptance(config: URL(fileURLWithPath: arguments[2]))
             driver = value
-            try await value.run()
+            let operation = Task { @MainActor in try await value.run() }
+            // Only this explicit acceptance process changes its signal handling.
+            // Cancellation reaches the bridge's awaited browser/helper shutdown.
+            let signals = [SIGTERM, SIGINT].map { number in
+                signal(number, SIG_IGN)
+                let source = DispatchSource.makeSignalSource(signal: number, queue: .main)
+                source.setEventHandler { operation.cancel() }
+                source.resume()
+                return source
+            }
+            defer { signals.forEach { $0.cancel() } }
+            try await operation.value
             await value.host.bridge.shutdown()
             try value.require(!NSApplication.shared.windows.contains { $0.isVisible || $0.isKeyWindow }, "acceptance opened a visible window")
             try value.finish(status: "pass", error: nil)
@@ -86,6 +97,7 @@ final class WorkbenchAcceptance {
     }
 
     private func evaluate(_ script: String) async throws -> Any? {
+        try Task.checkCancellation()
         guard ContinuousClock.now < deadline else { throw Failure(description: "acceptance deadline exceeded") }
         return try await host.view.evaluateJavaScript(script)
     }
@@ -215,6 +227,22 @@ final class WorkbenchAcceptance {
         try await capture("final")
         guard let tree = try await evaluate(Self.treeScript) as? String, let data = tree.data(using: .utf8), data.count < 8 * 1024 * 1024 else { throw Failure(description: "observed DOM tree absent or oversized") }
         try write(data, "final-tree.json")
+        // Negative control changes only this owned offscreen DOM, then removes
+        // itself. Its observed tree must fail the real bundled browser judge.
+        _ = try await evaluate("""
+            (()=>{const panel=document.createElement('div');panel.id='acceptance-negative-fixture';
+            panel.style.cssText='position:absolute;left:600px;top:650px;width:300px;height:100px';
+            for(const [id,left] of [['acceptance-negative-a',0],['acceptance-negative-b',40]]) {
+              const button=document.createElement('button');button.id=id;button.textContent=id;
+              button.style.cssText=`position:absolute;left:${left}px;top:0;width:100px;height:50px`;panel.append(button);
+            } document.body.append(panel);})()
+            """)
+        guard let negative = try await evaluate(Self.treeScript) as? String, let negativeData = negative.data(using: .utf8), negativeData.count < 8 * 1024 * 1024 else {
+            throw Failure(description: "observed negative-control DOM tree absent or oversized")
+        }
+        try write(negativeData, "negative-tree.json")
+        _ = try await evaluate("document.getElementById('acceptance-negative-fixture').remove()")
+        try await wait("document.getElementById('acceptance-negative-fixture') === null")
         try require(phases.map { $0["id"] as? String } == Self.requiredPhases.map(Optional.some), "required workflow phase missing")
     }
 
@@ -226,6 +254,7 @@ final class WorkbenchAcceptance {
     }
 
     private func capture(_ name: String) async throws {
+        try Task.checkCancellation()
         let configuration = WKSnapshotConfiguration()
         configuration.rect = host.view.bounds; configuration.afterScreenUpdates = true
         let image = try await host.view.takeSnapshot(configuration: configuration)
@@ -242,10 +271,12 @@ final class WorkbenchAcceptance {
         let treeURL = root.appendingPathComponent("final-tree.json")
         let tree = try? Data(contentsOf: treeURL)
         let state = try Data(contentsOf: root.appendingPathComponent("state.json"))
+        let negative = try? Data(contentsOf: root.appendingPathComponent("negative-tree.json"))
         let report: [String: Any] = ["schema": 1, "run_id": runID, "status": status, "error": error ?? "",
             "required_phase_ids": Self.requiredPhases, "phases": phases, "assertions": assertions, "snapshots": snapshots,
             "history": ["path": "state.json", "sha256": Self.hash(state)],
             "final_tree": ["path": "final-tree.json", "sha256": tree.map(Self.hash) ?? "", "viewport": ["width": 1160, "height": 800]],
+            "negative_tree": ["path": "negative-tree.json", "sha256": negative.map(Self.hash) ?? ""],
             "cleanup": ["bridge_shutdown_awaited": true, "visible_windows": NSApplication.shared.windows.filter { $0.isVisible || $0.isKeyWindow }.count],
             "frontmost_before": initialFocus ?? -1, "frontmost_after": NSWorkspace.shared.frontmostApplication?.processIdentifier ?? -1,
             "limits": ["DOM programmatic input, not OS hardware input", "PNG paint requires separate independent review", "No Accessibility, native chooser/menu or notification assertion"]]
@@ -257,6 +288,72 @@ final class WorkbenchAcceptance {
     """#
 
     private static let treeScript = #"""
-    (()=>{let count=0;function walk(e,depth){if(++count>10000||depth>100)throw Error('DOM budget exceeded');const r=e.getBoundingClientRect(),s=getComputedStyle(e),tag=e.tagName.toLowerCase();let role=e.getAttribute('role')||({button:'button',input:'textField',textarea:'textField',select:'menu',img:'image',svg:'image',nav:'navigation',ul:'list',ol:'list',li:'listRow'})[tag]||(['p','h1','h2','h3','label','span'].includes(tag)?'text':'container');const visible=e.getClientRects().length>0&&s.visibility!=='hidden'&&s.display!=='none'&&Number(s.opacity)>0&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth;return {id:e.id||'',role,frame:{x:r.x,y:r.y,width:r.width,height:r.height},text:(e.children.length?Array.from(e.childNodes).filter(n=>n.nodeType===3).map(n=>n.textContent).join(''):e.textContent).trim(),isVisible:visible,attributes:{'web.tag':tag,'web.observer':'WKWebView DOM'},children:Array.from(e.children).filter(c=>!['script','style','defs','symbol'].includes(c.tagName.toLowerCase())).map(c=>walk(c,depth+1))}}const tree=walk(document.body,0);tree.frame={x:0,y:0,width:innerWidth,height:innerHeight};return JSON.stringify(tree)})()
+    (() => {
+      let count = 0, fragments = 0;
+      const rect = r => ({x:r.x,y:r.y,width:r.width,height:r.height});
+      function store(a,key,r) { for(const [k,v] of Object.entries(rect(r))) a[key+k[0].toUpperCase()+k.slice(1)]=v; }
+      function fixedBlock(s) {
+        return ['transform','filter','perspective','translate','rotate','scale'].some(k=>s[k] && s[k]!=='none') ||
+          /(?:^|\s)(layout|paint|strict|content)(?:\s|$)/.test(s.contain) ||
+          s.willChange.split(',').some(v=>['transform','filter','perspective','contain','translate','rotate','scale'].includes(v.trim()));
+      }
+      function walk(n, depth, inherited) {
+        if(++count>10000 || depth>100) throw Error('DOM budget exceeded');
+        const text = n.nodeType===Node.TEXT_NODE;
+        if(text && !n.textContent.trim()) return null;
+        if(!text && n.nodeType!==Node.ELEMENT_NODE) return null;
+        const e = text ? n.parentElement : n, tag=text?'#text':e.tagName.toLowerCase();
+        if(['script','style','defs','symbol'].includes(tag)) return null;
+        const s=getComputedStyle(e), range=text?document.createRange():null;
+        if(range) range.selectNodeContents(n);
+        const r=range?range.getBoundingClientRect():e.getBoundingClientRect();
+        const role=text?'text':e.getAttribute('role')||({button:'button',input:'textField',textarea:'textField',select:'menu',img:'image',svg:'image',nav:'navigation',ul:'list',ol:'list',li:'listRow'})[tag]||'container';
+        const focusable=!text && (e.tabIndex>=0 || e.isContentEditable===true);
+        const clickable=!text && (['button','input','select','textarea'].includes(tag) || (tag==='a'&&e.hasAttribute('href')) || typeof e.onclick==='function');
+        // Public WK DOM cannot enumerate event listeners. Only CSS-disabled,
+        // non-focusable artwork has positively measured inert interaction.
+        const measured=s.pointerEvents==='none'&&!focusable&&!clickable;
+        const visible=inherited.visible && s.display!=='none' && !['hidden','collapse'].includes(s.visibility) && Number(s.opacity)>0 && (range?range.getClientRects():e.getClientRects()).length>0;
+        let positioning=inherited.positioning;
+        if(!text && ['absolute','fixed'].includes(s.position)) positioning={root:depth,block:s.position==='fixed'?inherited.fixed:inherited.absolute};
+        const fixed=!text&&fixedBlock(s);
+        const a={'web.tag':tag,'web.observer':'WKWebView DOM','web.frame':'main','web.domDepth':depth,
+          'web.position':s.position,'web.overflowX':s.overflowX,'web.overflowY':s.overflowY,
+          'web.fixedContainer':fixed,'web.scrollX':scrollX,'web.scrollY':scrollY,
+          'web.isClickable':clickable,'web.isFocusable':focusable,'web.interactionMeasured':measured,
+          'web.hasInteractiveAncestor':inherited.interactive,'web.pointerEvents':s.pointerEvents};
+        if(positioning) { a['web.positioningRootDepth']=positioning.root; a['web.containingBlockDepth']=positioning.block; }
+        if(!text&&e.id) a['web.id']=e.id;
+        const label=!text&&(e.getAttribute('aria-label')||e.getAttribute('title'));
+        if(label) a.accessibilityLabel=label;
+        if(!text) a['web.enabled']=!e.disabled&&e.getAttribute('aria-disabled')!=='true';
+        if(text || (!text&&s.display==='inline'&&e instanceof HTMLElement)) {
+          const boxes=Array.from(range?range.getClientRects():e.getClientRects());
+          fragments+=boxes.length; if(fragments>100000) throw Error('DOM fragment budget exceeded');
+          const key=text?'web.textFragment':'web.inlineFragment';
+          if(!text) a['web.inlineCandidate']=true;
+          a[key+'Count']=boxes.length; boxes.forEach((box,i)=>store(a,key+i,box));
+        }
+        if(!text&&['auto','scroll'].some(v=>s.overflowX===v||s.overflowY===v)) {
+          // Offset/client geometry is reliable here only without rotation/skew.
+          const matrix=s.transform==='none'?null:new DOMMatrixReadOnly(s.transform);
+          if(matrix && (!matrix.is2D || matrix.b!==0 || matrix.c!==0)) throw Error('Transformed scroll geometry unavailable');
+          const sx=e.offsetWidth>0?r.width/e.offsetWidth:1, sy=e.offsetHeight>0?r.height/e.offsetHeight:1;
+          store(a,'web.scrollViewport',{x:r.x+e.clientLeft*sx,y:r.y+e.clientTop*sy,width:e.clientWidth*sx,height:e.clientHeight*sy});
+          store(a,'web.scrollBounds',{x:r.x+(e.clientLeft-e.scrollLeft)*sx,y:r.y+(e.clientTop-e.scrollTop)*sy,width:e.scrollWidth*sx,height:e.scrollHeight*sy});
+        }
+        const context={visible,interactive:inherited.interactive||focusable||clickable,positioning,
+          absolute:!text&&(s.position!=='static'||fixed)?depth:inherited.absolute,fixed:fixed?depth:inherited.fixed};
+        const children=text||['input','textarea'].includes(tag)?[]:Array.from(e.childNodes).map(c=>walk(c,depth+1,context)).filter(Boolean);
+        const result={id:!text?e.id||'':'',role,frame:rect(r),text:text?n.textContent.trim():label||null,isVisible:visible,attributes:a,children};
+        if(!text&&s.zIndex!=='auto'&&Number.isFinite(Number(s.zIndex))) result.zIndex=Number(s.zIndex);
+        return result;
+      }
+      const tree=walk(document.body,1,{visible:true,interactive:false,positioning:null,absolute:-1,fixed:-1});
+      tree.frame={x:0,y:0,width:innerWidth,height:innerHeight};
+      store(tree.attributes,'web.documentViewport',tree.frame);
+      store(tree.attributes,'web.documentBounds',{x:-scrollX,y:-scrollY,width:Math.max(innerWidth,document.documentElement.scrollWidth),height:Math.max(innerHeight,document.documentElement.scrollHeight)});
+      return JSON.stringify(tree);
+    })()
     """#
 }

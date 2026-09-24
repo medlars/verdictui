@@ -10,6 +10,7 @@ import VerdictUIDemoScenarios
 import VerdictUIKernel
 import VerdictUIProbe
 import VerdictUIWitness
+import VerdictUIWeb
 
 /// The scenarios and baseline location a command runs against.
 ///
@@ -593,15 +594,18 @@ public struct JudgeCommand: Sendable {
     /// The tree was observed from outside (an AX scrape, a DOM walk), so it
     /// carries no probe ids and the vacuity guard must not fire on it.
     public let externallyObserved: Bool
+    public let webObserved: Bool
 
     public init(
         treePath: String,
         viewportWidth: Double = 0,
         viewportHeight: Double = 0,
         scenarioName: String = "judged-tree",
-        externallyObserved: Bool = false
+        externallyObserved: Bool = false,
+        webObserved: Bool = false
     ) {
         self.externallyObserved = externallyObserved
+        self.webObserved = webObserved
         self.treePath = treePath
         self.viewportWidth = viewportWidth
         self.viewportHeight = viewportHeight
@@ -650,7 +654,25 @@ public struct JudgeCommand: Sendable {
         summary: Bool
     ) async -> ExitCode {
         await CommandRunner.run(output: environment.output) {
-            let data = try JudgeCommand.read(treePath)
+            let data: Data
+            if webObserved {
+                guard viewportWidth == 0, viewportHeight == 0 else {
+                    throw WebBrowserError.invalidWebOperation(reason: "web viewport comes from the observed root")
+                }
+                let stream = treePath == "-" ? FileHandle.standardInput : try FileHandle(forReadingFrom: URL(fileURLWithPath: treePath))
+                defer { if treePath != "-" { try? stream.close() } }
+                var body = Data()
+                while body.count <= WebTreeJudge.maximumBytes {
+                    guard let chunk = try stream.read(upToCount: min(65_536, WebTreeJudge.maximumBytes + 1 - body.count)), !chunk.isEmpty else { break }
+                    body.append(chunk)
+                }
+                data = body
+                let verdict = try WebTreeJudge.judge(data: data, scenario: scenarioName)
+                environment.output.writeOut(summary ? VerdictOutput.humanReadable(verdict) : try VerdictOutput.json(verdict, pretty: pretty))
+                if let qualification = VerdictOutput.paintQualification(verdict) { environment.output.writeError(qualification + "\n") }
+                return verdict.status == .pass ? .pass : .verdictFailed
+            }
+            data = try JudgeCommand.read(treePath)
             // A decode failure is a TOOL error (exit 2), never a failing
             // verdict (exit 1) -- "your UI is broken" and "I could not read
             // what you sent me" are different answers, and CommandRunner keeps

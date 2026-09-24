@@ -94,6 +94,10 @@ final class ProjectChecksTests: XCTestCase {
             #"{"name":"a","kind":"web","url":"file:///tmp/page.html","expectText":"   "}"#,
             #"{"name":"a","kind":"web","url":"https://user:secret@example.org"}"#,
             #"{"name":"a","kind":"web","url":"javascript:void(0)"}"#,
+            #"{"name":"a","kind":"web","runner":"consumer"}"#,
+            #"{"name":"a","kind":"web","subject":"owned"}"#,
+            #"{"name":"a","kind":"web","runner":"consumer","subject":"owned","url":"file:///tmp/page.html"}"#,
+            #"{"name":"a","kind":"web","runner":"consumer","subject":"owned","expectText":"ignored"}"#,
             #"{"name":"a","kind":"web","url":"file:///tmp/page.html","pid":10}"#,
             #"{"name":"a","kind":"live","pid":1}"#,
             #"{"name":"a","kind":"live","pid":2147483648}"#,
@@ -106,6 +110,7 @@ final class ProjectChecksTests: XCTestCase {
         for declaration in [#"{"name":"a","kind":"scenario","scenario":"settings"}"#,
             #"{"name":"a","kind":"appkit","runner":"consumer","subject":"settings"}"#,
             #"{"name":"a","kind":"web","url":"file:///tmp/page.html","expectText":"Ready"}"#,
+            #"{"name":"a","kind":"web","runner":"consumer","subject":"owned"}"#,
             #"{"name":"a","kind":"live","pid":123,"surface":"window:0","expectText":"Ready"}"#] {
             XCTAssertNoThrow(try ProjectChecks.decode(Data("{\"checks\":[\(declaration)]}".utf8)))
         }

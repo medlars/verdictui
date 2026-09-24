@@ -412,6 +412,19 @@ public actor VerdictDaemon {
             }
         }
 
+        if request.method == "judge_web" {
+            guard let runner = request.runner, let subject = request.subject else {
+                return failure("judge_web requires runner and subject")
+            }
+            do {
+                let verdict = try await ProjectCheckRuntime.judgeWebRunner(runner: runner, subject: subject,
+                    root: URL(fileURLWithPath: FileManager.default.currentDirectoryPath))
+                return success(.verdict(verdict))
+            } catch {
+                return failure("web consumer unavailable: \(error)")
+            }
+        }
+
         // `judge_appkit` is handled BEFORE the scenario guard because it needs
         // no scenario: it drives a binary the consumer compiled, not an entry in
         // the registry compiled into this one. Falling through to

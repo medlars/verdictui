@@ -88,8 +88,10 @@ that root and executes `verdictui mcp`.
 
 After upgrading the installed executable, reconnect an already-open MCP client.
 Replacing the file does not replace a running stdio server or refresh the
-client's cached tool catalog. A fresh 1.1.2 connection exposes 18 tools,
-including `web_open`, `web_act`, `live_inspect`, `live_verify`, and `live_act`.
+client's cached tool catalog. The current source catalog exposes 19 tools,
+including `judge_web`, `web_open`, `web_act`, `live_inspect`, `live_verify`, and
+`live_act`. Verify the actual connected client's catalog after installing;
+source tests do not prove that an existing client has reconnected.
 An older nine-tool catalog is not evidence that those installed capabilities
 are absent. Do not terminate other sessions to refresh one client's connection.
 

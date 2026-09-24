@@ -15,6 +15,7 @@ import subprocess
 import threading
 import time
 import uuid
+from contextlib import ExitStack, contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, cast
@@ -214,6 +215,37 @@ def stop_owned(process: subprocess.Popen, grace: float = 2) -> None:
 def validate_report(report: dict, run_root: Path) -> dict:
     """Revalidate retained measurements without launching a process or UI."""
     validate_native_receipt(report, run_root)
+    if report.get("driver_sha256") != digest(Path(__file__).resolve()):
+        raise ValueError("acceptance wrapper identity differs")
+    for key, expected, name in [
+        ("layout_verdict", {"PASS", "FAIL"}, "workbench-connected-workflow"),
+        ("negative_verdict", {"FAIL"}, "workbench-negative-control"),
+    ]:
+        verdict = json.loads(artifact_bytes(run_root, report.get(key)))
+        if (
+            not isinstance(verdict, dict)
+            or verdict.get("status") not in expected
+            or verdict.get("scenario") != name
+            or not isinstance(verdict.get("findings"), list)
+        ):
+            raise ValueError("real browser judge outcome is missing or incorrect")
+        if key == "negative_verdict" and not any(
+            isinstance(finding, dict)
+            and finding.get("severity") == "error"
+            and finding.get("rule") in {"sibling-overlap", "content-overlap"}
+            and str(finding.get("nodeID", "")).startswith("acceptance-negative-")
+            for finding in verdict["findings"]
+        ):
+            raise ValueError("real DOM overlap negative control was not detected")
+        errors = any(
+            isinstance(item, dict) and item.get("severity") == "error"
+            for item in verdict["findings"]
+        )
+        if errors != (verdict["status"] == "FAIL") or report[key].get("exit_code") != (
+            1 if errors else 0
+        ):
+            raise ValueError("real browser verdict and exit code disagree")
+    artifact(run_root, report.get("negative_tree"))
     native = json.loads(artifact_bytes(run_root, report.get("native_report")))
     validate_native_receipt(native, run_root)
     if any(report.get(key) != value for key, value in native.items()):
@@ -224,7 +256,58 @@ def validate_report(report: dict, run_root: Path) -> dict:
     return report
 
 
+class TerminationGuard:
+    """Restore caller handlers; defer interruption until owned resources are registered."""
+
+    def __init__(self):
+        self.previous = {}
+        self.pending = None
+        self.deferred = False
+        self.cleaning = False
+
+    def interrupt(self, signum, _frame):
+        if self.cleaning:
+            return
+        self.pending = signum
+        if not self.deferred:
+            self.check()
+
+    def check(self):
+        if self.pending is not None:
+            self.cleaning = True
+            raise ValueError(f"native acceptance interrupted by signal {self.pending}")
+
+    @contextmanager
+    def registration(self):
+        self.deferred = True
+        try:
+            yield
+        finally:
+            self.deferred = False
+            self.check()
+
+    def __enter__(self):
+        if threading.current_thread() is not threading.main_thread():
+            raise ValueError("acceptance requires the main thread for owned-process cleanup")
+        for signum in (signal.SIGTERM, signal.SIGINT):
+            self.previous[signum] = signal.signal(signum, self.interrupt)
+        return self
+
+    def __exit__(self, *_error):
+        for signum, handler in self.previous.items():
+            signal.signal(signum, handler)
+
+
 def run(args: argparse.Namespace, root: Path, output: Path) -> dict:
+    with TerminationGuard() as guard, ExitStack() as cleanup:
+        try:
+            return _run(args, root, output, guard, cleanup)
+        finally:
+            guard.cleaning = True
+
+
+def _run(args, root: Path, output: Path, guard: TerminationGuard, cleanup: ExitStack) -> dict:
+    driver_sha256 = digest(Path(__file__).resolve())
     identity = load_identity(root)
     app_identity = identity.validate_app(root, args.app)
     consumer_identity = identity.validate_consumer(
@@ -257,10 +340,15 @@ def run(args: argparse.Namespace, root: Path, output: Path) -> dict:
             except BrokenPipeError, ConnectionResetError:
                 pass
 
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Fixture)
-    server.daemon_threads = True
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
+    with guard.registration():
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Fixture)
+        server.daemon_threads = True
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        cleanup.callback(thread.join, timeout=2)
+        cleanup.callback(server.server_close)
+        cleanup.callback(server.shutdown)
+        cleanup.callback(release.set)
     projects = []
     for name in ("consumer-a", "consumer-b"):
         project = output / name
@@ -298,9 +386,9 @@ def run(args: argparse.Namespace, root: Path, output: Path) -> dict:
     executable = args.app / "Contents/MacOS/VerdictUIWorkbench"
     process = None
     started = time.monotonic()
-    try:
-        with (output / "native.log").open("x") as log:
-            os.chmod(output / "native.log", 0o600)
+    with (output / "native.log").open("x") as log:
+        os.chmod(output / "native.log", 0o600)
+        with guard.registration():
             process = subprocess.Popen(
                 [str(executable), "--acceptance-config", str(config)],
                 cwd=root,
@@ -309,39 +397,73 @@ def run(args: argparse.Namespace, root: Path, output: Path) -> dict:
                 stderr=subprocess.STDOUT,
                 start_new_session=True,
             )
-            try:
-                code = process.wait(timeout=args.timeout_seconds)
-            except subprocess.TimeoutExpired as error:
-                raise ValueError("native acceptance exceeded its explicit deadline") from error
-        if code:
-            raise ValueError(
-                f"native acceptance unavailable (exit {code}); inspect private native.log"
-            )
-        native_path = output / "native-report.json"
-        native = validate_native_receipt(json.loads(native_path.read_text()), output)
-        if native.get("run_id") != run_id:
-            raise ValueError("native receipt belongs to another attempt")
-        if (
-            identity.validate_app(root, args.app) != app_identity
-            or identity.validate_consumer(root, args.consumer_runner, args.consumer_build_receipt)
-            != consumer_identity
-        ):
-            raise ValueError("source or executable identity changed during acceptance")
-        report = dict(
-            native,
-            identities={"app": app_identity, "consumer": consumer_identity},
-            native_report={"path": native_path.name, "sha256": digest(native_path)},
-            elapsed_seconds=time.monotonic() - started,
-            owned_process={"pid": process.pid, "returncode": code},
+            cleanup.callback(stop_owned, process)
+        try:
+            code = process.wait(timeout=args.timeout_seconds)
+        except subprocess.TimeoutExpired as error:
+            raise ValueError("native acceptance exceeded its explicit deadline") from error
+    if code:
+        raise ValueError(f"native acceptance unavailable (exit {code}); inspect private native.log")
+    native_path = output / "native-report.json"
+    native = validate_native_receipt(json.loads(native_path.read_text()), output)
+    if native.get("run_id") != run_id:
+        raise ValueError("native receipt belongs to another attempt")
+    verdicts = {}
+    for key, tree_key, name, expected_codes in [
+        ("layout_verdict", "final_tree", "workbench-connected-workflow", {0, 1}),
+        ("negative_verdict", "negative_tree", "workbench-negative-control", {1}),
+    ]:
+        result = subprocess.run(
+            [
+                str(args.app / "Contents/Helpers/verdictui"),
+                "judge",
+                str(artifact(output, native.get(tree_key))),
+                "--web",
+                "--name",
+                name,
+            ],
+            capture_output=True,
+            timeout=3,
+            check=False,
         )
-        return validate_report(report, output)
-    finally:
-        if process:
-            stop_owned(process)
-        release.set()
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=2)
+        if len(result.stdout) > 32 * 1024 * 1024:
+            raise ValueError("actual browser judge exceeded its artifact budget")
+        path = output / (key + ".json")
+        try:
+            verdict = json.loads(result.stdout)
+        except ValueError as error:
+            save(
+                output / (key + "-unavailable.json"),
+                {
+                    "exit_code": result.returncode,
+                    "stderr": result.stderr[:16384].decode("utf-8", errors="replace"),
+                },
+            )
+            raise ValueError("actual browser judge produced no readable verdict") from error
+        save(path, verdict)
+        if result.returncode not in expected_codes:
+            raise ValueError(
+                f"actual browser judge did not produce the expected {key}; exit {result.returncode}; inspect {path.name}"
+            )
+        verdicts[key] = {"path": path.name, "sha256": digest(path), "exit_code": result.returncode}
+    if (
+        identity.validate_app(root, args.app) != app_identity
+        or identity.validate_consumer(root, args.consumer_runner, args.consumer_build_receipt)
+        != consumer_identity
+    ):
+        raise ValueError("source or executable identity changed during acceptance")
+    if digest(Path(__file__).resolve()) != driver_sha256:
+        raise ValueError("acceptance wrapper changed during the attempt")
+    report = dict(
+        native,
+        **verdicts,
+        driver_sha256=driver_sha256,
+        identities={"app": app_identity, "consumer": consumer_identity},
+        native_report={"path": native_path.name, "sha256": digest(native_path)},
+        elapsed_seconds=time.monotonic() - started,
+        owned_process={"pid": process.pid, "returncode": code},
+    )
+    return validate_report(report, output)
 
 
 def main() -> int:
@@ -355,17 +477,18 @@ def main() -> int:
     output = None
     try:
         if not 5 <= args.timeout_seconds <= 300:
-            raise ValueError("timeout must be between5 and300 seconds")
+            raise ValueError("timeout must be between 5 and 300 seconds")
         output = create_output(args.output)
         args.app = args.app.resolve(strict=True)
         args.consumer_runner = args.consumer_runner.resolve(strict=True)
         args.consumer_build_receipt = args.consumer_build_receipt.resolve(strict=True)
         report = run(args, Path(__file__).resolve().parents[1], output)
         save(output / "report.json", report)
+        status = json.loads(artifact_bytes(output, report["layout_verdict"]))["status"]
         print(
-            f"WORKBENCH ACCEPTANCE PASS: {report['assertions']} assertions, {len(REQUIRED_PHASES)}/{len(REQUIRED_PHASES)} native phases complete"
+            f"WORKBENCH ACCEPTANCE {status}: {report['assertions']} assertions, {len(REQUIRED_PHASES)}/{len(REQUIRED_PHASES)} native phases complete"
         )
-        return 0
+        return 0 if status == "PASS" else 1
     except (OSError, ValueError, ImportError, subprocess.SubprocessError) as error:
         if output and not (output / "report.json").exists():
             save(

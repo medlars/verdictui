@@ -37,7 +37,7 @@ public struct ProjectChecks: Codable, Sendable {
         }
         let allowed: [String: Set<String>] = [
             "scenario": ["name", "kind", "scenario"],
-            "web": ["name", "kind", "url", "expectText"],
+            "web": ["name", "kind", "url", "expectText", "runner", "subject"],
             "appkit": ["name", "kind", "runner", "subject"],
             "live": ["name", "kind", "pid", "surface", "expectText"],
         ]
@@ -58,9 +58,15 @@ public struct ProjectChecks: Codable, Sendable {
             case "appkit":
                 guard validText(check.runner), validText(check.subject) else { throw LiveRuntime.Failure.invalidRequest("appkit check requires runner and subject") }
             case "web":
-                guard validText(check.url, maximum: 8192), let raw = check.url, let url = URL(string: raw),
-                      ["http", "https", "file"].contains(url.scheme?.lowercased() ?? ""), url.user == nil, url.password == nil else {
-                    throw LiveRuntime.Failure.invalidRequest("web check requires an http, https or file URL without credentials")
+                if check.runner != nil || check.subject != nil {
+                    guard validText(check.runner), validText(check.subject), check.url == nil, check.expectText == nil else {
+                        throw LiveRuntime.Failure.invalidRequest("web runner requires runner and subject, without URL or expectText")
+                    }
+                } else {
+                    guard validText(check.url, maximum: 8192), let raw = check.url, let url = URL(string: raw),
+                          ["http", "https", "file"].contains(url.scheme?.lowercased() ?? ""), url.user == nil, url.password == nil else {
+                        throw LiveRuntime.Failure.invalidRequest("web check requires an http, https or file URL without credentials")
+                    }
                 }
             case "live":
                 guard let pid = check.pid, pid > 1 else { throw LiveRuntime.Failure.invalidRequest("live check requires a process ID greater than one") }
@@ -113,6 +119,17 @@ public enum ProjectCheckRuntime {
         public let status: String
     }
     @MainActor
+    public static func judgeWebRunner(runner: String, subject: String, root: URL) async throws -> Verdict {
+        guard [runner, subject].allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.utf8.count <= 4096 && !$0.contains("\0") }) else {
+            throw LiveRuntime.Failure.invalidRequest("web runner requires bounded runner and subject")
+        }
+        let target = URL(fileURLWithPath: runner, relativeTo: root).standardizedFileURL
+        let result = try await BoundedCommand.run(executable: target, arguments: ["render", subject], root: root)
+        guard result.code == 0 else { throw LiveRuntime.Failure.unavailable }
+        return try WebTreeJudge.judge(data: result.output, scenario: subject)
+    }
+
+    @MainActor
     public static func run(root: URL, executable: URL, sessions: WebSessionManager,
                            progress: (@MainActor (Progress) -> Void)? = nil) async -> ProjectCheckReport {
         let manifest: ProjectChecks
@@ -149,6 +166,9 @@ public enum ProjectCheckRuntime {
                                executable: URL, sessions: WebSessionManager) async throws -> Verdict {
         switch check.kind {
         case "web":
+            if let runner = check.runner, let subject = check.subject {
+                return try await judgeWebRunner(runner: runner, subject: subject, root: root)
+            }
             guard let raw = check.url, let url = URL(string: raw) else { throw LiveRuntime.Failure.unavailable }
             let profile = "check-\(UUID().uuidString.lowercased())-\(index)"
             _ = try await sessions.open(profile: profile, url: url)

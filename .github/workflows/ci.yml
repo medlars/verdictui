@@ -66,6 +66,7 @@ jobs:
           python3.14 - <<'PY'
           import json, pathlib, subprocess
           root = pathlib.Path.cwd()
+          (root / 'logs').mkdir(exist_ok=True)
           inputs = json.loads((root / 'dist/workbench-acceptance-inputs.json').read_text())
           subprocess.run(['python3.14', 'scripts/workbench-acceptance.py',
               '--app', inputs['app'], '--consumer-runner', inputs['consumer_runner'],

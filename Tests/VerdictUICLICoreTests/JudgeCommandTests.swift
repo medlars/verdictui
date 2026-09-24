@@ -1,4 +1,6 @@
+import ArgumentParser
 import Foundation
+import VerdictUIDemoScenarios
 import VerdictUIKernel
 import XCTest
 
@@ -121,4 +123,29 @@ final class JudgeCommandTests: XCTestCase {
             "undecodable input must throw, not silently produce a verdict about nothing"
         )
     }
+    func testWebFlagIsExplicitAndParsed() throws {
+        let parsed = try VerdictUITool.Judge.parse(["tree.json", "--web"])
+        XCTAssertTrue(parsed.web)
+        XCTAssertEqual(parsed.tree, "tree.json")
+        XCTAssertFalse(try VerdictUITool.Judge.parse(["tree.json"]).web)
+    }
+
+    @MainActor func testWebJudgeRejectsNativeMetadataAndViewportOverride() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let path = root.appendingPathComponent("tree.json")
+        try Data(cleanTreeJSON.utf8).write(to: path)
+        for viewport in [0.0, 800.0] {
+            let output = CapturedOutput()
+            let environment = CommandEnvironment(engine: VerdictEngine(registry: DemoScenarios.registry,
+                baselines: BaselineStore.standard(root: root)), output: output, pixelArtifactRoot: root)
+            let code = await JudgeCommand(treePath: path.path, viewportWidth: viewport, webObserved: true)
+                .run(environment, pretty: false, summary: false)
+            XCTAssertEqual(code, .couldNotVerify)
+            XCTAssertTrue(output.standardOutput.isEmpty)
+            XCTAssertFalse(output.standardError.isEmpty)
+        }
+    }
+
 }

@@ -363,9 +363,13 @@
 | `scripts/build-workbench-acceptance.sh` | Explicit cold preparation of packaged Workbench and pinned real consumer | Active | 2026-09-23 |
 | `Tests/test_workbench_identity.py` | Reject stale binaries, source changes, invalid stamps and replaced assets | Active | 2026-09-23 |
 | `scripts/mutation_catalog/_workbench_adoption.py` | Workbench build identity admission mutation controls | Active | 2026-09-23 |
+| `Sources/VerdictUIWeb/WebTreeJudge.swift` | Bounded explicit observed-DOM admission into the canonical browser layout engine | Active | 2026-09-24 |
+| `Tests/VerdictUIWebTests/WebTreeJudgeTests.swift` | Validate DOM budgets/metadata, real defect controls and retained paint uncertainty | Active | 2026-09-24 |
+| `Tests/VerdictUICLICoreTests/WebMCPToolTests.swift` | Verify explicit web consumer CLI, shared check and MCP process/transport parity | Active | 2026-09-24 |
 | `Sources/VerdictUIWorkbench/WorkbenchAcceptance.swift` | Quiet real WKWebView/bridge workflow, native snapshots and observed DOM export | Active | 2026-09-24 |
 | `scripts/workbench-acceptance.py` | Own native acceptance process and isolated fixtures; validate retained observations | Active | 2026-09-24 |
 | `Tests/test_workbench_acceptance.py` | Reject incomplete phases, corrupted images/history/tree and unbound native reports | Active | 2026-09-24 |
+
 
 
 ## Archived / Removed

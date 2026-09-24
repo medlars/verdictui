@@ -115,9 +115,9 @@ python3.14 scripts/workbench-acceptance.py \
   --output /absolute/new-private-run-directory
 ```
 
-The default native process budget is25seconds. Missing prebuilds, source drift,
+The default native process budget is 25 seconds. Missing prebuilds, source drift,
 unavailable rendering or a deadline produce unavailable, never a fallback demo.
-The validator requires Pillow12.3.0. A real consumer scenario invokes the bundled
+The validator requires Pillow 12.3.0. A real consumer scenario invokes the bundled
 helper; web checks alone cannot prove that helper ran. The known passing/failing
 consumer fixtures certify this integration, not any other fleet application's UI.
 
@@ -125,13 +125,18 @@ Required observations include connection, project selection, edited/saved
 checks, actual consumer PASS and FAIL, running state, cancellation followed by a
 terminal unavailable report, history, host recreation and measured DOM geometry.
 Eight actual WKWebView PNGs cover connected, passing, failing, two running states,
-history, compact760×600 and final1160×800 layouts. The emitted `final-tree.json`
+history, compact 760×600 and final 1160×800 layouts. The emitted `final-tree.json`
 contains observed DOM IDs, roles, bounds, visibility and text; it is not a
 hand-authored success tree. Intrinsic text and comprehensive CSS paint semantics
 are not invented where the DOM exporter cannot measure them.
 
 `report.json` binds each artifact hash to `native-report.json`, the app/helper
-and consumer build identities, and the complete phase set. The callable
+and consumer build identities, the exact Python driver hash, and the complete
+phase set. Successful acceptance requires the bundled helper to judge the final
+observed tree as PASS. A measured FAIL is retained as a real layout defect. A
+separate temporary DOM overlap must FAIL with cited negative-control node IDs.
+The actual negative tree and both helper verdicts are retained; the injected
+fault exists only in the isolated acceptance DOM and is removed afterward. The callable
 `validate_report(report, run_root)` rechecks retained bytes without launching
 the UI. Source admission must also rerun the canonical identity validators.
 These are local integrity checks, not authenticated attestation of a reviewer.
@@ -147,3 +152,29 @@ visual review, which must be bound to every reviewed image's exact hash.
 The full PM workbench stage requires both the existing browser layout smoke
 and this connected native workflow. CI retains native artifacts on success or
 failure. Candidate results do not automatically certify an installed release.
+
+
+Explicit web consumer adapters can expose an observed DOM tree through
+`render <subject>`. Declare `kind: web` with `runner` and `subject`, without
+`url` or `expectText`; the CLI `check`, shared runtime API and MCP `judge_web`
+use the same bounded process and `WebTreeJudge` admission. A retained tree can
+also be judged with `verdictui judge final-tree.json --web`. This selects the
+existing browser layout engine explicitly; generic native/AppKit rules remain
+unchanged. DOM depth, overflow, scroll/fragment geometry and interaction
+observations must be present and bounded. Canonical viewport scaffolds and
+invisible zero-size frame anchors retain their exact non-DOM/nonpainting
+contracts; raw depths may reset only at a measured iframe document boundary. Unknown event-listener registration
+stays unmeasured; only measured pointer-disabled, nonfocusable artwork receives
+positive inert classification. Raw DOM nodes remain in the returned tree and
+findings have canonical structural paths where no DOM ID exists.
+
+The acceptance wrapper temporarily handles SIGTERM/SIGINT, restores the caller's
+handlers when used as an imported API, and stops its owned native process before
+returning. The native acceptance process cancels its workflow and awaits bridge
+shutdown on those signals. These controls do not claim cleanup after SIGKILL.
+
+A completed native workflow retains either a measured layout PASS or FAIL with
+the actual helper exit code. The imported `run` API returns both outcomes so
+fleet coverage can record a real defect. The standalone command exits 1 and
+prints `WORKBENCH ACCEPTANCE FAIL` for that defect; missing observations remain
+UNAVAILABLE (exit 2). The independently inserted DOM overlap must still FAIL.
