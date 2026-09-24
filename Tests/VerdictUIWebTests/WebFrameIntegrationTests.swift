@@ -598,16 +598,38 @@ final class WebFrameIntegrationTests: XCTestCase {
             let longText = try await manager.verify(profile: "scroll", expectText: "Measured line 9999")
             XCTAssertEqual(longText.status, .pass, "\(longText.findings)")
             phase = "overlap budget refusal"
-            _ = try await manager.open(profile: "scroll", url: XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/overlap-budget")))
             do {
+                // Opening also observes the page. A bounded capture refusal
+                // can precede overlap lint on a heavily loaded host.
+                _ = try await manager.open(profile: "scroll", url: XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/overlap-budget")))
                 _ = try await manager.verify(profile: "scroll")
                 XCTFail("exhausted overlap inspection must not return a partial verdict")
             } catch {
-                XCTAssertTrue(String(describing: error).contains("bounded work budget"), "\(error)")
+                XCTAssertTrue(Self.isExpectedDocumentBudgetRefusal(error), "\(error)")
             }
         } catch { XCTFail("\(phase): \(error)") }
         await manager.closeAll()
         try await server.stop()
+    }
+
+    func testDocumentBudgetRefusalRejectsUnrelatedErrors() {
+        XCTAssertTrue(Self.isExpectedDocumentBudgetRefusal(WebBrowserError.invalidCDPResponse(
+            reason: "inline border geometry: inline geometry capture deadline exceeded")))
+        XCTAssertTrue(Self.isExpectedDocumentBudgetRefusal(WebBrowserError.invalidWebOperation(
+            reason: "web overlap inspection exceeded its bounded work budget")))
+        for error: any Error in [
+            WebBrowserError.invalidCDPResponse(reason: "missing inline border fragments"),
+            WebBrowserError.invalidWebOperation(reason: "session is closed"),
+            CocoaError(.fileReadNoSuchFile),
+        ] {
+            XCTAssertFalse(Self.isExpectedDocumentBudgetRefusal(error), "\(error)")
+        }
+    }
+
+    private static func isExpectedDocumentBudgetRefusal(_ error: any Error) -> Bool {
+        guard let browserError = error as? WebBrowserError else { return false }
+        return browserError == .invalidCDPResponse(reason: "inline border geometry: inline geometry capture deadline exceeded")
+            || browserError == .invalidWebOperation(reason: "web overlap inspection exceeded its bounded work budget")
     }
 
 }
