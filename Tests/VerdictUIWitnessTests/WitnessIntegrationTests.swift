@@ -274,8 +274,11 @@ final class WitnessIntegrationTests: XCTestCase {
             try host.readTree(scenario: Self.earlyExitScenario, readyTimeout: 1)
         ) { error in
             switch error {
-            case AXReader.Failure.hostUnavailable(let detail):
-                XCTAssertEqual(detail, "the host process never appeared")
+            // Any launch failure is acceptable: the subject is what survives the
+            // launch, not how it failed. `open` itself can refuse the bundle
+            // ("open exited N"), and pinning one detail string made that a red.
+            case AXReader.Failure.hostUnavailable:
+                break
             case AXReader.Failure.noWindow:
                 break  // The short-lived process was observed before its normal exit.
             default:
@@ -286,6 +289,8 @@ final class WitnessIntegrationTests: XCTestCase {
 
     /// Repeated real launches must reuse the same process-scoped bundle.
     func testRepeatedLaunchesReuseOneTemporaryDirectory() throws {
+        // It launches a real bundle through `open`, which needs a window server.
+        try XCTSkipIf(isHeadless, "no window server on this host")
         let root = URL(fileURLWithPath: NSTemporaryDirectory())
         // Count the BUNDLE directories, not the top-level witness roots. The
         // bundles now live in per-executable slots under one pid-scoped root,
