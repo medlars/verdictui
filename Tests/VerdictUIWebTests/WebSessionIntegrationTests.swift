@@ -109,13 +109,46 @@ final class WebSessionIntegrationTests: XCTestCase {
         } catch { await manager.closeAll(); throw error }
     }
 
+    /// Serves the fixture directory on loopback; the caller stops the returned process.
+    private func loopbackServer(root: URL) async throws -> (GuardedProcess, Int) {
+        let environment = ProcessInfo.processInfo.environment
+        let python: URL
+        if let configured = environment["VERDICTUI_TEST_PYTHON"] {
+            python = URL(fileURLWithPath: configured)
+        } else {
+            python = try XCTUnwrap((environment["PATH"] ?? "").split(separator: ":")
+                .map { URL(fileURLWithPath: String($0)).appendingPathComponent("python3.14") }
+                .first { FileManager.default.isExecutableFile(atPath: $0.path) }, "fixture requires python3.14")
+        }
+        let fixture = try XCTUnwrap(Bundle.module.url(forResource: "server", withExtension: "py", subdirectory: "Fixtures"))
+        let portFile = root.appendingPathComponent("server.port")
+        let server = try GuardedProcess.spawn(executable: python,
+            arguments: [fixture.path, fixture.deletingLastPathComponent().path, portFile.path],
+            directory: root, environment: environment)
+        let deadline = ContinuousClock.now + .seconds(5)
+        while ContinuousClock.now < deadline {
+            if let text = try? String(contentsOf: portFile, encoding: .utf8), let port = Int(text) { return (server, port) }
+            guard try server.status() == nil else { break }
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        _ = try? server.stop()
+        throw WebBrowserError.invalidWebOperation(reason: "loopback fixture server did not publish a port")
+    }
+
+    /// Persistence is asserted on an HTTP origin, never file://. Chrome does not
+    /// reliably reload file:// localStorage: identical copies of one closed profile
+    /// read it back in some launches and not others, while the same page over
+    /// loopback HTTP read back 48/48 (2026-09-24). CI run 36053472005 closed with
+    /// a 30-byte Local Storage log for file:// while the HTTP control passed.
     func testLoginTaskBadPasswordSecretRedactionAndProfilePersistence() async throws {
         let root = try root()
         defer { try? FileManager.default.removeItem(at: root) }
+        let (server, port) = try await loopbackServer(root: root)
+        defer { _ = try? server.stop() }
         let secret = UUID().uuidString + UUID().uuidString
         let badSecret = UUID().uuidString
         let hash = SHA256.hash(data: Data(secret.utf8)).map { String(format: "%02x", $0) }.joined()
-        var url = URLComponents(url: try fixture("login"), resolvingAgainstBaseURL: false)!
+        var url = try XCTUnwrap(URLComponents(string: "http://127.0.0.1:\(port)/login.html"))
         url.queryItems = [URLQueryItem(name: "hash", value: hash)]
         let manager = WebSessionManager(root: root, environment: [
             "VERDICTUI_WEB_CRED_GOOD": secret, "VERDICTUI_WEB_CRED_BAD": badSecret, "VERDICTUI_WEB_OP": ""])
@@ -158,6 +191,7 @@ final class WebSessionIntegrationTests: XCTestCase {
             XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("login/launch-stderr.log").path))
             let storedBefore = try await persistedTaskState(root: root)
             XCTAssertEqual(storedBefore["stored"], .bool(true), "visible success must include actual storage write")
+            XCTAssertEqual(storedBefore["protocol"], .string("http:"), "persistence must be measured on an HTTP origin")
             let closeStart = ContinuousClock.now
             try await manager.close(profile: "login")
             let closeElapsed = closeStart.duration(to: .now)
