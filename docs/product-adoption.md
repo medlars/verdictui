@@ -6,6 +6,17 @@ complete product coverage.
 
 ## Current qualification follow-up (2026-09-25)
 
+Private motion integration `8d311668` completed genuine quick PM at **B99.3**
+in 434.07 seconds: 1,347 native passes with 26 explicit skips, 798 Python passes,
+855 resolved mutation targets, contracts and lint passed. Installed Homebrew
+`act` parity remains the sole graded failure. CodeWatch reported 0/459 current
+files and unavailable coverage; a separate scoped scan is in progress. The PM
+added a duplicate truncated TODO, retained before reconciliation; all other
+tracked bytes and 520 shared PM Python files remained unchanged. Diagnostics
+were absent, so qualification uses the actual saved status and raw logs. This
+quick mode does not run packaged Workbench acceptance; a fresh source-bound
+package and native workflow are still required before final publication.
+
 PR48 published the current-binding/CLI/parity repair as `86286737`. Its qualified
 candidate `d5eeb9e` completed genuine quick PM at **B99.3**, with **installed
 parity as its only failed stage**: the Homebrew executable lacks `act`.
