@@ -370,7 +370,7 @@ jobs:
               echo "::warning::pm-base install attempt $((attempt - 1)) failed; retrying (CIS-72CBC8B5)"
               sleep $((attempt * 15))
             fi
-            pip install "git+ssh://git@github.com/medlars/pm-base.git@0b5b8943badd38ca5eba86cbe45d6ca44bfd8904" && exit 0
+            pip install "git+ssh://git@github.com/medlars/pm-base.git@542909e998cae63faaef111bbdc87a3019f84cac" && exit 0
           done
           exit 1
 
