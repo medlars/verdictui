@@ -6,6 +6,18 @@ complete product coverage.
 
 ## Current qualification follow-up (2026-09-25)
 
+PR50 published motion receipt admission and native lifetime witnesses as
+`2841148ac0e0973eca40dafb7093b8fce5dd59ce`. Qualified CI `36151564456`
+passed all three jobs: 1,347 native passes with 26 explicit skips, 779 Python
+passes with 22 skips and 11 subtest passes, plus 48 Workbench assertions across
+ten phases. The tested merge tree equals the submitted source tree; all nine
+uploaded PNG hashes were checked. The hosted runner agreed on reduced motion,
+so this also leaves normal native animation unavailable. The private release
+artifact below remains bound to the same runtime source fingerprint. Its direct
+extracted-helper handshake reports 1.1.4 and 19 tools. An invocation from a
+consumer project can delegate to that project's older compiled runtime; a newer
+launcher alone does not establish every consumer's tool catalog or version.
+
 Private motion integration `8d311668` completed genuine quick PM at **B99.3**
 in 434.07 seconds: 1,347 native passes with 26 explicit skips, 798 Python passes,
 855 resolved mutation targets, contracts and lint passed. Installed Homebrew
