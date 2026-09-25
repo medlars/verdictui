@@ -1,6 +1,5 @@
 import AppKit
 import CryptoKit
-import CoreFoundation
 import Foundation
 import WebKit
 import VerdictUIWorkbenchCore
@@ -20,9 +19,19 @@ final class WorkbenchAcceptance {
     private let initialFocus = NSWorkspace.shared.frontmostApplication?.processIdentifier
     private let initialCursor = NSEvent.mouseLocation
     private let motionHost: String
-    private var motionWindow: NSWindow?
-    private var motionSamples: [[String: Any]] = []
-    private var accessibilityObserver: NSObjectProtocol?
+    private lazy var motionRecorder = WorkbenchMotionRecorder(
+        readNative: { [unowned self] in nativeMotionState() },
+        write: { [unowned self] bytes, name in try write(bytes, name) })
+    private lazy var motionResources = WorkbenchMotionResources(
+        mode: motionHost == "invisible-window" ? .invisibleWindow : .detached,
+        publisher: WorkbenchMotionPublisher(center: NSWorkspace.shared.notificationCenter,
+            name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification)
+    ) { [weak self] in
+        guard let self else { return }
+        if self.accessibilityChanges.count < 128 {
+            self.accessibilityChanges.append(self.nativeMotionState())
+        } else { self.accessibilityChangesDropped += 1 }
+    }
     private var accessibilityChanges: [[String: Any]] = []
     private var accessibilityChangesDropped = 0
     private var host: WorkbenchHost
@@ -39,7 +48,11 @@ final class WorkbenchAcceptance {
             }
             let value = try WorkbenchAcceptance(config: URL(fileURLWithPath: arguments[2]))
             driver = value
-            let operation = Task { @MainActor in try await value.run() }
+            let operation = Task { @MainActor in
+                try await value.motionResources.withCleanup(
+                    body: { try await value.run() },
+                    shutdown: { await value.host.bridge.shutdown() })
+            }
             // Only this explicit acceptance process changes its signal handling.
             // Cancellation reaches the bridge's awaited browser/helper shutdown.
             let signals = [SIGTERM, SIGINT].map { number in
@@ -51,15 +64,11 @@ final class WorkbenchAcceptance {
             }
             defer { signals.forEach { $0.cancel() } }
             try await operation.value
-            await value.host.bridge.shutdown()
-            value.closeMotionWindow()
             try value.require(!NSApplication.shared.windows.contains { $0.isVisible || $0.isKeyWindow }, "acceptance opened a visible window")
             try value.finish(status: "pass", error: nil)
             exit(0)
         } catch {
             if let driver {
-                await driver.host.bridge.shutdown()
-                driver.closeMotionWindow()
                 try? driver.finish(status: "unavailable", error: String(describing: error))
             }
             FileHandle.standardError.write(Data("Workbench acceptance unavailable: \(error)\n".utf8))
@@ -102,38 +111,7 @@ final class WorkbenchAcceptance {
         let store = WorkbenchStore(stateURL: root.appendingPathComponent("state.json"))
         try store.addProject(projectB); try store.addProject(projectA)
         host = try WorkbenchHost(store: store, size: CGSize(width: 1160, height: 800))
-        attachMotionWindowIfRequested()
-        accessibilityObserver = NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                guard let self, self.accessibilityObserver != nil else { return }
-                if self.accessibilityChanges.count < 128 {
-                    self.accessibilityChanges.append(self.nativeMotionState())
-                } else { self.accessibilityChangesDropped += 1 }
-            }
-        }
-    }
-
-    private func attachMotionWindowIfRequested() {
-        guard motionHost == "invisible-window" else { return }
-        if motionWindow == nil {
-            let window = NSWindow(contentRect: host.view.frame, styleMask: .borderless, backing: .buffered, defer: true)
-            window.isReleasedWhenClosed = false
-            motionWindow = window
-        }
-        // This owned acceptance window is never ordered, shown, made key or activated.
-        motionWindow?.contentView = host.view
-    }
-
-    private func closeMotionWindow() {
-        if let accessibilityObserver {
-            NSWorkspace.shared.notificationCenter.removeObserver(accessibilityObserver)
-            self.accessibilityObserver = nil
-        }
-        motionWindow?.contentView = nil
-        motionWindow?.close()
-        motionWindow = nil
+        motionResources.attach(host.view)
     }
 
     private func nativeMotionState() -> [String: Any] {
@@ -150,31 +128,7 @@ final class WorkbenchAcceptance {
     }
 
     private func observeMotion(_ checkpoint: String) async throws {
-        let before = nativeMotionState()
-        var value: Any?
-        var evaluationError: String?
-        do { value = try await evaluate(Self.motionScript) }
-        catch { evaluationError = String(describing: error) }
-        let after = nativeMotionState()
-        let raw = value as? String
-        var retained: [String: Any] = ["checkpoint": checkpoint, "native_before": before,
-                                      "web_json": raw ?? "", "native_after": after]
-        if let evaluationError { retained["evaluation_error"] = evaluationError }
-        let bytes = try JSONSerialization.data(withJSONObject: retained, options: [.prettyPrinted, .sortedKeys])
-        let name = "motion-sample-\(motionSamples.count).json"
-        try write(bytes, name)
-        var sample: [String: Any] = ["checkpoint": checkpoint, "native_before": before,
-                                    "native_after": after,
-                                    "raw_artifact": ["path": name, "sha256": Self.hash(bytes)]]
-        guard evaluationError == nil, let raw,
-              let data = raw.data(using: .utf8),
-              let web = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            sample["capture_error"] = evaluationError ?? "motion observation did not return a JSON object"
-            motionSamples.append(sample)
-            throw Failure(description: "motion observation unavailable; retained \(name)")
-        }
-        sample["web"] = web
-        motionSamples.append(sample)
+        try await motionRecorder.observe(checkpoint) { try await evaluate(Self.motionScript) }
     }
 
     private static let motionScript = #"""
@@ -338,11 +292,8 @@ final class WorkbenchAcceptance {
             try await Task.sleep(for: .milliseconds(20))
         }
         try await observeMotion("running-before")
-        guard let mediaValue = try await evaluate("matchMedia('(prefers-reduced-motion: reduce)').matches") as? NSNumber,
-              CFGetTypeID(mediaValue) == CFBooleanGetTypeID() else {
-            throw Failure(description: "native reduced-motion media value unavailable")
-        }
-        let reduced = mediaValue.boolValue
+        let reduced = try WorkbenchAcceptanceValues.mediaBoolean(
+            await evaluate("matchMedia('(prefers-reduced-motion: reduce)').matches"))
         let firstMotion = try await evaluate("JSON.stringify(document.getAnimations().map(a=>({time:a.currentTime,state:a.playState})))") as? String
         try await capture("running-before")
         try await Task.sleep(for: .milliseconds(180))
@@ -367,7 +318,7 @@ final class WorkbenchAcceptance {
         try await capture("history")
         await host.bridge.shutdown()
         host = try WorkbenchHost(store: WorkbenchStore(stateURL: root.appendingPathComponent("state.json")), size: CGSize(width: 1160, height: 800))
-        attachMotionWindowIfRequested()
+        motionResources.attach(host.view)
         try await wait("document.readyState === 'complete' && document.getElementById('connection-label') !== null")
         try await observeMotion("recreated-page-ready")
         try require(try packagedPage() == loadedPage, "host recreation changed the packaged page")
@@ -459,7 +410,7 @@ final class WorkbenchAcceptance {
             "negative_tree": ["path": "negative-tree.json", "sha256": negative.map(Self.hash) ?? ""],
             "cleanup": ["bridge_shutdown_awaited": true, "visible_windows": NSApplication.shared.windows.filter { $0.isVisible || $0.isKeyWindow }.count],
             "frontmost_before": initialFocus ?? -1, "frontmost_after": NSWorkspace.shared.frontmostApplication?.processIdentifier ?? -1,
-            "motion_diagnostics": ["schema": 1, "host_mode": motionHost, "samples": motionSamples,
+            "motion_diagnostics": ["schema": 1, "host_mode": motionHost, "samples": motionRecorder.samples,
                                    "initial_frontmost_pid": initialFocus ?? -1,
                                    "initial_cursor": ["x": initialCursor.x, "y": initialCursor.y],
                                    "final_native": nativeMotionState(),
