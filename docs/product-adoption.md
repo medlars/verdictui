@@ -1,8 +1,49 @@
 # Product adoption and installed-artifact acceptance
 
-Updated September 24, 2026. A library import, a registered manifest, an executable
+Updated September 25, 2026. A library import, a registered manifest, an executable
 runner, and a verified installed app are different evidence states. None implies
 complete product coverage.
+
+## Current qualification follow-up (2026-09-25)
+
+Clean documentation commit `2d476ef` changed no runtime files, but its genuine
+quick PM returned B92.7 after one late-browser-exit witness failed with two
+assertions. The initial native suite executed 1,315 cases with 26 skips;
+`testMCPSIGTERMAwaitsPermittedLateBrowserExit` could not read its required
+`browser-exit.json` after MCP exit and process-absence assertions. The PM's
+automatic confirmation passed unchanged source. That later pass does not
+identify the cause or replace the failed qualification. Original stage output
+and the full failed PM receipt are retained under `publication-docs/final-quick`;
+CIS-8FAD7552 tracks diagnosis with unchanged assertions and shutdown budgets.
+
+Hosted CI `36101820843` passed all three jobs at `2d476ef`: 1,289 native
+passes/26 skips, 48 Workbench assertions across ten phases, and 691 Python
+passes/25 skips. The temporary PR merge has the candidate's exact tree; all
+108 retained artifacts were rehashed. This successful remote run does not
+supersede the failed local qualification, and PR47 remains draft.
+
+A test-only follow-up now emits a bounded, sanitized lifecycle record into
+ordinary XCTest output before fixture cleanup. It preserves the original
+assertions and 9/10/45-second budgets, does not install a signal handler, and
+still attempts cleanup if optional evidence archival fails. Six focused helper
+tests pass. All 17 new guards have executed mutation witnesses with exact
+restores; the five initially non-compiling mutants and their corrected replay
+remain retained. Root rehashed all 78 artifacts from private candidate
+`73045f76`. Aggregate qualification of the integrated change is still pending.
+The earlier instrumented target and nine-test class passed, but used a
+timing-intrusive signal observer and are excluded from causal acceptance.
+
+SagaMail's three declared views still lack behavior acceptance. Source review
+found that typed binding registration intentionally seeds harness-owned copies;
+the existing tests preserve that legacy behavior. A real external-model/view
+test and a lifetime-safe dispatch design are required before admitting consumer
+toggle behavior. This is planned work, not a measured runtime repair.
+
+This is separate from CIS-B1FB43A2, which fresh central-store readback records
+as fixed since September24 by PR45's migration from implementation-defined
+file-origin storage to stable loopback HTTP. Its original failures remain
+retained. The new failure concerns missing shutdown evidence, with production
+versus fixture causality still unmeasured.
 
 ## September 24 published framework and consumer checkpoint
 
@@ -12,8 +53,10 @@ checks. Published CI `36070125761` passed all three jobs and observed 1,315 nati
 tests: 1,289 passes, 26 explicit skips and zero failures. The 734 mutation-catalog
 entries resolve; this is not an exhaustive mutation execution claim. Actual
 published-source verification closed CIS-B6D2ABA3 (11 pixel tests) and
-CIS-4AF18508 (current CI observation). Original browser persistence diagnostic
-CIS-B1FB43A2 remains open.
+CIS-4AF18508 (current CI observation). The separate file-origin persistence
+fixture issue, CIS-B1FB43A2, was closed after PR45 moved the full acceptance flow
+to a stable HTTP origin. This does not explain Chrome's original internal behavior.
+The new missing shutdown-marker failure is tracked as CIS-8FAD7552 below.
 
 The packaged desktop passed 138 browser assertions and 48 quiet native bridge
 assertions. Nine original native screenshots were reviewed for readable state
@@ -162,8 +205,11 @@ the general Swift job stalled without a completion summary. At that point its
 production, general-test, engine and manifest bytes matched the earlier
 successful 168-test run; the last printed test did not identify the culprit.
 Those failed receipts remain retained under CIS-5B0A42FA. The causal updater
-repair is now merged with actual hosted completion evidence; the separate
-browser teardown issue remains open.
+repair is now merged with actual hosted completion evidence. A reviewed probe
+re-admitted the official raw logs and archived results from a clean persistent
+checkout on the published default-branch ancestry, then verified closure of
+CIS-5B0A42FA. This was a hosted-evidence probe, not a local XCTest execution.
+The separate browser teardown issue remains open.
 The browser job requires all33 cases and normal closure of both browsers.
 Sentinel's existing Swift CI compiled out consumer tests without a sibling
 VerdictUI checkout. Dedicated pinned-framework job9d18abd passes10 native,
