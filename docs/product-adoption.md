@@ -4,7 +4,130 @@ Updated September 25, 2026. A library import, a registered manifest, an executab
 runner, and a verified installed app are different evidence states. None implies
 complete product coverage.
 
-## Current qualification follow-up (2026-09-25)
+## Current consumer qualification (2026-09-25)
+
+SagaMail source repairs are published in **draft PR45 at `dee71c47`**; full
+acceptance remains incomplete. Earlier clean integration `dce792c0` passed36
+exact postcommit native cases with zero
+failures/errors/skips;16 PNGs match prior retained captures byte-for-byte.
+Calendar uses explicit iCloud/default-calendar state and the production520pt
+width. Its width/inventory mutations were caught; independent visual review
+confirms initial horizontal containment and exact crop equivalence. Notes
+scrolling, actions and baseline matching remain unverified.
+
+AI source `47f793df` adds shared explicit-input content while retaining the
+production persisted wrapper and lifecycle.13 native cases and9 controls pass;
+12 retained images (11 unique states) match postcommit bytes and pass independent
+initial-state visual review. Templates source `93ebaab1` similarly isolates the
+real empty child. Seven cases (five new, two settling) and3 controls pass;
+actual-pixel guards reject blank content. Standalone light/dark images are
+byte-identical to current hosted renders. Four experiments against older
+references still fail; their source/results remain retained, and all165 original
+references and snapshot gates are unchanged. The final combined native run on clean `dee71c47` passed54 exact
+XML/verbose-completed cases with zero failures/errors/skips in111.18 seconds.
+All37 PNGs match the individually reviewed captures byte-for-byte. Fresh hosted
+CI36184357492 is running; no result from that run is inferred from local tests.
+
+The disposable Settings diagnostic has qualified actual process cleanup and
+sampled noninterference in Simple panel, Advanced panel and Simple ordinary
+window cases. Both Simple styles expose six finite, nonoverlapping tab controls,
+but the selected label is unreadable in captured chrome pixels. Advanced
+collapses its14 tabs into an overflow control. Neither result proves full
+rendering acceptance. The prototype stays private and is not integrated as a
+product fix. Real native Composing actions separately changed model values but
+failed to show updated same-host pixels/text; no passing action-plus-render
+coverage was claimed.
+
+Fresh VerdictUI quick PM on unchanged977009c9 is B99.3, exit1:1,347 native passes,
+26 skips;799 Python passes,2 skips,11 subtests;855 mutation sites resolved (not
+executed mutation controls). Installed Homebrew CLI lacks `act`, the sole graded
+failure. Current source stdio MCP advertises19 tools; the actual loaded Codex
+connection advertises18 and a fresh `web_list` call succeeds. Installation,
+client refresh and automatic edit-hook delivery remain separate open evidence.
+
+The PM repairs were first published at `d973fe7f`. Completed CI `36175302485`
+preserves the same
+73 failed render identities and byte-identical PNGs/references. Its archive is
+complete with no collection errors; finalization exits1 to preserve the original
+test failure. That behavior also occurred in the prior run and is not a new
+collector defect. Root verified456 sealed evidence bindings.
+
+
+SagaMail draft PR45 `1343a242` has verified render/archive evidence from CI
+`36168673797`: 13 actual comparator passes, 259 hosted Python guards and 30
+website tests. Both web render jobs and the headless-suite freshness check
+passed. The native job subsequently completed successfully; its separate
+consumer summary proves 13 passes with zero failures in 4.649 seconds. Full
+parallel progress denominators are not credited as aggregate passing coverage.
+
+The latest render suite failed the same 73 cases. All 73 current PNGs, 165
+references and 167 comparison geometries/fingerprints match the preceding run.
+Root verified 413 producer bindings (414 archive files) and all 458 sealed
+readback artifacts. Collection is complete with no errors, both comparator
+files retained and comparator exit 0. Finalize returns 1 because it correctly
+preserves the original snapshot exit 1. The previous `unexpected_artifact`
+collection defect is repaired, separately from the render failures.
+
+The full-Retina comparator correction changed the earlier 58-case failure set
+by +17/-2. Controlled retained-pixel analysis reproduces all 19 changed native
+precision readings within floating-point rounding. Historical passing images
+were not archived, so their exact bytes remain unavailable. References,
+precision 0.98, perceptual precision 1 and the four-point allowance are unchanged.
+This does not explain the underlying rendering drift or qualify all screens.
+
+An independent visual review directly inspected 19 retained pairs (38 original
+PNGs): 11 raster-readability failures, five limited static passes and three
+unavailable judgments. Root verified all 43 report/image bindings. Faint helper
+text also appears in references; this is raster screening, not formal WCAG
+conformance. Four pairs change the displayed model from Gemini to Claude.
+Source inspection confirms both screens read the saved `aiModel` preference,
+which neither snapshot class pins. The historical writer is unknown. These
+findings are tracked separately as CIS-F9D187B9 and CIS-83560756; no references
+were replaced. Loaded Tasks content and interactive behavior remain unobserved.
+
+A second independent review covered the remaining 56 current failing pairs
+(112 originals). Root verified 119 more report/image bindings and normalized
+both reports against the archive: 17 + 56 disjoint pairs cover all 73 retained
+current failures. Combined static judgments are 34 limited passes, 25 failures
+and 14 unavailable. Additional findings include eight captures with truncated
+labels, clipped sheets or overprinted settings headings (CIS-3A53892E), and
+saved-preference differences in composing, notifications, privacy and login
+settings. These also occur in references or require intended-state verification;
+source analysis now proves four sheet fixtures are narrower than their existing
+view contracts (460 points versus 520–640). Advanced uses a 520-point fixture
+inside a production 960-point settings contract. Settings header overlap still
+needs native host comparison. Calendar also queries live authorization, calendars
+and installed apps. These are distinct fixture causes, not proof of an installed
+product defect. This does not qualify passing snapshots or live interactions.
+
+The interrupted/all-skipped native false passes and own-heartbeat conflict now
+have source repairs, integrated privately at `56cb5a11`. Independent review
+passed 21 additional security probes and 13 production-chain integration
+controls. The repairs are now published in draft PR45 at `d973fe7f`. Root
+qualified clean `d7c59ad8` with the actual bounded touched command: build plus
+871 unique XML/verbose-completed passing quick units, zero failures or skips,
+exit 0 in 372.008 seconds and one owned heartbeat write without failure.
+The clean sibling framework was `14294df0`; this does not replace the latest
+hosted framework result. Existing source/dependency and linker warnings remain.
+The official fresh-HOME hosted selection also passes 259 Python cases.
+No installed, changed-file behavioral or visual acceptance is implied. A root fenced replay
+of 263 tests found an older pipeline fixture attempting to launch the installed
+app; the fence blocked process creation (262 passes, one failure). CIS-A8134916
+tracks the isolated test repair. Integrated `91ff108e` preserves all 72 original
+assertions and adds guards against external test effects. Root re-ran all three
+modules under the external fence: 269 passes, zero failures or skips. Five
+copied-source mutations caught the missing mock or weakened guards. Earlier combined 161/176-test author replays
+lacked that fence, so their no-installed-action claim is withdrawn; historical
+launch delivery is unobserved. The original receipts remain preserved. The
+canonical diagnostics compare-before-write race also remains explicit.
+
+Framework main CI `36161850845` passed on `9293d26`: 1,347 native passes,
+26 skips, 779 Python passes, 22 skips, 11 subtests and 48 Workbench assertions.
+The next commit `977009c9` changes generated evidence only. An actual current
+Codex MCP call succeeds with 18 advertised tools; this does not prove current
+client refresh, installed 19-tool parity or automatic edit-hook delivery.
+
+## Previous qualification follow-up (2026-09-25)
 
 SagaMail draft PR45 `b5f0bb79` now preserves an actual failed render run.
 Run `36159275678` completed: the native job passed, including a separate
