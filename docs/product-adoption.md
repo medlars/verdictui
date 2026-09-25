@@ -10,12 +10,23 @@ Private motion integration `8d311668` completed genuine quick PM at **B99.3**
 in 434.07 seconds: 1,347 native passes with 26 explicit skips, 798 Python passes,
 855 resolved mutation targets, contracts and lint passed. Installed Homebrew
 `act` parity remains the sole graded failure. CodeWatch reported 0/459 current
-files and unavailable coverage; a separate scoped scan is in progress. The PM
+files and unavailable coverage. A separate eight-file scan completed with all
+eight checker exits zero and no errors; retained compiler-unmeasured and
+static-analysis warnings do not establish full-fleet CodeWatch coverage. The PM
 added a duplicate truncated TODO, retained before reconciliation; all other
 tracked bytes and 520 shared PM Python files remained unchanged. Diagnostics
 were absent, so qualification uses the actual saved status and raw logs. This
-quick mode does not run packaged Workbench acceptance; a fresh source-bound
-package and native workflow are still required before final publication.
+quick mode does not run packaged Workbench acceptance. A subsequent fresh
+strict signed build from clean `c29d1df` passed both detached and never-shown
+window workflows: each had 48 assertions and ten complete native phases.
+Root bound all 18 original PNGs and inspected running, compact, pass, fail and
+history screens. Both running pairs remained byte-identical, so normal native
+animation is still unavailable. Apple accepted notarization
+`e7f092aa-6449-4b14-80e4-7143d2c13019`; copied and extracted bundles passed
+staple, signature and Gatekeeper verification, with the tested original left
+unchanged. Private ZIP SHA256:
+`b333e29313d7e7e11c0ce67e6ba772fede5862e49d3865fc51058bf075a1ed08`.
+Evidence is under `artifact-motion-final/`. No installed copy was replaced.
 
 PR48 published the current-binding/CLI/parity repair as `86286737`. Its qualified
 candidate `d5eeb9e` completed genuine quick PM at **B99.3**, with **installed
@@ -79,7 +90,7 @@ and tolerances remain unchanged. Local Junk
 Mail acceptance does not imply a passing wider render suite, installed acceptance
 or complete SagaMail coverage.
 
-The current staged desktop was built from clean `1a0d065` with matching app,
+The earlier staged desktop was built from clean `1a0d065` with matching app,
 helper and consumer source identities. It passed 138 Chromium/WebKit checks and
 48 actual native assertions across ten phases. Root reviewed ten browser images
 and all nine original native images, including measured compact geometry.
@@ -121,18 +132,27 @@ the token remains alive, queued-callback suppression and retained never-shown
 window closure. Invalid JSON is rejected before Foundation can raise an
 Objective-C exception. Root rehashed 441 evidence bindings and matched all
 three integrated source files. The original compiler failure, refused error
-format and interrupted redundant campaign remain retained. Combined PM and
-fresh app/consumer artifacts are still required; the earlier notarized
-`1a0d065` archive is not an artifact of this new source.
+format and interrupted redundant campaign remain retained. Combined quick PM
+and fresh signed/notarized `c29d1df` app/consumer qualification are recorded
+above; the earlier notarized `1a0d065` archive remains a separate artifact.
 
 SagaMail CI provenance retention is also being added for passing and failing
 runs. It preserves original images/logs and records exact source, framework,
 compiler, SDK and font details. The strict schema fix passed 64 pure controls
 and independent review. Its first native campaign stopped before any tests
 because the compiler rejected combined `-warnings-as-errors` and
-`-suppress-warnings`; that invocation conflict remains under investigation.
-This prevention work does not resolve or waive the current 58 snapshot
-failures under CIS-6B8B5EDA.
+`-suppress-warnings`. Candidate `9ab16895` applies strict flags to the actual
+snapshot target while preserving vendor settings. Its fresh native campaign
+passed 16 helper cases, one fresh-process parity case and three VerdictUI
+render cases; the expected FeatureTour mismatch reproduced the original
+image exactly. The parallel Avatar pass lacked a suite aggregate, so its
+original completeness claim was corrected to partial. One bounded serial
+supplement then proved exactly one Avatar pass with its real aggregate, fresh
+comparison record and unchanged compiled/source/reference identities.
+Independent review admitted both records. A subsequent performance review
+found archive copying could bypass refused count/size limits; that repair
+remains in progress before PR45 publication. This prevention work does not
+resolve or waive the 58 snapshot failures under CIS-6B8B5EDA.
 
 ### Live dashboard freshness boundary
 
