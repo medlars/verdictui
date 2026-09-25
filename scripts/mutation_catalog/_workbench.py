@@ -4,6 +4,22 @@ from mutation_catalog_types import Mutation, Runner
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="installed parity compares a stale release instead of the pipeline artifact",
+        path="scripts/verdictui_pm_smoke.py",
+        old='built = S.PROJECT_ROOT / ".build" / "debug" / "verdictui"',
+        new='built = S.PROJECT_ROOT / ".build" / "release" / "verdictui"',
+        test="Tests/test_verdictui_pm.py::TestStageInstalledParity::test_stale_release_cannot_hide_a_new_pipeline_subcommand",
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
+        name="installed parity accepts an unavailable pipeline artifact",
+        path="scripts/verdictui_pm_smoke.py",
+        old='"passed": False,\n                "detail": "installed parity unavailable: run stage_build first",',
+        new='"passed": True,\n                "detail": "installed parity unavailable: run stage_build first",',
+        test="Tests/test_verdictui_pm.py::TestStageInstalledParity::test_missing_pipeline_binary_is_unavailable_even_with_an_install",
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
         name="native resource identity loses verified Darwin path alias",
         path="scripts/workbench-acceptance.py",
         old='return "/private" + path',

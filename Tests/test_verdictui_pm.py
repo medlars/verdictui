@@ -1255,9 +1255,9 @@ def _installed_verdictui() -> str | None:
 )
 def test_installed_binary_exposes_every_built_subcommand() -> None:
     """The binary on PATH must not lag the repo's subcommand surface."""
-    built = _PROJECT_ROOT / ".build" / "release" / "verdictui"
+    built = _PROJECT_ROOT / ".build" / "debug" / "verdictui"
     if not built.exists():
-        pytest.skip("no release build to compare against — run swift build -c release")
+        pytest.skip("no pipeline build to compare against — run stage_build first")
 
     def subcommands(binary: str) -> set[str]:
         proc = subprocess.run([binary, "--help"], capture_output=True, text=True, timeout=60)
@@ -1372,6 +1372,34 @@ class TestStageInstalledParity:
 
         monkeypatch.setattr(_mod.subprocess, "run", fake_run)
         return pm
+
+    def test_stale_release_cannot_hide_a_new_pipeline_subcommand(self, tmp_path, monkeypatch):
+        """Exercise real help processes: the PM builds debug, release may be old."""
+        current = tmp_path / ".build" / "debug" / "verdictui"
+        stale_release = tmp_path / ".build" / "release" / "verdictui"
+        installed = tmp_path / "installed" / "verdictui"
+        for binary, verbs in (
+            (current, "  list\n  act\n"),
+            (stale_release, "  list\n"),
+            (installed, "  list\n"),
+        ):
+            binary.parent.mkdir(parents=True)
+            binary.write_text("#!/bin/sh\ncat <<'HELP'\nSUBCOMMANDS:\n" + verbs + "\nHELP\n")
+            binary.chmod(0o755)
+        monkeypatch.setattr(_S, "PROJECT_ROOT", tmp_path)
+        monkeypatch.setattr(_S, "_verdictui_copies_on_path", lambda: [str(installed)])
+        result = VerdictUIPM.__new__(VerdictUIPM).stage_installed_parity()
+        assert not result["passed"], result
+        assert "act" in result["detail"] and str(installed) in result["detail"]
+
+    def test_missing_pipeline_binary_is_unavailable_even_with_an_install(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.setattr(_S, "PROJECT_ROOT", tmp_path)
+        monkeypatch.setattr(_S, "_verdictui_copies_on_path", lambda: ["/private/test/verdictui"])
+        result = VerdictUIPM.__new__(VerdictUIPM).stage_installed_parity()
+        assert not result["passed"], result
+        assert "unavailable" in result["detail"] and "stage_build" in result["detail"]
 
     def test_passes_when_the_surfaces_match(self, monkeypatch):
         pm = self._pm_with(monkeypatch, self._HELP)
