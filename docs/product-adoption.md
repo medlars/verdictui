@@ -15,9 +15,42 @@ All three ordinary lifecycle records were retained, without claiming the earlier
 intermittent cause resolved. The PM added its own installed-parity TODO; its exact
 diff is retained, and production/test files plus all 520 shared PM Python files
 were unchanged. This is scoped source evidence, not green deployment acceptance.
-Actual SagaMail behavior/paint, signed final packaging and installed acceptance
-remain separate. Receipt: `qualification-consumer-binding/report.json` under the
-private final-integration evidence directory.
+Receipt: `qualification-consumer-binding/report.json` under the private
+final-integration evidence directory. Installed acceptance remains open.
+
+SagaMail candidate `8ce7d4e` now qualifies both real master bindings across its
+three presets: 13 native cases, 49 Python cases including all 17 runtime cases,
+six CLI and six MCP actions, and eight compiled production-site mutations.
+Every measured case passed without skips; the 13 native cases also passed after
+the final consumer commit. Root inspected all four original 700 × 900 images
+from one retained host (TT → FT → FF → TF) and the declared-node geometry.
+Independent source/evidence review found no issues. This is local consumer
+acceptance with framework `14294df`, not installed or whole-app acceptance.
+Publication and its hosted CI remain separate.
+
+Framework candidate `1a0d065` passed hosted CI `36116199437`: 1,334 native
+passes/26 skips, 693 Python passes/25 skips/11 subtest passes, and 48 actual
+Workbench assertions across ten phases. Its temporary PR merge differs only
+in `evidence/run-v2.json`. CI now uses published pm-base `542909e`; all 162
+installed and wheel modules match that exact source. The unchanged private
+macOS Python qualification passed 702 cases/16 skips. Three skipped modules
+revealed an undeclared PyYAML dependency; a separate pinned declaration passed
+13 actual workflow controls with zero skips. Its hosted confirmation is pending.
+The original generic CI-shape failure remains recorded as CIS-A09491E7.
+
+The current staged desktop was built from clean `1a0d065` with matching app,
+helper and consumer source identities. It passed 138 Chromium/WebKit checks and
+48 actual native assertions across ten phases. Root reviewed ten browser images
+and all nine original native images, including measured compact geometry.
+Browser normal and reduced motion passed. Native WebKit reported reduced motion
+even though NSWorkspace reported otherwise; normal native motion remains
+unmeasured. Apple accepted notarization `30b91101-4411-498d-907b-4ae60f84129b`;
+stapling, strict signatures and extracted-archive Gatekeeper checks passed.
+The packaged helper reports 1.1.4 and 19 MCP tools, including `act`. Archive
+SHA256: `c2a075c868edbc859534090f43f4d4abdab38c197ecb74584ca7bf79c5f28b19`.
+This private artifact does not replace the installed Homebrew CLI or reconnect
+an existing client session. Evidence is under `artifact-14294df/` (the directory
+name predates its final `1a0d065` source), including the notarized ZIP.
 
 
 Clean documentation commit `2d476ef` changed no runtime files, but its genuine
@@ -64,8 +97,8 @@ verified the temporary PR merge and final published trees against the candidate.
 The CEO aftermath signed its ledger but returned exit 2 for fleet evidence and
 propagation gaps; 150 unavailable UI evidence entries do not mean 150 broken apps.
 
-SagaMail's three declared views still lack behavior acceptance. The actual
-external-model/windowless-view RED proves the copied-binding gap: the owned
+Before the current checkpoint, SagaMail's three declared views lacked behavior
+acceptance. The actual external-model/windowless-view RED proved the copied-binding gap: the owned
 baseline passed, but three after-state assertions failed despite Harness PASS.
 CIS-928A0BF1 tracks the repair. A 43-case candidate then passed, but independent
 review reproduced unbounded retired-token metadata and stale same-ID dispatch.
@@ -78,18 +111,19 @@ and checks dispatch refusal and owner release. Root rehashed 492 historical
 artifacts plus 15 final records. Same-ID churn remains constant across 1,001
 incarnations; storage still grows with distinct historical IDs until retirement.
 The 32-cycle native witness releases old models, including final host teardown.
-AppKit may retain the empty hosting view. Aggregate qualification and actual
-consumer behavior remain pending.
+AppKit may retain the empty hosting view. The aggregate and actual consumer
+qualification above supersede that earlier pending state; publication and
+installed delivery remain distinct.
 
-The shared CLI also enumerates scenario actions without exposing execution.
-A thin `act` adapter now has a frozen candidate, `f98340b4`, over the existing
+The previous shared CLI enumerated scenario actions without exposing execution.
+A thin `act` adapter, `f98340b4`, was integrated over the existing
 daemon action and result contracts. Its actual stock and private compiled-consumer
 entrypoints passed 36 strict tests and 38 protocol controls, including help/version,
 empty and option-shaped text, observed outcomes, success continuation and the
 0/1/2 exit contract. Independent source/evidence review has no findings; root
 rehashed all 182 review artifacts. All 14 canonical mutations were detected with passing baselines and exact tracked-file restoration. Fresh native stock and consumer binaries then passed the same 36 tests with zero skips. Root rehashed all 307 final artifacts.
-The private fixture does not establish SagaMail adoption; its actual native,
-CLI/MCP and four-state rendering acceptance remains pending.
+The private fixture did not itself establish SagaMail adoption. The actual
+native, CLI/MCP and four-state checkpoint above supplies that separate evidence.
 
 This is separate from CIS-B1FB43A2, which fresh central-store readback records
 as fixed since September24 by PR45's migration from implementation-defined
@@ -478,10 +512,11 @@ PR44 published the consumer build budget and diagnostic-safe integration harness
 as `3992d662`. Both candidate CI `36059158162` and published CI `36061062514`
 passed six jobs, including native render snapshots; two dispatch-only GUI jobs
 were skipped. The final harness measured seventeen controls without skips.
-Current layout and paint admission must now be refreshed against the published
-consumer and final dependency. Behavior remains unavailable: these preset view states
-do not exercise actual user actions. See SagaMail's `docs/verdictui-adoption.md`
-for reproduction and the complete evidence boundary.
+At that checkpoint, those preset images did not exercise actual user actions.
+Candidate `8ce7d4e` now supplies the separate master-binding and four-state
+acceptance recorded above. See SagaMail's `docs/verdictui-adoption.md` for
+reproduction and the complete evidence boundary; publication and installed
+acceptance remain separate.
 
 ## Sentinel and LaunchGate source checkpoints — September 24
 
