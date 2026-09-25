@@ -86,19 +86,34 @@ name predates its final `1a0d065` source), including the notarized ZIP.
 ### Native motion evidence follow-up
 
 The signed candidate's conflicting macOS/WebKit readings remain unresolved.
-Acceptance-only telemetry is being qualified in a separate checkout: paired
-system/media readings, stable animation identity, document-clock order and
-sampled foreground/cursor/window observations. Independent review of the first
-candidate found four receipt-admission defects, which are being repaired before
-native execution. Synthetic receipt controls do not prove native painting;
-actual advancing timelines and independently reviewed original images remain
-separate requirements. No accessibility preference or media override is part
-of this qualification.
+Telemetry candidate `8b0fbc0` passed a fresh strict signed build and two actual
+native runs: detached and never-shown window hosts each passed 48 workflow
+assertions across ten phases. All eight WebKit samples reported reduced motion;
+all sixteen paired NSWorkspace readings reported false. No animations or media
+changes were observed. Root reviewed both distinct original running images;
+each mode's before/after PNGs were byte-identical. Window attachment did not
+resolve the discrepancy. This is workflow and static-paint evidence, with
+normal native motion still unavailable. No preference or media override was used.
+
+Four independently found receipt-admission defects were repaired. The integrated
+Python checks passed 203 cases with no skips (one browser case deselected), and
+37 targeted mutations produced 40 actual assertion failures against 40 passing
+baseline case executions. All tracked bytes were restored. The first 33/34
+campaign and the original Swift raw-string compilation failure remain retained.
+These checks prove receipt admission, not Swift execution. Native Boolean,
+archive-failure and observer/window cleanup helpers are now being separately
+qualified through actual Core XCTest witnesses and mutations. Their source
+changes require fresh app and consumer artifacts; the earlier notarized
+`1a0d065` archive is not an artifact of this new source.
 
 SagaMail CI provenance retention is also being added for passing and failing
 runs. It preserves original images/logs and records exact source, framework,
-compiler, SDK and font details. This prevention work does not resolve or waive
-the current 58 snapshot failures under CIS-6B8B5EDA.
+compiler, SDK and font details. The strict schema fix passed 64 pure controls
+and independent review. Its first native campaign stopped before any tests
+because the compiler rejected combined `-warnings-as-errors` and
+`-suppress-warnings`; that invocation conflict remains under investigation.
+This prevention work does not resolve or waive the current 58 snapshot
+failures under CIS-6B8B5EDA.
 
 ### Live dashboard freshness boundary
 
@@ -210,8 +225,9 @@ labels, consistent controls and compact layout. Apple accepted notarization
 `3482928b-201b-4b50-ae17-0ec4e34874fa`; signature, staple and Gatekeeper checks
 also passed after archive extraction. This artifact remains bound to `7928e90`;
 its production inputs are unchanged in published `595b7a3`. No installation
-followed. Native normal motion is unmeasured because macOS has reduced motion
-enabled; the captured progress frames correctly remain still. Later test-only
+followed. Native normal motion was unmeasured under WebKit's reduced-motion
+query, and the captured progress frames were still. That query alone does not
+establish the owner's macOS setting; the later paired readings disagree. Later test-only
 cleanup retains profile and server evidence whenever retirement is uncertain.
 
 SagaMail's published `73b2d735` (only CI evidence after `3992d662`) was observed
@@ -715,8 +731,9 @@ cancellation alone does not establish crash cleanup or persisted browser state.
 This scope covers project selection, editing and saving checks, actual consumer
 PASS/FAIL, running state, cancellation, history and reload. It does not certify
 OS file pickers, notifications, window management, other products or every
-possible state. Native captures measured the owner's enabled reduced-motion
-preference; normal native motion remains unmeasured. See
+possible state. Native captures measured WebKit's reduced-motion query; they
+do not establish that the owner enabled the macOS setting. Paired native and
+WebKit readings now disagree, and normal native motion remains unmeasured. See
 [workbench-adoption.md](workbench-adoption.md) for reproducible admission.
 
 ## Runner reliability follow-up
