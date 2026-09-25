@@ -49,6 +49,13 @@ package final class WorkbenchMotionRecorder {
         var retained: [String: Any] = ["checkpoint": checkpoint, "native_before": before,
                                       "web_json": raw ?? "", "native_after": after]
         if let evaluationError { retained["evaluation_error"] = evaluationError }
+        // Foundation can raise an Objective-C exception for invalid values;
+        // validate before crossing that boundary, since Swift catch cannot catch it.
+        guard JSONSerialization.isValidJSONObject(retained) else {
+            throw archiveFailure(.serialization, checkpoint: checkpoint,
+                error: WorkbenchMotionFailure(stage: .serialization, detail: "native observation contains a non-JSON value"),
+                evaluationError: evaluationError)
+        }
         let bytes: Data
         do { bytes = try JSONSerialization.data(withJSONObject: retained, options: [.prettyPrinted, .sortedKeys]) }
         catch {
