@@ -200,9 +200,23 @@ final class ActionInjectionTests: XCTestCase {
         XCTAssertNil(measured.actionableProbes["external-toggle"])
         XCTAssertThrowsError(try ProbeAction.toggle("external-toggle").apply(to: measured))
         XCTAssertEqual(host!.actionableProbes["external-toggle"], ["tap", "toggle"])
+        // An ordinary pending lease can disappear with its measuring view even
+        // without explicit retirement. Retain a late delivery to prove this
+        // actual measuring state permanently refuses callbacks after sizing.
+        let lateToken = ScenarioState.SiteToken()
+        if let model {
+            measured.registerSite(probeID: "late-measurement", token: lateToken,
+                                  action: .bool(Binding(get: { model.isExpanded },
+                                                        set: { model.isExpanded = $0 })))
+        }
+        measured.admitSites(["late-measurement": [lateToken]])
+        XCTAssertNil(measured.actionableProbes["late-measurement"])
+        XCTAssertThrowsError(try ProbeAction.toggle("late-measurement").apply(to: measured))
+        XCTAssertFalse(model!.isExpanded)
         autoreleasepool { host = nil; model = nil }
         XCTAssertNil(retiredModel, "retained measuring and actual states must not retain retired controls")
         for state in recorder.states { XCTAssertNil(state.actionableProbes["external-toggle"]) }
+        withExtendedLifetime(lateToken) {}
     }
 
     @MainActor
