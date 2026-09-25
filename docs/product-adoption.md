@@ -6,47 +6,67 @@ complete product coverage.
 
 ## Current qualification follow-up (2026-09-25)
 
-The integrated current-binding/CLI/parity candidate `3cc3f8b` completed genuine
-quick PM at **B99.3**, with **installed parity as its only failed stage**. The
-Homebrew executable lacks `act`; no installed copy was replaced. Build, contracts,
-798 mutation-anchor checks, lint, 1,334 native passes/26 skips and 724 Python
-passes completed in 359.345 seconds. Runtime and MCP p50 were 51.57 ms and
-8.91 ms, respectively.
-All three ordinary lifecycle records were retained, without claiming the earlier
-intermittent cause resolved. The PM added its own installed-parity TODO; its exact
-diff is retained, and production/test files plus all 520 shared PM Python files
-were unchanged. This is scoped source evidence, not green deployment acceptance.
-Receipt: `qualification-final-yaml/root-report.json` under the private
-final-integration evidence directory. Installed acceptance remains open.
+PR48 published the current-binding/CLI/parity repair as `86286737`. Its qualified
+candidate `d5eeb9e` completed genuine quick PM at **B99.3**, with **installed
+parity as its only failed stage**: the Homebrew executable lacks `act`.
+Build, contracts, 800 mutation-anchor checks, lint, 1,334 native passes with
+26 explicit skips and 736 Python passes completed in 369.295 seconds.
+Runtime and MCP p50 were 51.02 ms and 9.45 ms. Source/test bytes and all 520
+shared PM Python files were unchanged except the retained PM-generated TODO
+duplicate, reconciled afterward. The diagnostics file was absent; actual
+`pm-last-status.json` and raw output are retained rather than invented diagnostics.
+Receipt: `qualification-linux-final/root-report.json` in the private integration
+evidence directory. No installed copy was replaced.
 
-SagaMail candidate `8ce7d4e` qualifies both real master bindings across its
-three presets: 13 native cases, 49 Python cases including all 17 runtime cases,
+Qualified hosted CI `36121116285` passed all three jobs: 1,334 native passes,
+26 skips, 715 Python passes, 22 skips, 11 subtests and 48 actual Workbench
+assertions across ten phases. Its tested PR merge differs only in generated
+`evidence/run-v2.json`; the published source has the same runtime files.
+Default-branch CI `36122292939` also passed all three jobs at published
+`86286737`, with the same native/Python counts and 48 Workbench assertions.
+Root retained and rehashed its 25 downloaded evidence files.
+The official CIS verifier then ran 58 native binding/discovery/scenario cases
+on clean published `86286737`, closed CIS-928A0BF1 and recorded publication on
+main. The earlier 82-case and mutation qualification remains separate evidence.
+
+CI uses published pm-base `542909e`. A fresh installation selected by the actual
+published workflow compared all 162 source, produced-wheel and installed module
+hashes successfully. Its genuine unittest passed; the CIS store initially
+refused closure because that summary format is unsupported. A genuine pytest
+entry point then executed the same frozen producer again, verified a new receipt
+and all module hashes, and passed. The official verifier closed CIS-5CF132EB
+with one actual pytest case on clean published source. Both runs, the initial
+refusal and 40 original artifacts per run remain retained and rehashed. The
+durable verification clone stays pinned at `86286737`. The earlier generic
+CI-shape failure remains separate under CIS-A09491E7. Pinned PyYAML restores the
+previously skipped workflow modules, and the Linux/Apple version parser retains
+strict version and malformed-output rejection. The original failing hosted run
+`36119293262` remains intact; no check or tolerance was removed.
+
+SagaMail candidate `8ce7d4e` qualifies both real master bindings across three
+presets: 13 native cases, 49 Python cases including all 17 runtime controls,
 six CLI and six MCP actions, and eight compiled production-site mutations.
-Every measured case passed without skips; the 13 native cases also passed after
-the final consumer commit. Root inspected all four original 700 × 900 images
-from one retained host (TT → FT → FF → TF) and the declared-node geometry.
-Independent source/evidence review found no issues. This is local consumer
-acceptance with framework `14294df`, not installed or whole-app acceptance.
-The whitespace-only follow-up `ce252e6` preserves Swift tokens and restores the
-prior 692 style warnings; its fresh postcommit native run passes all 13 cases
-without skips. The existing StaleAgentReaper security warning is unchanged.
-Publication and its hosted CI remain separate.
+Root inspected all four original 700 × 900 captures from one retained host
+(TT → FT → FF → TF), together with measured node geometry. Independent source
+and evidence review found no issues. Whitespace-only `ce252e6` preserves Swift
+tokens, restores the prior 692 style warnings and passes a fresh postcommit
+13-case native run without skips; TODO-only `48373789` changes no source.
+The existing StaleAgentReaper security warning remains unchanged.
 
-Framework candidate `1a0d065` passed hosted CI `36116199437`: 1,334 native
-passes/26 skips, 693 Python passes/25 skips/11 subtest passes, and 48 actual
-Workbench assertions across ten phases. Its temporary PR merge differs only
-in `evidence/run-v2.json`. CI now uses published pm-base `542909e`; all 162
-installed and wheel modules match that exact source. The unchanged private
-macOS Python qualification passed 702 cases/16 skips. Three skipped modules
-revealed an undeclared PyYAML dependency; a separate pinned declaration passed
-13 actual workflow controls with zero skips. Hosted `36119293262` then exposed
-an Apple-only Swift-version parser: the Linux runner correctly reports Swift
-6.4, but the guard rejected its non-Apple prefix. That run passed 702 Python
-cases with 22 skips and 11 subtests, and failed this one guard. Its native and
-secret-scan jobs passed. Repair `0cf7303` accepts both actual version formats while retaining the
-exact major/minor pin and malformed-output refusal. The original failure is
-retained; final hosted and aggregate qualification remain pending.
-The original generic CI-shape failure remains recorded as CIS-A09491E7.
+PR45 is now published, but its merge is held under CIS-6B8B5EDA: hosted run `36122364463` failed
+58 snapshot comparisons across multiple screens, including untouched FeatureTour
+views. Five other jobs passed, including all 13 native consumer cases; two
+workflow-dispatch jobs were skipped. Fresh isolated prior-consumer and candidate
+runs reproduced the same four FeatureTour failures with byte-identical current
+images under the published framework. This excludes the consumer change as a
+necessary cause for those four failures. A third fresh run using the exact
+historical framework `645d943` also reproduced all four failures and identical
+images, excluding both recent source changes as necessary causes. Compiler,
+font metrics and environment remain under investigation. The prior green run
+did not retain its font fingerprint or compiler binary identity. References
+and tolerances remain unchanged. Local Junk
+Mail acceptance does not imply a passing wider render suite, installed acceptance
+or complete SagaMail coverage.
 
 The current staged desktop was built from clean `1a0d065` with matching app,
 helper and consumer source identities. It passed 138 Chromium/WebKit checks and
@@ -62,6 +82,36 @@ This private artifact does not replace the installed Homebrew CLI or reconnect
 an existing client session. Evidence is under `artifact-14294df/` (the directory
 name predates its final `1a0d065` source), including the notarized ZIP.
 
+
+### Native motion evidence follow-up
+
+The signed candidate's conflicting macOS/WebKit readings remain unresolved.
+Acceptance-only telemetry is being qualified in a separate checkout: paired
+system/media readings, stable animation identity, document-clock order and
+sampled foreground/cursor/window observations. Independent review of the first
+candidate found four receipt-admission defects, which are being repaired before
+native execution. Synthetic receipt controls do not prove native painting;
+actual advancing timelines and independently reviewed original images remain
+separate requirements. No accessibility preference or media override is part
+of this qualification.
+
+SagaMail CI provenance retention is also being added for passing and failing
+runs. It preserves original images/logs and records exact source, framework,
+compiler, SDK and font details. This prevention work does not resolve or waive
+the current 58 snapshot failures under CIS-6B8B5EDA.
+
+### Live dashboard freshness boundary
+
+A read-only refresh at 10:31 UTC on September 25 found all five declared and
+loaded service pins still at `b17b4d9`, with both deployment roots clean.
+Dashboard and watcher process identities stayed stable. Canonical data contained
+52 projects and 1,526 stages and stayed unchanged across the bounded requests.
+GET `/` and two GETs to `/api/dashboard` each timed out after eight seconds, so
+current served rendering is unavailable. This neither confirms nor falsifies
+the earlier HTTP-200/empty-project symptom tracked by CIS-4CD3306E. All 26
+retained artifacts were rehashed; no service, controller, lock, signal or
+configuration operation occurred. Coordinated deployment still awaits the
+previously requested ownership resolution.
 
 Clean documentation commit `2d476ef` changed no runtime files, but its genuine
 quick PM returned B92.7 after one late-browser-exit witness failed with two
