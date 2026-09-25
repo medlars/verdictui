@@ -247,3 +247,24 @@ module, or treating an exit event as proof of group death were rejected. This
 is an explicit classification of external OS cleanup, not a relaxed UI settle
 criterion or a change to production timeout budgets. The C guardian is also
 explicitly classified as SwiftSyntax-free in the package isolation gate.
+
+
+## 2026-09-25 — Real control actions and installed comparison
+
+Typed probe registration now targets the consumer's supplied current binding.
+The former copied-value contract is explicitly migrated; the durable binding
+factories retain first-seed behavior and their returned scalar lifetime. Site
+registrations have modifier-owned leases, independent preference admission and
+terminal revocation. Ambiguous IDs and removed controls refuse dispatch rather
+than exposing an older registration. This follows the owner's requirement to
+act on and observe real products. Current verification and remaining acceptance
+are recorded in `product-adoption.md`; the architecture choice alone is not proof
+that a consumer's behavior works.
+
+The installation check compares top-level commands with the debug artifact
+built by the same PM pipeline. A stale release build can match a stale installed
+copy and conceal a newly added command; three private executable fixtures
+reproduced that false pass. An installed copy with no pipeline reference now
+reports unavailable and fails the check. This preserves the separate installed
+acceptance boundary and does not claim byte identity or behavioral equivalence
+from matching help text.

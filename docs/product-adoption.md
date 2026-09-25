@@ -55,15 +55,27 @@ external-model/windowless-view RED proves the copied-binding gap: the owned
 baseline passed, but three after-state assertions failed despite Harness PASS.
 CIS-928A0BF1 tracks the repair. A 43-case candidate then passed, but independent
 review reproduced unbounded retired-token metadata and stale same-ID dispatch.
-Those three failing tests are retained. The revised lease design has 46 focused
-passes; longer lifecycle controls, mutation witnesses and aggregate qualification
-remain pending. No candidate result is substituted for consumer acceptance.
+Those three failing tests are retained. The revised lease candidate `a54df40` passed 82 strict tests with zero skips.
+All 40 selected mutation witnesses are verified across the retained 39/40
+original sweep and corrected one-row replay. The survivor exposed a test gap:
+a disappearing weak lease did not prove permanent measuring-host retirement.
+The stronger test retains a late callback against the actual measuring state
+and checks dispatch refusal and owner release. Root rehashed 492 historical
+artifacts plus 15 final records. Same-ID churn remains constant across 1,001
+incarnations; storage still grows with distinct historical IDs until retirement.
+The 32-cycle native witness releases old models, including final host teardown.
+AppKit may retain the empty hosting view. Aggregate qualification and actual
+consumer behavior remain pending.
 
 The shared CLI also enumerates scenario actions without exposing execution.
-A thin `act` adapter is being prepared over the existing daemon action and result
-contracts. Actual stock and consumer entrypoints must prove help/version behavior,
-typed text/value parsing, observed outcomes and the 0/1/2 exit contract before
-SagaMail's CLI/MCP behavior and four rendered states can be admitted.
+A thin `act` adapter now has a frozen candidate, `f98340b4`, over the existing
+daemon action and result contracts. Its actual stock and private compiled-consumer
+entrypoints passed 36 strict tests and 38 protocol controls, including help/version,
+empty and option-shaped text, observed outcomes, success continuation and the
+0/1/2 exit contract. Independent source/evidence review has no findings; root
+rehashed all 182 review artifacts. Fourteen canonical mutations are running.
+The private fixture does not establish SagaMail adoption; its actual native,
+CLI/MCP and four-state rendering acceptance remains pending.
 
 This is separate from CIS-B1FB43A2, which fresh central-store readback records
 as fixed since September24 by PR45's migration from implementation-defined
