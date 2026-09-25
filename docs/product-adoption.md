@@ -6,6 +6,43 @@ complete product coverage.
 
 ## Current qualification follow-up (2026-09-25)
 
+SagaMail draft PR45 `b5f0bb79` now preserves an actual failed render run.
+Run `36159275678` completed: the native job passed, including a separate
+13-case consumer summary; hosted evidence guards passed 215 cases, website
+smoke passed 30, both web render jobs passed, and freshness confirmed a recent
+named-job success. Two dispatch-only GUI jobs were skipped. The full run is
+**failed** because its render job reproduced the original 58 snapshot failures.
+The native parallel run has 5,029 progress identities but no nonzero aggregate
+summary; that count is not credited as passing coverage.
+
+Render setup and preparation succeeded. The finalizer preserved snapshot exit 1
+and uploaded a complete archive with no collection errors: 165 references,
+58 current mismatch images, 167 comparison records, source/toolchain/font
+identities and raw logs. Root verified 396 manifest bindings and hashed all
+397 files. The tested merge `3b92014b` is tree-identical to the submitted PR head.
+Independent comparison, with all ten report artifacts rehashed by root, found
+all 58 current PNGs byte-identical to original run `36122364463`, the same
+58 failure identities, and all 165 references identical to both original
+`48373789` and prior-green `3992d662` source trees. The 59th mismatch record is
+an intentional negative control; it is not another failed test. Comparison
+records are diagnostics, not a coverage count. The separate render-verdict
+identity step was skipped after test failure. The cause of the original
+mismatches remains unresolved, so PR45 remains a draft and must not merge.
+
+The new PM refusal prevents an empty touched-stage result from being reported
+as a pass. Source `2edd5424` has 16 pure controls, nine detected mutations and
+independent reviews; the integrated invocation exits 2 and persists unavailable
+with `all_passed=false`. It does not supply missing scoped-stage wiring or
+atomic concurrent report ownership. The combined pure selection passed
+157 cases; the final five-file hosted selection also passed 215 cases under
+the official fresh-home probe. References, precision and deadlines are unchanged.
+
+Default-branch CI `36153349429` passed all three jobs on `c12b9e3`, with the
+same 1,347 native passes/26 skips, 779 Python passes/22 skips/11 subtests,
+and 48 native Workbench assertions reported below. Root rehashed 26 retained
+artifacts and checked all nine PNG bindings. Latest main `847cd6e` changes only
+generated evidence. Cancelled run `36153257476` is not successful qualification.
+
 PR50 published motion receipt admission and native lifetime witnesses as
 `2841148ac0e0973eca40dafb7093b8fce5dd59ce`. Qualified CI `36151564456`
 passed all three jobs: 1,347 native passes with 26 explicit skips, 779 Python
