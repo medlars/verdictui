@@ -1154,3 +1154,48 @@ def test_default_producer_refuses_legacy_native_without_diagnostics(tmp_path, mo
             tmp_path, monkeypatch, capsys, "PASS", "imported"
         )
     assert json.loads((tmp_path / "run/config.json").read_text())["motion_host"] == "detached"
+
+
+@pytest.mark.parametrize(
+    ("case", "message"),
+    [
+        ("media-number", "media boolean"),
+        ("negative-web-time", "web timestamp"),
+        ("window-number", "boolean/window"),
+        ("cursor-boolean", "interference observations"),
+        ("history-number", "change history malformed"),
+        ("checkpoint-order", "checkpoints incomplete"),
+        ("native-clock", "sample timing"),
+        ("final-clock", "final/initial"),
+        ("accessibility-history", "accessibility change history"),
+        ("environment-values", "environment/history provenance"),
+    ],
+)
+def test_motion_schema_rejects_invalid_but_authentically_bound_values(tmp_path, case, message):
+    receipt = synthetic_motion_receipt(tmp_path)
+    diagnostic = receipt["motion_diagnostics"]
+    sample = diagnostic["samples"][1]
+    if case == "media-number":
+        sample["web"]["reduced"] = 0
+    elif case == "negative-web-time":
+        sample["web"]["at"] = -1
+    elif case == "window-number":
+        sample["native_before"]["visible_windows"] = -1
+    elif case == "cursor-boolean":
+        sample["native_before"]["cursor"]["x"] = True
+    elif case == "history-number":
+        sample["web"]["changes"] = [{"at": 1, "matches": 1, "media": "reduce"}]
+    elif case == "checkpoint-order":
+        sample["checkpoint"] = "running-after"
+    elif case == "native-clock":
+        sample["native_after"]["uptime_seconds"] = -1
+    elif case == "final-clock":
+        diagnostic["final_native"]["uptime_seconds"] = -1
+    elif case == "accessibility-history":
+        diagnostic["accessibility_changes"] = "unavailable"
+    else:
+        diagnostic["environment_variable_names"] = {"HOME": "not-an-allowed-value"}
+    # Bind the actual invalid reading: a raw mismatch must not mask schema admission.
+    retain_motion_raw(tmp_path, receipt)
+    with pytest.raises(ValueError, match=message):
+        subject().assess_motion(receipt, tmp_path)
