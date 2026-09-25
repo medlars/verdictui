@@ -101,8 +101,13 @@ final class WorkbenchAcceptanceSupportTests: XCTestCase {
             return ["reading": nativeReads]
         }, write: { bytes, name in try bytes.write(to: root.appendingPathComponent(name), options: .atomic) })
         let raw = "{\"reduced\":true,\"animations\":[]}"
-        try await recorder.observe("first") { raw }
-        try await recorder.observe("second") { raw }
+        do {
+            try await recorder.observe("first") { raw }
+            try await recorder.observe("second") { raw }
+        } catch {
+            XCTFail("valid motion observation was rejected: \(error)")
+            return
+        }
         XCTAssertEqual(recorder.samples.count, 2)
         let retained = try rawSample(recorder, in: root)
         XCTAssertEqual(retained["checkpoint"] as? String, "second")
