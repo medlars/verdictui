@@ -203,7 +203,7 @@ final class WorkbenchAcceptance {
           return {selector,transform:style?.transform??null,animation:style?.animationName??null};
         })});
     })()
-    """
+    """#
 
     private func require(_ condition: Bool, _ message: String) throws {
         guard condition else { throw Failure(description: message) }
