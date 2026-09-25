@@ -25,8 +25,47 @@ byte-identical to current hosted renders. Four experiments against older
 references still fail; their source/results remain retained, and all165 original
 references and snapshot gates are unchanged. The final combined native run on clean `dee71c47` passed54 exact
 XML/verbose-completed cases with zero failures/errors/skips in111.18 seconds.
-All37 PNGs match the individually reviewed captures byte-for-byte. Fresh hosted
-CI36184357492 is running; no result from that run is inferred from local tests.
+All 37 PNGs match the individually reviewed captures byte-for-byte. Hosted
+CI 36184357492 on the same source completed: native, web and freshness jobs
+passed; the same 73 render identities failed. Of the current PNGs, 69 are
+unchanged and the four corrected sheet captures match the local images exactly.
+All 165 references remain unchanged. The actual logs prove 13 focused consumer
+passes and 13 comparator passes. Named completion records for the 51 new
+presentation cases are absent from this parallel run, so their hosted completion
+remains unavailable; the local 54-case qualification is separate. Root rehashed
+562 archived evidence bindings. The collector is complete with no errors, and
+its nonzero finalization correctly preserves the render failure.
+
+Draft PR45 at `8a38e92a` now gives eight original AI, Composing and
+Templates snapshots explicit shared presentation inputs. Five new guards pass;
+the eight original comparisons still fail, with no errors or skips. Root replay
+retains all 22 PNGs byte-identical to the reviewed author captures. All 165
+reference images and the original comparator remain unchanged. Legacy preference
+preparation is preserved for 53 other cases; those cases were not run locally.
+The source preflight is explicitly scheduled in CI. All 353 selected Python
+cases pass both with a private home and in an archived checkout with an isolated
+virtual environment and no sibling repositories. The first native replay had an
+empty dependency cache and ran zero tests; the recorded replay used cached
+dependencies under the unchanged preference-write fence.
+
+Fresh per-test XML and paired named log completions are now required by the
+hosted render collector. Missing or contradictory receipts are unavailable;
+these receipts never issue a UI verdict. SwiftPM's additional Swift Testing XML is retained as bounded, uninterpreted
+diagnostics and cannot substitute for the required XCTest report. An actual
+sidecar reproduced the former collector rejection; 181 committed and 183
+independent collector cases now pass. Two source mutations confirm rejection
+of missing admission and improper report substitution.
+
+The Templates instruction caption now uses primary text emphasis in the shared
+presentation. Independent review of six light/dark captures confirms zero pixel
+changes outside its predefined text regions and unchanged canvas, buttons,
+glyph bounds and line positions. Maximum ICC-aware sampled glyph contrast rose
+from 1.62–2.73:1 to 10.64–12.51:1; this is a raster diagnostic, not formal
+accessibility conformance. Other empty states and banners remain outside this
+bounded fix, so CIS-F9D187B9 remains open. The final root replay on clean
+`8a38e92a` retains the five passing guards and eight original failures, with all
+22 PNGs byte-identical to the reviewed corrected captures. Fresh hosted CI
+36191994143 is running; completion is not inferred from these local results.
 
 The disposable Settings diagnostic has qualified actual process cleanup and
 sampled noninterference in Simple panel, Advanced panel and Simple ordinary
@@ -44,6 +83,15 @@ executed mutation controls). Installed Homebrew CLI lacks `act`, the sole graded
 failure. Current source stdio MCP advertises19 tools; the actual loaded Codex
 connection advertises18 and a fresh `web_list` call succeeds. Installation,
 client refresh and automatic edit-hook delivery remain separate open evidence.
+
+Framework PR51 merged as `844baf78` with the exact tree of tested `d5ae32b`.
+CI 36184688874 passed all three jobs: 1,347 native passes with 26 skips,
+779 Python passes with 22 skips and 11 subtests, and 48 Workbench assertions
+across ten phases. Root revalidated the retained report, source and consumer
+identities and reviewed all seven unique PNGs (nine retained captures).
+The observed reduced-motion setting was respected; normal native animation
+remains unverified. These are hosted debug-artifact observations, not installed
+acceptance.
 
 The PM repairs were first published at `d973fe7f`. Completed CI `36175302485`
 preserves the same
