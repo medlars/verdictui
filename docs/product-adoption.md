@@ -6,6 +6,20 @@ complete product coverage.
 
 ## Current qualification follow-up (2026-09-25)
 
+The integrated current-binding/CLI/parity candidate `fc14552` completed genuine
+quick PM at **B99.3**, with **installed parity as its only failed stage**. The
+Homebrew executable lacks `act`; no installed copy was replaced. Build, contracts,
+798 mutation-anchor checks, lint, 1,334 native passes/26 skips and 724 Python
+passes completed. Runtime and MCP p50 were 48.33 ms and 8.62 ms, respectively.
+All three ordinary lifecycle records were retained, without claiming the earlier
+intermittent cause resolved. The PM added its own installed-parity TODO; its exact
+diff is retained, and production/test files plus all 520 shared PM Python files
+were unchanged. This is scoped source evidence, not green deployment acceptance.
+Actual SagaMail behavior/paint, signed final packaging and installed acceptance
+remain separate. Receipt: `qualification-consumer-binding/report.json` under the
+private final-integration evidence directory.
+
+
 Clean documentation commit `2d476ef` changed no runtime files, but its genuine
 quick PM returned B92.7 after one late-browser-exit witness failed with two
 assertions. The initial native suite executed 1,315 cases with 26 skips;
@@ -73,7 +87,7 @@ daemon action and result contracts. Its actual stock and private compiled-consum
 entrypoints passed 36 strict tests and 38 protocol controls, including help/version,
 empty and option-shaped text, observed outcomes, success continuation and the
 0/1/2 exit contract. Independent source/evidence review has no findings; root
-rehashed all 182 review artifacts. Fourteen canonical mutations are running.
+rehashed all 182 review artifacts. All 14 canonical mutations were detected with passing baselines and exact tracked-file restoration. Fresh native stock and consumer binaries then passed the same 36 tests with zero skips. Root rehashed all 307 final artifacts.
 The private fixture does not establish SagaMail adoption; its actual native,
 CLI/MCP and four-state rendering acceptance remains pending.
 
