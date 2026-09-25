@@ -386,6 +386,9 @@
 | `Sources/VerdictUIWeb/WebTreeJudge.swift` | Bounded explicit observed-DOM admission into the canonical browser layout engine | Active | 2026-09-24 |
 | `Tests/VerdictUIWebTests/WebTreeJudgeTests.swift` | Validate DOM budgets/metadata, real defect controls and retained paint uncertainty | Active | 2026-09-24 |
 | `Tests/VerdictUICLICoreTests/WebMCPToolTests.swift` | Verify explicit web consumer CLI, shared check and MCP process/transport parity | Active | 2026-09-24 |
+| `Sources/VerdictUIWorkbenchCore/WorkbenchAcceptanceSupport.swift` | Package-scoped native motion conversion, retained observations and owned window/observer cleanup | Active | 2026-09-25 |
+| `Tests/VerdictUIWorkbenchCoreTests/WorkbenchAcceptanceSupportTests.swift` | Real CFBoolean, file archival, NotificationCenter lifetime and never-shown NSWindow witnesses | Active | 2026-09-25 |
+| `scripts/mutation_catalog/_workbench_motion.py` | Native motion and cleanup mutation witnesses | Active | 2026-09-25 |
 | `Sources/VerdictUIWorkbench/WorkbenchAcceptance.swift` | Quiet real WKWebView/bridge workflow, native snapshots and observed DOM export | Active | 2026-09-24 |
 | `scripts/workbench-acceptance.py` | Own native acceptance process and isolated fixtures; validate retained observations | Active | 2026-09-24 |
 | `Tests/test_workbench_acceptance.py` | Reject incomplete phases, corrupted images/history/tree and unbound native reports | Active | 2026-09-24 |
