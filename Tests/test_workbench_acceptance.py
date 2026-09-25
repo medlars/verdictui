@@ -470,6 +470,7 @@ def test_motion_assessment_preserves_actual_mode_and_disagreement(tmp_path, mode
         "visible",
         "association",
         "dropped",
+        "native-dropped",
         "phase",
         "media-changed",
     ],
@@ -494,6 +495,8 @@ def test_motion_cannot_claim_normal_without_advance_and_sampled_noninterference(
         sample["native_after"]["view_has_window"] = True
     elif mutation == "dropped":
         sample["web"]["changes_dropped"] = 1
+    elif mutation == "native-dropped":
+        data["accessibility_changes_dropped"] = 1
     elif mutation == "phase":
         receipt["phases"][5]["observations"] = {}
     else:
@@ -596,7 +599,8 @@ def test_original_motion_payload_cannot_be_missing_or_forge_advance(tmp_path, mu
             )
         elif mutation == "nan":
             observed.update(
-                before='[{"time":NaN,"state":"running"}]', after='[{"time":1,"state":"running"}]'
+                before='[{"time":NaN,"state":"running"},{"time":0,"state":"running"}]',
+                after='[{"time":1,"state":"running"},{"time":1,"state":"running"}]',
             )
     with pytest.raises(ValueError, match="motion"):
         subject().validate_native_receipt(receipt, tmp_path)

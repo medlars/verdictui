@@ -754,4 +754,28 @@ MUTATIONS += [
         test="Tests/test_workbench_acceptance.py::test_default_producer_refuses_legacy_native_without_diagnostics",
         runner=Runner.PYTEST,
     ),
+    Mutation(
+        name="motion telemetry requires lossless native history",
+        path="scripts/workbench-acceptance.py",
+        old="and dropped == 0",
+        new="and True",
+        test="Tests/test_workbench_acceptance.py::test_motion_cannot_claim_normal_without_advance_and_sampled_noninterference[native-dropped]",
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
+        name="motion telemetry requires observed phase mode",
+        path="scripts/workbench-acceptance.py",
+        old='observed.get("normal_motion_verified") is True\n        and observed.get("reduced_motion") is False',
+        new="True",
+        test="Tests/test_workbench_acceptance.py::test_motion_cannot_claim_normal_without_advance_and_sampled_noninterference[phase]",
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
+        name="motion telemetry requires actual normal media",
+        path="scripts/workbench-acceptance.py",
+        old='web["reduced"] is False\n            and web["no_preference"] is True',
+        new="True",
+        test="Tests/test_workbench_acceptance.py::test_motion_cannot_claim_normal_without_advance_and_sampled_noninterference[media-changed]",
+        runner=Runner.PYTEST,
+    ),
 ]
