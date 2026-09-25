@@ -29,7 +29,15 @@ still attempts cleanup if optional evidence archival fails. Six focused helper
 tests pass. All 17 new guards have executed mutation witnesses with exact
 restores; the five initially non-compiling mutants and their corrected replay
 remain retained. Root rehashed all 78 artifacts from private candidate
-`73045f76`. Aggregate qualification of the integrated change is still pending.
+`73045f76`; 22 independent-review artifacts were also rehashed, with no findings.
+The integrated clean `85ca7dc` genuine quick PM passed all 24 stages at A100
+in 372.013 seconds: 1,321 native cases/26 skips and 722 Python passes/1 skip/11 subtest passes. Source
+and the actual shared PM runtime stayed unchanged. Ordinary XCTest output
+emitted all three bounded records (crash, terminate, late), with all observed
+processes retired. The late fixture recorded browser exit 0, a default TERM
+disposition, the nine-second wrapper interval and MCP status 143. This admits
+the diagnostic change; it does not establish the cause of the earlier failure.
+The original failed receipt and CIS-8FAD7552 remain open evidence.
 The earlier instrumented target and nine-test class passed, but used a
 timing-intrusive signal observer and are excluded from causal acceptance.
 
