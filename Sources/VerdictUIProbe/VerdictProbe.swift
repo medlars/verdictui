@@ -380,9 +380,10 @@ extension View {
     /// in-process ``ProbeSiteAction`` on the harness-owned ``ScenarioState``
     /// (installed as ``EnvironmentValues/verdictScenarioState``).
     ///
-    /// Prefer constructing the binding from ``ScenarioState/boolBinding(_:default:)``
-    /// (or string/double/tap) with the same `id`, then passing it here so the
-    /// probe site and the action target cannot drift.
+    /// Pass the same binding or handler used by the actual control. Typed actions
+    /// dispatch to that current target, including external model bindings. The
+    /// site's private token must be present in the delivered action preferences;
+    /// removing the action cannot expose an older registration for the same ID.
     public func verdictProbe(
         _ id: String,
         role: Role = ProbeRecord.unclassifiedRole,
@@ -413,10 +414,22 @@ private struct ProbeActionRegistrar: View {
     let id: String
     let action: ProbeSiteAction
     @Environment(\.verdictScenarioState) private var state
+    @State private var token = ScenarioState.SiteToken()
 
     var body: some View {
-        let _ = state?.register(probeID: id, action: action)
-        return Color.clear
+        let _ = state?.registerSite(probeID: id, token: token, action: action)
+        return Color.clear.preference(key: ProbeActionPreferenceKey.self, value: [id: [token]])
+    }
+}
+
+/// Kept separate from geometry: removing an action can leave identical pixels
+/// and semantic records, but must still deliver a revocation to the host.
+struct ProbeActionPreferenceKey: PreferenceKey {
+    static let defaultValue: [String: Set<ScenarioState.SiteToken>] = [:]
+
+    static func reduce(value: inout [String: Set<ScenarioState.SiteToken>],
+                       nextValue: () -> [String: Set<ScenarioState.SiteToken>]) {
+        for (id, tokens) in nextValue() { value[id, default: []].formUnion(tokens) }
     }
 }
 
@@ -430,6 +443,7 @@ private struct ProbeActionRegistrar: View {
 struct VerdictRootModifier: ViewModifier {
     let explicitSink: VerdictTreeSink?
     let onTree: ((SemanticNode) -> Void)?
+    @Environment(\.verdictScenarioState) private var state
 
     /// Used only by the `onTree:` flavour, which has no sink of its own. `@State`
     /// so the recorder survives across passes — a recorder recreated on every
@@ -447,6 +461,9 @@ struct VerdictRootModifier: ViewModifier {
             .verdictNamedCoordinateSpace()
             .onPreferenceChange(VerdictProbeKey.self) { snapshot in
                 deliver(snapshot, to: sink)
+            }
+            .onPreferenceChange(ProbeActionPreferenceKey.self) { tokens in
+                state?.admitSites(tokens)
             }
     }
 

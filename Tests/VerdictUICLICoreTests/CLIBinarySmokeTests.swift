@@ -49,8 +49,8 @@ final class CLIBinarySmokeTests: XCTestCase {
         let standardError: String
     }
 
-    private func run(_ arguments: [String], in directory: URL) throws -> Run? {
-        guard let binary = Self.binaryURL else { return nil }
+    private func run(_ arguments: [String], in directory: URL, binary: URL? = nil) throws -> Run? {
+        guard let binary = binary ?? Self.binaryURL else { return nil }
 
         let process = Process()
         process.executableURL = binary
@@ -238,5 +238,145 @@ final class CLIBinarySmokeTests: XCTestCase {
             refused.standardError.contains("--accept"),
             "the refusal must name the flag that would proceed: \(refused.standardError)"
         )
+    }
+
+    func testScenarioActBinaryPreservesStepWireAndThreeValuedExits() throws {
+        let directory = try temporaryDirectory()
+        let cases: [([String], Int32)] = [
+            (["act", "demo-toggle-layout", "toggle", "advanced-toggle", "--include-tree", "--pretty"], 0),
+            (["act", "demo-toggle-layout", "tap", "missing-act-probe"], 1),
+            (["act", "missing-act-scenario", "tap", "p"], 2),
+        ]
+        for (arguments, expected) in cases {
+            guard let result = try run(arguments, in: directory) else {
+                throw XCTSkip("verdictui has not been built")
+            }
+            XCTAssertEqual(result.exitCode, expected, result.standardError + result.standardOutput)
+            if expected == 2 {
+                XCTAssertTrue(result.standardOutput.isEmpty)
+                XCTAssertTrue(result.standardError.contains("missing-act-scenario"))
+            } else {
+                let wire = try JSONDecoder().decode(StepResultWire.self, from: Data(result.standardOutput.utf8))
+                XCTAssertEqual(wire.status, expected == 0 ? "PASS" : "FAIL")
+                XCTAssertEqual(wire.probe, arguments[3])
+                if expected == 0 {
+                    XCTAssertNotNil(wire.tree?.expand()?.node(withID: "advanced-detail"))
+                    XCTAssertNil(wire.tree?.expand()?.node(withID: "collapsed-summary"))
+                    XCTAssertTrue(result.standardOutput.contains("\n  "))
+                } else {
+                    XCTAssertNil(wire.tree)
+                    XCTAssertTrue(wire.findings.contains { $0.nodeID == "missing-act-probe" && !$0.rule.isEmpty })
+                }
+            }
+        }
+    }
+
+    func testScenarioActBinaryRejectsMalformedRequestsWithoutAVerdict() throws {
+        let directory = try temporaryDirectory()
+        for arguments in [
+            ["act", "demo-toggle-layout", "click", "advanced-toggle"],
+            ["act", "demo-toggle-layout", "setText", "advanced-toggle"],
+            ["act", "demo-toggle-layout", "setSlider", "advanced-toggle"],
+            ["act", "demo-toggle-layout", "setSlider", "advanced-toggle", "--value=nan"],
+            ["act", "demo-toggle-layout", "setSlider", "advanced-toggle", "--value=inf"],
+        ] {
+            guard let result = try run(arguments, in: directory) else {
+                throw XCTSkip("verdictui has not been built")
+            }
+            XCTAssertEqual(result.exitCode, 2, "\(arguments): \(result.standardError)")
+            XCTAssertTrue(result.standardOutput.isEmpty, "invalid input must not manufacture a verdict")
+            XCTAssertFalse(result.standardError.isEmpty)
+        }
+    }
+
+    /// This shell fixture proves launcher routing/argv only; custom-registry
+    /// action semantics are separately covered by ActToolTests.
+    func testScenarioActBinaryForwardsToDeclaredRunnerWithoutDemoFallback() throws {
+        let directory = try temporaryDirectory()
+        let config = directory.appendingPathComponent(".verdictui")
+        try FileManager.default.createDirectory(at: config, withIntermediateDirectories: true)
+        try Data(#"{"runner":"fixture-runner"}"#.utf8).write(to: config.appendingPathComponent("config.json"))
+        let runner = directory.appendingPathComponent("fixture-runner")
+        try Data("""
+            #!/bin/sh
+            printf '%s\\n' "$@" > received-argv.txt
+            printf '%s\\n' '{"fixture":"declared-runner"}'
+            """.utf8).write(to: runner)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: runner.path)
+        let arguments = ["act", "consumer-only-screen", "setText", "consumer-field", "--text=--help", "--include-tree"]
+        guard let result = try run(arguments, in: directory) else {
+            throw XCTSkip("verdictui has not been built")
+        }
+        XCTAssertEqual(result.exitCode, 0, result.standardError)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(result.standardOutput.utf8)) as? [String: String])
+        XCTAssertEqual(object, ["fixture": "declared-runner"])
+        let received = try String(contentsOf: directory.appendingPathComponent("received-argv.txt"), encoding: .utf8)
+        XCTAssertEqual(received.split(separator: "\n").map(String.init), arguments)
+
+        try Data(#"{"runner":"missing-runner"}"#.utf8).write(to: config.appendingPathComponent("config.json"))
+        let refused = try XCTUnwrap(try run(["act", "demo-toggle-layout", "toggle", "advanced-toggle"], in: directory))
+        XCTAssertEqual(refused.exitCode, 2, "a broken consumer runner must not fall back to a passing demo")
+        XCTAssertTrue(refused.standardOutput.isEmpty)
+        XCTAssertTrue(refused.standardError.contains("missing-runner"))
+    }
+
+    /// Stock main() and compiled consumer main(arguments) must select the same
+    /// concrete overloads. This runner's demo registry proves entrypoint parity,
+    /// while the consumer-only TaskLocal control verifies registry ownership.
+    func testSharedEntrypointsPreserveHelpSyntaxAndVerdictExits() throws {
+        guard let stock = Self.binaryURL else { throw XCTSkip("verdictui has not been built") }
+        let consumer = stock.deletingLastPathComponent().appendingPathComponent("VerdictUIProjectRunner")
+        guard FileManager.default.isExecutableFile(atPath: consumer.path) else {
+            throw XCTSkip("VerdictUIProjectRunner has not been built")
+        }
+        let directory = try temporaryDirectory()
+        for binary in [stock, consumer] {
+            for arguments in [[], ["list"]] {
+                let result = try XCTUnwrap(try run(arguments, in: directory, binary: binary))
+                XCTAssertEqual(result.exitCode, 0, result.standardError)
+                let names = try JSONDecoder().decode([String].self, from: Data(result.standardOutput.utf8))
+                XCTAssertTrue(names.contains("demo-toggle-layout"))
+            }
+            for arguments in [["--help"], ["act", "--help"], ["help", "act"], ["--version"]] {
+                let result = try XCTUnwrap(try run(arguments, in: directory, binary: binary))
+                XCTAssertEqual(result.exitCode, 0, "\(binary.lastPathComponent) \(arguments): \(result.standardError)")
+                XCTAssertFalse(result.standardOutput.isEmpty)
+                XCTAssertTrue(result.standardError.isEmpty)
+            }
+            for arguments in [
+                ["act"],
+                ["act", "demo-toggle-layout", "toggle"],
+                ["act", "demo-toggle-layout", "setSlider", "advanced-toggle", "--value=oops"],
+                ["act", "demo-toggle-layout", "toggle", "advanced-toggle", "--imaginary"],
+            ] {
+                let result = try XCTUnwrap(try run(arguments, in: directory, binary: binary))
+                XCTAssertEqual(result.exitCode, 2, "\(binary.lastPathComponent) \(arguments): \(result.standardError)")
+                XCTAssertTrue(result.standardOutput.isEmpty)
+                XCTAssertFalse(result.standardError.isEmpty)
+            }
+            let cases: [([String], Int32)] = [
+                (["act", "demo-toggle-layout", "toggle", "advanced-toggle", "--include-tree"], 0),
+                (["act", "demo-toggle-layout", "setText", "missing-text-probe", "--text=--help"], 1),
+                (["act", "missing-scenario", "tap", "p"], 2),
+            ]
+            for (arguments, expected) in cases {
+                let result = try XCTUnwrap(try run(arguments, in: directory, binary: binary))
+                XCTAssertEqual(result.exitCode, expected, result.standardError)
+                if expected == 2 {
+                    XCTAssertTrue(result.standardOutput.isEmpty)
+                    XCTAssertTrue(result.standardError.contains("missing-scenario"))
+                } else {
+                    let wire = try JSONDecoder().decode(StepResultWire.self, from: Data(result.standardOutput.utf8))
+                    XCTAssertEqual(wire.status, expected == 0 ? "PASS" : "FAIL")
+                    XCTAssertEqual(wire.probe, arguments[3])
+                    if expected == 0 {
+                        XCTAssertNotNil(wire.tree?.expand()?.node(withID: "advanced-detail"))
+                    } else {
+                        XCTAssertTrue(wire.findings.contains { $0.nodeID == "missing-text-probe" })
+                    }
+                    XCTAssertTrue(result.standardError.isEmpty)
+                }
+            }
+        }
     }
 }

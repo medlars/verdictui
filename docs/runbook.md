@@ -26,6 +26,45 @@ Exit codes are three-valued and the third is load-bearing:
 
 Never treat 2 as a product defect: it means the tool could not look.
 
+### Scenario actions from the CLI
+
+Run these from the consumer project with its compiled runner configured:
+
+```bash
+verdictui actions settings
+verdictui act settings toggle advanced-toggle --include-tree --pretty
+verdictui act settings setText search-field --text "search words"
+verdictui act settings setSlider zoom-slider --value 0.75
+verdictui act settings tap apply-button
+```
+
+The syntax is `act <scenario> <kind> <probe> [--text VALUE] [--value NUMBER]
+[--include-tree] [--pretty]`. The canonical verbs are `tap`, `toggle`, `setText`,
+and `setSlider`, matching daemon/MCP actions. `setText` requires `--text` (an
+explicit empty string via `--text ""` is allowed); `setSlider` requires a finite `--value`.
+Use `--text=--help` for text that looks like an option. Unknown verbs, missing
+payloads and nonfinite values are rejected before an action is attempted.
+
+This delegates through the existing consumer launcher and compiled registry.
+A missing or failed configured runner is unavailable; it cannot substitute the
+stock catalog. Without consumer adoption, the stock CLI still exposes only its
+explicitly named demo scenarios, which prove nothing about another project.
+
+Stdout is the existing `StepResultWire` JSON object: `probe`, `status`, compact
+`delta`, cited `findings`, `settled`, and `elapsedMs`. `--include-tree` adds the
+compact observed after-tree when available; `--pretty` only changes formatting.
+Exit 0 means the step verdict passed, 1 means it failed (including an unknown
+probe with cited evidence), and 2 means no verdict was produced, with diagnostics
+on stderr. Syntax and validation errors also exit 2 through the shared stock
+and consumer entrypoint; help and version requests exit 0 on stdout. There is
+no `--summary` form for this wire result.
+
+Each invocation creates a fresh scenario host and performs one inner-loop
+state-to-layout action. It does not deliver physical clicks or typing to an
+installed application, persist state across invocations, or prove an intended
+outcome unless the scenario's compiled expectations assert that observed state.
+Use the existing live/browser action surfaces for those targets.
+
 ### Same-host pixels after actions
 
 Use the default `cacheDisplay` pixel backend after `OracleHost.settle()` and

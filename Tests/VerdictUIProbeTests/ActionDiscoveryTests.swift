@@ -71,6 +71,98 @@ final class ActionDiscoveryTests: XCTestCase {
         XCTAssertEqual(witness.count, 2)
     }
 
+    @MainActor
+    func testRemovingOnlyActionRevokesItWhileSemanticTreeIsIdentical() async throws {
+        let model = SiteSwitchModel()
+        let host = OracleHost(scenario: SiteSwitchScenario(model: model),
+                              viewport: Size(width: 220, height: 100))
+        let before = try await host.currentTree()
+        let dormant = host.state.boolBinding("same-site")
+        host.state.registerTap("same-site") { model.fallbackCount += 1 }
+        XCTAssertEqual(host.actionableProbes["same-site"], ["tap"])
+        try host.apply(.tap("same-site"))
+        XCTAssertEqual(model.target.count, 1)
+        model.armed = false
+        let withoutAction = try await host.currentTree()
+        XCTAssertEqual(before, withoutAction, "the action preference must change independently of semantic geometry")
+        XCTAssertNil(host.actionableProbes["same-site"])
+        XCTAssertThrowsError(try host.apply(.tap("same-site")))
+        XCTAssertThrowsError(try host.apply(.toggle("same-site")))
+        XCTAssertEqual(model.target.count, 1)
+        XCTAssertEqual(model.fallbackCount, 0)
+        XCTAssertFalse(dormant.wrappedValue)
+        model.armed = true
+        let restored = try await host.currentTree()
+        XCTAssertEqual(restored, before)
+        XCTAssertEqual(host.actionableProbes["same-site"], ["tap"])
+        try host.apply(.tap("same-site"))
+        XCTAssertEqual(model.target.count, 2)
+    }
+
+    @MainActor
+    func testLongLivedHostReleasesReplacedControlsAcrossRepeatedRemoval() async throws {
+        var model: SiteSwitchModel? = SiteSwitchModel()
+        weak var retiredModel: SiteSwitchModel?
+        retiredModel = model
+        var host: OracleHost? = autoreleasepool {
+            OracleHost(scenario: SiteSwitchScenario(model: model!), viewport: Size(width: 220, height: 100))
+        }
+        weak var retiredHost: OracleHost?
+        retiredHost = host
+        weak var retiredView: AnyObject?
+        retiredView = Mirror(reflecting: host!).children.first { $0.label == "hostingView" }?.value as AnyObject?
+        XCTAssertNotNil(retiredView, "the diagnostic weak witness must identify the actual hosting view")
+        let retainedState = host!.state
+        let initial = try await host!.currentTree()
+        for _ in 0..<32 {
+            weak var retiredTarget: SiteTarget?
+            retiredTarget = model!.target
+            try host!.apply(.tap("same-site"))
+            XCTAssertEqual(model!.target.count, 1)
+            model!.armed = false
+            let removed = try await host!.currentTree()
+            XCTAssertEqual(removed, initial)
+            XCTAssertThrowsError(try host!.apply(.tap("same-site")))
+            model!.target = SiteTarget()
+            _ = try await host!.currentTree()
+            XCTAssertNil(retiredTarget, "removed callbacks must release each former control owner")
+            model!.armed = true
+            let restored = try await host!.currentTree()
+            XCTAssertEqual(restored, initial)
+            XCTAssertEqual(host!.actionableProbes["same-site"], ["tap"])
+        }
+        autoreleasepool { host = nil; model = nil }
+        print("site-churn retirement host=\(retiredHost != nil) view=\(retiredView != nil) model=\(retiredModel != nil) actions=\(retainedState.actionableProbes)")
+        XCTAssertNil(retiredHost)
+        XCTAssertNil(retiredModel)
+        XCTAssertThrowsError(try ProbeAction.tap("same-site").apply(to: retainedState))
+    }
+
+    @MainActor
+    func testRenderedSameIDUsesCurrentOwnerAndCurrentType() async throws {
+        let model = SiteSwitchModel()
+        let host = OracleHost(scenario: SiteSwitchScenario(model: model),
+                              viewport: Size(width: 220, height: 100))
+        let original = model.target
+        let before = try await host.currentTree()
+        let replacement = SiteTarget()
+        model.target = replacement
+        let afterReplacement = try await host.currentTree()
+        XCTAssertEqual(before, afterReplacement)
+        try host.apply(.tap("same-site"))
+        XCTAssertEqual(original.count, 0)
+        XCTAssertEqual(replacement.count, 1)
+        model.textMode = true
+        let afterTypeChange = try await host.currentTree()
+        XCTAssertEqual(before, afterTypeChange)
+        XCTAssertEqual(host.actionableProbes["same-site"], ["setText"])
+        XCTAssertThrowsError(try host.apply(.tap("same-site")))
+        try host.apply(.setText("same-site", "current owner"))
+        XCTAssertEqual(replacement.text, "current owner")
+        XCTAssertEqual(original.text, "seed")
+        XCTAssertEqual(replacement.count, 1)
+    }
+
     // MARK: - The capability, at its source
 
     /// `ScenarioState` already holds every registration, so it is the only place
@@ -257,6 +349,43 @@ private struct DisappearingActionScenario: VerdictScenario {
                 Button("Action") { witness.count += 1 }
                     .verdictProbe("remove-me", role: .button, action: .tap { witness.count += 1 })
             }
+        }
+    }
+}
+
+@MainActor
+private final class SiteTarget {
+    var count = 0
+    var text = "seed"
+}
+
+@MainActor
+private final class SiteSwitchModel: ObservableObject {
+    @Published var armed = true
+    @Published var target = SiteTarget()
+    @Published var textMode = false
+    var fallbackCount = 0
+}
+
+private struct SiteSwitchScenario: VerdictScenario {
+    let name = "site-switch"
+    let model: SiteSwitchModel
+    func body(state: ScenarioState) -> some View { SiteSwitchView(model: model) }
+}
+
+private struct SiteSwitchView: View {
+    @ObservedObject var model: SiteSwitchModel
+    var body: some View {
+        let target = model.target
+        let action: ProbeSiteAction = model.textMode
+            ? .text(Binding(get: { target.text }, set: { target.text = $0 }))
+            : .tap { target.count += 1 }
+        if model.armed {
+            Text("Identical semantic content").frame(width: 200, height: 40)
+                .verdictProbe("same-site", role: .button, text: "Identical semantic content", action: action)
+        } else {
+            Text("Identical semantic content").frame(width: 200, height: 40)
+                .verdictProbe("same-site", role: .button, text: "Identical semantic content")
         }
     }
 }

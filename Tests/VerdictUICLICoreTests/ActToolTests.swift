@@ -1,4 +1,6 @@
+import ArgumentParser
 import Foundation
+import SwiftUI
 import VerdictUIDemoScenarios
 import VerdictUIKernel
 import VerdictUIProbe
@@ -582,5 +584,231 @@ final class ActToolTests: XCTestCase {
             strings: ["$root", "text"]
         )
         XCTAssertNil(halfMetrics.expand(), "a partially-sentinel metrics triple must be refused")
+    }
+}
+
+
+extension ActToolTests {
+    func testCLIParserAcceptsEveryCanonicalVerbAndPreservesPayload() throws {
+        for kind in DaemonAction.kinds {
+            let parsed = try XCTUnwrap(
+                VerdictUITool.parseAsRoot([
+                    "act", "consumer-cli-controls", kind, "target", "--text=--help",
+                    "--value", "0.75", "--include-tree", "--pretty",
+                ]) as? VerdictUITool.Act)
+            XCTAssertEqual(parsed.scenario, "consumer-cli-controls")
+            XCTAssertEqual(parsed.kind, kind)
+            XCTAssertEqual(parsed.probe, "target")
+            XCTAssertEqual(parsed.text, "--help")
+            XCTAssertEqual(parsed.value, 0.75)
+            XCTAssertTrue(parsed.includeTree)
+            XCTAssertTrue(parsed.pretty)
+            XCTAssertEqual(parsed.command.action, DaemonAction(kind: kind, probe: "target", text: "--help", value: 0.75))
+        }
+        let empty = try XCTUnwrap(VerdictUITool.parseAsRoot([
+            "act", "consumer-cli-controls", "setText", "target", "--text", "",
+        ]) as? VerdictUITool.Act)
+        XCTAssertEqual(empty.text, "", "explicit empty text is distinct from a missing payload")
+        XCTAssertFalse(empty.includeTree)
+        XCTAssertFalse(empty.pretty)
+    }
+
+    func testCLIParserRejectsMalformedActionBeforeExecution() {
+        let cases = [
+            ["act"], ["act", "screen", "toggle"],
+            ["act", "screen", "click", "p"],
+            ["act", "screen", "setText", "p"],
+            ["act", "screen", "setSlider", "p"],
+            ["act", "screen", "setSlider", "p", "--value=nan"],
+            ["act", "screen", "setSlider", "p", "--value=inf"],
+            ["act", "screen", "setSlider", "p", "--value=-inf"],
+            ["act", "screen", "setSlider", "p", "--value=not-a-number"],
+            ["act", "screen", "tap", "p", "--summary"],
+        ]
+        for arguments in cases {
+            XCTAssertThrowsError(try VerdictUITool.parseAsRoot(arguments), "\(arguments)")
+        }
+    }
+
+    func testCLIEntryPointPreservesParserStreamsAndCodes() async {
+        for arguments in [
+            ["act"], ["act", "screen", "toggle"],
+            ["act", "screen", "click", "p"],
+            ["act", "screen", "setText", "p"],
+            ["act", "screen", "setSlider", "p"],
+            ["act", "screen", "setSlider", "p", "--value=nan"],
+            ["act", "screen", "setSlider", "p", "--value=inf"],
+            ["act", "screen", "setSlider", "p", "--value=-inf"],
+            ["act", "screen", "setSlider", "p", "--value=oops"],
+            ["act", "screen", "toggle", "p", "--unknown"],
+            ["verify"], ["unknown-command"],
+        ] {
+            let output = CapturedOutput()
+            let code = await VerdictUITool.execute(arguments, output: output)
+            XCTAssertEqual(code, .couldNotVerify, "\(arguments)")
+            XCTAssertTrue(output.standardOutput.isEmpty)
+            XCTAssertFalse(output.standardError.isEmpty)
+        }
+        for arguments in [["--help"], ["act", "--help"], ["help", "act"], ["--version"]] {
+            let output = CapturedOutput()
+            let code = await VerdictUITool.execute(arguments, output: output)
+            XCTAssertEqual(code, .pass, "\(arguments)")
+            XCTAssertFalse(output.standardOutput.isEmpty)
+            XCTAssertTrue(output.standardError.isEmpty)
+        }
+    }
+
+    @MainActor
+    func testCLICommandRejectsMalformedPayloadBeforeScenarioLookup() async {
+        let cases: [(DaemonAction, String)] = [
+            (.init(kind: "click", probe: "p"), "unknown action"),
+            (.init(kind: "setText", probe: "p"), "requires a 'text'"),
+            (.init(kind: "setSlider", probe: "p"), "requires a 'value'"),
+            (.init(kind: "setSlider", probe: "p", value: .nan), "finite"),
+            (.init(kind: "setSlider", probe: "p", value: .infinity), "finite"),
+            (.init(kind: "setSlider", probe: "p", value: -.infinity), "finite"),
+        ]
+        for (action, message) in cases {
+            let output = CapturedOutput()
+            let environment = Self.commandEnvironment(output: output, registry: ScenarioRegistry([]))
+            let code = await ActCommand(scenario: "missing-scenario", action: action)
+                .run(environment, pretty: false)
+            XCTAssertEqual(code, .couldNotVerify)
+            XCTAssertTrue(output.standardOutput.isEmpty)
+            XCTAssertTrue(output.standardError.contains(message), output.standardError)
+            XCTAssertFalse(output.standardError.contains("unknown scenario"), "validation must precede lookup")
+        }
+    }
+
+    @MainActor
+    func testCLICommandEmitsObservedPayloadForAllFourVerbs() async throws {
+        let cases: [(DaemonAction, String)] = [
+            (.init(kind: "tap", probe: "consumer-toggle"), "enabled"),
+            (.init(kind: "toggle", probe: "consumer-toggle"), "enabled"),
+            (.init(kind: "setText", probe: "consumer-text", text: "updated text"), "updated text"),
+            (.init(kind: "setSlider", probe: "consumer-slider", value: 0.75), "0.75"),
+        ]
+        for (action, expected) in cases {
+            let output = CapturedOutput()
+            let environment = Self.commandEnvironment(output: output, registry: Self.consumerRegistry)
+            let code = await ActCommand(
+                scenario: "consumer-cli-controls", action: action, includeTree: true
+            ).run(environment, pretty: true)
+            XCTAssertEqual(code, .pass, output.standardError + output.standardOutput)
+            let wire = try JSONDecoder().decode(StepResultWire.self, from: Data(output.standardOutput.utf8))
+            XCTAssertEqual(wire.probe, action.probe)
+            XCTAssertEqual(wire.status, "PASS")
+            XCTAssertTrue(wire.settled)
+            XCTAssertTrue(wire.findings.isEmpty)
+            XCTAssertEqual(wire.tree?.expand()?.node(withID: action.probe)?.text, expected)
+            XCTAssertFalse(wire.delta.changed.isEmpty, "the output must describe an observed change")
+            XCTAssertTrue(output.standardOutput.contains("\n  "), "--pretty must reach the encoder")
+            XCTAssertTrue(output.standardError.isEmpty)
+        }
+    }
+
+    @MainActor
+    func testCLICommandPreservesLeanWireAndThreeValuedExits() async throws {
+        let cases: [(String, String, VerdictUICLICore.ExitCode)] = [
+            ("consumer-cli-controls", "consumer-toggle", .pass),
+            ("consumer-cli-controls", "missing-probe", .verdictFailed),
+            ("missing-scenario", "consumer-toggle", .couldNotVerify),
+        ]
+        for (scenario, probe, expected) in cases {
+            let output = CapturedOutput()
+            let environment = Self.commandEnvironment(output: output, registry: Self.consumerRegistry)
+            let code = await ActCommand(scenario: scenario, action: .init(kind: "toggle", probe: probe))
+                .run(environment, pretty: false)
+            XCTAssertEqual(code, expected, output.standardError)
+            if expected == .couldNotVerify {
+                XCTAssertTrue(output.standardOutput.isEmpty)
+                XCTAssertTrue(output.standardError.contains(scenario))
+            } else {
+                let data = Data(output.standardOutput.utf8)
+                let wire = try JSONDecoder().decode(StepResultWire.self, from: data)
+                let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+                XCTAssertEqual(Set(object.keys), ["probe", "status", "delta", "findings", "settled", "elapsedMs"])
+                XCTAssertNil(wire.tree)
+                XCTAssertEqual(wire.status, expected == .pass ? "PASS" : "FAIL")
+                if expected == .verdictFailed {
+                    XCTAssertTrue(wire.findings.contains { $0.nodeID == probe && !$0.rule.isEmpty })
+                }
+                XCTAssertTrue(output.standardError.isEmpty)
+            }
+        }
+    }
+
+    @MainActor
+    func testCLICommandUsesConsumerEnvironmentWithoutDemoFallback() async throws {
+        let cases: [([String], VerdictUICLICore.ExitCode)] = [
+            (["act", "consumer-cli-controls", "setText", "consumer-text", "--text=--help", "--include-tree"], .pass),
+            (["act", "consumer-cli-controls", "toggle", "missing-probe"], .verdictFailed),
+            (["act", "demo-toggle-layout", "toggle", "advanced-toggle"], .couldNotVerify),
+        ]
+        for (arguments, expected) in cases {
+            let output = CapturedOutput()
+            let environment = Self.commandEnvironment(output: output, registry: Self.consumerRegistry)
+            let code = await VerdictUIRunner.$environment.withValue(environment) {
+                await VerdictUITool.execute(arguments, output: output)
+            }
+            XCTAssertEqual(code, expected, output.standardError)
+            if expected == .couldNotVerify {
+                XCTAssertTrue(output.standardOutput.isEmpty)
+                XCTAssertTrue(output.standardError.contains("demo-toggle-layout"))
+            } else {
+                let wire = try JSONDecoder().decode(StepResultWire.self, from: Data(output.standardOutput.utf8))
+                XCTAssertEqual(wire.status, expected == .pass ? "PASS" : "FAIL")
+                if expected == .pass {
+                    XCTAssertEqual(wire.tree?.expand()?.node(withID: "consumer-text")?.text, "--help")
+                } else {
+                    XCTAssertTrue(wire.findings.contains { $0.nodeID == "missing-probe" })
+                }
+                XCTAssertTrue(output.standardError.isEmpty)
+            }
+        }
+        XCTAssertTrue(ProjectRunner.shouldForward(arguments: ["act", "consumer-cli-controls", "toggle", "consumer-toggle"]))
+        XCTAssertTrue(ProjectRunner.shouldForward(arguments: ["act", "consumer-cli-controls", "setText", "consumer-text", "--text=--help"]))
+    }
+
+    private static var consumerRegistry: ScenarioRegistry {
+        ScenarioRegistry([ScenarioEntry(viewport: Size(width: 320, height: 240)) { CLIActionScenario() }])
+    }
+
+    private static func commandEnvironment(output: CapturedOutput, registry: ScenarioRegistry) -> CommandEnvironment {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
+        return CommandEnvironment(
+            engine: VerdictEngine(registry: registry, baselines: .standard(root: root)),
+            output: output, pixelArtifactRoot: root)
+    }
+}
+
+private struct CLIActionScenario: VerdictScenario, Sendable {
+    let name = "consumer-cli-controls"
+
+    func body(state: ScenarioState) -> some View {
+        CLIActionView(
+            enabled: state.boolBinding("consumer-toggle", default: false),
+            text: state.stringBinding("consumer-text", default: "original"),
+            value: state.doubleBinding("consumer-slider", default: 0.25))
+    }
+}
+
+private struct CLIActionView: View {
+    @Binding var enabled: Bool
+    @Binding var text: String
+    @Binding var value: Double
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Text(enabled ? "enabled" : "disabled")
+                .frame(width: 220, height: 36)
+                .verdictProbe("consumer-toggle", role: .text, text: enabled ? "enabled" : "disabled")
+            Text(text)
+                .frame(width: 220, height: 36)
+                .verdictProbe("consumer-text", role: .text, text: text)
+            Text(String(value))
+                .frame(width: 220, height: 36)
+                .verdictProbe("consumer-slider", role: .text, text: String(value))
+        }
     }
 }

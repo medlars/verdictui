@@ -566,9 +566,14 @@ class VerdictUISmokeMixin:
         copies = S._verdictui_copies_on_path()
         if not copies:
             return {"passed": True, "detail": "no installed verdictui on PATH — nothing to compare"}
-        built = S.PROJECT_ROOT / ".build" / "release" / "verdictui"
+        # stage_build and stage_cli_smoke exercise debug. A previous release
+        # can match a stale install while both lack the command just built.
+        built = S.PROJECT_ROOT / ".build" / "debug" / "verdictui"
         if not built.exists():
-            return {"passed": True, "detail": "no release build — run swift build -c release"}
+            return {
+                "passed": False,
+                "detail": "installed parity unavailable: run stage_build first",
+            }
 
         def subcommands(binary: str) -> set[str]:
             r = subprocess.run(  # noqa: S603 — argv from resolved paths

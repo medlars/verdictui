@@ -8,6 +8,223 @@ from mutation_catalog_types import Mutation, Runner  # noqa: F401
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="lease retirement forgets its permanent stale flag",
+        path="Sources/VerdictUIProbe/Scenario.swift",
+        old="isRetired = true",
+        new="isRetired = false",
+        test="ScenarioTests/testRetiredSiteTokenCannotRetainALateCallback",
+    ),
+    Mutation(
+        name="lease retirement retains its external operation",
+        path="Sources/VerdictUIProbe/Scenario.swift",
+        old="            action = nil",
+        new="            _ = action",
+        test="ScenarioTests/testSupersededUndeliveredLeaseReleasesItsTargetAndCannotReturn",
+    ),
+    Mutation(
+        name="host retirement leaves consumer root in retained native view",
+        path="Sources/VerdictUIProbe/OracleHost.swift",
+        old="hostingView.rootView = AnyView(EmptyView())",
+        new="_ = hostingView.rootView",
+        test="ActionDiscoveryTests/testLongLivedHostReleasesReplacedControlsAcrossRepeatedRemoval",
+    ),
+    Mutation(
+        name="host retirement fails to apply empty consumer root",
+        path="Sources/VerdictUIProbe/OracleHost.swift",
+        old="hostingView.rootView = AnyView(EmptyView())\n        hostingView.layoutSubtreeIfNeeded()",
+        new="hostingView.rootView = AnyView(EmptyView())\n        _ = hostingView",
+        test="ActionDiscoveryTests/testLongLivedHostReleasesReplacedControlsAcrossRepeatedRemoval",
+    ),
+    Mutation(
+        name="old preference retires an undelivered replacement",
+        path="Sources/VerdictUIProbe/Scenario.swift",
+        old="            slot.admitted = valid",
+        new="            if proposed.contains(where: { $0 !== slot.pending }) { slot.pending?.retire(); slot.pending = nil }\n            slot.admitted = valid",
+        test="ScenarioTests/testOlderPreferenceCannotRetireAnUndeliveredReplacement",
+    ),
+    Mutation(
+        name="admitted refresh displaces a pending replacement",
+        path="Sources/VerdictUIProbe/Scenario.swift",
+        old="if token !== slot.admitted && token !== slot.pending {",
+        new="if token !== slot.pending {",
+        test="ScenarioTests/testAdmittedOwnerRefreshCannotDisplacePendingReplacement",
+    ),
+    Mutation(
+        name="pending lease is retained after its modifier dies",
+        path="Sources/VerdictUIProbe/Scenario.swift",
+        old="weak var pending: SiteToken?",
+        new="var pending: SiteToken?",
+        test="ScenarioTests/testUndeliveredLeaseDoesNotRetainItsTargetAfterModifierRelease",
+    ),
+    Mutation(
+        name="superseded pending lease keeps its binding",
+        path="Sources/VerdictUIProbe/Scenario.swift",
+        old="            slot.pending?.retire()\n            slot.pending = token",
+        new="            _ = slot.pending\n            slot.pending = token",
+        test="ScenarioTests/testSupersededUndeliveredLeaseReleasesItsTargetAndCannotReturn",
+    ),
+    Mutation(
+        name="host retirement keeps pending lease callback",
+        path="Sources/VerdictUIProbe/Scenario.swift",
+        old="            slot.pending?.retire()\n        }\n        sites.removeAll()",
+        new="            _ = slot.pending\n        }\n        sites.removeAll()",
+        test="ScenarioTests/testRetirementClearsRetainedPendingLeaseAndNeverRevealsDurableFallback",
+    ),
+    Mutation(
+        name="permanent retirement retains admission metadata",
+        path="Sources/VerdictUIProbe/Scenario.swift",
+        old="        sites.removeAll()",
+        new="        _ = sites",
+        test="ScenarioTests/testPermanentSiteRetirementReleasesAllAdmissionMetadata",
+    ),
+    Mutation(
+        name="permanent retirement reveals durable fallback",
+        path="Sources/VerdictUIProbe/Scenario.swift",
+        old="guard !sitesRetired else { return nil }",
+        new="_ = sitesRetired",
+        test="ScenarioTests/testRetirementClearsRetainedPendingLeaseAndNeverRevealsDurableFallback",
+    ),
+    Mutation(
+        name="site lease transfers its callback across hosts",
+        path="Sources/VerdictUIProbe/Scenario.swift",
+        old="guard token.owner == nil || token.owner === self else { return }",
+        new="_ = token.owner",
+        test="ScenarioTests/testSiteLeaseCannotTransferBetweenHostsOrProbeIDs",
+    ),
+    Mutation(
+        name="site lease transfers its callback across probe IDs",
+        path="Sources/VerdictUIProbe/Scenario.swift",
+        old="guard token.id == nil || token.id == id else { return }",
+        new="_ = token.id",
+        test="ScenarioTests/testSiteLeaseCannotTransferBetweenHostsOrProbeIDs",
+    ),
+    Mutation(
+        name="external bool action drops the target setter",
+        path="Sources/VerdictUIProbe/Scenario.swift",
+        old="self = .bool(get: { binding.wrappedValue }, set: { binding.wrappedValue = $0 })",
+        new="self = .bool(get: { binding.wrappedValue }, set: { _ in })",
+        test="ActionInjectionTests/testToggleActionUpdatesExternalControlBindingAndRenderedState",
+    ),
+    Mutation(
+        name="external text action drops the target setter",
+        path="Sources/VerdictUIProbe/Scenario.swift",
+        old="self = .text(get: { binding.wrappedValue }, set: { binding.wrappedValue = $0 })",
+        new="self = .text(get: { binding.wrappedValue }, set: { _ in })",
+        test="ActionInjectionTests/testExternalTextAndSliderWriteOnceAndRenderExactValues",
+    ),
+    Mutation(
+        name="external slider action drops the target setter",
+        path="Sources/VerdictUIProbe/Scenario.swift",
+        old="self = .slider(get: { binding.wrappedValue }, set: { binding.wrappedValue = $0 })",
+        new="self = .slider(get: { binding.wrappedValue }, set: { _ in })",
+        test="ActionInjectionTests/testExternalTextAndSliderWriteOnceAndRenderExactValues",
+    ),
+    Mutation(
+        name="external toggle reads a fixed seed instead of current target",
+        path="Sources/VerdictUIProbe/Scenario.swift",
+        old="self = .bool(get: { binding.wrappedValue }, set: { binding.wrappedValue = $0 })",
+        new="self = .bool(get: { false }, set: { binding.wrappedValue = $0 })",
+        test="ActionInjectionTests/testExternalToggleReadsCurrentValueAndHostsRemainIndependent",
+    ),
+    Mutation(
+        name="site refresh retains the first external target",
+        path="Sources/VerdictUIProbe/Scenario.swift",
+        old="token.action = ActionRecord(action)",
+        new="if token.action == nil { token.action = ActionRecord(action) }",
+        test="ActionDiscoveryTests/testRenderedSameIDUsesCurrentOwnerAndCurrentType",
+    ),
+    Mutation(
+        name="absent site admission falls back to durable actions",
+        path="Sources/VerdictUIProbe/Scenario.swift",
+        old="if let slot = sites[id] {",
+        new="if let slot = sites[id], slot.admitted != nil {",
+        test="ScenarioTests/testSiteOwnershipRefusesFallbackAndLateTokensCannotReplaceNewOwner",
+    ),
+    Mutation(
+        name="empty action preferences fail to revoke a still visible probe",
+        path="Sources/VerdictUIProbe/VerdictProbe.swift",
+        old="state?.admitSites(tokens)",
+        new="if !tokens.isEmpty { state?.admitSites(tokens) }",
+        test="ActionDiscoveryTests/testRemovingOnlyActionRevokesItWhileSemanticTreeIsIdentical",
+    ),
+    Mutation(
+        name="late old token delivery revokes the newer owner",
+        path="Sources/VerdictUIProbe/Scenario.swift",
+        old="continue // A late old-token delivery cannot revoke a newer owner.",
+        new="_ = proposed // Continue processing an old-token delivery.",
+        test="ScenarioTests/testSiteOwnershipRefusesFallbackAndLateTokensCannotReplaceNewOwner",
+    ),
+    Mutation(
+        name="retired token accepts and retains a late callback",
+        path="Sources/VerdictUIProbe/Scenario.swift",
+        old="guard !sitesRetired, !token.isRetired else { return }",
+        new="guard !sitesRetired else { return }",
+        test="ScenarioTests/testRetiredSiteTokenCannotRetainALateCallback",
+    ),
+    Mutation(
+        name="retired state accepts a new site callback",
+        path="Sources/VerdictUIProbe/Scenario.swift",
+        old="guard !sitesRetired, !token.isRetired else { return }",
+        new="guard !token.isRetired else { return }",
+        test="ScenarioTests/testRetiredStateCannotRetainFreshSiteCallbacks",
+    ),
+    Mutation(
+        name="ambiguous site admission arbitrarily chooses one owner",
+        path="Sources/VerdictUIProbe/Scenario.swift",
+        old="let next = proposed.count == 1 ? proposed.first : nil",
+        new="let next = proposed.first(where: { !$0.isRetired })",
+        test="ScenarioTests/testAmbiguousSiteTokensCannotDispatchEitherOwner",
+    ),
+    Mutation(
+        name="manual registration publishes during view evaluation",
+        path="Sources/VerdictUIProbe/Scenario.swift",
+        old="manual[id] = ActionRecord(action)",
+        new="objectWillChange.send(); manual[id] = ActionRecord(action)",
+        test="ScenarioTests/testInitialProbeRegistrationsDoNotPublishChanges",
+    ),
+    Mutation(
+        name="factory action publishes twice through its setter",
+        path="Sources/VerdictUIProbe/Scenario.swift",
+        old="if !performingAction { objectWillChange.send() }",
+        new="objectWillChange.send()",
+        test="ScenarioTests/testFactoryActionPublishesExactlyOnce",
+    ),
+    Mutation(
+        name="bools factory binding strongly retains the state",
+        path="Sources/VerdictUIProbe/Scenario.swift",
+        old="        let cell = bools[id]!\n        return Binding(get: { cell.value }, set: { [weak self] value in\n            self?.publishBindingWrite()",
+        new="        let cell = bools[id]!\n        return Binding(get: { cell.value }, set: { [self] value in\n            self.publishBindingWrite()",
+        test="ScenarioTests/testFactoryBindingsOutliveStateWithoutRetainingIt",
+    ),
+    Mutation(
+        name="strings factory binding strongly retains the state",
+        path="Sources/VerdictUIProbe/Scenario.swift",
+        old="        let cell = strings[id]!\n        return Binding(get: { cell.value }, set: { [weak self] value in\n            self?.publishBindingWrite()",
+        new="        let cell = strings[id]!\n        return Binding(get: { cell.value }, set: { [self] value in\n            self.publishBindingWrite()",
+        test="ScenarioTests/testFactoryBindingsOutliveStateWithoutRetainingIt",
+    ),
+    Mutation(
+        name="doubles factory binding strongly retains the state",
+        path="Sources/VerdictUIProbe/Scenario.swift",
+        old="        let cell = doubles[id]!\n        return Binding(get: { cell.value }, set: { [weak self] value in\n            self?.publishBindingWrite()",
+        new="        let cell = doubles[id]!\n        return Binding(get: { cell.value }, set: { [self] value in\n            self.publishBindingWrite()",
+        test="ScenarioTests/testFactoryBindingsOutliveStateWithoutRetainingIt",
+    ),
+    Mutation(
+        name="host deinit leaves site callbacks in retained public state",
+        path="Sources/VerdictUIProbe/OracleHost.swift",
+        old="        state.retireSites()\n        // AppKit",
+        new="        _ = state\n        // AppKit",
+        test="ActionInjectionTests/testRetainedPublicStateCannotRetainOrDriveRetiredHostControls",
+    ),
+    Mutation(
+        name="implicit measuring host retains its site callbacks",
+        path="Sources/VerdictUIProbe/OracleHost.swift",
+        old="defer { measuringState.retireSites() }",
+        new="defer { _ = measuringState }",
+        test="ActionInjectionTests/testImplicitMeasurementStateRetiresBeforeActualHost",
+    ),
+    Mutation(
         name="skip animation policy stops marking injected mutations",
         path="Sources/VerdictUIProbe/VerdictClock.swift",
         old="            transaction.disablesAnimations = true",
@@ -59,44 +276,44 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="scenario initial bool seed publishes during rendering",
         path="Sources/VerdictUIProbe/Scenario.swift",
-        old="            bools[id] = defaultValue",
-        new="            objectWillChange.send()\n            bools[id] = defaultValue",
+        old="if bools[id] == nil { bools[id] = Cell(defaultValue) }",
+        new="if bools[id] == nil { objectWillChange.send(); bools[id] = Cell(defaultValue) }",
         test="ScenarioTests/testInitialBindingSeedsDoNotPublishChanges",
     ),
     Mutation(
-        name="scenario initial bool registration publishes during rendering",
+        name="scenario initial bool registration writes during rendering",
         path="Sources/VerdictUIProbe/Scenario.swift",
-        old="                bools[id] = binding.wrappedValue",
-        new="                objectWillChange.send()\n                bools[id] = binding.wrappedValue",
-        test="ScenarioTests/testInitialProbeRegistrationsDoNotPublishChanges",
+        old="            case .bool(let binding):\n",
+        new="            case .bool(let binding):\n                let current = binding.wrappedValue\n                binding.wrappedValue = current\n",
+        test="ScenarioTests/testRegisteringTypedOperationsDoesNotInvokeAnySetter",
     ),
     Mutation(
         name="scenario initial text seed publishes during rendering",
         path="Sources/VerdictUIProbe/Scenario.swift",
-        old="            strings[id] = defaultValue",
-        new="            objectWillChange.send()\n            strings[id] = defaultValue",
+        old="if strings[id] == nil { strings[id] = Cell(defaultValue) }",
+        new="if strings[id] == nil { objectWillChange.send(); strings[id] = Cell(defaultValue) }",
         test="ScenarioTests/testInitialBindingSeedsDoNotPublishChanges",
     ),
     Mutation(
-        name="scenario initial text registration publishes during rendering",
+        name="scenario initial text registration writes during rendering",
         path="Sources/VerdictUIProbe/Scenario.swift",
-        old="                strings[id] = binding.wrappedValue",
-        new="                objectWillChange.send()\n                strings[id] = binding.wrappedValue",
-        test="ScenarioTests/testInitialProbeRegistrationsDoNotPublishChanges",
+        old="            case .text(let binding):\n",
+        new="            case .text(let binding):\n                let current = binding.wrappedValue\n                binding.wrappedValue = current\n",
+        test="ScenarioTests/testRegisteringTypedOperationsDoesNotInvokeAnySetter",
     ),
     Mutation(
         name="scenario initial slider seed publishes during rendering",
         path="Sources/VerdictUIProbe/Scenario.swift",
-        old="            doubles[id] = defaultValue",
-        new="            objectWillChange.send()\n            doubles[id] = defaultValue",
+        old="if doubles[id] == nil { doubles[id] = Cell(defaultValue) }",
+        new="if doubles[id] == nil { objectWillChange.send(); doubles[id] = Cell(defaultValue) }",
         test="ScenarioTests/testInitialBindingSeedsDoNotPublishChanges",
     ),
     Mutation(
-        name="scenario initial slider registration publishes during rendering",
+        name="scenario initial slider registration writes during rendering",
         path="Sources/VerdictUIProbe/Scenario.swift",
-        old="                doubles[id] = binding.wrappedValue",
-        new="                objectWillChange.send()\n                doubles[id] = binding.wrappedValue",
-        test="ScenarioTests/testInitialProbeRegistrationsDoNotPublishChanges",
+        old="            case .slider(let binding):\n",
+        new="            case .slider(let binding):\n                let current = binding.wrappedValue\n                binding.wrappedValue = current\n",
+        test="ScenarioTests/testRegisteringTypedOperationsDoesNotInvokeAnySetter",
     ),
     Mutation(
         name="hard line breaks other than \\n stop withholding TextMetrics",
@@ -181,27 +398,16 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="toggle action stops flipping the bool binding",
         path="Sources/VerdictUIProbe/Scenario.swift",
-        old="bools[id] = !current",
-        new="bools[id] = current",
+        old="        performWrite { set(!get()) }\n    }\n\n    func performSetText",
+        new="        performWrite { set(get()) }\n    }\n\n    func performSetText",
         test="ActionInjectionTests/testToggleActionExpandsToggleLayoutScenario",
     ),
     Mutation(
         name="unknown probe toggle is silently ignored instead of throwing",
         path="Sources/VerdictUIProbe/Scenario.swift",
-        old="""\
-        guard let current = bools[id] else {
-            if strings[id] != nil || doubles[id] != nil || taps[id] != nil {
-                throw ProbeActionError.typeMismatch(id: id, expected: "bool")
-            }
-            throw ProbeActionError.unknownProbe(id)
-        }
-""",
-        new="""\
-        guard let current = bools[id] else {
-            return
-        }
-""",
-        test="ActionInjectionTests/testUnknownProbeIDThrowsWithEvidence",
+        old="guard let action = record(for: id) else { throw ProbeActionError.unknownProbe(id) }",
+        new="guard let action = record(for: id) else { return .bool(get: { false }, set: { _ in }) }",
+        test="ScenarioTests/testMissingRecordsRefuseAndConstantsRemainUnchanged",
     ),
     Mutation(
         name="flow keeps running after a step FAILs instead of exiting early",
@@ -403,18 +609,10 @@ MUTATIONS: list[Mutation] = [
         runner=Runner.SWIFT,
     ),
     Mutation(
-        # Discovery starts reporting every probe it was ever asked about
-        # rather than only the ones with a binding. That is the always-true
-        # failure (no.md #17): an agent reading it would act on probes that
-        # refuse -- the exact state this feature was built to end -- and it
-        # reads as a MORE helpful answer, so nothing about it looks wrong.
-        # The `new` keeps every binding live and compiles (no.md #31): it
-        # widens the map rather than deleting the computation.
         name="actionability reports unbound probes as actionable",
         path="Sources/VerdictUIProbe/Scenario.swift",
-        old='        for id in strings.keys { result[id, default: []].append("setText") }',
-        new="""        for id in strings.keys { result[id, default: []].append("setText") }
-        result["never-registered", default: []].append("tap")""",
+        old="        return result\n",
+        new='        return result.merging(["never-registered": ["tap"]]) { current, _ in current }\n',
         test="ActionDiscoveryTests/testStateReportsRegisteredProbesAndOmitsUnregisteredOnes",
     ),
     Mutation(

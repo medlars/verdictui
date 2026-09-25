@@ -23,186 +23,245 @@ import SwiftUI
 /// ``ProbeAction`` then mutates those registrations in-process.
 @MainActor
 public final class ScenarioState: ObservableObject {
-    private var bools: [String: Bool] = [:]
-    private var strings: [String: String] = [:]
-    private var doubles: [String: Double] = [:]
-    private var taps: [String: () -> Void] = [:]
+    // Cells let a returned factory binding outlive this state without retaining it.
+    private final class Cell<Value> {
+        var value: Value
+        init(_ value: Value) { self.value = value }
+    }
+
+    fileprivate enum ActionRecord {
+        case bool(get: () -> Bool, set: (Bool) -> Void)
+        case text(get: () -> String, set: (String) -> Void)
+        case slider(get: () -> Double, set: (Double) -> Void)
+        case tap(() -> Void)
+
+        init(_ action: ProbeSiteAction) {
+            switch action {
+            case .bool(let binding):
+                self = .bool(get: { binding.wrappedValue }, set: { binding.wrappedValue = $0 })
+            case .text(let binding):
+                self = .text(get: { binding.wrappedValue }, set: { binding.wrappedValue = $0 })
+            case .slider(let binding):
+                self = .slider(get: { binding.wrappedValue }, set: { binding.wrappedValue = $0 })
+            case .tap(let handler): self = .tap(handler)
+            }
+        }
+
+        var verbs: [String] {
+            switch self {
+            case .bool: ["tap", "toggle"]
+            case .text: ["setText"]
+            case .slider: ["setSlider"]
+            case .tap: ["tap"]
+            }
+        }
+    }
+
+    /// A modifier owns this lease. Retirement travels with the lease itself,
+    /// so rejecting a late delivery needs no append-only identity tombstones.
+    @MainActor
+    final class SiteToken: Hashable {
+        fileprivate weak var owner: ScenarioState?
+        fileprivate var id: String?
+        fileprivate var action: ActionRecord?
+        fileprivate var isRetired = false
+
+        nonisolated static func == (lhs: SiteToken, rhs: SiteToken) -> Bool { lhs === rhs }
+        nonisolated func hash(into hasher: inout Hasher) { hasher.combine(ObjectIdentifier(self)) }
+
+        fileprivate func retire() {
+            isRetired = true
+            action = nil
+        }
+    }
+
+    private struct SiteSlot {
+        var admitted: SiteToken?
+        weak var pending: SiteToken?
+    }
+
+    private var bools: [String: Cell<Bool>] = [:]
+    private var strings: [String: Cell<String>] = [:]
+    private var doubles: [String: Cell<Double>] = [:]
+    private var manual: [String: ActionRecord] = [:]
+    private var sites: [String: SiteSlot] = [:]
+    private var sitesRetired = false
+    private var performingAction = false
 
     public init() {}
 
-    // MARK: - Binding factories
+    // MARK: - Durable binding factories
 
-    // Initial values and action registrations are established during body(state:).
-    // The current evaluation already reads them; publishing here invalidates a
-    // view while it is rendering. Only subsequent writes publish changes.
-
-    /// A bool binding keyed by probe id. The first call seeds `default`; later
-    /// calls reuse the stored value so a re-render does not reset user/actions.
-    public func boolBinding(
-        _ id: String,
-        default defaultValue: Bool = false
-    ) -> Binding<Bool> {
-        if bools[id] == nil {
-            bools[id] = defaultValue
-        }
-        return Binding(
-            get: { self.bools[id] ?? defaultValue },
-            set: {
-                self.objectWillChange.send()
-                self.bools[id] = $0
-            }
-        )
+    /// The first call seeds the cell; later calls preserve its value. The binding
+    /// owns its scalar cell, and only weakly references this state's publisher.
+    public func boolBinding(_ id: String, default defaultValue: Bool = false) -> Binding<Bool> {
+        if bools[id] == nil { bools[id] = Cell(defaultValue) }
+        let cell = bools[id]!
+        return Binding(get: { cell.value }, set: { [weak self] value in
+            self?.publishBindingWrite()
+            cell.value = value
+        })
     }
 
-    /// A string binding keyed by probe id.
-    public func stringBinding(
-        _ id: String,
-        default defaultValue: String = ""
-    ) -> Binding<String> {
-        if strings[id] == nil {
-            strings[id] = defaultValue
-        }
-        return Binding(
-            get: { self.strings[id] ?? defaultValue },
-            set: {
-                self.objectWillChange.send()
-                self.strings[id] = $0
-            }
-        )
+    public func stringBinding(_ id: String, default defaultValue: String = "") -> Binding<String> {
+        if strings[id] == nil { strings[id] = Cell(defaultValue) }
+        let cell = strings[id]!
+        return Binding(get: { cell.value }, set: { [weak self] value in
+            self?.publishBindingWrite()
+            cell.value = value
+        })
     }
 
-    /// A double binding keyed by probe id (sliders).
-    public func doubleBinding(
-        _ id: String,
-        default defaultValue: Double = 0
-    ) -> Binding<Double> {
-        if doubles[id] == nil {
-            doubles[id] = defaultValue
-        }
-        return Binding(
-            get: { self.doubles[id] ?? defaultValue },
-            set: {
-                self.objectWillChange.send()
-                self.doubles[id] = $0
-            }
-        )
+    public func doubleBinding(_ id: String, default defaultValue: Double = 0) -> Binding<Double> {
+        if doubles[id] == nil { doubles[id] = Cell(defaultValue) }
+        let cell = doubles[id]!
+        return Binding(get: { cell.value }, set: { [weak self] value in
+            self?.publishBindingWrite()
+            cell.value = value
+        })
     }
 
-    /// Register a tap handler for a button-like probe.
+    private func publishBindingWrite() {
+        if !performingAction { objectWillChange.send() }
+    }
+
+    /// A durable manual registration. The newest manual action replaces its
+    /// predecessor and takes precedence over a same-ID factory binding.
     public func registerTap(_ id: String, _ handler: @escaping () -> Void) {
-        taps[id] = handler
+        register(probeID: id, action: .tap(handler))
     }
 
-    /// Install a ``ProbeSiteAction`` under `id` (used by `.verdictProbe(..., action:)`).
-    ///
-    /// For bool/text/slider, copies the current wrapped value into owned storage
-    /// so later ``ProbeAction`` mutations do not need to retain the `Binding`
-    /// (storing `Binding` values on the state object crashed headless hosts).
+    /// Register operations on the supplied current target, without writing or
+    /// publishing during registration. Unlike the old snapshot implementation,
+    /// typed actions invoke this binding's setter; constants remain unchanged.
+    /// These closures retain the binding for the registration's lifetime.
     public func register(probeID id: String, action: ProbeSiteAction) {
-        switch action {
-        case .bool(let binding):
-            if bools[id] == nil {
-                bools[id] = binding.wrappedValue
+        manual[id] = ActionRecord(action)
+    }
+
+    // MARK: - Rendered site ownership (private to the probe module)
+
+    func registerSite(probeID id: String, token: SiteToken, action: ProbeSiteAction) {
+        guard !sitesRetired, !token.isRetired else { return }
+        guard token.owner == nil || token.owner === self else { return }
+        guard token.id == nil || token.id == id else { return }
+        token.owner = self
+        token.id = id
+        token.action = ActionRecord(action)
+        var slot = sites[id] ?? SiteSlot()
+        if token !== slot.admitted && token !== slot.pending {
+            slot.pending?.retire()
+            slot.pending = token
+        }
+        sites[id] = slot
+    }
+
+    /// Preference delivery, independent of semantic tree equality, admits the
+    /// currently rendered token. A superseded token can never regain ownership.
+    func admitSites(_ tokens: [String: Set<SiteToken>]) {
+        guard !sitesRetired else { return }
+        for (id, var slot) in sites {
+            let proposed = tokens[id] ?? []
+            if !proposed.isEmpty && proposed.allSatisfy({ $0.isRetired }) {
+                continue // A late old-token delivery cannot revoke a newer owner.
             }
-        case .text(let binding):
-            if strings[id] == nil {
-                strings[id] = binding.wrappedValue
+            let next = proposed.count == 1 ? proposed.first : nil
+            let valid = next.flatMap { token in
+                token.owner === self && token.id == id && !token.isRetired
+                    && (token === slot.admitted || token === slot.pending) ? token : nil
             }
-        case .slider(let binding):
-            if doubles[id] == nil {
-                doubles[id] = binding.wrappedValue
+            if let previous = slot.admitted, previous !== valid {
+                previous.retire()
             }
-        case .tap(let handler):
-            taps[id] = handler
+            slot.admitted = valid
+            if valid != nil && valid === slot.pending { slot.pending = nil }
+            // An older delivery cannot retire a replacement whose preference
+            // has not arrived. The modifier owns that weak pending lease.
+            sites[id] = slot
         }
     }
 
-    // MARK: - Discovery
-
-    /// Every probe that has a binding registered, mapped to the ``ProbeAction``
-    /// verbs it accepts.
-    ///
-    /// This exists because `role` cannot answer the question. A role is a claim
-    /// about what a node IS; actionability is a claim about what the harness can
-    /// DRIVE, and a probe may carry `.toggle` with no binding behind it. Without
-    /// this, a caller discovers actionability only by acting and being refused —
-    /// which is discovery by failure, and on the shipped catalog it fails far
-    /// more often than it succeeds.
-    ///
-    /// Derived from the same dictionaries ``performTap(_:)`` and its siblings
-    /// consult, so the answer cannot drift from the behaviour: a second registry
-    /// listing "what is actionable" would be a claim about the first one, and
-    /// the two would disagree the moment either changed.
-    ///
-    /// A bool reports both `tap` and `toggle` because ``performTap(_:)`` falls
-    /// through to a toggle when no separate handler is registered — the verbs
-    /// listed are the ones that will actually be ACCEPTED, not the ones the
-    /// storage is named after.
-    ///
-    /// Verbs are spelled out rather than derived from `ProbeAction` case names:
-    /// an interpolated case is a compiler detail that may change between
-    /// toolchains, the same reason ``ProbeAction/description`` spells its own.
-    public var actionableProbes: [String: [String]] {
-        var result: [String: [String]] = [:]
-        for id in taps.keys { result[id, default: []].append("tap") }
-        for id in bools.keys {
-            // `tap` first: that is the order performTap tries them in.
-            var verbs = result[id] ?? []
-            if !verbs.contains("tap") { verbs.append("tap") }
-            verbs.append("toggle")
-            result[id] = verbs
+    func retireSites() {
+        sitesRetired = true
+        for slot in sites.values {
+            slot.admitted?.retire()
+            slot.pending?.retire()
         }
-        for id in strings.keys { result[id, default: []].append("setText") }
-        for id in doubles.keys { result[id, default: []].append("setSlider") }
+        sites.removeAll()
+    }
+
+    // Site ownership permanently fences an ID for this state: missing/stale
+    // admission never falls back to a manual record, a factory or an old site.
+    private func record(for id: String) -> ActionRecord? {
+        guard !sitesRetired else { return nil }
+        if let slot = sites[id] {
+            return slot.admitted?.action
+        }
+        if let action = manual[id] { return action }
+        if bools[id] != nil {
+            return ActionRecord(.bool(boolBinding(id)))
+        }
+        if strings[id] != nil {
+            return ActionRecord(.text(stringBinding(id)))
+        }
+        if doubles[id] != nil {
+            return ActionRecord(.slider(doubleBinding(id)))
+        }
+        return nil
+    }
+
+    /// Verbs are derived from the same current records consulted by dispatch.
+    public var actionableProbes: [String: [String]] {
+        let ids = Set(bools.keys).union(strings.keys).union(doubles.keys)
+            .union(manual.keys).union(sites.keys)
+        let result = Dictionary(uniqueKeysWithValues: ids.compactMap { id in
+            record(for: id).map { (id, $0.verbs) }
+        })
         return result
+    }
+
+    private func requiredRecord(_ id: String) throws -> ActionRecord {
+        guard let action = record(for: id) else { throw ProbeActionError.unknownProbe(id) }
+        return action
+    }
+
+    private func performWrite(_ body: () -> Void) {
+        let previous = performingAction
+        performingAction = true
+        defer { performingAction = previous }
+        if !previous { objectWillChange.send() }
+        body()
     }
 
     // MARK: - ProbeAction performance
 
     func performTap(_ id: String) throws {
-        if let handler = taps[id] {
-            objectWillChange.send()
-            handler()
-            return
+        switch try requiredRecord(id) {
+        case .tap(let handler): performWrite(handler)
+        case .bool(let get, let set): performWrite { set(!get()) }
+        default: throw ProbeActionError.unknownProbe(id)
         }
-        if bools[id] != nil {
-            try performToggle(id)
-            return
-        }
-        throw ProbeActionError.unknownProbe(id)
     }
 
     func performToggle(_ id: String) throws {
-        guard let current = bools[id] else {
-            if strings[id] != nil || doubles[id] != nil || taps[id] != nil {
-                throw ProbeActionError.typeMismatch(id: id, expected: "bool")
-            }
-            throw ProbeActionError.unknownProbe(id)
+        guard case .bool(let get, let set) = try requiredRecord(id) else {
+            throw ProbeActionError.typeMismatch(id: id, expected: "bool")
         }
-        objectWillChange.send()
-        bools[id] = !current
+        performWrite { set(!get()) }
     }
 
     func performSetText(_ id: String, _ value: String) throws {
-        guard strings[id] != nil else {
-            if bools[id] != nil || doubles[id] != nil || taps[id] != nil {
-                throw ProbeActionError.typeMismatch(id: id, expected: "string")
-            }
-            throw ProbeActionError.unknownProbe(id)
+        guard case .text(_, let set) = try requiredRecord(id) else {
+            throw ProbeActionError.typeMismatch(id: id, expected: "string")
         }
-        objectWillChange.send()
-        strings[id] = value
+        performWrite { set(value) }
     }
 
     func performSetSlider(_ id: String, _ value: Double) throws {
-        guard doubles[id] != nil else {
-            if bools[id] != nil || strings[id] != nil || taps[id] != nil {
-                throw ProbeActionError.typeMismatch(id: id, expected: "double")
-            }
-            throw ProbeActionError.unknownProbe(id)
+        guard case .slider(_, let set) = try requiredRecord(id) else {
+            throw ProbeActionError.typeMismatch(id: id, expected: "double")
         }
-        objectWillChange.send()
-        doubles[id] = value
+        performWrite { set(value) }
     }
 }
 

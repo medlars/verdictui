@@ -3,6 +3,7 @@
 // Kept in the LIBRARY rather than in the executable so a test can construct and
 // run any of them. `main.swift` is four lines and holds no behaviour.
 import ArgumentParser
+import Darwin
 import Foundation
 import VerdictUIKernel
 
@@ -35,7 +36,7 @@ public struct VerdictUITool: AsyncParsableCommand {
             """,
         version: ReleaseVersion.display,
         subcommands: [
-            List.self, Render.self, Actions.self, Verify.self, Judge.self, Baseline.self,
+            List.self, Render.self, Actions.self, Act.self, Verify.self, Judge.self, Baseline.self,
             SweepRun.self,
             Inspect.self, Capture.self, AppKit.self, Live.self, Web.self, Check.self, Daemon.self, MCP.self,
         ],
@@ -43,6 +44,52 @@ public struct VerdictUITool: AsyncParsableCommand {
     )
 
     public init() {}
+
+    /// Both existing entrypoints use this boundary, including the no-argument launcher.
+    public static func main() async {
+        await main(nil)
+    }
+
+    public static func main(_ arguments: [String]?) async {
+        let code = await execute(arguments, output: StandardOutput())
+        guard code != .pass else { return }
+        Darwin.exit(code.rawValue)
+    }
+
+    static func execute(_ arguments: [String]?, output: OutputSink) async -> ExitCode {
+        var command: any ParsableCommand
+        do {
+            command = try await asyncParseAsRoot(arguments)
+        } catch {
+            return reportParserOutcome(error, output: output)
+        }
+        do {
+            if var asynchronous = command as? any AsyncParsableCommand {
+                try await asynchronous.run()
+            } else {
+                try command.run()
+            }
+            return .pass
+        } catch let code as ArgumentParser.ExitCode {
+            switch code.rawValue {
+            case ExitCode.pass.rawValue: return .pass
+            case ExitCode.verdictFailed.rawValue: return .verdictFailed
+            default: return .couldNotVerify
+            }
+        } catch {
+            return reportParserOutcome(error, output: output)
+        }
+    }
+
+    private static func reportParserOutcome(_ error: any Error, output: OutputSink) -> ExitCode {
+        let message = fullMessage(for: error)
+        if exitCode(for: error) == .success {
+            if !message.isEmpty { output.writeOut(message + "\n") }
+            return .pass
+        }
+        if !message.isEmpty { output.writeError(message + "\n") }
+        return .couldNotVerify
+    }
 
     /// Runs `body` and terminates with its exit code.
     ///
@@ -314,6 +361,54 @@ public struct VerdictUITool: AsyncParsableCommand {
             let environment = CommandEnvironment.standard()
             let code = await ActionsCommand(scenario: scenario)
                 .run(environment, pretty: formatting.pretty)
+            try VerdictUITool.finish(code)
+        }
+    }
+
+    /// One in-process action followed by observation, using the same engine as MCP.
+    public struct Act: AsyncParsableCommand {
+        public static let configuration = CommandConfiguration(
+            commandName: "act",
+            abstract: "Act on a scenario probe and print the observed step result."
+        )
+        public init() {}
+
+        @Argument(help: "Scenario name, as printed by `verdictui list`.")
+        public var scenario: String
+
+        @Argument(help: "Action: tap, toggle, setText, or setSlider.")
+        public var kind: String
+
+        @Argument(help: "Probe id, as printed by `verdictui actions <scenario>`.")
+        public var probe: String
+
+        @Option(name: .long, help: "Required for setText. Use --text=VALUE for option-shaped text.")
+        public var text: String?
+
+        @Option(name: .long, help: "Required finite number for setSlider.")
+        public var value: Double?
+
+        @Flag(name: .long, help: "Embed the observed after-tree in the step result.")
+        public var includeTree = false
+
+        @Flag(name: .long, help: "Indent the JSON and sort its keys for human reading.")
+        public var pretty = false
+
+        var command: ActCommand {
+            ActCommand(
+                scenario: scenario,
+                action: DaemonAction(kind: kind, probe: probe, text: text, value: value),
+                includeTree: includeTree)
+        }
+
+        public func validate() throws {
+            _ = try command.validatedAction()
+        }
+
+        @MainActor
+        public func run() async throws {
+            let environment = CommandEnvironment.standard()
+            let code = await command.run(environment, pretty: pretty)
             try VerdictUITool.finish(code)
         }
     }

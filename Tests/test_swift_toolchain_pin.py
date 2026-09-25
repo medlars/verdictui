@@ -24,7 +24,7 @@ yaml = pytest.importorskip("yaml")
 ROOT = Path(__file__).resolve().parents[1]
 PIN = ROOT / ".github" / "swift-toolchain-version"
 CI = ROOT / ".github" / "workflows" / "ci.yml"
-_VERSION_RE = re.compile(r"Apple Swift version (\d+\.\d+)")
+_VERSION_RE = re.compile(r"^(?:Apple )?Swift version (\d+\.\d+)(?:\.\d+)?(?=\s|$)", re.MULTILINE)
 
 
 def _pin() -> str:
@@ -87,3 +87,61 @@ def test_the_local_toolchain_matches_the_pin() -> None:
         f"local Swift {found.group(1)} differs from the pinned CI toolchain {_pin()}: "
         "a green local build is not evidence about what CI compiles (CTS-6D1E7A0F)"
     )
+
+
+def _check_local_version_output(monkeypatch: pytest.MonkeyPatch, output: str) -> None:
+    """Feed recorded version output through the actual local guard without launching Swift."""
+    monkeypatch.setitem(globals(), "_pin", lambda: "6.4")
+    monkeypatch.setattr(shutil, "which", lambda _: "fixture-swift")
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda args, **kwargs: subprocess.CompletedProcess(args, 0, output, ""),
+    )
+    test_the_local_toolchain_matches_the_pin()
+
+
+def test_local_guard_accepts_linux_version_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    _check_local_version_output(
+        monkeypatch,
+        "Swift version 6.4 (swift-6.4-RELEASE)\nTarget: x86_64-unknown-linux-gnu\n",
+    )
+
+
+def test_local_guard_accepts_apple_version_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    _check_local_version_output(
+        monkeypatch,
+        "Apple Swift version 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1)\n"
+        "Target: arm64-apple-macosx27.0\n",
+    )
+
+
+@pytest.mark.parametrize("prefix", ["Apple Swift", "Swift"])
+def test_local_guard_accepts_patch_version_output(
+    monkeypatch: pytest.MonkeyPatch, prefix: str
+) -> None:
+    _check_local_version_output(monkeypatch, f"{prefix} version 6.4.1 (compiler-build)\n")
+
+
+@pytest.mark.parametrize("prefix", ["Apple Swift", "Swift"])
+def test_local_guard_rejects_wrong_version(monkeypatch: pytest.MonkeyPatch, prefix: str) -> None:
+    with pytest.raises(AssertionError, match="differs from the pinned CI toolchain"):
+        _check_local_version_output(monkeypatch, f"{prefix} version 6.3.3 (compiler-build)\n")
+
+
+@pytest.mark.parametrize(
+    "output",
+    [
+        "Swift version 6.4garbage\n",
+        "Apple Swift version 6.4garbage\n",
+        "Swift version 6.4. (swift-6.4-RELEASE)\n",
+        "Swift version 6.x\n",
+        "prefix Apple Swift version 6.4\n",
+        "swift-driver version 6.4\n",
+    ],
+)
+def test_local_guard_rejects_malformed_version_output(
+    monkeypatch: pytest.MonkeyPatch, output: str
+) -> None:
+    with pytest.raises(AssertionError, match="could not read a Swift version"):
+        _check_local_version_output(monkeypatch, output)

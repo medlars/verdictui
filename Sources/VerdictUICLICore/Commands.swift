@@ -263,6 +263,39 @@ public struct ActionsCommand: Sendable {
     }
 }
 
+/// Applies one scenario action and emits the shared compact step wire format.
+public struct ActCommand: Sendable {
+    public let scenario: String
+    public let action: DaemonAction
+    public let includeTree: Bool
+
+    public init(scenario: String, action: DaemonAction, includeTree: Bool = false) {
+        self.scenario = scenario
+        self.action = action
+        self.includeTree = includeTree
+    }
+
+    /// Validate before resolving or rendering any scenario, including direct callers.
+    func validatedAction() throws -> ProbeAction {
+        guard action.value?.isFinite ?? true else {
+            throw ValidationError("--value must be a finite number")
+        }
+        return try action.probeAction()
+    }
+
+    @MainActor
+    public func run(_ environment: CommandEnvironment, pretty: Bool) async -> ExitCode {
+        await CommandRunner.run(output: environment.output) {
+            let probeAction = try validatedAction()
+            let step = try await environment.engine.act(
+                scenario: scenario, action: probeAction, includeTree: includeTree)
+            environment.output.writeOut(
+                try VerdictOutput.json(StepResultWire(step, includeTree: includeTree), pretty: pretty))
+            return step.verdict.status == .pass ? .pass : .verdictFailed
+        }
+    }
+}
+
 /// What `render --pixels` prints: the tree, plus where the image was written.
 ///
 /// A struct rather than a dictionary because this crosses the wire and is read
