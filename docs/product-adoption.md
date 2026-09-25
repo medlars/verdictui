@@ -20,7 +20,8 @@ Hosted CI `36101820843` passed all three jobs at `2d476ef`: 1,289 native
 passes/26 skips, 48 Workbench assertions across ten phases, and 691 Python
 passes/25 skips. The temporary PR merge has the candidate's exact tree; all
 108 retained artifacts were rehashed. This successful remote run does not
-supersede the failed local qualification, and PR47 remains draft.
+supersede the failed local qualification. PR47 subsequently merged the independently
+qualified passive diagnostic repair, as recorded below.
 
 A test-only follow-up now emits a bounded, sanitized lifecycle record into
 ordinary XCTest output before fixture cleanup. It preserves the original
@@ -41,11 +42,28 @@ The original failed receipt and CIS-8FAD7552 remain open evidence.
 The earlier instrumented target and nine-test class passed, but used a
 timing-intrusive signal observer and are excluded from causal acceptance.
 
-SagaMail's three declared views still lack behavior acceptance. Source review
-found that typed binding registration intentionally seeds harness-owned copies;
-the existing tests preserve that legacy behavior. A real external-model/view
-test and a lifetime-safe dispatch design are required before admitting consumer
-toggle behavior. This is planned work, not a measured runtime repair.
+PR47 merged as `f382821` with the same tree as qualified candidate `9f7b7f8`.
+Hosted CI `36107211438` passed all three jobs, with 1,295 native passes and
+26 skips, 48 Workbench assertions across ten phases, and 691 Python passes,
+25 skips and 11 subtest passes. Root rehashed all 60 retained artifacts and
+verified the temporary PR merge and final published trees against the candidate.
+The CEO aftermath signed its ledger but returned exit 2 for fleet evidence and
+propagation gaps; 150 unavailable UI evidence entries do not mean 150 broken apps.
+
+SagaMail's three declared views still lack behavior acceptance. The actual
+external-model/windowless-view RED proves the copied-binding gap: the owned
+baseline passed, but three after-state assertions failed despite Harness PASS.
+CIS-928A0BF1 tracks the repair. A 43-case candidate then passed, but independent
+review reproduced unbounded retired-token metadata and stale same-ID dispatch.
+Those three failing tests are retained. The revised lease design has 46 focused
+passes; longer lifecycle controls, mutation witnesses and aggregate qualification
+remain pending. No candidate result is substituted for consumer acceptance.
+
+The shared CLI also enumerates scenario actions without exposing execution.
+A thin `act` adapter is being prepared over the existing daemon action and result
+contracts. Actual stock and consumer entrypoints must prove help/version behavior,
+typed text/value parsing, observed outcomes and the 0/1/2 exit contract before
+SagaMail's CLI/MCP behavior and four rendered states can be admitted.
 
 This is separate from CIS-B1FB43A2, which fresh central-store readback records
 as fixed since September24 by PR45's migration from implementation-defined
