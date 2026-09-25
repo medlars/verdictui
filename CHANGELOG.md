@@ -2,6 +2,15 @@
 
 ## [1.1.4] — 2026-09-23
 
+- Added scenario `act` to the shared CLI, using the same typed engine and
+  observed-result wire contract as MCP. Parser failures use exit 2; produced
+  passing and failing verdicts retain exits 0 and 1.
+- Changed typed probe actions to operate on the consumer's current binding,
+  with lifecycle admission, replacement and revocation. Retiring a host releases
+  its rendered content even when AppKit temporarily retains the hosting view.
+- Corrected installed command-parity checks to use the PM pipeline's build,
+  preventing an old release binary from concealing a stale installation.
+
 - Corrected false AppKit clipping and overlap reports for native button and popup
   decorations by measuring their public alignment rectangles. Original bounds
   remain attached as evidence; custom controls and root viewports retain their

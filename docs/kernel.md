@@ -761,3 +761,44 @@ from one is not evidence the other would agree.
 The inner loop is the product's fast channel. Divergence in the middle loop is the
 bug detector. An agent that only calls `ProbeAction` is trusting instrumentation;
 an agent that also cross-validates is trusting less.
+
+### Typed action ownership
+
+`ScenarioState` factories own durable scalar cells: the first factory seed wins,
+registration does not publish, and each write publishes once. Factory bindings
+retain their cell and weakly notify the state, so retaining a binding does not
+retain a retired host. A manual `register` or `registerTap` replaces the previous
+manual target for its ID and takes precedence over a factory with that ID.
+
+A `.verdictProbe(..., action:)` site takes exclusive ownership of its ID for that
+host's lifetime. Its stable private modifier token must be admitted through the
+current action-preference stream, which is independent of semantic tree equality.
+Removing an action while keeping an identical semantic node revokes its authority.
+An absent, retired or stale site never falls back to a factory, manual target or
+older callback. Re-evaluation refreshes the current token's operations; a replaced
+token cannot overwrite or revoke its newer owner. Retirement lives on the private
+modifier lease, not in an accumulating UUID history. Each fenced ID retains at
+most one admitted lease and a weak pending replacement. An older preference
+delivery cannot retire a replacement before its first delivery; superseding an
+undelivered replacement retires that lease and releases its callback. Ambiguous
+simultaneous owners refuse dispatch. Host retirement clears leases and ID metadata
+and permanently disables dispatch, so clearing the fences never reveals durable
+fallback actions. This also releases callbacks when a caller retains the public
+`state`. Retirement first disables callbacks, then replaces and lays out the
+owned hosting view's root with empty content. AppKit may retain that native view
+temporarily; it no longer retains the consumer model through its rendered root.
+The implicit measuring host retires its separate records after sizing.
+
+Typed bool/text/slider registrations invoke the supplied current binding's getter
+and setter. They no longer copy an external binding's initial value into unrelated
+harness storage. This intentionally changes legacy copy-only registration
+semantics; factory seed behavior remains unchanged. These private operation
+closures still retain their binding until retirement; they are not a claim that
+wrapping a binding makes every SwiftUI lifetime safe. External observed-control,
+replacement and weak-retirement tests cover the supported path.
+
+Pass the same binding to the real control and its probe. An action's lint PASS is
+not proof of its intended result: independently assert the actual external value
+and rendered after-state. Constant/no-op setters remain unchanged; wrong-target
+writes do not satisfy that acceptance. This is in-process control-binding
+behavior, not mouse/keyboard hit testing or installed-application verification.

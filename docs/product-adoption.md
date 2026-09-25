@@ -6,6 +6,63 @@ complete product coverage.
 
 ## Current qualification follow-up (2026-09-25)
 
+The integrated current-binding/CLI/parity candidate `3cc3f8b` completed genuine
+quick PM at **B99.3**, with **installed parity as its only failed stage**. The
+Homebrew executable lacks `act`; no installed copy was replaced. Build, contracts,
+798 mutation-anchor checks, lint, 1,334 native passes/26 skips and 724 Python
+passes completed in 359.345 seconds. Runtime and MCP p50 were 51.57 ms and
+8.91 ms, respectively.
+All three ordinary lifecycle records were retained, without claiming the earlier
+intermittent cause resolved. The PM added its own installed-parity TODO; its exact
+diff is retained, and production/test files plus all 520 shared PM Python files
+were unchanged. This is scoped source evidence, not green deployment acceptance.
+Receipt: `qualification-final-yaml/root-report.json` under the private
+final-integration evidence directory. Installed acceptance remains open.
+
+SagaMail candidate `8ce7d4e` qualifies both real master bindings across its
+three presets: 13 native cases, 49 Python cases including all 17 runtime cases,
+six CLI and six MCP actions, and eight compiled production-site mutations.
+Every measured case passed without skips; the 13 native cases also passed after
+the final consumer commit. Root inspected all four original 700 × 900 images
+from one retained host (TT → FT → FF → TF) and the declared-node geometry.
+Independent source/evidence review found no issues. This is local consumer
+acceptance with framework `14294df`, not installed or whole-app acceptance.
+The whitespace-only follow-up `ce252e6` preserves Swift tokens and restores the
+prior 692 style warnings; its fresh postcommit native run passes all 13 cases
+without skips. The existing StaleAgentReaper security warning is unchanged.
+Publication and its hosted CI remain separate.
+
+Framework candidate `1a0d065` passed hosted CI `36116199437`: 1,334 native
+passes/26 skips, 693 Python passes/25 skips/11 subtest passes, and 48 actual
+Workbench assertions across ten phases. Its temporary PR merge differs only
+in `evidence/run-v2.json`. CI now uses published pm-base `542909e`; all 162
+installed and wheel modules match that exact source. The unchanged private
+macOS Python qualification passed 702 cases/16 skips. Three skipped modules
+revealed an undeclared PyYAML dependency; a separate pinned declaration passed
+13 actual workflow controls with zero skips. Hosted `36119293262` then exposed
+an Apple-only Swift-version parser: the Linux runner correctly reports Swift
+6.4, but the guard rejected its non-Apple prefix. That run passed 702 Python
+cases with 22 skips and 11 subtests, and failed this one guard. Its native and
+secret-scan jobs passed. Repair `0cf7303` accepts both actual version formats while retaining the
+exact major/minor pin and malformed-output refusal. The original failure is
+retained; final hosted and aggregate qualification remain pending.
+The original generic CI-shape failure remains recorded as CIS-A09491E7.
+
+The current staged desktop was built from clean `1a0d065` with matching app,
+helper and consumer source identities. It passed 138 Chromium/WebKit checks and
+48 actual native assertions across ten phases. Root reviewed ten browser images
+and all nine original native images, including measured compact geometry.
+Browser normal and reduced motion passed. Native WebKit reported reduced motion
+even though NSWorkspace reported otherwise; normal native motion remains
+unmeasured. Apple accepted notarization `30b91101-4411-498d-907b-4ae60f84129b`;
+stapling, strict signatures and extracted-archive Gatekeeper checks passed.
+The packaged helper reports 1.1.4 and 19 MCP tools, including `act`. Archive
+SHA256: `c2a075c868edbc859534090f43f4d4abdab38c197ecb74584ca7bf79c5f28b19`.
+This private artifact does not replace the installed Homebrew CLI or reconnect
+an existing client session. Evidence is under `artifact-14294df/` (the directory
+name predates its final `1a0d065` source), including the notarized ZIP.
+
+
 Clean documentation commit `2d476ef` changed no runtime files, but its genuine
 quick PM returned B92.7 after one late-browser-exit witness failed with two
 assertions. The initial native suite executed 1,315 cases with 26 skips;
@@ -20,7 +77,8 @@ Hosted CI `36101820843` passed all three jobs at `2d476ef`: 1,289 native
 passes/26 skips, 48 Workbench assertions across ten phases, and 691 Python
 passes/25 skips. The temporary PR merge has the candidate's exact tree; all
 108 retained artifacts were rehashed. This successful remote run does not
-supersede the failed local qualification, and PR47 remains draft.
+supersede the failed local qualification. PR47 subsequently merged the independently
+qualified passive diagnostic repair, as recorded below.
 
 A test-only follow-up now emits a bounded, sanitized lifecycle record into
 ordinary XCTest output before fixture cleanup. It preserves the original
@@ -41,11 +99,41 @@ The original failed receipt and CIS-8FAD7552 remain open evidence.
 The earlier instrumented target and nine-test class passed, but used a
 timing-intrusive signal observer and are excluded from causal acceptance.
 
-SagaMail's three declared views still lack behavior acceptance. Source review
-found that typed binding registration intentionally seeds harness-owned copies;
-the existing tests preserve that legacy behavior. A real external-model/view
-test and a lifetime-safe dispatch design are required before admitting consumer
-toggle behavior. This is planned work, not a measured runtime repair.
+PR47 merged as `f382821` with the same tree as qualified candidate `9f7b7f8`.
+Hosted CI `36107211438` passed all three jobs, with 1,295 native passes and
+26 skips, 48 Workbench assertions across ten phases, and 691 Python passes,
+25 skips and 11 subtest passes. Root rehashed all 60 retained artifacts and
+verified the temporary PR merge and final published trees against the candidate.
+The CEO aftermath signed its ledger but returned exit 2 for fleet evidence and
+propagation gaps; 150 unavailable UI evidence entries do not mean 150 broken apps.
+
+Before the current checkpoint, SagaMail's three declared views lacked behavior
+acceptance. The actual external-model/windowless-view RED proved the copied-binding gap: the owned
+baseline passed, but three after-state assertions failed despite Harness PASS.
+CIS-928A0BF1 tracks the repair. A 43-case candidate then passed, but independent
+review reproduced unbounded retired-token metadata and stale same-ID dispatch.
+Those three failing tests are retained. The revised lease candidate `a54df40` passed 82 strict tests with zero skips.
+All 40 selected mutation witnesses are verified across the retained 39/40
+original sweep and corrected one-row replay. The survivor exposed a test gap:
+a disappearing weak lease did not prove permanent measuring-host retirement.
+The stronger test retains a late callback against the actual measuring state
+and checks dispatch refusal and owner release. Root rehashed 492 historical
+artifacts plus 15 final records. Same-ID churn remains constant across 1,001
+incarnations; storage still grows with distinct historical IDs until retirement.
+The 32-cycle native witness releases old models, including final host teardown.
+AppKit may retain the empty hosting view. The aggregate and actual consumer
+qualification above supersede that earlier pending state; publication and
+installed delivery remain distinct.
+
+The previous shared CLI enumerated scenario actions without exposing execution.
+A thin `act` adapter, `f98340b4`, was integrated over the existing
+daemon action and result contracts. Its actual stock and private compiled-consumer
+entrypoints passed 36 strict tests and 38 protocol controls, including help/version,
+empty and option-shaped text, observed outcomes, success continuation and the
+0/1/2 exit contract. Independent source/evidence review has no findings; root
+rehashed all 182 review artifacts. All 14 canonical mutations were detected with passing baselines and exact tracked-file restoration. Fresh native stock and consumer binaries then passed the same 36 tests with zero skips. Root rehashed all 307 final artifacts.
+The private fixture did not itself establish SagaMail adoption. The actual
+native, CLI/MCP and four-state checkpoint above supplies that separate evidence.
 
 This is separate from CIS-B1FB43A2, which fresh central-store readback records
 as fixed since September24 by PR45's migration from implementation-defined
@@ -318,9 +406,17 @@ one common qualified `cf893c59` pin with the two existing deployment checkouts,
 subject to fresh publication/runtime checks. Existing controllers cannot safely
 be reused by changing constants: the older five-service flow assumes one
 checkout, while the newer lifecycle owns only the dashboard. A real coordinator
-must own all five identities and both source destinations before any rollout;
-no placeholder controller or new service action has been created. No passing readiness or previous-request
-payload is substituted.
+must own all five identities and both source destinations before any rollout.
+A private concrete coordinator now implements those boundaries with injected
+operating-system fixtures. Independent review reproduced acceptance of a late
+probe and an HTTP read lacking an absolute deadline. The repaired candidate
+`f1b5f0a` passes 126 offline controls, preserving all original 102 identities,
+plus four mutation witnesses. Independent recheck passed all 126 cases, the
+three original transaction regressions and three additional transport controls,
+with no findings; root rehashed all 32 review artifacts. This is
+preparation only: no live ownership approval or service action exists, and
+modeled cancellation is not real network or launchd acceptance. No passing
+readiness or previous-request payload is substituted.
 Coverage readback reports unavailable, not a completed census or fleet readiness.
 Historical failed lifecycle receipts retain their original status.
 
@@ -434,10 +530,11 @@ PR44 published the consumer build budget and diagnostic-safe integration harness
 as `3992d662`. Both candidate CI `36059158162` and published CI `36061062514`
 passed six jobs, including native render snapshots; two dispatch-only GUI jobs
 were skipped. The final harness measured seventeen controls without skips.
-Current layout and paint admission must now be refreshed against the published
-consumer and final dependency. Behavior remains unavailable: these preset view states
-do not exercise actual user actions. See SagaMail's `docs/verdictui-adoption.md`
-for reproduction and the complete evidence boundary.
+At that checkpoint, those preset images did not exercise actual user actions.
+Candidate `8ce7d4e` now supplies the separate master-binding and four-state
+acceptance recorded above. See SagaMail's `docs/verdictui-adoption.md` for
+reproduction and the complete evidence boundary; publication and installed
+acceptance remain separate.
 
 ## Sentinel and LaunchGate source checkpoints — September 24
 

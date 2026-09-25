@@ -221,16 +221,18 @@ public final class OracleHost {
         if let viewport {
             requested = viewport
         } else {
+            let measuringState = ScenarioState()
+            defer { measuringState.retireSites() }
             // Measured in a throwaway host with a throwaway state, so the
             // measurement pass cannot leave anything behind — no `@State` settled
             // at an unbounded proposal, no probe registrations from a pass that
             // is about to be discarded — in the tree the caller will read.
             let measuring = NSHostingView(
                 rootView: Self.pinned(
-                    ScenarioRoot(scenario: scenario, state: ScenarioState()),
+                    ScenarioRoot(scenario: scenario, state: measuringState),
                     sink: VerdictTreeSink(),
                     clock: clock,
-                    state: ScenarioState(),
+                    state: measuringState,
                     animationPolicy: animationPolicy,
                     // The MEASURING pass needs the variant too: a scenario sized
                     // at `.medium` and then rendered at `.accessibility5` would
@@ -271,6 +273,16 @@ public final class OracleHost {
             width: resolved.size.width,
             height: resolved.size.height
         )
+        hostingView.layoutSubtreeIfNeeded()
+    }
+
+    isolated deinit {
+        // Public state can outlive its host; it must not keep rendered controls
+        // or external models actionable or retained after their host retires.
+        state.retireSites()
+        // AppKit can retain the hosting view after this owner is gone. Detach
+        // the consumer content rather than extending its lifetime with the view.
+        hostingView.rootView = AnyView(EmptyView())
         hostingView.layoutSubtreeIfNeeded()
     }
 

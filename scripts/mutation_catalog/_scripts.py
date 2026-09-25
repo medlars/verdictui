@@ -8,6 +8,22 @@ from mutation_catalog_types import Mutation, Runner  # noqa: F401
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="Swift version guard loses Linux format support",
+        path="Tests/test_swift_toolchain_pin.py",
+        old=r"^(?:Apple )?Swift version ",
+        new=r"^Apple Swift version ",
+        test="Tests/test_swift_toolchain_pin.py::test_local_guard_accepts_linux_version_output",
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
+        name="Swift version guard ignores toolchain drift",
+        path="Tests/test_swift_toolchain_pin.py",
+        old="assert found.group(1) == _pin(), (",
+        new="assert found.group(1) is not None, (",
+        test="Tests/test_swift_toolchain_pin.py::test_local_guard_rejects_wrong_version",
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
         name="Summary loses native SF Symbol skip accounting",
         path="scripts/verify-swift-test-output.py",
         old=r"(?:\S+\s+)?Test",
