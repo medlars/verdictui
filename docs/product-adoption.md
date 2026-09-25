@@ -1,21 +1,80 @@
 # Product adoption and installed-artifact acceptance
 
-Updated September 24, 2026. A library import, a registered manifest, an executable
+Updated September 25, 2026. A library import, a registered manifest, an executable
 runner, and a verified installed app are different evidence states. None implies
 complete product coverage.
 
-## September 24 final candidate checkpoint
+## Current qualification follow-up (2026-09-25)
 
-Framework `7928e90` passed local PM Grade A100 and exact CI `36064850073`.
+Clean documentation commit `2d476ef` changed no runtime files, but its genuine
+quick PM returned B92.7 after one late-browser-exit witness failed with two
+assertions. The initial native suite executed 1,315 cases with 26 skips;
+`testMCPSIGTERMAwaitsPermittedLateBrowserExit` could not read its required
+`browser-exit.json` after MCP exit and process-absence assertions. The PM's
+automatic confirmation passed unchanged source. That later pass does not
+identify the cause or replace the failed qualification. Original stage output
+and the full failed PM receipt are retained under `publication-docs/final-quick`;
+CIS-8FAD7552 tracks diagnosis with unchanged assertions and shutdown budgets.
+
+Hosted CI `36101820843` passed all three jobs at `2d476ef`: 1,289 native
+passes/26 skips, 48 Workbench assertions across ten phases, and 691 Python
+passes/25 skips. The temporary PR merge has the candidate's exact tree; all
+108 retained artifacts were rehashed. This successful remote run does not
+supersede the failed local qualification, and PR47 remains draft.
+
+A test-only follow-up now emits a bounded, sanitized lifecycle record into
+ordinary XCTest output before fixture cleanup. It preserves the original
+assertions and 9/10/45-second budgets, does not install a signal handler, and
+still attempts cleanup if optional evidence archival fails. Six focused helper
+tests pass. All 17 new guards have executed mutation witnesses with exact
+restores; the five initially non-compiling mutants and their corrected replay
+remain retained. Root rehashed all 78 artifacts from private candidate
+`73045f76`; 22 independent-review artifacts were also rehashed, with no findings.
+The integrated clean `85ca7dc` genuine quick PM passed all 24 stages at A100
+in 372.013 seconds: 1,321 native cases/26 skips and 722 Python passes/1 skip/11 subtest passes. Source
+and the actual shared PM runtime stayed unchanged. Ordinary XCTest output
+emitted all three bounded records (crash, terminate, late), with all observed
+processes retired. The late fixture recorded browser exit 0, a default TERM
+disposition, the nine-second wrapper interval and MCP status 143. This admits
+the diagnostic change; it does not establish the cause of the earlier failure.
+The original failed receipt and CIS-8FAD7552 remain open evidence.
+The earlier instrumented target and nine-test class passed, but used a
+timing-intrusive signal observer and are excluded from causal acceptance.
+
+SagaMail's three declared views still lack behavior acceptance. Source review
+found that typed binding registration intentionally seeds harness-owned copies;
+the existing tests preserve that legacy behavior. A real external-model/view
+test and a lifetime-safe dispatch design are required before admitting consumer
+toggle behavior. This is planned work, not a measured runtime repair.
+
+This is separate from CIS-B1FB43A2, which fresh central-store readback records
+as fixed since September24 by PR45's migration from implementation-defined
+file-origin storage to stable loopback HTTP. Its original failures remain
+retained. The new failure concerns missing shutdown evidence, with production
+versus fixture causality still unmeasured.
+
+## September 24 published framework and consumer checkpoint
+
+Framework PR46 is merged as `595b7a3`, with the same Git tree as qualified
+`ebd24e3`. Local PM passed Grade A100 across 24 stages, including 722 Python
+checks. Published CI `36070125761` passed all three jobs and observed 1,315 native
+tests: 1,289 passes, 26 explicit skips and zero failures. The 734 mutation-catalog
+entries resolve; this is not an exhaustive mutation execution claim. Actual
+published-source verification closed CIS-B6D2ABA3 (11 pixel tests) and
+CIS-4AF18508 (current CI observation). The separate file-origin persistence
+fixture issue, CIS-B1FB43A2, was closed after PR45 moved the full acceptance flow
+to a stable HTTP origin. This does not explain Chrome's original internal behavior.
+The new missing shutdown-marker failure is tracked as CIS-8FAD7552 below.
+
 The packaged desktop passed 138 browser assertions and 48 quiet native bridge
 assertions. Nine original native screenshots were reviewed for readable state
 labels, consistent controls and compact layout. Apple accepted notarization
 `3482928b-201b-4b50-ae17-0ec4e34874fa`; signature, staple and Gatekeeper checks
-also passed after archive extraction. This artifact remains bound to `7928e90`.
-No installation followed. Native normal motion is unmeasured because macOS has
-reduced motion enabled; the captured progress frames correctly remain still.
-The later `0856d7d` changes test-only browser cleanup and its mutation controls,
-retaining profile and server evidence whenever retirement is uncertain.
+also passed after archive extraction. This artifact remains bound to `7928e90`;
+its production inputs are unchanged in published `595b7a3`. No installation
+followed. Native normal motion is unmeasured because macOS has reduced motion
+enabled; the captured progress frames correctly remain still. Later test-only
+cleanup retains profile and server evidence whenever retirement is uncertain.
 
 SagaMail's published `73b2d735` (only CI evidence after `3992d662`) was observed
 with dependency and signed helper `7928e90`. Its three real Junk Mail preset
@@ -27,12 +86,243 @@ canonical checkout does not inherit a verification clone's receipt automatically
 
 Sentinel `8820a47` passed 20 consumer controls, 29 strict native tests and two
 additional checks through the signed `7928e90` helper. The 20-control run retains
-its older launcher identity separately. Aggregate qualification was stopped
-before a legacy engine smoke that would start real scanner/sync loops. A test-only
-isolation repair is required before the genuine quick pipeline can run.
+its older launcher identity separately. The engine smoke now uses an isolated
+real process and private IPC state. A genuine 18-stage run at `34de4a97` reported
+B83.3; its failed records are retained. Follow-up `854211ca` synchronizes verified
+published hook sources and passes 110 focused Python and nine shell checks,
+plus an actual web build, 11 HTML assertions and eight visual comparisons.
+Static follow-up `d043c37` fixes typing and template modes; 324 focused checks
+passed with two explicit upstream skips, and 21 changed files passed scanning.
+Independent review reproduced a required-parameter coverage gap in its isolated
+registry test. `fdca84c7` corrects it with an explicit inventory, 108 passing
+controls and ten detected mutations; independent review found no remaining issue
+in that change. Its current file census covers 786/786 files with zero errors
+and 598 warnings, with opt-in checks still unmeasured. A genuine aggregate first
+exposed seven failures caused by the verification producer's temporary directory;
+paired unchanged tests proved that cause. The normal-temp aggregate then exposed
+three fixture regressions introduced in `d043c37`. `7a29e418` repairs the planted
+forbidden payloads and passes99 related checks. Its genuine18-stage aggregate
+passes A100 with2,886 Python passes, three explicit skips and two retained expected
+failures. Both failed aggregates remain retained. Published CI36080725611 passed
+its general jobs but failed the Learning snapshot: its fixture measured before
+the intended offline banner appeared. Follow-up7bf4b60f settles the fixture state
+and admits the independently reviewed1280x800 image. Strict native verification
+passes91 cases; five opt-in live PowerTabs cases remain skipped/unmeasured.
+
+Actual website rendering exposed target-size, focus, hidden navigation and
+reduced-motion gaps. The repaired source and independent reference review pass
+eight unchanged-threshold comparisons,27 behavior checks and11 HTML checks.
+Two initial browser-close timeouts remain retained; a later complete run under
+the original10-second budget observed both browser processes exit0. Their
+original cause remains unresolved. Independent review subsequently caught
+sequential cleanup skipping the server when browser close fails. Concurrent
+resource cleanup passes five author and ten independent failure controls. The
+first complete run after that fix still failed: all33 test cases passed, but
+both browser hooks timed out. Later27-case and full33-case event-observed runs
+exit normally and do not establish the intermittent cause. Current passing
+contract evidence remains distinct from those unresolved historical failures,
+tracked as open P2 CIS-793D6D65.
+Native/web fixes and dedicated consumer/browser CI were integrated as a04fffa8.
+That genuine 18-stage aggregate passed A100 in113.737seconds with2,886 Python
+passes and unchanged source, dependency, runtime and baselines. Its current
+census covers790/790 supported files with zero errors and599 warnings:30
+refreshed files and760 unchanged measurements reused, with checker-runtime
+changes explicitly reconciled. Root rechecked all834 artifact hashes and790
+source hashes/modes. Compiler and other opt-in dimensions remain unmeasured.
+Published CI36089486691 failed before starting jobs: three job-level evidence
+paths used an unavailable runner context. The exact validator reproduces this;
+a reviewed runtime-path correction landed as `204bc292`, with 85 focused
+controls and an unchanged-runtime, 18-stage PM result of A100. Its remote run
+`36090496058` passed all 10 required native consumer tests, all 20 actual
+CLI/MCP/daemon tests, and 77 snapshot tests with five explicit live skips.
+Root admitted the raw consumer logs, JUnit identities and pinned dependency lock.
+The real-browser job failed before testing because setup-python attempted to
+write `/Users/runner` on the self-hosted machine. Reviewed correction `dc042475`
+uses the installed Python 3.14 and retains the private environment; 89 focused
+controls pass. Its first PM returned A100 but failed qualification because
+another process changed the canonical PM runtime during execution. A new run
+completed against stable `b17b4d9`: all 18 stages passed A100 in 106.13 seconds
+with unchanged source, dependency, runtime and baselines. The 855.629-second
+wall time included waiting for active fleet PM slots. The original invalid
+qualification remains retained. That source census covers 790 files: three fresh
+checks, 787 unchanged measurements reused, no errors and 599 retained warnings;
+runtime changes are explicitly reconciled rather than called byte-identical.
+Remote run `36092473420` passed seven jobs. Root admitted 33 browser cases, two
+normal browser exits, eight unchanged references, 77 snapshot passes/five live
+skips, and all 10 native plus 20 consumer cases. The general Swift job stalled
+again and was canceled after the other jobs completed. The diagnostic preserves the original PIPE streams, environment and Swift
+arguments, samples positively owned XCTest after 120 seconds, and fails with
+bounded owned-group cleanup after 180 seconds. An independent review reproduced
+a blocked-console defect before publication. Repairs `064255f3` and `13ba78ac`
+remove optional console mirroring, preserve complete raw logs, and explicitly
+provision Python 3.14 in the hosted job. All 120 focused controls and independent
+backpressure/runtime checks pass. Published `2f44f9d5` passed all 18 PM stages
+at A100 with 2,886 Python passes, unchanged source/dependency/runtime/baselines,
+and a 792-input census with zero errors and 608 retained warnings. The census
+verifier accidentally hashed its still-open output log before its final print;
+907 other artifact bindings match and an explicit reconciliation preserves the
+original mismatching envelope. CI `36096180986` passed seven jobs: 33 browser
+cases with two normal exits, 77 snapshots plus five live skips, and 10 native
+plus 20 actual CLI/MCP consumer tests. Root verified all 321 retained artifacts.
+General Swift timed out after 180.317 seconds with 146 starts, 145 passes and no
+aggregate. XCTest was an observed direct child in a separate process group;
+the diagnostic filter wrongly excluded it, so no stack was captured and cleanup
+remained unverified. Corrections `bd80de5f` and `0d22b3fe` admit only freshly
+revalidated retained ancestry for read-only sampling and fix a separately
+reproduced already-reaped-group cleanup race. They do not expand signal authority
+or change the test command/budgets. Published `80734c96` passed all 144 focused
+checks and 67 independent controls, all 18 PM stages at A100 with 2,886 Python
+passes, and a 792-input census with zero errors and 610 retained warnings.
+Hosted run `36098173282` passed seven jobs, including all 33 browser cases,
+77 snapshots with five explicit live skips, and 10 native plus 20 actual consumer
+cases. General Swift still timed out after 180.378 seconds with 146 starts,
+145 passes and no aggregate. The corrected diagnostic captured the actual
+XCTest process: all 1,658 sampled main-thread stacks were in Sparkle's
+`NSAlert.runModal`. The alert text was not observed. The 32,768-byte test output
+ends mid-line, so its final printed test is not culprit evidence. Cleanup was
+not verified; retained XCTest and Python identities survived in separate groups.
+
+The causal repair makes `UpdateController.shared` construction inert, starts
+Sparkle explicitly and idempotently from AppDelegate, and preserves capability
+observation and manual update checks. Commit `823233ed` compiles all 40 app
+sources; the eight lifecycle tests type-check. Independent review found an
+ordering assertion that KVO replay could satisfy too late; test-only `c439f89b`
+now asserts inside the synchronous startup callback. Root integrated it as
+`c12ac58f`; both independent source reviews have no remaining findings.
+No local native tests or app were launched. The genuine quick PM at `c12ac58f`
+passed all 18 stages at A100 with 2,886 Python tests in 134.99 seconds; source,
+dependency, runtime and baselines remained unchanged. The final census covers 792 inputs: five fresh checks and 787 unchanged results
+reused, zero errors, 610 retained warnings and no new warnings. All 218 runtime
+fingerprints stayed unchanged; root verified all 952 evidence artifacts. The
+repair is merged through PR77 as `01588d865ceb25dd47ec947f045070fe2906cc32`,
+whose tree exactly matches qualified `c12ac58f`. Hosted run `36100447862`
+passed all eight jobs and completed the full
+general Swift suite: all 174 unique cases passed, including each of the eight
+updater tests exactly once, with zero failures, skips or unmatched starts. The
+observer completed in 59.248 seconds with exit zero and confirmed cleanup. It
+finished before the 120-second sampling point, so no stack was collected; this
+is completion evidence, not a claim that all modal UI was measured absent.
+Browser coverage passed all 33 cases with normal exits and eight unchanged
+references. Snapshots passed 77 cases with five explicit live skips. The real
+consumer lane passed 10 native and 20 Python tests, including eight CLI
+exchanges and four brokers with normal direct-child retirement. Root verified
+all 364 retained remote artifacts. Universal descendant containment and the
+previous failed cleanup remain separate, unverified claims.
+Historical pre-diagnostic run `36090496058` at `204bc292` was canceled after
+the general Swift job stalled without a completion summary. At that point its
+production, general-test, engine and manifest bytes matched the earlier
+successful 168-test run; the last printed test did not identify the culprit.
+Those failed receipts remain retained under CIS-5B0A42FA. The causal updater
+repair is now merged with actual hosted completion evidence. A reviewed probe
+re-admitted the official raw logs and archived results from a clean persistent
+checkout on the published default-branch ancestry, then verified closure of
+CIS-5B0A42FA. This was a hosted-evidence probe, not a local XCTest execution.
+The separate browser teardown issue remains open.
+The browser job requires all33 cases and normal closure of both browsers.
+Sentinel's existing Swift CI compiled out consumer tests without a sibling
+VerdictUI checkout. Dedicated pinned-framework job9d18abd passes10 native,
+20 actual CLI/MCP/daemon and47 admission controls locally with zero skips.
+Independent security review re-admits the exact populations, rejects13 invalid
+raw-evidence controls and verifies239 retained artifacts without findings.
+
 LaunchGate `5ae0108` with dependency and helper `7928e90` passed 19 strict native
-checks and six actual CLI/MCP controls. Its final same-host pixel evidence covers
-both Welcome themes and Activity states; broader installed behavior is unmeasured.
+checks and six actual CLI/MCP controls. Its same-host pixel evidence covers both
+Welcome themes and Activity states: 32 images, 736 measurements and 16 observed
+actions. Later `124b38d` is published in [draft PR46](https://github.com/medlars/launchgate/pull/46).
+Its current scan covers 326/326 files with zero new errors. Genuine 56-stage PM
+reports 626 Python passes and 13 skips, with B98.2 solely because of historical
+launch lateness (CIS-2870D6FC); measured host load makes the grade provisional.
+The source CI previously lacked a VerdictUI checkout, allowing consumer tests
+to be compiled out. Its new pinned-framework job passed all 19 native and six
+CLI/MCP identities locally and in remote run `36075017679` with zero skips.
+The general job passed 603 Python tests but rejected 37 skips against its old
+limit of 31. Follow-up `20e93c4` accounts for all six additional identities,
+verifies the real 37/38 shell boundary and preserves the strict consumer job.
+Its 42 focused checks and independent review pass. Final CI `36077350916`
+passes both jobs: 604 general Python passes with 37 accounted skips, plus all
+19 native and six CLI/MCP consumer cases with zero skips. Installed launch performance and broader installed behavior remain
+unmeasured.
+
+PM-base `37108c2` passed genuine full and quick pipelines (95 and 51 stages,
+respectively, both A100) and exact CI `36069044686`. PR253 merged as `fabe3fb`;
+merge CI `36072548156` passed. The dashboard previously served that qualified source. Initial read-only preparation
+refused changed raw launchd snapshots; separately reviewed fresh observations
+preserved the original unknown differences. The subsequent activation failed
+after bootstrap because its private controller rejected an intermediate Python
+launcher identity (CIS-ACBF7882). That failed receipt remains failed, with
+historical containment unverified. A separate present-state observation verifies
+the exact final daemon, source, plist, unchanged neighboring jobs, served HTML
+and watcher response. Its initial census response was explicitly unavailable;
+a later actual response admitted 45 project rows and reported all 150 registered
+UI scopes unavailable, with completion still withheld. UIV-20260924-007 failed
+on 22 mobile hit targets and could not admit its then-empty project tables.
+The separate `e60e5e26` repair measures 44px controls and contains the narrow
+layout with real project data. Its genuine95-stage full PM passes A100.
+Independent review found the author's detail-cell selector matched nothing,
+retained that evidence defect and measured all104 actual cells. Follow-up
+5c176776 also fixes desktop stage collisions and variable-length filter overflow.
+Its91 focused checks and independent six-width browser review pass with52 actual
+rows,104 populated spans and failure controls reproducing the old collisions.
+Final5c source passes the genuine95-stage full PM at A100, with5,165 Python
+passes and24 explicit skips. Source, baselines and the global editable mapping
+remain unchanged. Its genuine quick pipeline passes A100:51 reported stages,
+49 executed and two explicit library-default skips (visual and algorithm).
+The coverage run observes5,171 passes and24 skips. Separate actual browser
+rendering supplies the dashboard visual evidence; skipped stages are preserved.
+[PR254](https://github.com/medlars/pm-base/pull/254) merged as2b416d0 after exact
+candidate CI36086865099 passed; merge CI36088055055 also passed.
+A lossless evidence converter preserves187 full and204 quick original artifacts.
+Its access-time false rejection and skip-map guard were corrected and reviewed
+with78 controls; historical failed conversions remain retained. The independently
+reviewed v10 controller attempted exact5c from a separate serving clone.
+Its first preflight refused changed watcher metadata; a fresh reviewed capture
+preserves the fork-count change, identical process identities and all four
+neighboring services. That attempt rejected an observed intermediate Python shim during the final
+exec transition. It retained all identities and reports their subsequent
+absence; its containment status remains unverified. Bootstrap-only recovery v11
+passed 48 author and 32 independent controls. Root reviewed a fresh complete
+absence/peer baseline and restored exact `5c176776` successfully, observing its
+final pinned Python process and source-identical served HTML. Receipt
+`dashboard-replacement-v11/attempt-urax2018/receipt.json` has SHA256
+`b09ea19dac218aaa9b650e688392e25e4ba92dc884a229e38a3ffbbdcba1192d`.
+The service is restored; actual served visual acceptance failed on
+CIS-4CD3306E. Four widths show no projects or stages while the canonical data
+contains 45 projects and the independent PanoMac endpoint has 52 stages.
+The bounded data/coverage repair is committed as `801b4459`: 176 focused
+controls pass, and two fresh reads of the captured input preserve all 45 projects
+and 1,432 stages while coverage stays unavailable. Qualification source
+`cf893c59` passed 184 independent controls and the full PM: 95 stages at A100,
+5,232 passes and 25 explicit skips with unchanged source/runtime/baselines.
+Draft PR 260 CI `36095257603` passed with 4,824 passes and 84 explicit skips;
+its temporary test merge has an identical Git tree. Actual quick qualification
+then passed A100: 51 reported stages, 49 executed and two declared library skips;
+5,238 tests passed with 25 explicit skips, including the separate coverage run.
+PR 260 merged as `542909e`, preserving the exact qualified tree and candidate
+ancestry. Independent admission verified all 205 quick evidence copies and the
+actual test/coverage populations; all 78 converter controls pass.
+The v12 deployment preflight passed initially but its apply refused before any
+service mutation: another action changed all five LaunchAgent deployment pins
+to `b17b4d9` and replaced both the dashboard and watcher processes. The expected
+serving checkouts still held different commits. The old root-owned baseline and
+failed preflight remain intact; no automatic retry or peer overwrite occurred.
+Paired successful tool results identify Claude workflow `wf_f8329dbd-de6`,
+agent `ac12a633c1a3d6de0`, executing accepted ticket `CTS-9EB385F5`. That ticket
+requires all five service pins to agree and detects CEO-code lag. Its new guard
+therefore conflicts with the temporary per-service rollout; it is not evidence
+of a permanent rewrite daemon or malicious behavior. The owner pause/ownership
+question is pending. The default reconciliation is a fully qualified coherent
+five-service deployment after coordination; separate versions need an explicit
+policy decision. Current-service reconciliation, new activation and actual
+served rendering remain pending. A read-only reconciliation plan admits
+one common qualified `cf893c59` pin with the two existing deployment checkouts,
+subject to fresh publication/runtime checks. Existing controllers cannot safely
+be reused by changing constants: the older five-service flow assumes one
+checkout, while the newer lifecycle owns only the dashboard. A real coordinator
+must own all five identities and both source destinations before any rollout;
+no placeholder controller or new service action has been created. No passing readiness or previous-request
+payload is substituted.
+Coverage readback reports unavailable, not a completed census or fleet readiness.
+Historical failed lifecycle receipts retain their original status.
 
 ## Registry coverage census
 
@@ -76,7 +366,11 @@ projects and withheld UI completion; the three scheduled jobs remained idle.
 Live dashboard checks passed at 1440px and 390px, including exact API-to-DOM
 coverage text, column alignment and overflow checks. Review of the four actual
 images exposed a separate watcher-status parsing defect: a stamped PID lock was
-displayed as stopped. That repair and final paint acceptance remain pending.
+displayed as stopped. Source `5c176776` repairs that parsing through the shared
+PID-lock reader. Final populated-page acceptance remains pending because the
+new live audit found CIS-4CD3306E: a UI-coverage timeout empties the project table
+despite 45 available project records. Service restoration and empty-state
+geometry do not certify project or stage rendering.
 
 ## Actual client and consumer checks
 
@@ -91,8 +385,9 @@ was also called through the Codex `judge_appkit` tool. Eight empty controller
 surfaces passed, two reported layout errors, and the planted truncation defect
 failed as intended. Measured native alignment rectangles explain the two
 apparent errors: decorative popup/button bounds extend outside their logical
-layout rectangles. The renderer correction and its genuine-defect controls are
-being verified separately. These empty-state results do not cover populated
+layout rectangles. The renderer correction and genuine-defect controls were subsequently
+published in `bc9f523` and remain in qualified `595b7a3`. Native alignment
+rectangles drive logical checks while raw frame attributes remain available. These empty-state results do not cover populated
 tables, async data, installed application behavior or paint.
 
 ## SagaMail source adoption checkpoint — September 24
