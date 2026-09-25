@@ -100,10 +100,18 @@ Python checks passed 203 cases with no skips (one browser case deselected), and
 37 targeted mutations produced 40 actual assertion failures against 40 passing
 baseline case executions. All tracked bytes were restored. The first 33/34
 campaign and the original Swift raw-string compilation failure remain retained.
-These checks prove receipt admission, not Swift execution. Native Boolean,
-archive-failure and observer/window cleanup helpers are now being separately
-qualified through actual Core XCTest witnesses and mutations. Their source
-changes require fresh app and consumer artifacts; the earlier notarized
+These checks prove receipt admission, not Swift execution. Separate native
+qualification at `557b3d2` passed all 13 strict Core XCTest cases without skips
+and detected 18 distinct production mutations. Fifteen unchanged witnesses
+come from the original campaign; three affected witnesses were replayed after
+making the valid-archive assertion explicit. Actual tests cover CFBoolean
+identity, error-sidecar retention, failed disk writes, callback release while
+the token remains alive, queued-callback suppression and retained never-shown
+window closure. Invalid JSON is rejected before Foundation can raise an
+Objective-C exception. Root rehashed 441 evidence bindings and matched all
+three integrated source files. The original compiler failure, refused error
+format and interrupted redundant campaign remain retained. Combined PM and
+fresh app/consumer artifacts are still required; the earlier notarized
 `1a0d065` archive is not an artifact of this new source.
 
 SagaMail CI provenance retention is also being added for passing and failing
