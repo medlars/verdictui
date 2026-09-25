@@ -17,6 +17,23 @@ final class WorkbenchAcceptance {
     private let deadline: ContinuousClock.Instant
     private let runID: String
     private let initialFocus = NSWorkspace.shared.frontmostApplication?.processIdentifier
+    private let initialCursor = NSEvent.mouseLocation
+    private let motionHost: String
+    private lazy var motionRecorder = WorkbenchMotionRecorder(
+        readNative: { [unowned self] in nativeMotionState() },
+        write: { [unowned self] bytes, name in try write(bytes, name) })
+    private lazy var motionResources = WorkbenchMotionResources(
+        mode: motionHost == "invisible-window" ? .invisibleWindow : .detached,
+        publisher: WorkbenchMotionPublisher(center: NSWorkspace.shared.notificationCenter,
+            name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification)
+    ) { [weak self] in
+        guard let self else { return }
+        if self.accessibilityChanges.count < 128 {
+            self.accessibilityChanges.append(self.nativeMotionState())
+        } else { self.accessibilityChangesDropped += 1 }
+    }
+    private var accessibilityChanges: [[String: Any]] = []
+    private var accessibilityChangesDropped = 0
     private var host: WorkbenchHost
     private var phases: [[String: Any]] = []
     private var snapshots: [[String: Any]] = []
@@ -31,7 +48,11 @@ final class WorkbenchAcceptance {
             }
             let value = try WorkbenchAcceptance(config: URL(fileURLWithPath: arguments[2]))
             driver = value
-            let operation = Task { @MainActor in try await value.run() }
+            let operation = Task { @MainActor in
+                try await value.motionResources.withCleanup(
+                    body: { try await value.run() },
+                    shutdown: { await value.host.bridge.shutdown() })
+            }
             // Only this explicit acceptance process changes its signal handling.
             // Cancellation reaches the bridge's awaited browser/helper shutdown.
             let signals = [SIGTERM, SIGINT].map { number in
@@ -43,13 +64,11 @@ final class WorkbenchAcceptance {
             }
             defer { signals.forEach { $0.cancel() } }
             try await operation.value
-            await value.host.bridge.shutdown()
             try value.require(!NSApplication.shared.windows.contains { $0.isVisible || $0.isKeyWindow }, "acceptance opened a visible window")
             try value.finish(status: "pass", error: nil)
             exit(0)
         } catch {
             if let driver {
-                await driver.host.bridge.shutdown()
                 try? driver.finish(status: "unavailable", error: String(describing: error))
             }
             FileHandle.standardError.write(Data("Workbench acceptance unavailable: \(error)\n".utf8))
@@ -61,7 +80,8 @@ final class WorkbenchAcceptance {
         let bytes = try Data(contentsOf: config)
         guard bytes.count <= 16_384,
               let object = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
-              Set(object.keys) == Set(["schema", "run_id", "output_root", "project_a", "project_b", "fixture_url", "timeout_seconds"]),
+              Set(object.keys).subtracting(["motion_host"]) == Set(["schema", "run_id", "output_root", "project_a", "project_b", "fixture_url", "timeout_seconds"]),
+              object["motion_host"] == nil || ["detached", "invisible-window"].contains(object["motion_host"] as? String ?? ""),
               object["schema"] as? Int == 1,
               let id = object["run_id"] as? String, UUID(uuidString: id) != nil,
               let output = object["output_root"] as? String,
@@ -86,11 +106,58 @@ final class WorkbenchAcceptance {
         }
         root = owned; projectA = first; projectB = second
         runID = id; fixtureURL = fixture
+        motionHost = object["motion_host"] as? String ?? "detached"
         deadline = .now + .seconds(timeout)
         let store = WorkbenchStore(stateURL: root.appendingPathComponent("state.json"))
         try store.addProject(projectB); try store.addProject(projectA)
         host = try WorkbenchHost(store: store, size: CGSize(width: 1160, height: 800))
+        motionResources.attach(host.view)
     }
+
+    private func nativeMotionState() -> [String: Any] {
+        let cursor = NSEvent.mouseLocation
+        return ["uptime_seconds": ProcessInfo.processInfo.systemUptime,
+                "os_reduced_motion": NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+                "frontmost_pid": NSWorkspace.shared.frontmostApplication?.processIdentifier ?? -1,
+                "cursor": ["x": cursor.x, "y": cursor.y],
+                "visible_windows": NSApplication.shared.windows.filter(\.isVisible).count,
+                "key_windows": NSApplication.shared.windows.filter(\.isKeyWindow).count,
+                "view_has_window": host.view.window != nil,
+                "view_window_visible": host.view.window?.isVisible ?? false,
+                "view_window_key": host.view.window?.isKeyWindow ?? false]
+    }
+
+    private func observeMotion(_ checkpoint: String) async throws {
+        try await motionRecorder.observe(checkpoint) { try await evaluate(Self.motionScript) }
+    }
+
+    private static let motionScript = #"""
+    (()=>{
+      if(!window.__verdictMotionObservation) {
+        const reduced=matchMedia('(prefers-reduced-motion: reduce)');
+        const normal=matchMedia('(prefers-reduced-motion: no-preference)');
+        const history=[];
+        for(const query of [reduced,normal]) query.addEventListener('change',event=>{
+          if(history.length<128) history.push({at:performance.now(),media:event.media,matches:event.matches});
+          else history.dropped=(history.dropped??0)+1;
+        });
+        window.__verdictMotionObservation={reduced,normal,history,document_id:crypto.randomUUID(),animationIDs:new WeakMap(),nextAnimationID:1};
+      }
+      const observed=window.__verdictMotionObservation;
+      return JSON.stringify({document_id:observed.document_id,at:performance.now(),reduced:observed.reduced.matches,
+        no_preference:observed.normal.matches,changes:observed.history.slice(),changes_dropped:observed.history.dropped??0,
+        visibility:document.visibilityState,hidden:document.hidden,user_agent:navigator.userAgent,
+        stage:document.getElementById('verification-stage')?.dataset.status??null,
+        animations:document.getAnimations().map(a=>{
+          if(!observed.animationIDs.has(a)) observed.animationIDs.set(a,observed.nextAnimationID++);
+          return {id:observed.animationIDs.get(a),name:a.animationName??'',time:a.currentTime,state:a.playState};
+        }),
+        transforms:['.lens-body','.lens-core','.lens-orbit','.lens-shine'].map(selector=>{
+          const element=document.querySelector(selector);const style=element?getComputedStyle(element):null;
+          return {selector,transform:style?.transform??null,animation:style?.animationName??null};
+        })});
+    })()
+    """#
 
     private func require(_ condition: Bool, _ message: String) throws {
         guard condition else { throw Failure(description: message) }
@@ -193,6 +260,7 @@ final class WorkbenchAcceptance {
 
     private func run() async throws {
         try await wait("document.readyState === 'complete' && document.getElementById('connection-label') !== null")
+        try await observeMotion("page-ready")
         loadedPage = try packagedPage()
         try await wait("document.getElementById('connection-label').textContent === 'Engine connected' && !document.getElementById('run-checks').disabled")
         try require(host.store.selectedProject == projectA.path, "wrong initial project")
@@ -223,11 +291,14 @@ final class WorkbenchAcceptance {
             guard ContinuousClock.now < deadline else { throw Failure(description: "actual browser never requested the controlled fixture") }
             try await Task.sleep(for: .milliseconds(20))
         }
-        let reduced = try await evaluate("matchMedia('(prefers-reduced-motion: reduce)').matches") as? Bool == true
+        try await observeMotion("running-before")
+        let reduced = try WorkbenchAcceptanceValues.mediaBoolean(
+            await evaluate("matchMedia('(prefers-reduced-motion: reduce)').matches"))
         let firstMotion = try await evaluate("JSON.stringify(document.getAnimations().map(a=>({time:a.currentTime,state:a.playState})))") as? String
         try await capture("running-before")
         try await Task.sleep(for: .milliseconds(180))
         let secondMotion = try await evaluate("JSON.stringify(document.getAnimations().map(a=>({time:a.currentTime,state:a.playState})))") as? String
+        try await observeMotion("running-after")
         try await capture("running-after")
         if reduced {
             try require(firstMotion == "[]" && secondMotion == "[]", "native running animation ignored reduced motion")
@@ -247,7 +318,9 @@ final class WorkbenchAcceptance {
         try await capture("history")
         await host.bridge.shutdown()
         host = try WorkbenchHost(store: WorkbenchStore(stateURL: root.appendingPathComponent("state.json")), size: CGSize(width: 1160, height: 800))
+        motionResources.attach(host.view)
         try await wait("document.readyState === 'complete' && document.getElementById('connection-label') !== null")
+        try await observeMotion("recreated-page-ready")
         try require(try packagedPage() == loadedPage, "host recreation changed the packaged page")
         try await wait("document.getElementById('connection-label').textContent === 'Engine connected'")
         try require(host.store.history.count == 3 && host.store.selectedProject == projectA.path, "host recreation lost persisted history or project")
@@ -337,6 +410,15 @@ final class WorkbenchAcceptance {
             "negative_tree": ["path": "negative-tree.json", "sha256": negative.map(Self.hash) ?? ""],
             "cleanup": ["bridge_shutdown_awaited": true, "visible_windows": NSApplication.shared.windows.filter { $0.isVisible || $0.isKeyWindow }.count],
             "frontmost_before": initialFocus ?? -1, "frontmost_after": NSWorkspace.shared.frontmostApplication?.processIdentifier ?? -1,
+            "motion_diagnostics": ["schema": 1, "host_mode": motionHost, "samples": motionRecorder.samples,
+                                   "initial_frontmost_pid": initialFocus ?? -1,
+                                   "initial_cursor": ["x": initialCursor.x, "y": initialCursor.y],
+                                   "final_native": nativeMotionState(),
+                                   "accessibility_changes": accessibilityChanges,
+                                   "accessibility_changes_dropped": accessibilityChangesDropped,
+                                   "operating_system": ProcessInfo.processInfo.operatingSystemVersionString,
+                                   "webkit_bundle_version": Bundle(for: WKWebView.self).object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unavailable",
+                                   "environment_variable_names": ProcessInfo.processInfo.environment.keys.sorted()],
             "limits": ["DOM programmatic input, not OS hardware input", "PNG paint requires separate independent review", "No Accessibility, native chooser/menu or notification assertion"]]
         try write(JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]), "native-report.json")
     }
