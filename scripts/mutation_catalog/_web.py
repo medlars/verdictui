@@ -7,6 +7,140 @@ _TEST = "VerdictUIWebTests."
 
 MUTATIONS: list[Mutation] = [
     Mutation(
+        name="web lifecycle evidence JSON encoding validity",
+        path="Tests/VerdictUIWebTests/WebCredentialLifecycleTests.swift",
+        old="guard JSONSerialization.isValidJSONObject(value),",
+        new="guard !JSONSerialization.isValidJSONObject(value),",
+        test=_TEST
+        + "LifecycleDiagnosticExportTests/testMarkerAndOutputLimitsNeverReturnRawContent",
+    ),
+    Mutation(
+        name="web lifecycle evidence receipt byte bound",
+        path="Tests/VerdictUIWebTests/WebCredentialLifecycleTests.swift",
+        old='guard data.count <= inputLimit else { return ["state": "truncated"] }\n            guard let value',
+        new='guard data.count <= inputLimit + 1 else { return ["state": "truncated"] }\n            guard let value',
+        test=_TEST
+        + "LifecycleDiagnosticExportTests/testMissingPartialMalformedAndOversizedReceiptsAreUnavailable",
+    ),
+    Mutation(
+        name="web lifecycle evidence exact receipt fields",
+        path="Tests/VerdictUIWebTests/WebCredentialLifecycleTests.swift",
+        old="Set(value.keys) == fields",
+        new="true",
+        test=_TEST
+        + "LifecycleDiagnosticExportTests/testMissingPartialMalformedAndOversizedReceiptsAreUnavailable",
+    ),
+    Mutation(
+        name="web lifecycle evidence numeric type boundary",
+        path="Tests/VerdictUIWebTests/WebCredentialLifecycleTests.swift",
+        old="CFGetTypeID(number) != CFBooleanGetTypeID()",
+        new="true",
+        test=_TEST
+        + "LifecycleDiagnosticExportTests/testMissingPartialMalformedAndOversizedReceiptsAreUnavailable",
+    ),
+    Mutation(
+        name="web lifecycle evidence boolean type boundary",
+        path="Tests/VerdictUIWebTests/WebCredentialLifecycleTests.swift",
+        old="CFGetTypeID(number) == CFBooleanGetTypeID()",
+        new="true",
+        test=_TEST
+        + "LifecycleDiagnosticExportTests/testEnumsBooleansAndRegularFileBoundaryRejectUntrustedValues",
+    ),
+    Mutation(
+        name="web lifecycle evidence signal enum allowlist",
+        path="Tests/VerdictUIWebTests/WebCredentialLifecycleTests.swift",
+        old='["default", "ignore", "callable"].contains(text)',
+        new="true",
+        test=_TEST
+        + "LifecycleDiagnosticExportTests/testEnumsBooleansAndRegularFileBoundaryRejectUntrustedValues",
+    ),
+    Mutation(
+        name="web lifecycle evidence receipt regular-file boundary",
+        path="Tests/VerdictUIWebTests/WebCredentialLifecycleTests.swift",
+        old='    static func read(_ name: String, root: URL, fields: Set<String>) -> [String: Any] {\n        let url = root.appendingPathComponent(name)\n        guard FileManager.default.fileExists(atPath: url.path) else { return ["state": "missing"] }\n        do {\n            let attributes = try FileManager.default.attributesOfItem(atPath: url.path)\n            guard attributes[.type] as? FileAttributeType == .typeRegular else { return ["state": "invalid_file"] }\n',
+        new='    static func read(_ name: String, root: URL, fields: Set<String>) -> [String: Any] {\n        let url = root.appendingPathComponent(name)\n        guard FileManager.default.fileExists(atPath: url.path) else { return ["state": "missing"] }\n        do {\n            let attributes = try FileManager.default.attributesOfItem(atPath: url.path)\n            _ = attributes\n',
+        test=_TEST
+        + "LifecycleDiagnosticExportTests/testEnumsBooleansAndRegularFileBoundaryRejectUntrustedValues",
+    ),
+    Mutation(
+        name="web lifecycle evidence exact normal marker",
+        path="Tests/VerdictUIWebTests/WebCredentialLifecycleTests.swift",
+        old='data == Data("normal".utf8) ? "observed" : "malformed"',
+        new='!data.isEmpty ? "observed" : "malformed"',
+        test=_TEST
+        + "LifecycleDiagnosticExportTests/testMarkerAndOutputLimitsNeverReturnRawContent",
+    ),
+    Mutation(
+        name="web lifecycle evidence marker byte bound",
+        path="Tests/VerdictUIWebTests/WebCredentialLifecycleTests.swift",
+        old="guard data.count <= 6 else",
+        new="guard data.count <= 7 else",
+        test=_TEST
+        + "LifecycleDiagnosticExportTests/testMarkerAndOutputLimitsNeverReturnRawContent",
+    ),
+    Mutation(
+        name="web lifecycle evidence output byte bound",
+        path="Tests/VerdictUIWebTests/WebCredentialLifecycleTests.swift",
+        old="guard data.count <= outputLimit else",
+        new="guard data.count <= outputLimit * 2 else",
+        test=_TEST
+        + "LifecycleDiagnosticExportTests/testMarkerAndOutputLimitsNeverReturnRawContent",
+    ),
+    Mutation(
+        name="web lifecycle evidence stderr byte bound",
+        path="Tests/VerdictUIWebTests/WebCredentialLifecycleTests.swift",
+        old='guard data.count <= inputLimit else { return ["state": "truncated"] }\n            guard let text',
+        new='guard data.count <= inputLimit + 1 else { return ["state": "truncated"] }\n            guard let text',
+        test=_TEST
+        + "LifecycleDiagnosticExportTests/testKnownShutdownFailureIsReportedWithoutStderrContent",
+    ),
+    Mutation(
+        name="web lifecycle evidence known shutdown failure signal",
+        path="Tests/VerdictUIWebTests/WebCredentialLifecycleTests.swift",
+        old='.contains("verdictui: browser shutdown incomplete")',
+        new='.contains("deliberately absent shutdown marker")',
+        test=_TEST
+        + "LifecycleDiagnosticExportTests/testKnownShutdownFailureIsReportedWithoutStderrContent",
+    ),
+    Mutation(
+        name="web lifecycle evidence retained live identities",
+        path="Tests/VerdictUIWebTests/WebCredentialLifecycleTests.swift",
+        old='["running", "leader_alive", "child_alive", "wrapper_alive"].contains',
+        new='["running"].contains',
+        test=_TEST + "LifecycleDiagnosticExportTests/testLiveAndIncompleteCaptureCannotBeObserved",
+    ),
+    Mutation(
+        name="web lifecycle evidence incomplete availability",
+        path="Tests/VerdictUIWebTests/WebCredentialLifecycleTests.swift",
+        old='let incomplete = evidence.values.contains { ($0["state"] as? String) != "observed" }',
+        new="let incomplete = evidence.isEmpty",
+        test=_TEST + "LifecycleDiagnosticExportTests/testLiveAndIncompleteCaptureCannotBeObserved",
+    ),
+    Mutation(
+        name="web lifecycle evidence cleanup after export failure",
+        path="Tests/VerdictUIWebTests/WebCredentialLifecycleTests.swift",
+        old="static func finish(root: URL, kind: Kind?, destination: URL?, sink: (Data) throws -> Void) throws {\n        defer { try? FileManager.default.removeItem(at: root) }",
+        new="static func finish(root: URL, kind: Kind?, destination: URL?, sink: (Data) throws -> Void) throws {\n        // deliberately omitted fixture cleanup",
+        test=_TEST
+        + "LifecycleDiagnosticExportTests/testFinishEmitsOnceAndAlwaysCleansAfterArchiveOrOutputFailure",
+    ),
+    Mutation(
+        name="web lifecycle evidence single summary emission",
+        path="Tests/VerdictUIWebTests/WebCredentialLifecycleTests.swift",
+        old="do { try sink(summary(root: root, kind: kind, archiveFailed: archiveFailed)) }",
+        new="do { try sink(summary(root: root, kind: kind, archiveFailed: archiveFailed)); try sink(summary(root: root, kind: kind, archiveFailed: archiveFailed)) }",
+        test=_TEST
+        + "LifecycleDiagnosticExportTests/testFinishEmitsOnceAndAlwaysCleansAfterArchiveOrOutputFailure",
+    ),
+    Mutation(
+        name="web lifecycle evidence archive failure reporting",
+        path="Tests/VerdictUIWebTests/WebCredentialLifecycleTests.swift",
+        old="if archiveFailed { throw Failure.archiveFailed }",
+        new="if archiveFailed && destination == nil { throw Failure.archiveFailed }",
+        test=_TEST
+        + "LifecycleDiagnosticExportTests/testFinishEmitsOnceAndAlwaysCleansAfterArchiveOrOutputFailure",
+    ),
+    Mutation(
         name="web document fixture deletes evidence after browser retirement failure",
         path="Tests/VerdictUIWebTests/WebFrameIntegrationTests.swift",
         old="guard retirementFailures.isEmpty else { return }",
