@@ -17,6 +17,12 @@ final class WorkbenchAcceptanceSupportTests: XCTestCase {
     }
 
     @MainActor
+    private final class WeakProbe {
+        weak var value: LifetimeProbe?
+        init(_ value: LifetimeProbe?) { self.value = value }
+    }
+
+    @MainActor
     private final class RetainedWindow: NSWindow {
         var closeCalls = 0
         var onClose: (() -> Void)?
@@ -229,16 +235,16 @@ final class WorkbenchAcceptanceSupportTests: XCTestCase {
         let center = NotificationCenter()
         let name = Notification.Name(UUID().uuidString)
         var probe: LifetimeProbe? = LifetimeProbe()
-        weak var weakProbe = probe
+        let weakProbe = WeakProbe(probe)
         let token = publisher(center, name).observe(receiving(try XCTUnwrap(probe)))
         probe = nil
         center.post(name: name, object: nil)
-        try await waitFor { weakProbe?.deliveries == 1 }
+        try await waitFor { weakProbe.value?.deliveries == 1 }
         token.cancel()
         token.cancel()
-        try await waitFor { weakProbe == nil }
+        try await waitFor { weakProbe.value == nil }
         // The token remains alive, so release cannot be explained by dropping it.
-        withExtendedLifetime(token) { XCTAssertNil(weakProbe) }
+        withExtendedLifetime(token) { XCTAssertNil(weakProbe.value) }
     }
 
     func testAlreadyQueuedCallbackCannotDeliverAfterCloseAndUnrelatedObserverSurvives() async throws {
@@ -247,7 +253,7 @@ final class WorkbenchAcceptanceSupportTests: XCTestCase {
         var deliveries = 0
         var unrelatedDeliveries = 0
         var probe: LifetimeProbe? = LifetimeProbe()
-        weak var weakProbe = probe
+        let weakProbe = WeakProbe(probe)
         let resources = WorkbenchMotionResources(mode: .detached, publisher: publisher(center, name),
             receive: receiving(try XCTUnwrap(probe)) { deliveries += 1 })
         probe = nil
@@ -256,7 +262,7 @@ final class WorkbenchAcceptanceSupportTests: XCTestCase {
         center.post(name: name, object: nil)
         // Posting synchronously queues delivery; do not yield until after close.
         resources.close()
-        try await waitFor { weakProbe == nil && unrelatedDeliveries == 1 }
+        try await waitFor { weakProbe.value == nil && unrelatedDeliveries == 1 }
         XCTAssertEqual(deliveries, 0)
         center.post(name: name, object: nil)
         try await waitFor { unrelatedDeliveries == 2 }
@@ -278,7 +284,7 @@ final class WorkbenchAcceptanceSupportTests: XCTestCase {
         var order: [String] = []
         retained.onClose = { order.append("close") }
         var probe: LifetimeProbe? = LifetimeProbe()
-        weak var weakProbe = probe
+        let weakProbe = WeakProbe(probe)
         let resources = WorkbenchMotionResources(mode: .invisibleWindow, publisher: publisher(center, name),
             makeWindow: { _ in retained }, receive: receiving(try XCTUnwrap(probe)))
         probe = nil
@@ -304,7 +310,7 @@ final class WorkbenchAcceptanceSupportTests: XCTestCase {
         XCTAssertEqual(retained.closeCalls, 1)
         XCTAssertNil(view.window)
         XCTAssertNil(resources.window)
-        XCTAssertNil(weakProbe)
+        XCTAssertNil(weakProbe.value)
         XCTAssertFalse(retained.isVisible || retained.isKeyWindow || retained.isMainWindow)
     }
 }
