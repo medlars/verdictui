@@ -6,19 +6,20 @@ complete product coverage.
 
 ## Current qualification follow-up (2026-09-25)
 
-The integrated current-binding/CLI/parity candidate `fc14552` completed genuine
+The integrated current-binding/CLI/parity candidate `3cc3f8b` completed genuine
 quick PM at **B99.3**, with **installed parity as its only failed stage**. The
 Homebrew executable lacks `act`; no installed copy was replaced. Build, contracts,
 798 mutation-anchor checks, lint, 1,334 native passes/26 skips and 724 Python
-passes completed. Runtime and MCP p50 were 48.33 ms and 8.62 ms, respectively.
+passes completed in 359.345 seconds. Runtime and MCP p50 were 51.57 ms and
+8.91 ms, respectively.
 All three ordinary lifecycle records were retained, without claiming the earlier
 intermittent cause resolved. The PM added its own installed-parity TODO; its exact
 diff is retained, and production/test files plus all 520 shared PM Python files
 were unchanged. This is scoped source evidence, not green deployment acceptance.
-Receipt: `qualification-consumer-binding/report.json` under the private
+Receipt: `qualification-final-yaml/root-report.json` under the private
 final-integration evidence directory. Installed acceptance remains open.
 
-SagaMail candidate `8ce7d4e` now qualifies both real master bindings across its
+SagaMail candidate `8ce7d4e` qualifies both real master bindings across its
 three presets: 13 native cases, 49 Python cases including all 17 runtime cases,
 six CLI and six MCP actions, and eight compiled production-site mutations.
 Every measured case passed without skips; the 13 native cases also passed after
@@ -26,6 +27,9 @@ the final consumer commit. Root inspected all four original 700 × 900 images
 from one retained host (TT → FT → FF → TF) and the declared-node geometry.
 Independent source/evidence review found no issues. This is local consumer
 acceptance with framework `14294df`, not installed or whole-app acceptance.
+The whitespace-only follow-up `ce252e6` preserves Swift tokens and restores the
+prior 692 style warnings; its fresh postcommit native run passes all 13 cases
+without skips. The existing StaleAgentReaper security warning is unchanged.
 Publication and its hosted CI remain separate.
 
 Framework candidate `1a0d065` passed hosted CI `36116199437`: 1,334 native
@@ -35,7 +39,13 @@ in `evidence/run-v2.json`. CI now uses published pm-base `542909e`; all 162
 installed and wheel modules match that exact source. The unchanged private
 macOS Python qualification passed 702 cases/16 skips. Three skipped modules
 revealed an undeclared PyYAML dependency; a separate pinned declaration passed
-13 actual workflow controls with zero skips. Its hosted confirmation is pending.
+13 actual workflow controls with zero skips. Hosted `36119293262` then exposed
+an Apple-only Swift-version parser: the Linux runner correctly reports Swift
+6.4, but the guard rejected its non-Apple prefix. That run passed 702 Python
+cases with 22 skips and 11 subtests, and failed this one guard. Its native and
+secret-scan jobs passed. Repair `0cf7303` accepts both actual version formats while retaining the
+exact major/minor pin and malformed-output refusal. The original failure is
+retained; final hosted and aggregate qualification remain pending.
 The original generic CI-shape failure remains recorded as CIS-A09491E7.
 
 The current staged desktop was built from clean `1a0d065` with matching app,
@@ -396,9 +406,17 @@ one common qualified `cf893c59` pin with the two existing deployment checkouts,
 subject to fresh publication/runtime checks. Existing controllers cannot safely
 be reused by changing constants: the older five-service flow assumes one
 checkout, while the newer lifecycle owns only the dashboard. A real coordinator
-must own all five identities and both source destinations before any rollout;
-no placeholder controller or new service action has been created. No passing readiness or previous-request
-payload is substituted.
+must own all five identities and both source destinations before any rollout.
+A private concrete coordinator now implements those boundaries with injected
+operating-system fixtures. Independent review reproduced acceptance of a late
+probe and an HTTP read lacking an absolute deadline. The repaired candidate
+`f1b5f0a` passes 126 offline controls, preserving all original 102 identities,
+plus four mutation witnesses. Independent recheck passed all 126 cases, the
+three original transaction regressions and three additional transport controls,
+with no findings; root rehashed all 32 review artifacts. This is
+preparation only: no live ownership approval or service action exists, and
+modeled cancellation is not real network or launchd acceptance. No passing
+readiness or previous-request payload is substituted.
 Coverage readback reports unavailable, not a completed census or fleet readiness.
 Historical failed lifecycle receipts retain their original status.
 
