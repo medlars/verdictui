@@ -291,6 +291,21 @@ def validate_native_receipt(receipt: Any, root: Path) -> dict:
     return receipt
 
 
+def same_json(left: Any, right: Any) -> bool:
+    """JSON numbers may change int/float representation, but booleans never alias them."""
+    if type(left) in (int, float) and type(right) in (int, float):
+        return math.isfinite(left) and math.isfinite(right) and left == right
+    if type(left) is not type(right):
+        return False
+    if isinstance(left, dict):
+        return left.keys() == right.keys() and all(same_json(left[key], right[key]) for key in left)
+    if isinstance(left, list):
+        return len(left) == len(right) and all(
+            same_json(a, b) for a, b in zip(left, right, strict=True)
+        )
+    return left == right
+
+
 def assess_motion(receipt: dict, root: Path) -> dict:
     """Admit sampled telemetry; never turn a reduced/unknown observation into normal."""
     diagnostic = receipt.get("motion_diagnostics")
@@ -354,17 +369,27 @@ def assess_motion(receipt: dict, root: Path) -> dict:
             type(web.get(key)) is not bool for key in ("reduced", "no_preference", "hidden")
         ):
             raise ValueError("motion media boolean unavailable")
-        if not finite(web.get("at")) or web.get("visibility") not in {"hidden", "visible"}:
+        if (
+            not finite(web.get("at"))
+            or web["at"] < 0
+            or web.get("visibility") not in {"hidden", "visible"}
+            or not isinstance(web.get("document_id"), str)
+            or not web["document_id"]
+        ):
             raise ValueError("motion web timestamp/visibility unavailable")
         animations = web.get("animations")
         if not isinstance(animations, list) or any(
             not isinstance(item, dict)
             or not isinstance(item.get("name"), str)
+            or type(item.get("id")) is not int
+            or item["id"] <= 0
             or item.get("state") not in {"idle", "running", "paused", "finished"}
             or (item.get("time") is not None and not finite(item["time"]))
             for item in animations
         ):
             raise ValueError("motion animation telemetry malformed")
+        if len({item["id"] for item in animations}) != len(animations):
+            raise ValueError("motion animation identities duplicated")
         changes = web.get("changes")
         if (
             not isinstance(changes, list)
@@ -384,10 +409,10 @@ def assess_motion(receipt: dict, root: Path) -> dict:
         if (
             not isinstance(raw, dict)
             or any(
-                raw.get(key) != sample[key]
+                not same_json(raw.get(key), sample[key])
                 for key in ("checkpoint", "native_before", "native_after")
             )
-            or json.loads(raw.get("web_json", "")) != web
+            or not same_json(json.loads(raw.get("web_json", "")), web)
         ):
             raise ValueError("motion raw observation differs")
     final = native(diagnostic.get("final_native"))
@@ -426,10 +451,18 @@ def assess_motion(receipt: dict, root: Path) -> dict:
         for side in ("native_before", "native_after")
     )
     first, second = samples[1]["web"], samples[2]["web"]
+    same_document = (
+        samples[0]["web"]["document_id"] == first["document_id"] == second["document_id"]
+        and samples[3]["web"]["document_id"] != first["document_id"]
+        and samples[0]["web"]["at"] <= first["at"] < second["at"]
+    )
+    later = {item["id"]: item for item in second["animations"]}
     progressed = {
         a["name"]
-        for a, b in zip(first["animations"], second["animations"], strict=False)
-        if a["name"] == b["name"]
+        for a in first["animations"]
+        if same_document
+        and (b := later.get(a["id"])) is not None
+        and a["name"] == b["name"]
         and a["state"] == b["state"] == "running"
         and finite(a["time"])
         and finite(b["time"])
@@ -459,6 +492,7 @@ def assess_motion(receipt: dict, root: Path) -> dict:
         "host_mode": mode,
         "sampled_noninterference": quiet,
         "host_association_observed": association,
+        "same_document_clock_ordered": same_document,
         "progressed_animation_names": sorted(progressed),
         "media_os_agreement": all(
             sample["web"]["reduced"] == sample[side]["os_reduced_motion"]
@@ -656,12 +690,14 @@ def validate_report(report: dict, run_root: Path) -> dict:
     artifact(run_root, report.get("negative_tree"))
     native = json.loads(artifact_bytes(run_root, report.get("native_report")))
     validate_native_receipt(native, run_root)
-    if any(report.get(key) != value for key, value in native.items()):
+    if any(not same_json(report.get(key), value) for key, value in native.items()):
         raise ValueError("retained native observations differ from the admitted report")
-    if "motion_diagnostics" in native and report.get("motion_assessment") != assess_motion(
-        native, run_root
-    ):
-        raise ValueError("motion assessment differs from actual native observations")
+    if "motion_diagnostics" in native:
+        if not same_json(report.get("motion_assessment"), assess_motion(native, run_root)):
+            raise ValueError("motion assessment differs from actual native observations")
+    elif "motion_assessment" in report or "motion_diagnostics" in report:
+        # Legacy receipts remain inspectable but cannot carry a new unsupported claim.
+        raise ValueError("motion assessment lacks native diagnostics")
     identities = report.get("identities", {})
     if not identities.get("app") or not identities.get("consumer"):
         raise ValueError("application and consumer identities are missing")
@@ -737,8 +773,8 @@ def run(args: argparse.Namespace, root: Path, output: Path) -> dict:
 
 
 def _run(args, root: Path, output: Path, guard: TerminationGuard, cleanup: ExitStack) -> dict:
-    motion_host = getattr(args, "motion_host", None)
-    if motion_host is not None and motion_host not in {"detached", "invisible-window"}:
+    motion_host = getattr(args, "motion_host", "detached")
+    if motion_host not in {"detached", "invisible-window"}:
         raise ValueError("invalid motion host mode")
     phase_timing("start")
     driver_sha256 = digest(Path(__file__).resolve())
@@ -826,7 +862,7 @@ def _run(args, root: Path, output: Path, guard: TerminationGuard, cleanup: ExitS
             "project_b": str(projects[1]),
             "fixture_url": f"http://127.0.0.1:{server.server_port}/{token}",
             "timeout_seconds": args.timeout_seconds - 2,
-            **({"motion_host": motion_host} if motion_host is not None else {}),
+            "motion_host": motion_host,
         },
     )
     executable = args.app / "Contents/MacOS/VerdictUIWorkbench"
@@ -854,10 +890,7 @@ def _run(args, root: Path, output: Path, guard: TerminationGuard, cleanup: ExitS
         raise ValueError(f"native acceptance unavailable (exit {code}); inspect private native.log")
     native_path = output / "native-report.json"
     native = validate_native_receipt(json.loads(native_path.read_text()), output)
-    if (
-        motion_host is not None
-        and native.get("motion_diagnostics", {}).get("host_mode") != motion_host
-    ):
+    if native.get("motion_diagnostics", {}).get("host_mode") != motion_host:
         raise ValueError("requested motion host was not observed")
     if native.get("run_id") != run_id:
         raise ValueError("native receipt belongs to another attempt")
@@ -933,7 +966,9 @@ def main() -> int:
     parser.add_argument("--consumer-runner", type=Path, required=True)
     parser.add_argument("--consumer-build-receipt", type=Path, required=True)
     parser.add_argument("--timeout-seconds", type=float, default=25)
-    parser.add_argument("--motion-host", choices=("detached", "invisible-window"))
+    parser.add_argument(
+        "--motion-host", choices=("detached", "invisible-window"), default="detached"
+    )
     args = parser.parse_args()
     output = None
     try:

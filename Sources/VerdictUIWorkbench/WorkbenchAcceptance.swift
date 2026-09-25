@@ -151,22 +151,30 @@ final class WorkbenchAcceptance {
 
     private func observeMotion(_ checkpoint: String) async throws {
         let before = nativeMotionState()
-        let value = try await evaluate(Self.motionScript)
+        var value: Any?
+        var evaluationError: String?
+        do { value = try await evaluate(Self.motionScript) }
+        catch { evaluationError = String(describing: error) }
         let after = nativeMotionState()
         let raw = value as? String
-        let retained: [String: Any] = ["checkpoint": checkpoint, "native_before": before,
+        var retained: [String: Any] = ["checkpoint": checkpoint, "native_before": before,
                                       "web_json": raw ?? "", "native_after": after]
+        if let evaluationError { retained["evaluation_error"] = evaluationError }
         let bytes = try JSONSerialization.data(withJSONObject: retained, options: [.prettyPrinted, .sortedKeys])
         let name = "motion-sample-\(motionSamples.count).json"
         try write(bytes, name)
-        guard let raw,
+        var sample: [String: Any] = ["checkpoint": checkpoint, "native_before": before,
+                                    "native_after": after,
+                                    "raw_artifact": ["path": name, "sha256": Self.hash(bytes)]]
+        guard evaluationError == nil, let raw,
               let data = raw.data(using: .utf8),
-              let web = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw Failure(description: "motion observation unavailable")
+              let web = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            sample["capture_error"] = evaluationError ?? "motion observation did not return a JSON object"
+            motionSamples.append(sample)
+            throw Failure(description: "motion observation unavailable; retained \(name)")
         }
-        motionSamples.append(["checkpoint": checkpoint, "native_before": before,
-                              "web": web, "native_after": after,
-                              "raw_artifact": ["path": name, "sha256": Self.hash(bytes)]])
+        sample["web"] = web
+        motionSamples.append(sample)
     }
 
     private static let motionScript = #"""
@@ -179,14 +187,17 @@ final class WorkbenchAcceptance {
           if(history.length<128) history.push({at:performance.now(),media:event.media,matches:event.matches});
           else history.dropped=(history.dropped??0)+1;
         });
-        window.__verdictMotionObservation={reduced,normal,history};
+        window.__verdictMotionObservation={reduced,normal,history,document_id:crypto.randomUUID(),animationIDs:new WeakMap(),nextAnimationID:1};
       }
       const observed=window.__verdictMotionObservation;
-      return JSON.stringify({at:performance.now(),reduced:observed.reduced.matches,
+      return JSON.stringify({document_id:observed.document_id,at:performance.now(),reduced:observed.reduced.matches,
         no_preference:observed.normal.matches,changes:observed.history.slice(),changes_dropped:observed.history.dropped??0,
         visibility:document.visibilityState,hidden:document.hidden,user_agent:navigator.userAgent,
         stage:document.getElementById('verification-stage')?.dataset.status??null,
-        animations:document.getAnimations().map(a=>({name:a.animationName??'',time:a.currentTime,state:a.playState})),
+        animations:document.getAnimations().map(a=>{
+          if(!observed.animationIDs.has(a)) observed.animationIDs.set(a,observed.nextAnimationID++);
+          return {id:observed.animationIDs.get(a),name:a.animationName??'',time:a.currentTime,state:a.playState};
+        }),
         transforms:['.lens-body','.lens-core','.lens-orbit','.lens-shine'].map(selector=>{
           const element=document.querySelector(selector);const style=element?getComputedStyle(element):null;
           return {selector,transform:style?.transform??null,animation:style?.animationName??null};

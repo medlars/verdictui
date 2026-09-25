@@ -394,7 +394,8 @@ def synthetic_motion_receipt(root, *, reduced=False, mode="detached"):
         ("page-ready", "running-before", "running-after", "recreated-page-ready")
     ):
         web = {
-            "at": index * 10,
+            "at": index * 10 if index < 3 else 0,
+            "document_id": "original-document" if index < 3 else "recreated-document",
             "reduced": reduced,
             "no_preference": not reduced,
             "hidden": True,
@@ -405,8 +406,10 @@ def synthetic_motion_receipt(root, *, reduced=False, mode="detached"):
             "animations": []
             if reduced
             else [
-                {"name": name, "time": index * 10, "state": "running"}
-                for name in ("orbit", "breathe", "scan-light", "inspection-tilt")
+                {"id": animation_id, "name": name, "time": index * 10, "state": "running"}
+                for animation_id, name in enumerate(
+                    ("orbit", "breathe", "scan-light", "inspection-tilt"), start=1
+                )
             ],
         }
         samples.append(
@@ -780,6 +783,12 @@ def test_real_wrapper_preserves_measured_layout_outcome(
     template = tmp_path / "synthetic-native"
     template.mkdir()
     synthetic_receipt(template)
+    native_path = template / "native-report.json"
+    data = json.loads(native_path.read_text())
+    data["motion_diagnostics"] = synthetic_motion_receipt(template, reduced=True)[
+        "motion_diagnostics"
+    ]
+    native_path.write_text(json.dumps(data))
     for name in ("layout_verdict.json", "negative_verdict.json"):
         (template / name).unlink()
     app = tmp_path / "fixture.app"
@@ -982,3 +991,166 @@ def test_loaded_page_rejects_arbitrary_alias_even_to_packaged_assets(tmp_path):
     receipt["native_report"]["sha256"] = module.digest(native_path)
     with pytest.raises(ValueError, match="loaded page"):
         module.validate_report(receipt, tmp_path)
+
+
+def complete_motion_report(root):
+    module = subject()
+    receipt = synthetic_receipt(root)
+    receipt["motion_diagnostics"] = synthetic_motion_receipt(root)["motion_diagnostics"]
+    receipt["phases"][5]["observations"].update(
+        reduced_motion=False,
+        normal_motion_verified=True,
+        before=json.dumps([{"time": 10, "state": "running"}]),
+        after=json.dumps([{"time": 20, "state": "running"}]),
+    )
+    receipt["motion_assessment"] = module.assess_motion(receipt, root)
+    sync_motion_native(root, receipt)
+    assert module.validate_report(receipt, root) is receipt
+    return receipt
+
+
+def sync_motion_native(root, receipt):
+    path = root / receipt["native_report"]["path"]
+    native = json.loads(path.read_text())
+    native["phases"] = receipt["phases"]
+    if "motion_diagnostics" in receipt:
+        native["motion_diagnostics"] = receipt["motion_diagnostics"]
+    else:
+        native.pop("motion_diagnostics", None)
+    path.write_text(json.dumps(native))
+    receipt["native_report"]["sha256"] = subject().digest(path)
+
+
+@pytest.mark.parametrize("mutation", ["media", "native", "cursor", "timestamp"])
+def test_motion_raw_boolean_number_alias_is_rejected(tmp_path, mutation):
+    receipt = complete_motion_report(tmp_path)
+    sample = receipt["motion_diagnostics"]["samples"][0]
+    if mutation == "cursor":
+        data = receipt["motion_diagnostics"]
+        data["initial_cursor"]["x"] = 0
+        data["final_native"]["cursor"]["x"] = 0
+        for reading in data["samples"]:
+            for side in ("native_before", "native_after"):
+                reading[side]["cursor"]["x"] = 0
+        retain_motion_raw(tmp_path, receipt)
+    path = tmp_path / sample["raw_artifact"]["path"]
+    raw = json.loads(path.read_text())
+    if mutation == "native":
+        raw["native_before"]["os_reduced_motion"] = 0
+    elif mutation == "cursor":
+        raw["native_before"]["cursor"]["x"] = False
+    else:
+        web = json.loads(raw["web_json"])
+        web["reduced" if mutation == "media" else "at"] = 0 if mutation == "media" else False
+        raw["web_json"] = json.dumps(web)
+    path.write_text(json.dumps(raw))
+    sample["raw_artifact"]["sha256"] = subject().digest(path)
+    sync_motion_native(tmp_path, receipt)
+    with pytest.raises(ValueError, match="raw observation differs"):
+        subject().validate_report(receipt, tmp_path)
+
+
+def test_motion_json_numbers_allow_roundtrip_representation_without_boolean_alias():
+    module = subject()
+    assert module.same_json({"at": [10.0]}, {"at": [10]})
+    assert not module.same_json({"at": [False]}, {"at": [0]})
+
+
+@pytest.mark.parametrize("where", ["native-and-report", "native-only", "outer-type-alias"])
+def test_motion_assessment_requires_exact_native_diagnostics(tmp_path, where):
+    receipt = complete_motion_report(tmp_path)
+    if where == "native-and-report":
+        del receipt["motion_diagnostics"]
+        sync_motion_native(tmp_path, receipt)
+    elif where == "native-only":
+        path = tmp_path / receipt["native_report"]["path"]
+        native = json.loads(path.read_text())
+        del native["motion_diagnostics"]
+        path.write_text(json.dumps(native))
+        receipt["native_report"]["sha256"] = subject().digest(path)
+    else:
+        receipt["motion_assessment"]["sampled_noninterference"] = 1
+    with pytest.raises(ValueError, match="motion assessment"):
+        subject().validate_report(receipt, tmp_path)
+
+
+@pytest.mark.parametrize(
+    "mutation", ["reversed", "same-time", "new-document", "wrong-page", "reused-recreated"]
+)
+def test_motion_requires_same_document_forward_clock(tmp_path, mutation):
+    receipt = synthetic_motion_receipt(tmp_path)
+    samples = receipt["motion_diagnostics"]["samples"]
+    if mutation == "reversed":
+        samples[2]["web"]["at"] = 1
+    elif mutation == "same-time":
+        samples[2]["web"]["at"] = samples[1]["web"]["at"]
+    elif mutation == "new-document":
+        samples[2]["web"]["document_id"] = "unexpected-navigation"
+    elif mutation == "wrong-page":
+        samples[0]["web"]["document_id"] = "unrelated-page"
+    else:
+        samples[3]["web"]["document_id"] = samples[2]["web"]["document_id"]
+    retain_motion_raw(tmp_path, receipt)
+    result = subject().assess_motion(receipt, tmp_path)
+    assert result["normal_css_timeline"] == "unavailable"
+    assert not result["same_document_clock_ordered"]
+
+
+@pytest.mark.parametrize("advances", [False, True])
+def test_motion_duplicate_names_track_animation_identity_across_reordering(tmp_path, advances):
+    receipt = synthetic_motion_receipt(tmp_path)
+    before = []
+    after = []
+    for index, name in enumerate(("orbit", "breathe", "scan-light", "inspection-tilt")):
+        pair = [
+            {"id": index * 2 + offset, "name": name, "time": offset * 10, "state": "running"}
+            for offset in (1, 2)
+        ]
+        before.extend(copy.deepcopy(pair))
+        for item in reversed(pair):
+            item["time"] += 5 if advances else 0
+            after.append(item)
+    samples = receipt["motion_diagnostics"]["samples"]
+    samples[1]["web"]["animations"] = before
+    samples[2]["web"]["animations"] = after
+    retain_motion_raw(tmp_path, receipt)
+    result = subject().assess_motion(receipt, tmp_path)
+    assert result["normal_css_timeline"] == ("verified" if advances else "unavailable")
+
+
+@pytest.mark.parametrize("mutation", ["missing", "bool", "duplicate", "replaced"])
+def test_motion_animation_identity_cannot_be_missing_aliased_or_replaced(tmp_path, mutation):
+    receipt = synthetic_motion_receipt(tmp_path)
+    rows = receipt["motion_diagnostics"]["samples"][2]["web"]["animations"]
+    if mutation == "missing":
+        del rows[0]["id"]
+    elif mutation == "bool":
+        rows[0]["id"] = True
+    elif mutation == "duplicate":
+        rows[1]["id"] = rows[0]["id"]
+    else:
+        rows[0]["id"] = 999
+    retain_motion_raw(tmp_path, receipt)
+    if mutation == "replaced":
+        assert subject().assess_motion(receipt, tmp_path)["normal_css_timeline"] == "unavailable"
+    else:
+        with pytest.raises(ValueError, match="animation"):
+            subject().assess_motion(receipt, tmp_path)
+
+
+def test_default_producer_refuses_legacy_native_without_diagnostics(tmp_path, monkeypatch, capsys):
+    module = subject()
+    validate = module.validate_native_receipt
+
+    def legacy_native(receipt, root):
+        value = validate(receipt, root)
+        value.pop("motion_diagnostics", None)
+        return value
+
+    monkeypatch.setattr(module, "validate_native_receipt", legacy_native)
+    monkeypatch.setattr(sys.modules[__name__], "subject", lambda: module)
+    with pytest.raises(ValueError, match="requested motion host was not observed"):
+        test_real_wrapper_preserves_measured_layout_outcome(
+            tmp_path, monkeypatch, capsys, "PASS", "imported"
+        )
+    assert json.loads((tmp_path / "run/config.json").read_text())["motion_host"] == "detached"
