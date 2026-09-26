@@ -42,8 +42,13 @@ public enum AppLauncher {
             let language = locale.replacingOccurrences(of: "_", with: "-")
             args += ["-AppleLanguages", "(\(language))", "-AppleLocale", locale]
         }
+        // `-AppleInterfaceStyle Light` is not a value AppKit recognises: on a
+        // Dark-mode host the app still renders dark. Only forcing Aqua yields a
+        // light window there.
         if let colorScheme {
-            args += ["-AppleInterfaceStyle", colorScheme.lowercased() == "dark" ? "Dark" : "Light"]
+            args += colorScheme.lowercased() == "dark"
+                ? ["-AppleInterfaceStyle", "Dark"]
+                : ["-NSRequiresAquaSystemAppearance", "YES"]
         }
         return args
     }

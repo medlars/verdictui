@@ -122,7 +122,7 @@ final class LiveCommandTests: XCTestCase {
             ["-AppleLanguages", "(de-DE)", "-AppleLocale", "de_DE", "-AppleInterfaceStyle", "Dark"])
         XCTAssertEqual(
             AppLauncher.variantArguments(locale: nil, colorScheme: "light"),
-            ["-AppleInterfaceStyle", "Light"])
+            ["-NSRequiresAquaSystemAppearance", "YES"])
         XCTAssertEqual(AppLauncher.variantArguments(locale: nil, colorScheme: nil), [])
     }
 
