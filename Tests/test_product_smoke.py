@@ -3,6 +3,7 @@
 import importlib.util
 import io
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -201,6 +202,66 @@ class ProductSmokeAssertions(unittest.TestCase):
                 self.assertEqual(str(raised.exception), "credential leak detected in " + channel)
                 self.assertTrue(mcp.stderr.closed)
                 mcp.close()  # repeated teardown must be safe even after a detected leak
+
+
+class ProductSmokeHelpers(unittest.TestCase):
+    """The small helpers every smoke step leans on, exercised without a product build."""
+
+    def test_require_raises_acceptance_error_with_the_message(self):
+        smoke.require(True, "unused")
+        with self.assertRaisesRegex(smoke.AcceptanceError, "evidence missing"):
+            smoke.require(False, "evidence missing")
+
+    def test_alive_reports_a_live_pid_and_a_reaped_one(self):
+        import subprocess
+
+        self.assertTrue(smoke.alive(os.getpid()))
+        child = subprocess.Popen([sys.executable, "-c", "pass"])
+        child.wait()
+        self.assertFalse(smoke.alive(child.pid))
+
+    def test_required_stream_refuses_an_omitted_pipe(self):
+        stream = io.StringIO()
+        self.assertIs(smoke.required_stream(stream), stream)
+        with self.assertRaisesRegex(smoke.AcceptanceError, "omitted requested pipe"):
+            smoke.required_stream(None)
+
+    def _mcp(self, lines):
+        import queue
+
+        mcp = object.__new__(smoke.MCP)
+        mcp.audit = smoke.SecretAudit(["never-present-fixture-secret"])
+        mcp.captured_stdout = []
+        mcp.input = io.StringIO()
+        mcp.output = io.StringIO("".join(lines))
+        mcp.lines = queue.Queue()
+        mcp.sequence = 0
+        mcp._read()
+        return mcp
+
+    def test_read_captures_every_line_then_signals_exit(self):
+        mcp = self._mcp(['{"a":1}\n', '{"b":2}\n'])
+        self.assertEqual(mcp.captured_stdout, ['{"a":1}\n', '{"b":2}\n'])
+        drained = [mcp.lines.get_nowait() for _ in range(3)]
+        self.assertEqual(drained[-1], None)
+
+    def test_rpc_returns_the_result_for_the_matching_id(self):
+        mcp = self._mcp([json.dumps({"jsonrpc": "2.0", "id": 1, "result": {"ok": True}}) + "\n"])
+        self.assertEqual(mcp.rpc("tools/list"), {"ok": True})
+        sent = json.loads(mcp.input.getvalue())
+        self.assertEqual((sent["id"], sent["method"]), (1, "tools/list"))
+
+    def test_rpc_rejects_an_error_a_wrong_id_or_an_exit(self):
+        for line, message in (
+            (json.dumps({"id": 1, "error": {"code": -1}}), "MCP protocol error"),
+            (json.dumps({"id": 7, "result": {}}), "MCP protocol error"),
+            (json.dumps({"id": 1}), "MCP omitted result"),
+        ):
+            with self.subTest(line=line):
+                with self.assertRaisesRegex(smoke.AcceptanceError, message):
+                    self._mcp([line + "\n"]).rpc("initialize")
+        with self.assertRaisesRegex(smoke.AcceptanceError, "exited without response"):
+            self._mcp([]).rpc("initialize")
 
 
 if __name__ == "__main__":

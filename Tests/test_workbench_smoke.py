@@ -86,3 +86,37 @@ def test_missing_resources_emit_structured_failure(tmp_path: Path) -> None:
     assert output["passed"] == 0
     assert output["failed"] == 1
     assert output["status"] == "FAIL"
+
+
+class _Page:
+    """Records the script handed to page.evaluate and answers with a fixed value."""
+
+    def __init__(self, answer: object) -> None:
+        self.answer = answer
+        self.scripts: list[str] = []
+
+    def evaluate(self, script: str, *_args: object) -> object:
+        self.scripts.append(script)
+        return self.answer
+
+
+def test_animation_count_asks_for_running_infinite_animations() -> None:
+    page = _Page(2)
+    assert smoke.animation_count(page) == 2
+    assert "getAnimations()" in page.scripts[0]
+    assert 'playState==="running"' in page.scripts[0]
+    assert "iterations===Infinity" in page.scripts[0]
+
+
+def test_bounds_measures_every_layout_region_the_gate_checks() -> None:
+    page = _Page({"viewport": 1280, "document": 1280, "rects": {}})
+    assert smoke.bounds(page)["viewport"] == 1280
+    for selector in (
+        ".sidebar",
+        ".workspace-header",
+        ".verification-stage",
+        ".lens-body",
+        ".verification-copy",
+        ".evidence-panel",
+    ):
+        assert selector in page.scripts[0]
