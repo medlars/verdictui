@@ -1,0 +1,227 @@
+# CANONICAL governance-v2 CI-EVIDENCE-REF workflow (ADR-016, INS-7BAFEA54).
+#
+# Copy to `.github/workflows/ci-evidence-ref.yml` in a repo whose CI emits
+# run-v2 evidence, and set `workflows:` below to that CI workflow's `name:`.
+#
+# WHY A REF AND NOT A COMMIT ON THE DEFAULT BRANCH (supersedes
+# `ci-run-v2-persist.yml`, ADR-015). The commit-per-run mechanism caused 8
+# CI-breaking incidents (2 P0), rebase churn on busy default branches, and a
+# hook that misread an evidence commit as a code fix. `refs/ci/evidence/<sha>`
+# sits outside `refs/heads/*` and `refs/tags/*`: branch rulesets (GH013) never
+# apply to it, `push` webhook events do not fire for it (no re-trigger risk
+# even with a non-default token), it never appears in `git log main` or a
+# rebase, and it is force-updated per commit so history never accumulates.
+#
+# WHY A SIDECAR FILE (`ci-conclusion.json`) ALONGSIDE THE RECORD. The old
+# mechanism only ever persisted a SUCCESSFUL run (CIS-2E3F801C's fix gated on
+# `conclusion == 'success'`), so a consumer reading it could see "green" or
+# "nothing" and never "red" -- the exact conflation lessons 202/382 warn
+# against, just moved one level up. This template runs on every conclusion and
+# writes the run's own conclusion next to whatever record it emitted, so a
+# reader gets three real states (success / not-green / unobserved) with no API
+# token, which the old branch-commit channel could never provide.
+#
+# WHY A SEPARATE `workflow_run` WORKFLOW AND NOT A STEP INSIDE CI (CIS-35701F76,
+# carried over from the persist template). `success()` inside a job is
+# JOB-scoped and cannot observe a sibling job; `github.event.workflow_run.conclusion`
+# IS the whole run's conclusion, so this workflow sees every job by
+# construction and keeps seeing them when a job is added later.
+#
+# WHY THIS RUNS ON EVERY CONCLUSION, NOT ONLY `success`. The old template's
+# whole point was "never certify a red run as green" and it satisfied that by
+# refusing to publish anything for a failing run. That is also why nothing
+# could ever read RED from it. This template publishes for every conclusion --
+# a failing run's ref names itself as `conclusion: failure`, which is
+# information, not a false green, because the sidecar is read BEFORE the
+# record and a reader that only wants "is main certified" still gets the right
+# answer from `conclusion == 'success'` alone.
+#
+# NO RE-TRIGGER LOOP. The push uses the default GITHUB_TOKEN; GitHub creates no
+# workflow run from an event caused by that token. No `paths-ignore` is needed
+# because refs outside `refs/heads/*` never trigger a `push` event at all.
+#
+# Enforced by governance-v2/scripts/test_ci_evidence_ref_template.py, which
+# executes the `run:` blocks below against a real local bare remote in four
+# states rather than grepping this file for a shape (lesson 1272).
+
+name: CI evidence ref
+
+on:
+  workflow_run:
+    # REPLACE with the `name:` of the CI workflow that emits the evidence.
+    workflows: ["CI"]
+    types: [completed]
+
+# Least privilege: `refs/ci/*` only, never a branch. `actions: read` is for
+# `gh run download`.
+permissions:
+  contents: write
+  actions: read
+
+env:
+  EVIDENCE_REF_RETENTION_DAYS: "90"
+  EVIDENCE_REF_PRUNE_MAX: "200"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 1
+
+      # PYCHECK identity block, reused verbatim from
+      # `templates/ci-run-v2-persist.yml` (R19: one reader per format, one
+      # writer of this identity check -- not a second implementation that can
+      # drift from it). `|| true` on the download: an absent artifact is a
+      # legitimate state (the run failed before emitting, or the repo does not
+      # emit run-v2 evidence at all) and the next step owns that verdict.
+      - name: Download the run-v2 record emitted by that run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -uo pipefail
+          mkdir -p evidence
+          rm -f evidence/run-v2.json
+
+          gh run download "$RUN_ID" \
+            --repo "${{ github.repository }}" \
+            --name "run-v2-evidence-${HEAD_SHA}" \
+            --dir evidence || true
+
+          if [ -s evidence/run-v2.json ]; then
+            python3 - "$RUN_ID" <<'PYCHECK' || rm -f evidence/run-v2.json
+          import json, sys
+          run_id = sys.argv[1]
+          try:
+              rec = json.load(open("evidence/run-v2.json"))
+          except (OSError, ValueError) as exc:
+              print(f"::warning::run-v2 record is unreadable ({exc}); treating as absent")
+              raise SystemExit(1)
+          identity = str(rec.get("runner", {}).get("identity", ""))
+          if not identity.endswith(f"/{run_id}"):
+              print(f"::warning::run-v2 record is from {identity!r}, not run {run_id}; treating as absent")
+              raise SystemExit(1)
+          print(f"run-v2 record confirmed for run {run_id}")
+          PYCHECK
+          fi
+
+      - name: Write ci-conclusion.json
+        env:
+          REPO: ${{ github.repository }}
+          WORKFLOW: ${{ github.event.workflow_run.name }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          COMPLETED_AT: ${{ github.event.workflow_run.updated_at }}
+        run: |
+          set -eu
+          mkdir -p evidence
+          python3 - <<'PYWRITE'
+          import json, os
+
+          doc = {
+              "schema_version": "1.0.0",
+              "repo": os.environ["REPO"],
+              "workflow": os.environ["WORKFLOW"],
+              "run_id": os.environ["RUN_ID"],
+              "run_attempt": os.environ["RUN_ATTEMPT"],
+              "head_sha": os.environ["HEAD_SHA"],
+              "head_branch": os.environ["HEAD_BRANCH"],
+              "conclusion": os.environ["CONCLUSION"],
+              "completed_at": os.environ["COMPLETED_AT"],
+          }
+          with open("evidence/ci-conclusion.json", "w", encoding="utf-8") as fh:
+              json.dump(doc, fh, sort_keys=True)
+          PYWRITE
+
+      # A ROOT commit -- no parent, so this ref never grows a history and the
+      # push below is always a fast-forward-free force-update of a single
+      # object graph. Built with plumbing rather than `git commit`, and
+      # against a THROWAWAY index file so the job's own checked-out index and
+      # working tree are never touched (the run's other steps may still need
+      # them unmodified).
+      - name: Publish evidence as a CI ref
+        env:
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -eu
+          say() {
+            printf '%s\n' "$1"
+            if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+              printf '%s\n' "$1" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          }
+
+          export GIT_INDEX_FILE="${RUNNER_TEMP:-/tmp}/ci-evidence-ref.idx"
+          rm -f "$GIT_INDEX_FILE"
+
+          git update-index --add --cacheinfo \
+            "100644,$(git hash-object -w evidence/ci-conclusion.json),evidence/ci-conclusion.json"
+
+          record_state="absent"
+          if [ -s evidence/run-v2.json ]; then
+            git update-index --add --cacheinfo \
+              "100644,$(git hash-object -w evidence/run-v2.json),evidence/run-v2.json"
+            record_state="present"
+          fi
+
+          # `commit-tree` refuses without an identity, and a fresh runner has
+          # no global git config -- the checkout action does not set one, and
+          # nothing upstream of this step does either (measured live,
+          # medlars/qualityhub run 36204173628: "Author identity unknown ...
+          # fatal: empty ident name", the run this workflow's own live proof
+          # was meant to certify green).
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          tree=$(git write-tree)
+          commit=$(git commit-tree "$tree" \
+            -m "ci-evidence: run ${RUN_ID} for ${HEAD_SHA} conclusion=${CONCLUSION}")
+
+          attempt=0
+          while : ; do
+            attempt=$((attempt + 1))
+            if push_err=$(git push --force origin "${commit}:refs/ci/evidence/${HEAD_SHA}" 2>&1); then
+              say "### CI evidence ref: PUBLISHED refs/ci/evidence/${HEAD_SHA} (conclusion=${CONCLUSION}, record=${record_state})"
+              exit 0
+            fi
+            printf '%s\n' "$push_err"
+            # Bounded: one retry only, after a short backoff for a remote
+            # that is momentarily busy. This is not a rebase loop like the
+            # branch-commit template needed -- a force-push to a bespoke ref
+            # namespace has no history to reconcile with.
+            if [ "$attempt" -ge 2 ]; then
+              break
+            fi
+            sleep 5
+          done
+
+          echo "::error::CI evidence ref was built but could not be pushed."
+          say "### CI evidence ref: PUBLISH FAILED for ${HEAD_SHA}"
+          exit 1
+
+      # BOUNDED maintenance, never allowed to fail the job: pruning is
+      # housekeeping, not correctness, and a transient fetch failure here must
+      # not paint a successful publish red.
+      - name: Prune CI evidence refs older than retention
+        env:
+          RETENTION_DAYS: ${{ env.EVIDENCE_REF_RETENTION_DAYS }}
+          PRUNE_MAX: ${{ env.EVIDENCE_REF_PRUNE_MAX }}
+        run: |
+          set -u
+          git fetch -q origin '+refs/ci/evidence/*:refs/ci/evidence/*' || exit 0
+          cutoff=$(( $(date +%s) - RETENTION_DAYS * 86400 ))
+          git for-each-ref --format='%(refname) %(committerdate:unix)' refs/ci/evidence \
+            | awk -v c="$cutoff" '$2 < c { print $1 }' \
+            | head -n "$PRUNE_MAX" \
+            | xargs -r git push origin --delete || true
