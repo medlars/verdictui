@@ -10,7 +10,6 @@ on:
     # 11x with no issue filed because it was missing from a stale allow-list).
     workflows:
       - CI evidence ref
-      - Persist run-v2 evidence
       - Check Pinned GitHub Actions for Updates
       - CI
       - Dependency Graph
