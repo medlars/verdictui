@@ -25,8 +25,90 @@ byte-identical to current hosted renders. Four experiments against older
 references still fail; their source/results remain retained, and all165 original
 references and snapshot gates are unchanged. The final combined native run on clean `dee71c47` passed54 exact
 XML/verbose-completed cases with zero failures/errors/skips in111.18 seconds.
-All37 PNGs match the individually reviewed captures byte-for-byte. Fresh hosted
-CI36184357492 is running; no result from that run is inferred from local tests.
+All 37 PNGs match the individually reviewed captures byte-for-byte. Hosted
+CI 36184357492 on the same source completed: native, web and freshness jobs
+passed; the same 73 render identities failed. Of the current PNGs, 69 are
+unchanged and the four corrected sheet captures match the local images exactly.
+All 165 references remain unchanged. The actual logs prove 13 focused consumer
+passes and 13 comparator passes. Named completion records for the 51 new
+presentation cases are absent from this parallel run, so their hosted completion
+remains unavailable; the local 54-case qualification is separate. Root rehashed
+562 archived evidence bindings. The collector is complete with no errors, and
+its nonzero finalization correctly preserves the render failure.
+
+Draft PR45 at `8a38e92a` now gives eight original AI, Composing and
+Templates snapshots explicit shared presentation inputs. Five new guards pass;
+the eight original comparisons still fail, with no errors or skips. Root replay
+retains all 22 PNGs byte-identical to the reviewed author captures. All 165
+reference images and the original comparator remain unchanged. Legacy preference
+preparation is preserved for 53 other cases; those cases were not run locally.
+The source preflight is explicitly scheduled in CI. All 353 selected Python
+cases pass both with a private home and in an archived checkout with an isolated
+virtual environment and no sibling repositories. The first native replay had an
+empty dependency cache and ran zero tests; the recorded replay used cached
+dependencies under the unchanged preference-write fence.
+
+Fresh per-test XML and paired named log completions are now required by the
+hosted render collector. Missing or contradictory receipts are unavailable;
+these receipts never issue a UI verdict. SwiftPM's additional Swift Testing XML is retained as bounded, uninterpreted
+diagnostics and cannot substitute for the required XCTest report. An actual
+sidecar reproduced the former collector rejection; 181 committed and 183
+independent collector cases now pass. Two source mutations confirm rejection
+of missing admission and improper report substitution.
+
+The Templates instruction caption now uses primary text emphasis in the shared
+presentation. Independent review of six light/dark captures confirms zero pixel
+changes outside its predefined text regions and unchanged canvas, buttons,
+glyph bounds and line positions. Maximum ICC-aware sampled glyph contrast rose
+from 1.62–2.73:1 to 10.64–12.51:1; this is a raster diagnostic, not formal
+accessibility conformance. Other empty states and banners remain outside this
+bounded fix, so CIS-F9D187B9 remains open. The final root replay on clean
+`8a38e92a` retains the five passing guards and eight original failures, with all
+22 PNGs byte-identical to the reviewed corrected captures. Hosted CI36191994143
+has now completed on tested merge `aaa0e5b1`, whose direct parent is `8a38e92a`.
+The required XML and named logs agree on 256 cases: 183 pass, the same 73 fail,
+and none error or skip. All 56 focused presentation/containment/settling/fixture
+checks pass, as do the separate 13 comparator and 13 native consumer cases.
+Hosted Python passes all 353 selected cases. Native, web and freshness jobs
+succeed; GUI preflight and XCUITest are skipped. Overall CI correctly fails.
+The collector is complete with no errors and retains the original exit 1;
+Swift Testing diagnostics contribute no coverage. All 165 references are
+unchanged. Eight changed hosted PNGs match qualified local images exactly;
+14 local guard PNGs have no hosted export. Root rehashed all 649 evidence files.
+
+A separate read-only audit identifies faint instructional captions in Chat and
+Outbox in both themes and the OAuth banner in light mode. The dark OAuth
+capture is not a reported contrast failure. The three-line primary-emphasis fix is published at `5a2935d7`. Actual
+CI36197556822 retains the same 183 passing and 73 failing named cases, with
+all 56 focused checks, 13 consumer checks, 13 comparator checks and 353 Python
+cases passing. Six changed light/dark images have zero changed pixels outside
+the predefined caption regions; all 165 references are unchanged. Root inspected
+all six originals and rehashed 582 evidence files. Captions are readable with
+intact wrapping; the Chat model selector remains truncated, so whole-view
+acceptance is not claimed. The original failed comparisons remain open. Those six legacy cases
+remain unqualified for local native replay: they write standard defaults,
+construct AppState eagerly, and Outbox schedules shared database reads.
+Only fresh disposable hosted rendering can qualify this bounded follow-up.
+
+Framework documentation PR52 at `f6755c2` passed CI36192319360: 1,347 native
+passes, 26 native skips, 779 Python passes, 22 Python skips and 11 passed subtests.
+The source-bound Workbench report passes 48 assertions across ten phases. Eight
+of nine PNGs match the prior run exactly; direct review and pixel measurement
+limit the History difference to three timestamps (1,146 pixels, none outside
+those text regions). Root rehashed 302 artifacts and reran offline report and
+source/template fingerprint validation. Reduced motion remains observed; normal
+native motion and installed acceptance remain unavailable. A fresh loaded Codex
+MCP `web_list` call succeeds; its 18-tool catalog still differs from 19-tool
+source, so connection success does not close parity or edit-hook dispatch.
+
+The recurring WitnessHost damaged-app alert was traced to the test fixture
+relocating Apple's `/bin/echo` into an app bundle, violating its launch
+constraints. The published fixture uses VerdictUI's own compiled early-exit
+host. Read-only observations on September 25 found no nonprobe WitnessHost
+messages in a 30-minute unified-log sample and, at 22:31 UTC, zero
+`verdictui-witness-*` roots in the current user's temporary directory. No launch,
+cache deletion or Gatekeeper change occurred. These bounded observations do not
+prove that every older runner or registered bundle has been retired.
 
 The disposable Settings diagnostic has qualified actual process cleanup and
 sampled noninterference in Simple panel, Advanced panel and Simple ordinary
@@ -44,6 +126,15 @@ executed mutation controls). Installed Homebrew CLI lacks `act`, the sole graded
 failure. Current source stdio MCP advertises19 tools; the actual loaded Codex
 connection advertises18 and a fresh `web_list` call succeeds. Installation,
 client refresh and automatic edit-hook delivery remain separate open evidence.
+
+Framework PR51 merged as `844baf78` with the exact tree of tested `d5ae32b`.
+CI 36184688874 passed all three jobs: 1,347 native passes with 26 skips,
+779 Python passes with 22 skips and 11 subtests, and 48 Workbench assertions
+across ten phases. Root revalidated the retained report, source and consumer
+identities and reviewed all seven unique PNGs (nine retained captures).
+The observed reduced-motion setting was respected; normal native animation
+remains unverified. These are hosted debug-artifact observations, not installed
+acceptance.
 
 The PM repairs were first published at `d973fe7f`. Completed CI `36175302485`
 preserves the same
@@ -674,13 +765,24 @@ Paired successful tool results identify Claude workflow `wf_f8329dbd-de6`,
 agent `ac12a633c1a3d6de0`, executing accepted ticket `CTS-9EB385F5`. That ticket
 requires all five service pins to agree and detects CEO-code lag. Its new guard
 therefore conflicts with the temporary per-service rollout; it is not evidence
-of a permanent rewrite daemon or malicious behavior. The owner pause/ownership
-question is pending. The default reconciliation is a fully qualified coherent
-five-service deployment after coordination; separate versions need an explicit
-policy decision. Current-service reconciliation, new activation and actual
-served rendering remain pending. A read-only reconciliation plan admits
-one common qualified `cf893c59` pin with the two existing deployment checkouts,
-subject to fresh publication/runtime checks. Existing controllers cannot safely
+of a permanent rewrite daemon or malicious behavior. A later read-only observation at 2026-09-25 21:42 UTC supersedes that
+historical deployment state. The ticket and its subagent are complete, but
+parent Claude session `5b8f88c1-58d2-490f-a039-bed6adb76552` is still active and
+reports deploying a newer security fix. The actual watcher and dashboard
+LaunchAgents run with pin `c804c2e22d471e26ee64c89a90185e0b16e67c54`;
+reflect, morning briefing and weekly wrap-up pin
+`6a6b6c6fecbaf8c501a2d754aa69325b3b153247`. The scheduled jobs are not running
+between schedules, which is not evidence of an outage. Five-pin agreement is
+therefore not currently measured. A closed subtask does not release the active
+parent's ownership. No service, plist, source destination or signal was changed
+by this continuation. The earlier `cf893c59` reconciliation proposal is stale
+and must not roll back the newer security deployment. Current-service
+reconciliation, activation and actual served rendering remain pending. On
+September 26 the store additionally lists active owner-claimed P0 CIS-E9B81452
+for the later deployment launcher's credential-cache process-group conflict.
+A fresh bounded `/api/dashboard` GET returns HTTP 200; that does not establish
+that the durable repair is qualified or authorize overwriting its owner's work.
+The historical service pins above must be remeasured before any new rollout. Existing controllers cannot safely
 be reused by changing constants: the older five-service flow assumes one
 checkout, while the newer lifecycle owns only the dashboard. A real coordinator
 must own all five identities and both source destinations before any rollout.
