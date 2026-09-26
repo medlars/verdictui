@@ -125,6 +125,8 @@ One MCP server process owns its sessions. EOF and normal signal shutdown close t
 
 Profiles default to `~/Library/Application Support/VerdictUI/web-profiles`. Each name identifies a separate Chrome user-data directory, including its cookies and browser storage. Closing a named session preserves that data. Reopening a profile after a detected browser crash starts a fresh owned browser process; dead sessions are evicted from the list.
 
+Serve the page over `http://` or `https://` when a check depends on storage surviving a close and reopen. Chrome does not reliably flush or reload `localStorage` for `file://` origins across a profile close and reopen: measured 2026-09-24 on Chrome 153, `file://` reopens were intermittent while the same page over `http://` read back 48 of 48 times. A persistence check against a `file://` page can fail for a reason that is not the page's.
+
 Kernel-held locks prevent simultaneous ownership, including two sessions in the same process. A second owner fails rather than attaching to an unrelated browser. Profile names must be nonempty single path components and cannot be `.`, `..` or contain NUL. Temporary profiles used by `verdictui check` and the desktop workbench are separate from these named sessions.
 
 | Environment variable | Meaning |
