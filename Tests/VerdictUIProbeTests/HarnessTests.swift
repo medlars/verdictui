@@ -199,6 +199,20 @@ final class HarnessTests: XCTestCase {
     /// different path than its name claimed. ``LateMotionScenario`` is static
     /// until tapped, so the first capture settles cleanly and only the settle
     /// AFTER the act runs to the caller's deadline.
+    // CIS-FF4F566C: this test failed once under a full `swift test --jobs 4`
+    // at load ~470 and passed alone minutes later. Diagnosis: `Harness.perform`
+    // captures a BEFORE tree via `OracleHost.currentTree()` first, which has
+    // its own wall-clock budget (``OracleHost/defaultDeadline``, 3 s by
+    // default) entirely separate from the `timeout:` argument this test is
+    // exercising — and `no.md` #12 already documents that when that pre-act
+    // capture budget is exceeded, `perform` takes the `hostErrorRule` branch
+    // instead of reaching `Quiescence.timeoutRule` at all, i.e. the assertion
+    // below ("the fixture must reach the settle-timeout branch") is the one
+    // that would fail, not the overshoot discriminator itself. At load ~470 a
+    // 3 s budget for even a STATIC first render is not a generous margin.
+    // Widening only the pre-act capture deadline (via `Harness`'s explicit
+    // `deadline:` parameter) leaves the actual behavior under test — the
+    // overshoot on the post-tap settle, bounded by `budget` below — untouched.
     @MainActor
     func testSettleMsIsMeasuredNotAssumedOnTheTimeoutPath() async throws {
         // Two budgets, because one alone cannot distinguish a measurement from
@@ -207,7 +221,8 @@ final class HarnessTests: XCTestCase {
             let model = LateMotionModel()
             let harness = Harness(
                 scenario: LateMotionScenario(model: model),
-                viewport: Size(width: 200, height: 60)
+                viewport: Size(width: 200, height: 60),
+                deadline: 15
             )
 
             let step = await harness.perform(.tap(LateMotionScenario.probeID), timeout: budget)
