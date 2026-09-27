@@ -1,0 +1,1 @@
+{"completed_at": "2026-09-27T20:31:15Z", "conclusion": "success", "head_branch": "cis-96f9aeae-ff4f566c-flaky-timing", "head_sha": "b797df678cbd242e9a45851c0ea4463bae1a1bbe", "repo": "medlars/verdictui", "run_attempt": "1", "run_id": "36347619420", "schema_version": "1.0.0", "workflow": "CI"}
