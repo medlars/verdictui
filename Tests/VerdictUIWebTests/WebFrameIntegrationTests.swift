@@ -531,7 +531,24 @@ final class WebFrameIntegrationTests: XCTestCase {
         try await session.close(); try await server.stop()
     }
 
+    // CIS-FF4F566C: this test failed once under a full `swift test --jobs 4`
+    // at load ~470 and passed alone (53.95 s) minutes later. Diagnosis: this
+    // is the SAME mechanism `WebTiming.swift` already documents and CI already
+    // works around (CIS-4ADF5658) — the fixed capture/request budgets (10 s /
+    // 5 s at the default scale) are sized for developer hardware, and this
+    // fixture drives ~20 sequential open/verify/act round trips through a real
+    // headless browser, so under severe host contention a route can exceed
+    // budget and refuse with "deadline exceeded" instead of returning the
+    // verdict this test asserts on. `.github/workflows/ci.yml` sets
+    // `VERDICTUI_WEB_TIMEOUT_SCALE=3` for exactly this reason; this test was
+    // never given that margin locally. `WebTiming.current` is a process-wide
+    // `static let` resolved on first access, so the scale must be set before
+    // this test's first `WebSessionManager` call — mirroring CI's workaround
+    // rather than loosening any assertion below.
     func testLongDocumentsNestedPanelsAndFramesRemainScrollableAndActionable() async throws {
+        if ProcessInfo.processInfo.environment[WebTiming.scaleVariable] == nil {
+            setenv(WebTiming.scaleVariable, "3", 1)
+        }
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("vui-scroll-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let (server, port) = try await server(root: root)
