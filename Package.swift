@@ -176,9 +176,8 @@ let package = Package(
             ],
             swiftSettings: strictSettings
         ),
-        // Demo scenarios link here, not into `VerdictUICLICore`: the binary injects
-        // `DemoScenarios.registry` through `VerdictUIRunner.withStockCatalog` before
-        // handing argv to the core.
+        // Demo scenarios link here, not into `VerdictUICLICore`: the binary calls
+        // `VerdictUIRunner.main(registry: DemoScenarios.registry)` like any consumer.
         .executableTarget(
             name: "verdictui",
             dependencies: ["VerdictUICLICore", "VerdictUIDemoScenarios"],

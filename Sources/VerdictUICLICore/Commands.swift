@@ -68,11 +68,31 @@ public struct CommandEnvironment: Sendable {
     public static func standard(root: URL = URL(fileURLWithPath: ".")) -> CommandEnvironment {
         if let environment = VerdictUIRunner.environment { return environment }
 
-        let stockRegistry = VerdictUIRunner.stockCatalogRegistry ?? ScenarioRegistry([])
         return CommandEnvironment(
-            usesFallbackCatalog: VerdictUIRunner.stockCatalogRegistry != nil,
             engine: VerdictEngine(
-                registry: stockRegistry,
+                registry: ScenarioRegistry([]),
+                baselines: BaselineStore.standard(root: root)
+            ),
+            output: StandardOutput(),
+            pixelArtifactRoot: root.appendingPathComponent(
+                PixelArtifact.directory, isDirectory: true)
+        )
+    }
+
+    /// Builds an environment for tests and tooling that need a registry without
+    /// going through ``VerdictUIRunner/main(registry:)``.
+    @MainActor
+    public static func standard(
+        root: URL,
+        registry: ScenarioRegistry,
+        usesFallbackCatalog: Bool
+    ) -> CommandEnvironment {
+        if let environment = VerdictUIRunner.environment { return environment }
+
+        return CommandEnvironment(
+            usesFallbackCatalog: usesFallbackCatalog,
+            engine: VerdictEngine(
+                registry: registry,
                 baselines: BaselineStore.standard(root: root)
             ),
             output: StandardOutput(),

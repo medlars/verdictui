@@ -7,30 +7,22 @@ import VerdictUIProbe
 public enum VerdictUIRunner {
     @TaskLocal static var environment: CommandEnvironment?
 
-    /// Registry the shipped `verdictui` binary injects at its entry point.
-    /// ``CommandEnvironment/standard(root:)`` reads this; ``VerdictUICLICore``
-    /// never links demo scenarios itself.
-    @TaskLocal static var stockCatalogRegistry: ScenarioRegistry?
-
-    @MainActor
-    public static func withStockCatalog<Result: Sendable>(
-        _ registry: ScenarioRegistry,
-        operation: () async throws -> Result
-    ) async rethrows -> Result {
-        try await $stockCatalogRegistry.withValue(registry) { try await operation() }
-    }
-
     @MainActor
     public static func main(
         registry: ScenarioRegistry,
         root: URL? = nil,
-        arguments: [String]? = nil
+        arguments: [String]? = nil,
+        usesFallbackCatalog: Bool = false,
+        allowsExternalWitness: Bool = false
     ) async {
         let directory =
             root ?? ProjectScenarios.findProjectRoot(
                 startingAt: URL(fileURLWithPath: FileManager.default.currentDirectoryPath))
             ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-        await withRegistry(registry, root: directory) {
+        await withRegistry(
+            registry, root: directory, usesFallbackCatalog: usesFallbackCatalog,
+            allowsExternalWitness: allowsExternalWitness
+        ) {
             await VerdictUITool.main(arguments)
         }
     }
@@ -39,11 +31,15 @@ public enum VerdictUIRunner {
     static func withRegistry<Result: Sendable>(
         _ registry: ScenarioRegistry,
         root: URL,
+        usesFallbackCatalog: Bool = false,
+        allowsExternalWitness: Bool = false,
         operation: () async throws -> Result
     ) async rethrows -> Result {
         let environment = CommandEnvironment(
+            usesFallbackCatalog: usesFallbackCatalog,
             engine: VerdictEngine(
-                registry: registry, baselines: .standard(root: root), allowsExternalWitness: false
+                registry: registry, baselines: .standard(root: root),
+                allowsExternalWitness: allowsExternalWitness
             ),
             output: StandardOutput(),
             pixelArtifactRoot: root.appendingPathComponent(PixelArtifact.directory, isDirectory: true),

@@ -172,20 +172,20 @@ final class ProjectScenariosTests: XCTestCase {
 final class FallbackCatalogSignalTests: XCTestCase {
 
     /// A project with no manifest gets the demo catalog, and is TOLD so.
-    func testAProjectWithoutAManifestIsMarkedAsUsingTheFallback() async {
+    func testAProjectWithoutAManifestIsMarkedAsUsingTheFallback() {
         let root = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("vu-nofallback-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        await VerdictUIRunner.withStockCatalog(DemoScenarios.registry) {
-            XCTAssertTrue(
-                CommandEnvironment.standard(root: root).usesFallbackCatalog,
-                "a project declaring no scenarios receives VerdictUI's own demo catalog and must "
-                    + "be marked as such — otherwise a caller reports those findings as the "
-                    + "project's (CTS-99986645)"
-            )
-        }
+        let env = CommandEnvironment.standard(
+            root: root, registry: DemoScenarios.registry, usesFallbackCatalog: true)
+        XCTAssertTrue(
+            env.usesFallbackCatalog,
+            "a project declaring no scenarios receives VerdictUI's own demo catalog and must "
+                + "be marked as such — otherwise a caller reports those findings as the "
+                + "project's (CTS-99986645)"
+        )
     }
 
     /// CONTROL: the warning must not be unconditional.
@@ -246,23 +246,22 @@ extension ProjectScenariosTests {
     /// there. A consumer naming a DIFFERENT executable is naming one we cannot
     /// run, so the catalog they get is borrowed and the note must stand.
     @MainActor
-    func testAConsumerRunnerWeCannotExecuteDoesNotSilenceTheNote() async throws {
+    func testAConsumerRunnerWeCannotExecuteDoesNotSilenceTheNote() throws {
         let root = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("verdictui-proj-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
         try writeManifest(at: root, runner: "build/some-consumer-runner")
-        await VerdictUIRunner.withStockCatalog(DemoScenarios.registry) {
-            let env = CommandEnvironment.standard(root: root)
+        let env = CommandEnvironment.standard(
+            root: root, registry: DemoScenarios.registry, usesFallbackCatalog: true)
 
-            XCTAssertTrue(
-                env.usesFallbackCatalog,
-                "a project declaring a runner this binary never executes was reported as "
-                    + "owning its scenarios. The engine still carries the stock demo catalog, "
-                    + "so the note that would have told the caller their verdicts describe "
-                    + "VerdictUI's fixtures has been silenced by adding a file."
-            )
-        }
+        XCTAssertTrue(
+            env.usesFallbackCatalog,
+            "a project declaring a runner this binary never executes was reported as "
+                + "owning its scenarios. The engine still carries the stock demo catalog, "
+                + "so the note that would have told the caller their verdicts describe "
+                + "VerdictUI's fixtures has been silenced by adding a file."
+        )
     }
 
     /// The rule itself, in both directions.

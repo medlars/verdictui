@@ -22,9 +22,11 @@ struct VerdictUIBinary {
         do {
             if try ProjectRunnerBroker.runIfDeclared() { return }
             try ProjectRunner.forwardIfDeclared()
-            await VerdictUIRunner.withStockCatalog(DemoScenarios.registry) {
-                await VerdictUITool.main()
-            }
+            await VerdictUIRunner.main(
+                registry: DemoScenarios.registry,
+                usesFallbackCatalog: true,
+                allowsExternalWitness: true
+            )
         } catch {
             FileHandle.standardError.write(Data("verdictui: \(error)\n".utf8))
             exit(2)

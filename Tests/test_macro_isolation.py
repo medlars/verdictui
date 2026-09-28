@@ -292,7 +292,7 @@ class TestMacroTargetIsolation:
         deps = blocks.get("VerdictUICLICore", "")
         assert 'VerdictUIDemoScenarios' not in deps, (
             "VerdictUICLICore must not depend on VerdictUIDemoScenarios — inject the "
-            "stock catalog from the verdictui executable via VerdictUIRunner.withStockCatalog."
+            "stock catalog from the verdictui executable via VerdictUIRunner.main(registry:)."
         )
 
     def test_swiftsyntax_is_pinned_exactly(self) -> None:
