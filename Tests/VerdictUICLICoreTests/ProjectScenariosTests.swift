@@ -178,8 +178,12 @@ final class FallbackCatalogSignalTests: XCTestCase {
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let env = CommandEnvironment.standard(
-            root: root, registry: DemoScenarios.registry, usesFallbackCatalog: true)
+        let env = CommandEnvironment(
+            usesFallbackCatalog: true,
+            engine: VerdictEngine(
+                registry: DemoScenarios.registry, baselines: BaselineStore.standard(root: root)),
+            output: StandardOutput(),
+            pixelArtifactRoot: root.appendingPathComponent(PixelArtifact.directory, isDirectory: true))
         XCTAssertTrue(
             env.usesFallbackCatalog,
             "a project declaring no scenarios receives VerdictUI's own demo catalog and must "
