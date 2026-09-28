@@ -14,6 +14,7 @@
 // suite was 8/8 green against a binary that could not execute a single command.
 import Foundation
 import VerdictUICLICore
+import VerdictUIDemoScenarios
 
 @main
 struct VerdictUIBinary {
@@ -21,7 +22,9 @@ struct VerdictUIBinary {
         do {
             if try ProjectRunnerBroker.runIfDeclared() { return }
             try ProjectRunner.forwardIfDeclared()
-            await VerdictUITool.main()
+            await VerdictUIRunner.withStockCatalog(DemoScenarios.registry) {
+                await VerdictUITool.main()
+            }
         } catch {
             FileHandle.standardError.write(Data("verdictui: \(error)\n".utf8))
             exit(2)

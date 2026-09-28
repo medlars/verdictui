@@ -166,7 +166,6 @@ let package = Package(
                 "VerdictUIWeb",
                 "VerdictUIKernel",
                 "VerdictUIProbe",
-                "VerdictUIDemoScenarios",
                 // Wave 8: `verify --cross-validate` needs the external witness.
                 // Linking it does NOT make Accessibility mandatory — the
                 // witness is invoked only when cross-validation is requested,
@@ -177,9 +176,12 @@ let package = Package(
             ],
             swiftSettings: strictSettings
         ),
+        // Demo scenarios link here, not into `VerdictUICLICore`: the binary injects
+        // `DemoScenarios.registry` through `VerdictUIRunner.withStockCatalog` before
+        // handing argv to the core.
         .executableTarget(
             name: "verdictui",
-            dependencies: ["VerdictUICLICore"],
+            dependencies: ["VerdictUICLICore", "VerdictUIDemoScenarios"],
             swiftSettings: strictSettings
         ),
         .executableTarget(

@@ -6,7 +6,6 @@
 import ArgumentParser
 import Foundation
 import SwiftUI
-import VerdictUIDemoScenarios
 import VerdictUIKernel
 import VerdictUIProbe
 import VerdictUIWitness
@@ -69,10 +68,11 @@ public struct CommandEnvironment: Sendable {
     public static func standard(root: URL = URL(fileURLWithPath: ".")) -> CommandEnvironment {
         if let environment = VerdictUIRunner.environment { return environment }
 
+        let stockRegistry = VerdictUIRunner.stockCatalogRegistry ?? ScenarioRegistry([])
         return CommandEnvironment(
-            usesFallbackCatalog: true,
+            usesFallbackCatalog: VerdictUIRunner.stockCatalogRegistry != nil,
             engine: VerdictEngine(
-                registry: DemoScenarios.registry,
+                registry: stockRegistry,
                 baselines: BaselineStore.standard(root: root)
             ),
             output: StandardOutput(),

@@ -4,8 +4,8 @@ import Foundation
 ///
 /// ## Why this exists
 ///
-/// `CommandEnvironment.standard()` shipped `DemoScenarios.registry` compiled
-/// into the binary, so `verdictui list` returned the same six `demo-*`
+/// The stock `verdictui` binary once linked demo scenarios into
+/// `VerdictUICLICore`, so `verdictui list` returned the same six `demo-*`
 /// scenarios from every directory on the machine. Measured 2026-08-16
 /// (CTS-99986645): identical output from LaunchGate, `/tmp` and VerdictUI. The
 /// background hook then fired on a real LaunchGate SwiftUI file and reported

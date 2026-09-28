@@ -286,6 +286,15 @@ class TestMacroTargetIsolation:
             f"never the reverse."
         )
 
+    def test_the_cli_core_library_never_links_the_demo_catalog(self) -> None:
+        """Demo scenarios belong on the stock binary entry point, not CLICore."""
+        blocks = _target_dependencies()
+        deps = blocks.get("VerdictUICLICore", "")
+        assert 'VerdictUIDemoScenarios' not in deps, (
+            "VerdictUICLICore must not depend on VerdictUIDemoScenarios — inject the "
+            "stock catalog from the verdictui executable via VerdictUIRunner.withStockCatalog."
+        )
+
     def test_swiftsyntax_is_pinned_exactly(self) -> None:
         """`from:` would let a minor bump land silently on a CI machine.
 

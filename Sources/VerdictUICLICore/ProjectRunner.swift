@@ -7,6 +7,19 @@ import VerdictUIProbe
 public enum VerdictUIRunner {
     @TaskLocal static var environment: CommandEnvironment?
 
+    /// Registry the shipped `verdictui` binary injects at its entry point.
+    /// ``CommandEnvironment/standard(root:)`` reads this; ``VerdictUICLICore``
+    /// never links demo scenarios itself.
+    @TaskLocal static var stockCatalogRegistry: ScenarioRegistry?
+
+    @MainActor
+    public static func withStockCatalog<Result: Sendable>(
+        _ registry: ScenarioRegistry,
+        operation: () async throws -> Result
+    ) async rethrows -> Result {
+        try await $stockCatalogRegistry.withValue(registry) { try await operation() }
+    }
+
     @MainActor
     public static func main(
         registry: ScenarioRegistry,
