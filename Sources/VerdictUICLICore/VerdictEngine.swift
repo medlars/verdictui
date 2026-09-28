@@ -1,9 +1,3 @@
-// Wave 6: what every CLI command actually does.
-//
-// The argument-parser types in `Commands.swift` parse and delegate here. This
-// file holds no `print` and no `exit` — it returns values — which is what makes
-// the whole command surface assertable from a test target rather than only
-// through a subprocess.
 import Foundation
 import VerdictUIKernel
 import VerdictUIProbe
@@ -12,10 +6,7 @@ import VerdictUIWeb
 
 /// Runs scenarios and produces verdicts, trees, sweeps and baseline decisions.
 ///
-/// Holds the registry and the baseline store so a caller (the CLI, the daemon,
-/// the MCP server) constructs one of these and asks it questions. The three
-/// surfaces then cannot disagree about what `verify` means, which is the
-/// failure a second implementation always eventually produces.
+/// Holds the registry and the baseline store; callers (CLI, daemon, MCP) delegate here.
 public struct VerdictEngine: Sendable {
     /// Scenarios this engine can render.
     public let registry: ScenarioRegistry

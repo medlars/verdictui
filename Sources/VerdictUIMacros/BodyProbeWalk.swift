@@ -1,22 +1,8 @@
 import SwiftSyntax
 
-/// Rewrites a view's `body` expression, attaching `.verdictProbe(id:role:text:)`
-/// to every recognised element expression that does not already carry one.
-///
-/// This is Wave 4 Task 2 — the part that makes `@Verifiable` buy a *semantic*
-/// tree rather than a bare root. It operates on a COPY of the body syntax that
-/// becomes `verdictProbedBody`; the view's own `body` is never rewritten, so a
-/// `@Verifiable` view renders identically in a real app.
-///
-/// ## What it can and cannot see
-///
-/// A macro runs on syntax, before type checking, so recognition is by *spelling*
-/// and nothing else: `Text("x")` is recognised, a `let t = Text("x")` referenced
-/// later is not, and a custom `MyRow()` is opaque by design (the plan's stated
-/// position — nested `@Verifiable` types compose, so the walk probes the layer it
-/// can see and stops). Being explicit about that is the point: a walker that
-/// guessed at opaque expressions would attach ids to things whose role it cannot
-/// know, and a wrong role is worse than an absent one because rules act on it.
+/// Syntax walk that attaches `.verdictProbe` to recognised element spellings in a
+/// copied `body` (the live view body is unchanged). Recognition is by callee
+/// spelling only — see `.decisions/2026-009-macro-composition-via-compile-time-overload.md`.
 struct BodyProbeWalk {
     /// Element spellings the walk recognises, mapped to the role they report.
     ///

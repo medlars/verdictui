@@ -1,13 +1,4 @@
-// Wave 6: the warm daemon.
-//
-// A cold `verdictui verify` pays for process start, SwiftPM resolution and the
-// first AppKit/SwiftUI warm-up before it renders anything. Measured on this
-// machine: the first sweep cell costs ~209 ms against a ~120 ms steady state,
-// and that is only the render — the process around it costs more. An agent
-// calling verify in a loop pays all of it every time.
-//
-// The daemon keeps the process alive and answers JSON-RPC over a unix socket,
-// so repeat verifies pay only the render.
+// Warm JSON-RPC daemon over a unix socket (repeat verifies skip cold-start cost).
 import Foundation
 import VerdictUIKernel
 import VerdictUIProbe
