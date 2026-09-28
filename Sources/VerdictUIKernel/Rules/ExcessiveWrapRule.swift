@@ -1,4 +1,3 @@
-// VerdictUIKernel — platform-pure. No SwiftUI/AppKit imports allowed in this target.
 import Foundation
 
 /// Text must not wrap far past the width it was designed for.

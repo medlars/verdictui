@@ -98,21 +98,7 @@ public struct ScenarioEntry: Sendable {
 
 /// A named collection of scenarios, built from a static list.
 ///
-/// ### Why registration is static and not a runtime scan
-///
-/// The tempting design is a global mutable registry that each scenario adds
-/// itself to from a type-level initializer. Swift has no such hook — there is no
-/// portable "run this at load" for a struct — and the ways to fake one are all
-/// worse than an explicit list: an `+load`-style ObjC hook does not exist for
-/// Swift value types, and a runtime scan of loaded types is exactly the
-/// reflection this design rules out (it is slow, it breaks under dead-code
-/// stripping, and it makes "which scenarios exist" depend on link order rather
-/// than on anything readable).
-///
-/// So the macro generates the ENTRY and the author names it in one list. The
-/// cost is one line per scenario; what it buys is that the set of scenarios is
-/// a value you can read, diff, and test — and a scenario that was never listed
-/// fails visibly at the list rather than by being silently absent from a run.
+/// Rationale: `.decisions/2026-008-scenario-registration-is-a-static-list.md`.
 ///
 /// ```swift
 /// #VerdictScenario("checkout") {

@@ -1,4 +1,3 @@
-// VerdictUIKernel — platform-pure. No SwiftUI/AppKit imports allowed in this target.
 import Foundation
 
 /// Sibling edges that are ALMOST aligned are worse than edges that are not.

@@ -1,4 +1,3 @@
-// VerdictUIKernel — platform-pure. No SwiftUI/AppKit imports allowed in this target.
 import Foundation
 
 /// A lint rule: pure function from a semantic tree to findings.

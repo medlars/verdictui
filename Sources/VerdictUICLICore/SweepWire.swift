@@ -1,6 +1,4 @@
-// Wave 6: the serializable form of a sweep report.
-//
-// `SweepReport` is not `Codable` and is not made so. `Variant` holds SwiftUI's
+// Serializable sweep report wire shape. `SweepReport` is not `Codable` and is not made so. `Variant` holds SwiftUI's
 // `ColorScheme`, `DynamicTypeSize` and `LayoutDirection` — framework enums with
 // no raw values and no `Codable` conformance — and retrofitting them would put
 // this package's spelling of "dark" on types Apple owns, where a future SDK

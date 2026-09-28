@@ -1,4 +1,3 @@
-// VerdictUIKernel — platform-pure. No SwiftUI/AppKit imports allowed in this target.
 //
 // Wave 9 Task 3: the pixel channel's comparison half.
 //
