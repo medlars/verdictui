@@ -78,28 +78,6 @@ public struct CommandEnvironment: Sendable {
                 PixelArtifact.directory, isDirectory: true)
         )
     }
-
-    /// Builds an environment for tests and tooling that need a registry without
-    /// going through ``VerdictUIRunner/main(registry:)``.
-    @MainActor
-    public static func standard(
-        root: URL,
-        registry: ScenarioRegistry,
-        usesFallbackCatalog: Bool
-    ) -> CommandEnvironment {
-        if let environment = VerdictUIRunner.environment { return environment }
-
-        return CommandEnvironment(
-            usesFallbackCatalog: usesFallbackCatalog,
-            engine: VerdictEngine(
-                registry: registry,
-                baselines: BaselineStore.standard(root: root)
-            ),
-            output: StandardOutput(),
-            pixelArtifactRoot: root.appendingPathComponent(
-                PixelArtifact.directory, isDirectory: true)
-        )
-    }
 }
 
 /// Options every verdict-producing command shares.
