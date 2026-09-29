@@ -152,14 +152,11 @@ let package = Package(
             dependencies: ["VerdictUIDemoScenarios", "VerdictUIProbe", "VerdictUIKernel"],
             swiftSettings: strictSettings
         ),
-        // Wave 6's CLI, split in two ON PURPOSE. Everything that decides
-        // anything lives in `VerdictUICLICore` — a plain library a test target
-        // can import and call — and the `verdictui` executable is a thin
-        // `main.swift` that parses argv and hands over. The split exists
-        // because nothing inside an executableTarget is reachable from any test
-        // in the same package, so logic living there is verified only by its
-        // own pass count, which is zero (LaunchGate CIS-5178E04D: 65 controls,
-        // 0 executable by any test, 206 tests green).
+        // VerdictUICLICore (Wave 6+): CLI, daemon, and MCP share one library so
+        // `VerdictEngine` is the only judgment surface — no second `verify`
+        // reachable through argv, a socket, or MCP. The `verdictui` executable
+        // is a thin `main.swift`; tests import this target, not the executable
+        // (nothing inside an executableTarget is reachable from swift test).
         .target(
             name: "VerdictUICLICore",
             dependencies: [

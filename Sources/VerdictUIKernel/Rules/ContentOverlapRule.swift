@@ -1,4 +1,3 @@
-// VerdictUIKernel — platform-pure. No SwiftUI/AppKit imports allowed in this target.
 import Foundation
 
 /// Content that collides with content under a different parent.

@@ -1,8 +1,3 @@
-// Wave 6: the command surface.
-//
-// These types parse argv and delegate to `VerdictEngine`. They deliberately
-// hold no judgment logic — a command that decided anything itself would be a
-// second implementation of `verify`, reachable only through a subprocess.
 import ArgumentParser
 import Foundation
 import SwiftUI

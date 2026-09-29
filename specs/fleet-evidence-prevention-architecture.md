@@ -90,7 +90,7 @@ use supported MCP connection APIs and report actual catalog state. Fleet adoptio
 is not complete merely because prevention readers are installed. PanoMac's
 installed notification repair needs rendered acceptance after publication.
 
-### Import census — `/Users/eiman/Projects/.worktrees/verdictui-fleet-evidence`
+### Import census — `.worktrees/verdictui-fleet-evidence`
 
 `census: modules=63 edges=648 cross_project=0 cycles=0 layer_violations=0 layers_observed=true (observed) unparseable=0`
 
