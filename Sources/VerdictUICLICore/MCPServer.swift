@@ -1,9 +1,4 @@
-// Wave 7: the MCP stdio surface.
-//
-// This is a TRANSPORT, deliberately. Every tool it exposes routes into
-// `VerdictDaemon.handle`, which is the same method surface the CLI and the
-// socket daemon use — so the three cannot disagree about what `verify` means. A
-// second implementation here is how three surfaces drift into three answers.
+// MCP stdio transport; tools route through `VerdictDaemon.handle` (see Package.swift).
 import Foundation
 import VerdictUIKernel
 import VerdictUIProbe
