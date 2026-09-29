@@ -9,6 +9,7 @@ added to none of their capture lists. Only the 2 repos carrying this guard
 (kastdrive, kasttune) went red; the other 8 drifted silently — which is the
 whole argument for the guard existing in every repo rather than two.
 Prior instance: F-053, KastTune's Relay Uptime Probe failed 11x, no issue filed.
+A stale name in the list is the mirror defect: it looks watched but matches nothing.
 """
 
 from __future__ import annotations
@@ -61,6 +62,25 @@ def test_capture_trigger_watches_every_workflow_in_the_repo() -> None:
         f"workflows never watched by the capture trigger: {sorted(missing)} — "
         "a failure in them files no issue and closes none, while looking healthy"
     )
+
+
+@pytest.mark.skipif(not CAPTURE.exists(), reason="repo has no capture workflow")
+def test_capture_trigger_names_only_workflows_that_exist() -> None:
+    phantom = _watched() - _present()
+    assert not phantom, (
+        f"capture trigger lists workflows that do not exist in this repo: {sorted(phantom)} — "
+        "remove stale names; they confer no coverage while looking watched"
+    )
+
+
+@pytest.mark.skipif(not CAPTURE.exists(), reason="repo has no capture workflow")
+def test_positive_control_a_phantom_watched_name_is_caught() -> None:
+    """The phantom check must FAIL when a nonexistent name is on the watch list."""
+    present = _present()
+    watched = _watched() | {"Dependency Graph"}
+    with pytest.raises(AssertionError):
+        phantom = watched - present
+        assert not phantom, sorted(phantom)
 
 
 @pytest.mark.skipif(not CAPTURE.exists(), reason="repo has no capture workflow")

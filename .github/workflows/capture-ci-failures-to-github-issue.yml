@@ -12,7 +12,6 @@ on:
       - CI evidence ref
       - Check Pinned GitHub Actions for Updates
       - CI
-      - Dependency Graph
     types:
       - completed
 
