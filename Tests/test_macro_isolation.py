@@ -290,7 +290,7 @@ class TestMacroTargetIsolation:
         """Demo scenarios belong on the stock binary entry point, not CLICore."""
         blocks = _target_dependencies()
         deps = blocks.get("VerdictUICLICore", "")
-        assert 'VerdictUIDemoScenarios' not in deps, (
+        assert "VerdictUIDemoScenarios" not in deps, (
             "VerdictUICLICore must not depend on VerdictUIDemoScenarios — inject the "
             "stock catalog from the verdictui executable via VerdictUIRunner.main(registry:)."
         )

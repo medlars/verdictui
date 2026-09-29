@@ -587,7 +587,7 @@ public enum VariantParsing {
         colorSchemes: [String],
         dynamicTypeSizes: [String]
     ) throws -> [Variant] {
-        Sweep<CleanSettingsScenario>.matrix(
+        Variant.matrix(
             locales: locales,
             colorSchemes: try colorSchemes.map(colorScheme),
             dynamicTypeSizes: try dynamicTypeSizes.map(dynamicTypeSize)

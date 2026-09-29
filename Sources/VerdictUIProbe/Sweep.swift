@@ -103,6 +103,46 @@ public struct Variant: Equatable, Sendable {
         @unknown default: "unknown"
         }
     }
+
+    /// Cartesian product of sweep axes. Scenario-agnostic so callers outside any
+    /// concrete ``VerdictScenario`` type (the CLI, tests) can build a matrix.
+    public static func matrix(
+        locales: [String] = [],
+        colorSchemes: [ColorScheme] = [],
+        dynamicTypeSizes: [DynamicTypeSize] = [],
+        layoutDirections: [LayoutDirection] = [],
+        viewports: [Size?] = []
+    ) -> [Variant] {
+        let locales = locales.isEmpty ? [Variant.baseline.localeIdentifier] : locales
+        let schemes = colorSchemes.isEmpty ? [Variant.baseline.colorScheme] : colorSchemes
+        let sizes =
+            dynamicTypeSizes.isEmpty ? [Variant.baseline.dynamicTypeSize] : dynamicTypeSizes
+        let directions =
+            layoutDirections.isEmpty ? [Variant.baseline.layoutDirection] : layoutDirections
+        let sizesOrNil: [Size?] = viewports.isEmpty ? [nil] : viewports
+
+        var result: [Variant] = []
+        for locale in locales {
+            for scheme in schemes {
+                for size in sizes {
+                    for direction in directions {
+                        for viewport in sizesOrNil {
+                            result.append(
+                                Variant(
+                                    localeIdentifier: locale,
+                                    colorScheme: scheme,
+                                    dynamicTypeSize: size,
+                                    layoutDirection: direction,
+                                    viewport: viewport
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        return result
+    }
 }
 
 extension View {
@@ -231,35 +271,13 @@ public struct Sweep<Scenario: VerdictScenario>: Sendable where Scenario: Sendabl
         layoutDirections: [LayoutDirection] = [],
         viewports: [Size?] = []
     ) -> [Variant] {
-        let locales = locales.isEmpty ? [Variant.baseline.localeIdentifier] : locales
-        let schemes = colorSchemes.isEmpty ? [Variant.baseline.colorScheme] : colorSchemes
-        let sizes =
-            dynamicTypeSizes.isEmpty ? [Variant.baseline.dynamicTypeSize] : dynamicTypeSizes
-        let directions =
-            layoutDirections.isEmpty ? [Variant.baseline.layoutDirection] : layoutDirections
-        let sizesOrNil: [Size?] = viewports.isEmpty ? [nil] : viewports
-
-        var result: [Variant] = []
-        for locale in locales {
-            for scheme in schemes {
-                for size in sizes {
-                    for direction in directions {
-                        for viewport in sizesOrNil {
-                            result.append(
-                                Variant(
-                                    localeIdentifier: locale,
-                                    colorScheme: scheme,
-                                    dynamicTypeSize: size,
-                                    layoutDirection: direction,
-                                    viewport: viewport
-                                )
-                            )
-                        }
-                    }
-                }
-            }
-        }
-        return result
+        Variant.matrix(
+            locales: locales,
+            colorSchemes: colorSchemes,
+            dynamicTypeSizes: dynamicTypeSizes,
+            layoutDirections: layoutDirections,
+            viewports: viewports
+        )
     }
 
     /// Render every cell and collect its verdict.
