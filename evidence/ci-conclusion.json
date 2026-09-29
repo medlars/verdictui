@@ -1,0 +1,1 @@
+{"completed_at": "2026-09-29T18:00:46Z", "conclusion": "success", "head_branch": "pr-directive/tap-pr", "head_sha": "b5e40f3cdf5ee8f7ad1e919b8bd8b4b066260a1c", "repo": "medlars/verdictui", "run_attempt": "1", "run_id": "36607512276", "schema_version": "1.0.0", "workflow": "CI"}
