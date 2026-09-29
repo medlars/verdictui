@@ -1,6 +1,4 @@
-// Wave 6: how the CLI writes, and what its exit code means.
-//
-// Everything the tool prints goes through this file, for one reason: stdout is
+// CLI output routing and exit codes. Everything the tool prints goes through this file, for one reason: stdout is
 // a machine-readable contract (an agent parses it) and stderr is a human one.
 // A single `print` anywhere else is how the two get mixed, and a verdict JSON
 // with a progress line stapled to the front is not JSON.
