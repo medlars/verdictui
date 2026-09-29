@@ -18,7 +18,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 _PM_PATH = str(_PROJECT_ROOT / "scripts" / "verdictui-pm.py")
 _PYTHON = sys.executable
 
-# The PM is FIVE files: the entrypoint plus the four siblings it composes (see
+# The PM is SIX files: the entrypoint plus the five siblings it composes (see
 # the entrypoint's docstring). A test that asserts on "the PM's source" must
 # read all of them or its subject silently leaves its window — and the failure
 # is in the PASSING direction, because an absence assertion over a file the
@@ -29,6 +29,7 @@ PM_MODULE_PATHS = (
     _PROJECT_ROOT / "scripts" / "verdictui_pm_swift.py",
     _PROJECT_ROOT / "scripts" / "verdictui_pm_stages.py",
     _PROJECT_ROOT / "scripts" / "verdictui_pm_smoke.py",
+    _PROJECT_ROOT / "scripts" / "verdictui_pm_bench.py",
 )
 
 

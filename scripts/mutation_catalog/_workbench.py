@@ -152,7 +152,7 @@ MUTATIONS: list[Mutation] = [
     ),
     Mutation(
         name="native workbench omits renderer editor screenshot",
-        path="scripts/workbench-acceptance.py",
+        path="scripts/workbench_acceptance_receipts.py",
         old='    "web-renderer",\n',
         new="",
         test="Tests/test_workbench_acceptance.py::test_renderer_editor_png_is_required",
@@ -176,7 +176,7 @@ MUTATIONS: list[Mutation] = [
     ),
     Mutation(
         name="native workbench omits persisted web editor roundtrip admission",
-        path="scripts/workbench-acceptance.py",
+        path="scripts/workbench_acceptance_receipts.py",
         old='validate_web_editor(editor.get("web_editor") if isinstance(editor, dict) else None)',
         new="pass  # mutation removes editor evidence admission",
         test="Tests/test_workbench_acceptance.py::test_web_editor_roundtrip_observations_are_required",
@@ -184,7 +184,7 @@ MUTATIONS: list[Mutation] = [
     ),
     Mutation(
         name="native workbench accepts missing observed workflow phases",
-        path="scripts/workbench-acceptance.py",
+        path="scripts/workbench_acceptance_receipts.py",
         old='if not isinstance(phases, list) or [p.get("id") for p in phases if isinstance(p, dict)] != list(\n        REQUIRED_PHASES\n    ):',
         new="if not isinstance(phases, list):",
         test="Tests/test_workbench_acceptance.py::test_native_phase_guard_independently_rejects_missing_running_phase",
@@ -192,7 +192,7 @@ MUTATIONS: list[Mutation] = [
     ),
     Mutation(
         name="native workbench accepts zero measured assertions",
-        path="scripts/workbench-acceptance.py",
+        path="scripts/workbench_acceptance_receipts.py",
         old='receipt["assertions"] < len(\n        REQUIRED_PHASES\n    )',
         new='receipt["assertions"] < 0',
         test="Tests/test_workbench_acceptance.py::test_native_assertion_guard_independently_rejects_zero",
@@ -200,7 +200,7 @@ MUTATIONS: list[Mutation] = [
     ),
     Mutation(
         name="native workbench accepts missing phase PNGs",
-        path="scripts/workbench-acceptance.py",
+        path="scripts/workbench_acceptance_receipts.py",
         old='if (\n        not isinstance(snapshots, list)\n        or not all(isinstance(s, dict) for s in snapshots)\n        or {s.get("phase") for s in snapshots} != REQUIRED_IMAGES\n        or len(snapshots) != len(REQUIRED_IMAGES)\n    ):',
         new="if not isinstance(snapshots, list):",
         test="Tests/test_workbench_acceptance.py::test_native_image_guard_independently_rejects_missing_snapshot",
@@ -208,7 +208,7 @@ MUTATIONS: list[Mutation] = [
     ),
     Mutation(
         name="native workbench trusts artifact descriptor without actual hash",
-        path="scripts/workbench-acceptance.py",
+        path="scripts/workbench_acceptance_receipts.py",
         old="if not isinstance(expected, str) or digest(path) != expected:",
         new="if not isinstance(expected, str):",
         test="Tests/test_workbench_acceptance.py::test_artifact_hash_guard_checks_actual_bytes",
@@ -216,7 +216,7 @@ MUTATIONS: list[Mutation] = [
     ),
     Mutation(
         name="native workbench accepts a visible app window",
-        path="scripts/workbench-acceptance.py",
+        path="scripts/workbench_acceptance_receipts.py",
         old='or cleanup.get("visible_windows") != 0',
         new="or False",
         test="Tests/test_workbench_acceptance.py::test_native_cleanup_guard_independently_rejects_visible_window",
@@ -484,7 +484,7 @@ MUTATIONS += [
     ),
     Mutation(
         name="motion telemetry requires original payload",
-        path="scripts/workbench-acceptance.py",
+        path="scripts/workbench_acceptance_receipts.py",
         old='validate_motion_phase(phases[5].get("observations"))',
         new="pass  # omit original motion admission",
         test="Tests/test_workbench_acceptance.py::test_original_motion_payload_cannot_be_missing_or_forge_advance[missing]",
@@ -492,7 +492,7 @@ MUTATIONS += [
     ),
     Mutation(
         name="motion telemetry preserves original booleans",
-        path="scripts/workbench-acceptance.py",
+        path="scripts/workbench_acceptance_receipts.py",
         old="type(observed.get(key)) is not bool",
         new="False",
         test="Tests/test_workbench_acceptance.py::test_original_motion_payload_cannot_be_missing_or_forge_advance[boolean]",
@@ -500,7 +500,7 @@ MUTATIONS += [
     ),
     Mutation(
         name="motion telemetry binds original claim",
-        path="scripts/workbench-acceptance.py",
+        path="scripts/workbench_acceptance_receipts.py",
         old='raise ValueError("motion mode claim differs from media observation")',
         new="pass  # deliberately omit this admission guard",
         test="Tests/test_workbench_acceptance.py::test_original_motion_payload_cannot_be_missing_or_forge_advance[claim]",
@@ -508,7 +508,7 @@ MUTATIONS += [
     ),
     Mutation(
         name="motion telemetry rejects reduced animation",
-        path="scripts/workbench-acceptance.py",
+        path="scripts/workbench_acceptance_receipts.py",
         old='raise ValueError("reduced motion retained animation")',
         new="pass  # deliberately omit this admission guard",
         test="Tests/test_workbench_acceptance.py::test_original_motion_payload_cannot_be_missing_or_forge_advance[reduced-animation]",
@@ -516,7 +516,7 @@ MUTATIONS += [
     ),
     Mutation(
         name="motion telemetry requires normal animation",
-        path="scripts/workbench-acceptance.py",
+        path="scripts/workbench_acceptance_receipts.py",
         old='raise ValueError("normal native motion did not advance")',
         new="pass  # deliberately omit this admission guard",
         test="Tests/test_workbench_acceptance.py::test_original_motion_payload_cannot_be_missing_or_forge_advance[empty-normal]",
@@ -524,7 +524,7 @@ MUTATIONS += [
     ),
     Mutation(
         name="motion telemetry requires finite original time",
-        path="scripts/workbench-acceptance.py",
+        path="scripts/workbench_acceptance_receipts.py",
         old='or not math.isfinite(item["time"])',
         new="or False",
         test="Tests/test_workbench_acceptance.py::test_original_motion_payload_cannot_be_missing_or_forge_advance[nan]",
@@ -532,7 +532,7 @@ MUTATIONS += [
     ),
     Mutation(
         name="motion telemetry requires running original state",
-        path="scripts/workbench-acceptance.py",
+        path="scripts/workbench_acceptance_receipts.py",
         old='first["state"] == second["state"] == "running" and second["time"] > first["time"]',
         new='second["time"] > first["time"]',
         test="Tests/test_workbench_acceptance.py::test_original_motion_payload_cannot_be_missing_or_forge_advance[paused]",
@@ -540,7 +540,7 @@ MUTATIONS += [
     ),
     Mutation(
         name="motion telemetry validates host mode",
-        path="scripts/workbench-acceptance.py",
+        path="scripts/workbench_acceptance_receipts.py",
         old='raise ValueError("motion host mode unavailable")',
         new="pass  # deliberately omit this admission guard",
         test="Tests/test_workbench_acceptance.py::test_motion_malformed_or_unbound_observations_refuse[mode]",
@@ -548,7 +548,7 @@ MUTATIONS += [
     ),
     Mutation(
         name="motion telemetry validates media type",
-        path="scripts/workbench-acceptance.py",
+        path="scripts/workbench_acceptance_receipts.py",
         old='raise ValueError("motion media boolean unavailable")',
         new="pass  # deliberately omit this admission guard",
         test="Tests/test_workbench_acceptance.py::test_motion_schema_rejects_invalid_but_authentically_bound_values[media-number-media boolean]",
@@ -556,7 +556,7 @@ MUTATIONS += [
     ),
     Mutation(
         name="motion telemetry validates WebKit time",
-        path="scripts/workbench-acceptance.py",
+        path="scripts/workbench_acceptance_receipts.py",
         old='raise ValueError("motion web timestamp/visibility unavailable")',
         new="pass  # deliberately omit this admission guard",
         test="Tests/test_workbench_acceptance.py::test_motion_schema_rejects_invalid_but_authentically_bound_values[negative-web-time-web timestamp]",
@@ -564,7 +564,7 @@ MUTATIONS += [
     ),
     Mutation(
         name="motion telemetry validates native windows",
-        path="scripts/workbench-acceptance.py",
+        path="scripts/workbench_acceptance_receipts.py",
         old='raise ValueError("motion native boolean/window observation malformed")',
         new="pass  # deliberately omit this admission guard",
         test="Tests/test_workbench_acceptance.py::test_motion_schema_rejects_invalid_but_authentically_bound_values[window-number-boolean/window]",
@@ -572,7 +572,7 @@ MUTATIONS += [
     ),
     Mutation(
         name="motion telemetry validates native cursor",
-        path="scripts/workbench-acceptance.py",
+        path="scripts/workbench_acceptance_receipts.py",
         old='raise ValueError("motion native interference observations missing")',
         new="pass  # deliberately omit this admission guard",
         test="Tests/test_workbench_acceptance.py::test_motion_schema_rejects_invalid_but_authentically_bound_values[cursor-boolean-interference observations]",
@@ -580,7 +580,7 @@ MUTATIONS += [
     ),
     Mutation(
         name="motion telemetry validates media history",
-        path="scripts/workbench-acceptance.py",
+        path="scripts/workbench_acceptance_receipts.py",
         old='raise ValueError("motion change history malformed")',
         new="pass  # deliberately omit this admission guard",
         test="Tests/test_workbench_acceptance.py::test_motion_schema_rejects_invalid_but_authentically_bound_values[history-number-change history malformed]",
@@ -588,7 +588,7 @@ MUTATIONS += [
     ),
     Mutation(
         name="motion telemetry requires checkpoint order",
-        path="scripts/workbench-acceptance.py",
+        path="scripts/workbench_acceptance_receipts.py",
         old='raise ValueError("motion checkpoints incomplete")',
         new="pass  # deliberately omit this admission guard",
         test="Tests/test_workbench_acceptance.py::test_motion_schema_rejects_invalid_but_authentically_bound_values[checkpoint-order-checkpoints incomplete]",
@@ -596,7 +596,7 @@ MUTATIONS += [
     ),
     Mutation(
         name="motion telemetry requires native clock order",
-        path="scripts/workbench-acceptance.py",
+        path="scripts/workbench_acceptance_receipts.py",
         old='raise ValueError("motion sample timing is inconsistent")',
         new="pass  # deliberately omit this admission guard",
         test="Tests/test_workbench_acceptance.py::test_motion_schema_rejects_invalid_but_authentically_bound_values[native-clock-sample timing]",
@@ -604,7 +604,7 @@ MUTATIONS += [
     ),
     Mutation(
         name="motion telemetry requires final clock order",
-        path="scripts/workbench-acceptance.py",
+        path="scripts/workbench_acceptance_receipts.py",
         old='raise ValueError("motion final/initial observations missing")',
         new="pass  # deliberately omit this admission guard",
         test="Tests/test_workbench_acceptance.py::test_motion_schema_rejects_invalid_but_authentically_bound_values[final-clock-final/initial]",
@@ -612,7 +612,7 @@ MUTATIONS += [
     ),
     Mutation(
         name="motion telemetry validates accessibility history",
-        path="scripts/workbench-acceptance.py",
+        path="scripts/workbench_acceptance_receipts.py",
         old='raise ValueError("motion accessibility change history missing")',
         new="pass  # deliberately omit this admission guard",
         test="Tests/test_workbench_acceptance.py::test_motion_schema_rejects_invalid_but_authentically_bound_values[accessibility-history-accessibility change history]",
@@ -620,7 +620,7 @@ MUTATIONS += [
     ),
     Mutation(
         name="motion telemetry retains environment names only",
-        path="scripts/workbench-acceptance.py",
+        path="scripts/workbench_acceptance_receipts.py",
         old='raise ValueError("motion environment/history provenance malformed")',
         new="pass  # deliberately omit this admission guard",
         test="Tests/test_workbench_acceptance.py::test_motion_schema_rejects_invalid_but_authentically_bound_values[environment-values-environment/history provenance]",
@@ -628,7 +628,7 @@ MUTATIONS += [
     ),
     Mutation(
         name="motion telemetry preserves raw JSON types",
-        path="scripts/workbench-acceptance.py",
+        path="scripts/workbench_acceptance_receipts.py",
         old="if type(left) is not type(right):",
         new="if False:",
         test="Tests/test_workbench_acceptance.py::test_motion_raw_boolean_number_alias_is_rejected",
@@ -636,7 +636,7 @@ MUTATIONS += [
     ),
     Mutation(
         name="motion telemetry rejects duplicate animation identity",
-        path="scripts/workbench-acceptance.py",
+        path="scripts/workbench_acceptance_receipts.py",
         old='raise ValueError("motion animation identities duplicated")',
         new="pass  # deliberately omit this admission guard",
         test="Tests/test_workbench_acceptance.py::test_motion_animation_identity_cannot_be_missing_aliased_or_replaced[duplicate]",
@@ -644,7 +644,7 @@ MUTATIONS += [
     ),
     Mutation(
         name="motion telemetry rejects numeric animation identity aliases",
-        path="scripts/workbench-acceptance.py",
+        path="scripts/workbench_acceptance_receipts.py",
         old='or type(item.get("id")) is not int',
         new="or False",
         test="Tests/test_workbench_acceptance.py::test_motion_animation_identity_cannot_be_missing_aliased_or_replaced[bool]",
@@ -652,7 +652,7 @@ MUTATIONS += [
     ),
     Mutation(
         name="motion telemetry requires same document clock",
-        path="scripts/workbench-acceptance.py",
+        path="scripts/workbench_acceptance_receipts.py",
         old='if same_document\n        and (b := later.get(a["id"])) is not None',
         new='if (b := later.get(a["id"])) is not None',
         test="Tests/test_workbench_acceptance.py::test_motion_requires_same_document_forward_clock[reversed]",
@@ -660,7 +660,7 @@ MUTATIONS += [
     ),
     Mutation(
         name="motion telemetry pairs stable animation identities",
-        path="scripts/workbench-acceptance.py",
+        path="scripts/workbench_acceptance_receipts.py",
         old='later = {item["id"]: item for item in second["animations"]}',
         new='later = {a["id"]: b for a, b in zip(first["animations"], second["animations"], strict=False)}',
         test="Tests/test_workbench_acceptance.py::test_motion_duplicate_names_track_animation_identity_across_reordering[False]",
@@ -668,7 +668,7 @@ MUTATIONS += [
     ),
     Mutation(
         name="motion telemetry requires animation time advance",
-        path="scripts/workbench-acceptance.py",
+        path="scripts/workbench_acceptance_receipts.py",
         old='and b["time"] > a["time"]',
         new='and b["time"] >= a["time"]',
         test="Tests/test_workbench_acceptance.py::test_motion_cannot_claim_normal_without_advance_and_sampled_noninterference[stationary]",
@@ -676,7 +676,7 @@ MUTATIONS += [
     ),
     Mutation(
         name="motion telemetry requires running animation state",
-        path="scripts/workbench-acceptance.py",
+        path="scripts/workbench_acceptance_receipts.py",
         old='and a["state"] == b["state"] == "running"',
         new="and True",
         test="Tests/test_workbench_acceptance.py::test_motion_cannot_claim_normal_without_advance_and_sampled_noninterference[paused]",
@@ -684,7 +684,7 @@ MUTATIONS += [
     ),
     Mutation(
         name="motion telemetry requires all animation families",
-        path="scripts/workbench-acceptance.py",
+        path="scripts/workbench_acceptance_receipts.py",
         old='and {"orbit", "breathe", "scan-light", "inspection-tilt"}.issubset(progressed)',
         new="and bool(progressed)",
         test="Tests/test_workbench_acceptance.py::test_motion_cannot_claim_normal_without_advance_and_sampled_noninterference[wrong-name]",
@@ -692,7 +692,7 @@ MUTATIONS += [
     ),
     Mutation(
         name="motion telemetry requires known foreground",
-        path="scripts/workbench-acceptance.py",
+        path="scripts/workbench_acceptance_receipts.py",
         old='quiet = diagnostic["initial_frontmost_pid"] > 0 and all(',
         new="quiet = all(",
         test="Tests/test_workbench_acceptance.py::test_motion_unknown_foreground_is_not_sampled_noninterference",
@@ -700,7 +700,7 @@ MUTATIONS += [
     ),
     Mutation(
         name="motion telemetry requires sampled noninterference",
-        path="scripts/workbench-acceptance.py",
+        path="scripts/workbench_acceptance_receipts.py",
         old="and quiet\n        and association",
         new="and True\n        and association",
         test="Tests/test_workbench_acceptance.py::test_motion_cannot_claim_normal_without_advance_and_sampled_noninterference[cursor]",
@@ -708,7 +708,7 @@ MUTATIONS += [
     ),
     Mutation(
         name="motion telemetry requires observed host association",
-        path="scripts/workbench-acceptance.py",
+        path="scripts/workbench_acceptance_receipts.py",
         old="and association\n        and dropped == 0",
         new="and True\n        and dropped == 0",
         test="Tests/test_workbench_acceptance.py::test_motion_cannot_claim_normal_without_advance_and_sampled_noninterference[association]",
@@ -716,7 +716,7 @@ MUTATIONS += [
     ),
     Mutation(
         name="motion telemetry requires lossless media history",
-        path="scripts/workbench-acceptance.py",
+        path="scripts/workbench_acceptance_receipts.py",
         old='and all(sample["web"]["changes_dropped"] == 0 for sample in samples)',
         new="and True",
         test="Tests/test_workbench_acceptance.py::test_motion_cannot_claim_normal_without_advance_and_sampled_noninterference[dropped]",
@@ -756,7 +756,7 @@ MUTATIONS += [
     ),
     Mutation(
         name="motion telemetry requires lossless native history",
-        path="scripts/workbench-acceptance.py",
+        path="scripts/workbench_acceptance_receipts.py",
         old="and dropped == 0",
         new="and True",
         test="Tests/test_workbench_acceptance.py::test_motion_cannot_claim_normal_without_advance_and_sampled_noninterference[native-dropped]",
@@ -764,7 +764,7 @@ MUTATIONS += [
     ),
     Mutation(
         name="motion telemetry requires observed phase mode",
-        path="scripts/workbench-acceptance.py",
+        path="scripts/workbench_acceptance_receipts.py",
         old='observed.get("normal_motion_verified") is True\n        and observed.get("reduced_motion") is False',
         new="True",
         test="Tests/test_workbench_acceptance.py::test_motion_cannot_claim_normal_without_advance_and_sampled_noninterference[phase]",
@@ -772,7 +772,7 @@ MUTATIONS += [
     ),
     Mutation(
         name="motion telemetry requires actual normal media",
-        path="scripts/workbench-acceptance.py",
+        path="scripts/workbench_acceptance_receipts.py",
         old='web["reduced"] is False\n            and web["no_preference"] is True',
         new="True",
         test="Tests/test_workbench_acceptance.py::test_motion_cannot_claim_normal_without_advance_and_sampled_noninterference[media-changed]",

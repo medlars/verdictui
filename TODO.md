@@ -218,3 +218,4 @@
 ## CEO Audit (2026-08-30)
 
 - [x] (2026-09-23) Prior 2073-line PM entrypoint finding is resolved by modularization: `verdictui-pm.py` measures 333 lines, `verdictui_pm_stages.py` 305 and `verdictui_pm_smoke.py` 762. Existing composition and behavioral tests pass.
+- [x] (P1) testwatch-hook: no test file references `workbench_acceptance_receipts` — add tests for `scripts/workbench_acceptance_receipts.py` (2026-09-29: `Tests/test_workbench_acceptance.py` exercises the module through the driver and names it in `test_observed_tree_beyond_its_named_bound_is_rejected`)

@@ -281,22 +281,21 @@ extension ProjectRunnerTests {
         }
     }
 
-    // CIS-96F9AEE5: under host contention a forked `/bin/sh` can be killed
-    // before it reaches its first line, so `echo started > started.txt` never
-    // ran even though the timeout path behaved correctly — a setup-margin
-    // problem, not a timeout-correctness problem (repro: `swift test --jobs 4`
-    // at load ~400+). Widened from 0.15 s/0.5 s to 1.5 s/3 s: the marker write
-    // gets real room to happen even under load, while `sleep 3` stays
-    // comfortably longer than the 1.5 s timeout, so the timeout still fires
-    // while the command is genuinely still running (the behavior this test
-    // exists to prove).
+    // "Running" is proven by the product's own loop, not by a marker the child
+    // writes: `buildIfConfigured` can only report "timed out" while
+    // `process.status()` is nil, i.e. while the spawned command is alive. A
+    // first-line marker instead measured how soon the scheduler ran the child,
+    // which failed under contention although the timeout behaved (CIS-96F9AEE5).
+    // The monotonic lower bound shows the DECLARED budget governed; the long
+    // sleep keeps a starved poll loop from seeing the command finish first.
     func testDeclaredBuildTimeoutReachesRunningCommand() throws {
         try buildProject(settings: ["buildProduct": "Consumer", "buildTimeoutSeconds": 1.5],
-                         script: "echo started > started.txt\nexec /bin/sleep 3") { root, executable in
+                         script: "exec /bin/sleep 30") { root, executable in
+            let started = ProcessInfo.processInfo.systemUptime
             XCTAssertThrowsError(try ProjectRunner.buildIfConfigured(projectRoot: root, swiftExecutable: executable)) { error in
-                XCTAssertTrue(String(describing: error).contains("timed out after 1.5 seconds"))
+                XCTAssertTrue(String(describing: error).contains("timed out after 1.5 seconds"), "\(error)")
             }
-            XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("started.txt").path))
+            XCTAssertGreaterThanOrEqual(ProcessInfo.processInfo.systemUptime - started, 1.5)
         }
     }
 
