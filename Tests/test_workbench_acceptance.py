@@ -654,6 +654,17 @@ def test_incomplete_or_tampered_evidence_is_rejected(tmp_path, mutation):
         subject().validate_report(receipt, tmp_path)
 
 
+@pytest.mark.parametrize("bound", ["MAX_OBSERVED_TREE_NODES", "MAX_OBSERVED_TREE_DEPTH"])
+def test_observed_tree_beyond_its_named_bound_is_rejected(tmp_path, monkeypatch, bound):
+    receipt = synthetic_receipt(tmp_path)
+    subject()
+    receipts = sys.modules["workbench_acceptance_receipts"]
+    # The synthetic tree is one root plus ten leaves: 11 nodes, depth 1.
+    monkeypatch.setattr(receipts, bound, 5 if bound.endswith("NODES") else 0)
+    with pytest.raises(ValueError, match="bounded shape"):
+        subject().validate_report(receipt, tmp_path)
+
+
 def test_native_phase_guard_independently_rejects_missing_running_phase(tmp_path):
     receipt = synthetic_receipt(tmp_path)
     receipt["phases"].pop(5)

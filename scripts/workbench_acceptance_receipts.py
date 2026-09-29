@@ -15,6 +15,8 @@ import os
 from pathlib import Path
 from typing import Any, cast
 
+MAX_OBSERVED_TREE_NODES = 10_000
+MAX_OBSERVED_TREE_DEPTH = 100
 REQUIRED_PHASES = (
     "connected",
     "project-selection",
@@ -195,7 +197,11 @@ def validate_native_receipt(receipt: Any, root: Path) -> dict:
     while stack:
         node, depth = stack.pop()
         count += 1
-        if not isinstance(node, dict) or count > 10_000 or depth > 100:
+        if (
+            not isinstance(node, dict)
+            or count > MAX_OBSERVED_TREE_NODES
+            or depth > MAX_OBSERVED_TREE_DEPTH
+        ):
             raise ValueError("observed DOM tree exceeds its bounded shape")
         attributes = node.get("attributes", {})
         if not isinstance(attributes, dict) or attributes.get("web.observer") != "WKWebView DOM":
