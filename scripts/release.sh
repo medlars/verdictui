@@ -26,6 +26,7 @@ for burned in "${BURNED_VERSIONS[@]}"; do
 done
 
 cd "$(dirname "$0")/.."
+root="$(pwd)"
 git fetch -q origin --tags
 [ "$(git branch --show-current)" = "main" ] || fail "not on main"
 [ -z "$(git status --porcelain)" ] || fail "working tree is dirty"
@@ -64,6 +65,6 @@ sed -i '' -e "s|archive/refs/tags/v[0-9.]*\.tar\.gz|archive/refs/tags/v$version.
           -e 's|depends_on xcode: \["15.0", :build\]|depends_on xcode: ["16.0", :build]|' Formula/verdictui.rb
 git add -- Formula/verdictui.rb
 git commit -q -m "verdictui $version"
-git push -q origin HEAD:main
-echo "RELEASED v$version sha256 $sha"
+tap_pr="$(bash "$root/scripts/land-tap-formula.sh" "$tap_dir" "$version")"
+echo "RELEASED v$version sha256 $sha (tap $tap_pr)"
 echo "next: brew update && brew upgrade verdictui; if it fails follow docs/rollback.md"
