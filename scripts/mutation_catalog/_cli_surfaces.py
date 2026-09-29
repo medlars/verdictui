@@ -317,4 +317,11 @@ MUTATIONS: list[Mutation] = [
         # pass, so the condition is declared here (no.md #62).
         skips_when=("the host is headless, lacks Accessibility trust, or Finder is not running"),
     ),
+    Mutation(
+        name="a witness launch adopts a host that was already running",
+        path="Sources/VerdictUIWitness/WitnessHostProcess.swift",
+        old="running.last { !preexisting.contains($0) }",
+        new="running.last",
+        test="WitnessHostAdoptionTests/testTheNewestHostThatThisLaunchStartedIsAdopted",
+    ),
 ]

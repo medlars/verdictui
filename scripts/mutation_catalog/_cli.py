@@ -553,4 +553,11 @@ MUTATIONS: list[Mutation] = [
         new="true",
         test="ProjectRunnerTests/testInvalidManifestAndEmptyRunnerFailClosed",
     ),
+    Mutation(
+        name="declared consumer build timeout no longer bounds a running command",
+        path="Sources/VerdictUICLICore/ProjectRunner.swift",
+        old="guard !shouldCancel(), ProcessInfo.processInfo.systemUptime < deadline else {",
+        new="guard !shouldCancel() else {",
+        test="ProjectRunnerTests/testDeclaredBuildTimeoutReachesRunningCommand",
+    ),
 ]

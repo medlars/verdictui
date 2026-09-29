@@ -200,6 +200,11 @@ public struct WitnessHostProcess {
         launch.arguments = [
             "-n", "-a", bundle.path, "--args", scenario, String(hostLifetime),
         ]
+        // Every host shares one bundle identifier, so a host that was already
+        // running before THIS launch (a previous scenario's still-terminating
+        // host, an MCP render host, a peer session) must never be adopted: it
+        // is serving a different scenario (CTS-7685E2ED).
+        let preexisting = Set(Self.runningHostPIDs())
         do {
             try launch.run()
         } catch {
@@ -211,7 +216,7 @@ public struct WitnessHostProcess {
                 "open exited \(launch.terminationStatus) launching the host bundle")
         }
 
-        let pid = try awaitHost(timeout: readyTimeout)
+        let pid = try awaitHost(timeout: readyTimeout, excluding: preexisting)
         defer { kill(pid, SIGTERM) }
         return try body(pid)
     }
@@ -234,12 +239,12 @@ public struct WitnessHostProcess {
     /// here would be the same guess in a new place. Running the run loop yields
     /// to the OS and returns as soon as the deadline slice elapses, so the wait
     /// is bounded without a thread ever being parked on a guess.
-    private func awaitHost(timeout: TimeInterval) throws -> pid_t {
+    private func awaitHost(timeout: TimeInterval, excluding preexisting: Set<pid_t>) throws -> pid_t {
         let deadline = Date().addingTimeInterval(timeout)
         var lastError: Int32 = 0
         var seenPID: pid_t?
         while Date() < deadline {
-            if let pid = runningHostPID() {
+            if let pid = Self.launchedHostPID(running: Self.runningHostPIDs(), excluding: preexisting) {
                 seenPID = pid
                 do {
                     _ = try AXReader.readTree(pid: pid)
@@ -256,14 +261,18 @@ public struct WitnessHostProcess {
         throw AXReader.Failure.noWindow(axError: lastError)
     }
 
-    /// The pid of the most recently launched host, via its bundle identifier.
+    /// Every running host's pid, in LaunchServices' launch order.
     ///
     /// LaunchServices detaches the process, so the `open` child's pid is not the
     /// host's and stdout is not connected — the identifier is what remains.
-    private func runningHostPID() -> pid_t? {
-        NSRunningApplication.runningApplications(withBundleIdentifier: Self.bundleIdentifier)
-            .last?
-            .processIdentifier
+    private static func runningHostPIDs() -> [pid_t] {
+        NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier)
+            .map(\.processIdentifier)
+    }
+
+    /// The newest host that was NOT already running before this launch.
+    static func launchedHostPID(running: [pid_t], excluding preexisting: Set<pid_t>) -> pid_t? {
+        running.last { !preexisting.contains($0) }
     }
 
     static let bundleIdentifier = "com.vohux.verdictui.witnesshost"
