@@ -1,0 +1,1 @@
+{"completed_at": "2026-09-29T01:46:45Z", "conclusion": "failure", "head_branch": "cursor/decouple-clicore-demo-261b", "head_sha": "a071a912e9928e3c21b9d52bad6dfdb66c0f4c5b", "repo": "medlars/verdictui", "run_attempt": "1", "run_id": "36508676173", "schema_version": "1.0.0", "workflow": "CI"}
