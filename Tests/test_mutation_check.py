@@ -279,10 +279,11 @@ class TestPytestRunner:
         adding a threshold to the stage fails this until it is mutated —
         a count would merely need to be bumped."""
         mod = _load()
-        # The bench stages moved into `verdictui_pm_smoke` when the PM was split
-        # (CTS-6DBFF8C6); the `split` below raises rather than matching nothing,
-        # so this names its subject's file instead of silently missing it.
-        stage_module = "scripts/verdictui_pm_smoke.py"
+        # The bench stages live in `verdictui_pm_bench` (split out of
+        # `verdictui_pm_smoke`, CIS-8BBA6638); the `split` below raises rather than
+        # matching nothing, so this names its subject's file instead of silently
+        # missing it.
+        stage_module = "scripts/verdictui_pm_bench.py"
         pm_source = (_PROJECT_ROOT / stage_module).read_text()
         stage = pm_source.split("def stage_runtime_bench")[1].split("\n    def ")[0]
 

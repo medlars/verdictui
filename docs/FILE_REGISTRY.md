@@ -255,7 +255,8 @@
 | `scripts/verdictui_pm_support.py` | PM shared state — project paths, constants, logging, contention probe, timing lane. SINGLE OWNER of every name the suite monkeypatches, reached as `S.<name>` so a patch binds at call time | Active | 2026-08-30 |
 | `scripts/verdictui_pm_swift.py` | PM SwiftPM layer — lock files, runner acquisition, streamed test, locked product build, process-group termination | Active | 2026-08-30 |
 | `scripts/verdictui_pm_stages.py` | PM stage mixin — build, test, floor, contracts, architecture, lint, demo, governance wrappers | Active | 2026-08-30 |
-| `scripts/verdictui_pm_smoke.py` | PM stage mixin — CLI/transport smoke, mutation catalog, installed parity, stale buffer, SLO benches, pytest | Active | 2026-08-30 |
+| `scripts/verdictui_pm_smoke.py` | PM stage mixin — CLI/transport smoke, mutation catalog, installed parity, stale buffer, pytest | Active | 2026-09-29 |
+| `scripts/verdictui_pm_bench.py` | PM stage mixin — SLO 1 runtime bench and SLO 3 warm-MCP latency gates (split from `verdictui_pm_smoke.py`, CIS-8BBA6638) | Active | 2026-09-29 |
 | `scripts/floor-check.py`                                             | Floor compliance audit                                                                                                                                 | Active | 2026-08-04 |
 | `scripts/kernel-symbol-audit.py`                                     | Exit-gate checker: every public kernel symbol documented and mentioned by a test                                                                       | Active | 2026-08-04 |
 | `scripts/verify-swift-test-output.py` | Standalone CI test-summary admission with command status and explicit skip accounting | Active | 2026-09-24 |
@@ -264,8 +265,10 @@
 | `scripts/mutation_catalog/_probe.py` | Mutation rows targeting `Sources/VerdictUIProbe` | Active | 2026-08-28 |
 | `scripts/mutation_catalog/_kernel.py` | Mutation rows targeting `Sources/VerdictUIKernel` | Active | 2026-08-28 |
 | `scripts/mutation_catalog/_macros.py` | Mutation rows targeting `Sources/VerdictUIMacros` | Active | 2026-08-28 |
-| `scripts/mutation_catalog/_cli.py` | Mutation rows targeting the CLI, witness and demo scenarios | Active | 2026-08-28 |
-| `scripts/mutation_catalog/_scripts.py` | Mutation rows targeting the Python harness under `scripts/` | Active | 2026-08-28 |
+| `scripts/mutation_catalog/_cli.py` | Mutation rows targeting scenario act, consumer packages, builds and runners | Active | 2026-09-29 |
+| `scripts/mutation_catalog/_cli_surfaces.py` | Mutation rows targeting the demo, daemon, MCP transport and witness surfaces (split from `_cli.py`, CIS-DEF25670) | Active | 2026-09-29 |
+| `scripts/mutation_catalog/_scripts.py` | Mutation rows targeting Swift/CI summary admission and OS-wait guards under `scripts/` | Active | 2026-09-29 |
+| `scripts/mutation_catalog/_scripts_pm_stages.py` | Mutation rows targeting PM stages, bench gates and the mutation harness (split from `_scripts.py`, CIS-27F7D87A) | Active | 2026-09-29 |
 | `scripts/mutation_catalog/_misc.py` | Mutation rows targeting `Tests/`, `Package.swift`, docs and CLAUDE.md | Active | 2026-08-28 |
 | `scripts/stale-buffer-check.py`                                      | Detects a tracked file overwritten by a stale editor buffer — mtime older than the commit that touched it (CIS-638133AE)                                | Active | 2026-08-09 |
 | `Tests/test_stale_buffer_check.py`                                   | Guards the stale-buffer detector, mostly controls: an ordinary fresh edit must NOT fire                                                                 | Active | 2026-08-09 |
@@ -345,7 +348,8 @@
 | `examples/ConsumerApp/verify-integration.py` | verify-integration: external consumer acceptance fixture | Active | 2026-09-23 |
 | `examples/LiveAppFixture/Fixture.swift` | Fixture: external consumer acceptance fixture | Active | 2026-09-23 |
 | `scripts/mutation_catalog/_native.py` | _native: guard mutation witnesses | Active | 2026-09-23 |
-| `scripts/mutation_catalog/_web.py` | _web: session, transport, browser and credential guard mutation witnesses | Active | 2026-09-24 |
+| `scripts/mutation_catalog/_web.py` | _web: lifecycle evidence, document fixture, retirement and guarded-process guard mutation witnesses | Active | 2026-09-29 |
+| `scripts/mutation_catalog/_web_runtime.py` | _web_runtime: frame coherence, fixture, session and credential-resolver guard mutation witnesses (split from `_web.py`, CIS-8BE68FCB) | Active | 2026-09-29 |
 | `scripts/mutation_catalog/_web_lint.py` | _web_lint: WebLint guard mutation witnesses (split from _web.py, CTS-61F7E641) | Active | 2026-09-24 |
 | `scripts/mutation_catalog/_web_paint.py` | _web_paint: paint-semantics, frame and inline geometry guard mutation witnesses | Active | 2026-09-24 |
 | `scripts/mutation_catalog/_web_snapshot.py` | _web_snapshot: DOMSnapshot assembly and accessible-name guard mutation witnesses | Active | 2026-09-24 |
@@ -389,7 +393,8 @@
 | `Tests/VerdictUIWorkbenchCoreTests/WorkbenchAcceptanceSupportTests.swift` | Real CFBoolean, file archival, NotificationCenter lifetime and never-shown NSWindow witnesses | Active | 2026-09-25 |
 | `scripts/mutation_catalog/_workbench_motion.py` | Native motion and cleanup mutation witnesses | Active | 2026-09-25 |
 | `Sources/VerdictUIWorkbench/WorkbenchAcceptance.swift` | Quiet real WKWebView/bridge workflow, native snapshots and observed DOM export | Active | 2026-09-24 |
-| `scripts/workbench-acceptance.py` | Own native acceptance process and isolated fixtures; validate retained observations | Active | 2026-09-24 |
+| `scripts/workbench-acceptance.py` | Own native acceptance process and isolated fixtures; validate the retained report | Active | 2026-09-29 |
+| `scripts/workbench_acceptance_receipts.py` | Native receipt, artifact and motion validators for the acceptance driver (split out, CIS-67024614) | Active | 2026-09-29 |
 | `Tests/test_workbench_acceptance.py` | Reject incomplete phases, corrupted images/history/tree and unbound native reports | Active | 2026-09-24 |
 | `Sources/VerdictUIWorkbenchCore/WorkbenchResources.swift` | Resolve exact native copied assets in nested and flat SwiftPM bundles | Active | 2026-09-24 |
 | `Tests/VerdictUIWorkbenchCoreTests/WorkbenchResourcesTests.swift` | Real filesystem layout and redirection refusal controls | Active | 2026-09-24 |

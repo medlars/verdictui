@@ -55,7 +55,7 @@ def pm_module():
 @requires_pm_base
 def test_the_pm_composes_both_stage_mixins(pm_module) -> None:
     names = [base.__name__ for base in pm_module.VerdictUIPM.__mro__]
-    for mixin in ("VerdictUIStagesMixin", "VerdictUISmokeMixin"):
+    for mixin in ("VerdictUIStagesMixin", "VerdictUISmokeMixin", "VerdictUIBenchMixin"):
         assert mixin in names, (
             f"{mixin} is not in VerdictUIPM's MRO, so every stage it carries has "
             f"silently left the pipeline. The module still imports and the class "
@@ -68,13 +68,14 @@ def test_every_stage_each_mixin_defines_is_reachable_on_the_pm(pm_module) -> Non
     """The composition is the mechanism; THIS is the consequence, and it is what
     actually matters. Asserting the base list alone would pass if a mixin were
     present but its stages renamed out from under the runner."""
-    import verdictui_pm_smoke  # noqa: PLC0415 — resolved via the fixture's sys.path
+    import verdictui_pm_bench  # noqa: PLC0415 — resolved via the fixture's sys.path
+    import verdictui_pm_smoke  # noqa: PLC0415
     import verdictui_pm_stages  # noqa: PLC0415
 
     missing: list[str] = []
     total = 0
-    for module in (verdictui_pm_stages, verdictui_pm_smoke):
-        for cls_name in ("VerdictUIStagesMixin", "VerdictUISmokeMixin"):
+    for module in (verdictui_pm_stages, verdictui_pm_smoke, verdictui_pm_bench):
+        for cls_name in ("VerdictUIStagesMixin", "VerdictUISmokeMixin", "VerdictUIBenchMixin"):
             cls = getattr(module, cls_name, None)
             if cls is None:
                 continue
