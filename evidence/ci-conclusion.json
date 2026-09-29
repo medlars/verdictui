@@ -1,0 +1,1 @@
+{"completed_at": "2026-09-29T06:45:06Z", "conclusion": "success", "head_branch": "cursor/capture-workflow-phantom-name-1cb2", "head_sha": "66013871960044088c8df97121aab031ca96fe20", "repo": "medlars/verdictui", "run_attempt": "1", "run_id": "36531631831", "schema_version": "1.0.0", "workflow": "CI"}
