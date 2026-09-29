@@ -1,19 +1,20 @@
 #!/usr/bin/env python3.14
 """VerdictUI PM. Run: python3.14 scripts/verdictui-pm.py --quick
 
-Entrypoint only. The implementation lives in four siblings in this directory:
+Entrypoint only. The implementation lives in five siblings in this directory:
 
 | Module                    | Owns                                                     |
 | ------------------------- | -------------------------------------------------------- |
 | `verdictui_pm_support`    | Project paths, constants, logging, contention, timing env |
 | `verdictui_pm_swift`      | SwiftPM lock files, runner, streamed test, locked build   |
 | `verdictui_pm_stages`     | Build/test/architecture/lint/demo/governance stage mixin  |
-| `verdictui_pm_smoke`      | Smoke, parity, mutation-catalog and SLO-bench stage mixin |
+| `verdictui_pm_smoke`      | Smoke, parity and mutation-catalog stage mixin            |
+| `verdictui_pm_bench`      | SLO 1 / SLO 3 benchmark stage mixin                       |
 
 `print()` HERE IS THE CONTRACT, NOT A DEBUG LEAK — recorded because a quality
 scanner reads it as one (CIS-0D4BCEBB, "PM script uses print() -- should use
 structured logging"). Measured 2026-08-31: all 6 calls in this file are the CLI's
-report surface and there are ZERO in the four implementation siblings, which is
+report surface and there are ZERO in the five implementation siblings, which is
 where a stray debug print would actually be.
 
 Four emit the `query` subcommand's JSON payload on STDOUT, which a caller parses;
@@ -62,6 +63,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import verdictui_pm_support as S  # noqa: E402 — must follow the sys.path setup
 import verdictui_pm_swift as SW  # noqa: E402 — must follow the sys.path setup
+from verdictui_pm_bench import VerdictUIBenchMixin  # noqa: E402
 from verdictui_pm_smoke import VerdictUISmokeMixin  # noqa: E402
 from verdictui_pm_stages import VerdictUIStagesMixin  # noqa: E402
 from verdictui_pm_support import PROJECT_NAME, PmBase, stage_result_is_skip  # noqa: E402
@@ -112,7 +114,7 @@ def mutation_sweep_in_progress() -> bool:
     return (time.time() - started) < MUTATION_SWEEP_TTL_SECONDS
 
 
-class VerdictUIPM(VerdictUIStagesMixin, VerdictUISmokeMixin, PmBase):
+class VerdictUIPM(VerdictUIStagesMixin, VerdictUISmokeMixin, VerdictUIBenchMixin, PmBase):
     """Project Manager for VerdictUI — owns build, test, architecture, and governance stages.
 
     The stage methods come from the two mixins, which precede `PmBase` in the

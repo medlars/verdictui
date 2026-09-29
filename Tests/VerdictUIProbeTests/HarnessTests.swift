@@ -253,7 +253,8 @@ final class HarnessTests: XCTestCase {
             XCTAssertEqual(
                 step.verdict.findings.map(\.rule), [Quiescence.timeoutRule],
                 "the fixture must reach the settle-timeout branch, got "
-                    + "\(step.verdict.findings.map(\.rule))"
+                    + "\(step.verdict.findings.map { "\($0.rule): \($0.message)" }) "
+                    + "elapsedMs=\(step.elapsedMs) settleMs=\(settleMs) budgetMs=\(budgetMs)"
             )
             XCTAssertGreaterThan(
                 settleMs, budgetMs,
