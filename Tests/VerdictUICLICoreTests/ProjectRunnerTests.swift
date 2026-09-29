@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import VerdictUIProbe
 import XCTest
 
@@ -89,23 +90,36 @@ final class ProjectRunnerTests: XCTestCase {
     @MainActor
     func testCustomRegistryReachesAllStandardEnvironmentsAndDoesNotLeak() async {
         let root = FileManager.default.temporaryDirectory
-        await VerdictUIRunner.withRegistry(ScenarioRegistry([]), root: root) {
+        let marker = ScenarioRegistry([ScenarioEntry { TaskLocalLeakMarkerScenario() }])
+        await VerdictUIRunner.withRegistry(marker, root: root) {
             let env = CommandEnvironment.standard()
             XCTAssertFalse(env.usesFallbackCatalog)
-            XCTAssertEqual(env.engine.scenarioNames, [])
+            XCTAssertEqual(env.engine.scenarioNames, [TaskLocalLeakMarkerScenario.scenarioName])
             XCTAssertEqual(
                 env.pixelArtifactRoot,
                 root.appendingPathComponent(PixelArtifact.directory, isDirectory: true))
             let response = await VerdictDaemon.handle(
                 .init(method: "list", id: "custom"), engine: env.engine)
             if case .scenarios(let names) = response.result {
-                XCTAssertEqual(names, [])
+                XCTAssertEqual(names, [TaskLocalLeakMarkerScenario.scenarioName])
             } else {
                 XCTFail("custom registry was not dispatched")
             }
         }
-        XCTAssertTrue(CommandEnvironment.standard().usesFallbackCatalog)
-        XCTAssertFalse(CommandEnvironment.standard().engine.scenarioNames.isEmpty)
+        let after = CommandEnvironment.standard()
+        XCTAssertFalse(after.usesFallbackCatalog)
+        XCTAssertTrue(
+            after.engine.scenarioNames.isEmpty,
+            "withRegistry's TaskLocal must not leak past the operation block")
+    }
+}
+
+private struct TaskLocalLeakMarkerScenario: VerdictScenario, Sendable {
+    static let scenarioName = "tasklocal-leak-marker"
+    let name = scenarioName
+
+    func body(state: ScenarioState) -> some View {
+        Text("marker").verdictProbe("marker", role: .text, text: "marker")
     }
 }
 
