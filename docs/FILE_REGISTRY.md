@@ -261,6 +261,8 @@
 | `scripts/floor-check.py`                                             | Floor compliance audit                                                                                                                                 | Active | 2026-08-04 |
 | `scripts/kernel-symbol-audit.py`                                     | Exit-gate checker: every public kernel symbol documented and mentioned by a test                                                                       | Active | 2026-08-04 |
 | `scripts/verify-swift-test-output.py` | Standalone CI test-summary admission with command status and explicit skip accounting | Active | 2026-09-24 |
+| `scripts/package-desktop-zip.sh` | Builds the desktop release zip with no AppleDouble/`__MACOSX` entries; `--verify` refuses such entries and re-runs codesign after both `unzip` and `ditto -x` | Active | 2026-09-30 |
+| `scripts/test-package-desktop-zip.sh` | CI proof for the packager: a signed fixture with xattrs passes, the plain-`ditto` zip of it is refused | Active | 2026-09-30 |
 | `scripts/mutation-check.py`                                          | Mutation harness — breaks a guard on purpose and fails if no test notices                                                                              | Active | 2026-08-04 |
 | `scripts/mutation_catalog/__init__.py` | Reassembles `MUTATIONS` from the parts below in a fixed order; separate from the harness so a row may quote harness code without self-matching (`no.md` #16) | Active | 2026-08-28 |
 | `scripts/mutation_catalog/_probe.py` | Mutation rows targeting `Sources/VerdictUIProbe` | Active | 2026-08-28 |
