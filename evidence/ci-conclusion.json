@@ -1,0 +1,1 @@
+{"completed_at": "2026-09-30T19:58:38Z", "conclusion": "success", "head_branch": "fix/register-zip-scripts", "head_sha": "86e0b2e14c9541dc16af4ae3e9bc219e96da85b7", "repo": "medlars/verdictui", "run_attempt": "1", "run_id": "36767596638", "schema_version": "1.0.0", "workflow": "CI"}
