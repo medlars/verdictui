@@ -15,10 +15,13 @@ resources together. Development output is ad-hoc signed. Set
 sign a distribution build with hardened runtime and timestamp. The script
 verifies the resulting signature and matching helper version.
 
-Create a zip with `ditto -c -k --keepParent dist/VerdictUI.app <archive>`, submit
-it with `xcrun notarytool submit <archive> --keychain-profile vohux-notary --wait`,
-then staple and validate the app. Recreate the zip after stapling. Publish only
-an accepted, signature-verified archive and retain its SHA-256 with the release.
+Create a zip with `bash scripts/package-desktop-zip.sh dist/VerdictUI.app <archive>`,
+submit it with `xcrun notarytool submit <archive> --keychain-profile vohux-notary --wait`,
+then staple and validate the app. Recreate the zip with the same script after
+stapling. Publish only an accepted archive that the script verified and retain its
+SHA-256 with the release. Do not archive with plain `ditto -c -k`: it stores
+extended attributes as `._*` entries that break the signature when the zip is
+extracted with `unzip` (v1.1.3, CIS-353E4881).
 
 The in-process verification path needs no Accessibility or Screen Recording
 permission. The live-app adapter measures its OS access; denied access remains
