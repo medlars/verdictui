@@ -1,0 +1,1 @@
+{"completed_at": "2026-09-30T06:33:37Z", "conclusion": "failure", "head_branch": "cursor/ci-evidence-artifact-name-a160", "head_sha": "1480bf5cf279cf47d4a4708e3b3cfc9cf869859f", "repo": "medlars/verdictui", "run_attempt": "1", "run_id": "36677856585", "schema_version": "1.0.0", "workflow": "CI"}
