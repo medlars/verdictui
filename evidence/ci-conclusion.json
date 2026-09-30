@@ -1,0 +1,1 @@
+{"completed_at": "2026-09-30T03:00:46Z", "conclusion": "success", "head_branch": "chore/ruff-force-exclude", "head_sha": "f030d59030ef2bb5f480eddf2b3396c49cfe7730", "repo": "medlars/verdictui", "run_attempt": "1", "run_id": "36661479203", "schema_version": "1.0.0", "workflow": "CI"}
