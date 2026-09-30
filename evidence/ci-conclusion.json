@@ -1,0 +1,1 @@
+{"completed_at": "2026-09-30T19:36:21Z", "conclusion": "failure", "head_branch": "fix/release-zip-no-appledouble", "head_sha": "d4779012caf35da4b0768ebd5051a738b2c2fad4", "repo": "medlars/verdictui", "run_attempt": "1", "run_id": "36765438764", "schema_version": "1.0.0", "workflow": "CI"}
