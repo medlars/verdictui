@@ -11,14 +11,17 @@ Use the Developer ID identity and `vohux-notary` keychain profile recorded in
 
 1. Build with `VERDICTUI_SIGN_IDENTITY` set and
    `bash scripts/build-workbench.sh release`.
-2. Archive the app with `ditto -c -k --keepParent dist/VerdictUI.app <archive>`.
+2. Archive the app with `bash scripts/package-desktop-zip.sh dist/VerdictUI.app <archive>`.
+   It refuses archives with AppleDouble entries and proves the signature survives
+   both `unzip` and `ditto` extraction.
 3. Submit using `xcrun notarytool submit <archive> --keychain-profile vohux-notary --wait`.
    Require **Accepted**, and retain the submission ID and log.
 4. Run `xcrun stapler staple dist/VerdictUI.app`, then
    `xcrun stapler validate dist/VerdictUI.app`,
    `codesign --verify --deep --strict dist/VerdictUI.app`, and
    `spctl --assess --type execute -vv dist/VerdictUI.app`.
-5. Recreate the archive after stapling, record its SHA-256, and attach that archive
+5. Recreate the archive with the same script after stapling, record the SHA-256 it
+   prints, and attach that archive
    to the matching GitHub release. Compare installed app/helper bytes with the
    verified artifact and run installed acceptance before declaring completion.
 

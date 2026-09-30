@@ -78,6 +78,9 @@ jobs:
           set -o pipefail
           swift run VerdictUIDemo | python3 -c "import sys, json; json.load(sys.stdin)"
 
+      - name: Desktop archive has no AppleDouble entries and verifies after unzip
+        run: bash scripts/test-package-desktop-zip.sh
+
       - name: Prepare current native Workbench and consumer
         run: bash scripts/build-workbench-acceptance.sh debug
 

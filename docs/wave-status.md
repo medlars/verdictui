@@ -318,6 +318,10 @@ Fresh MCP connections advertise 18 tools. Existing Codex connections still carry
 
 Version 1.1.3 is published and installed. Public archive SHA-256:
 `a1442b1cdad75907bf3b8a18a9f591d2ad5355e87e90a702404d5d353ef6bcb2`.
+(Superseded 2026-09-30: that archive carried 19 AppleDouble entries and failed
+`codesign --verify` after `unzip`, CIS-353E4881. The same notarized, stapled app
+was re-archived with `scripts/package-desktop-zip.sh`; payload byte-identical, new
+SHA-256 `26e84bd09a437b69f6103964bbea2f6db85801c0f74ea836dab1e33e4c5a8565`.)
 Both actual Codex and Claude clients now advertise 18 tools and complete tool
 calls; no Codex UI access or process interruption was used. Homebrew's installed
 CLI passed the external consumer's custom registry, CLI 0/1/2 and MCP controls.
