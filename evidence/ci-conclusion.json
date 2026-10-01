@@ -1,0 +1,1 @@
+{"completed_at": "2026-10-01T18:09:35Z", "conclusion": "cancelled", "head_branch": "fix/swiftpm-child-containment", "head_sha": "dfb0457de07a4087a0a8d230b8bb768fd18e8f3c", "repo": "medlars/verdictui", "run_attempt": "1", "run_id": "36902866218", "schema_version": "1.0.0", "workflow": "CI"}
