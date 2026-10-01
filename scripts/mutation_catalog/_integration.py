@@ -208,7 +208,7 @@ MUTATIONS: list[Mutation] = [
         path=".github/workflows/ci.yml",
         old="VERDICTUI_TEST_PYTHON: ${{ steps.fixture_python.outputs.python-path }}",
         new="VERDICTUI_TEST_PYTHON: /usr/bin/python3",
-        test="scripts/test_ci_evidence_identity.py::TestWiring::test_fixture_python_is_configured_before_swift_tests",
+        test="scripts/test_ci_evidence_artifacts.py::TestFixturePython::test_fixture_python_is_configured_before_swift_tests",
         runner=Runner.PYTEST,
     ),
     Mutation(

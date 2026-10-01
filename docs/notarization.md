@@ -1,8 +1,9 @@
 # VerdictUI notarization
 
 The desktop app and its bundled CLI helper are distributed as a signed,
-notarized archive. Homebrew continues to compile the CLI from source; the Swift
-package remains source code. Desktop signing does not grant Accessibility or
+notarized archive. The Homebrew CLI is a separate notarized universal binary
+published to `medlars/verdictui-releases` by `scripts/release.sh` (see
+[signing.md](signing.md#homebrew-cli)). Desktop signing does not grant Accessibility or
 Screen Recording permission to the live-app adapter.
 
 Use the Developer ID identity and `vohux-notary` keychain profile recorded in

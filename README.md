@@ -14,8 +14,9 @@ host. No remote web service or account is required.
 ## Install
 
 ```sh
+# Signed, notarized universal binary from medlars/verdictui-releases:
 brew install medlars/tap/verdictui
-# Build the CLI from source:
+# Build the CLI from a source checkout:
 swift build -c release --product verdictui
 # Build the desktop app with its matching CLI:
 bash scripts/build-workbench.sh release
