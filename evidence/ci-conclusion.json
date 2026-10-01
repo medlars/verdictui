@@ -1,0 +1,1 @@
+{"completed_at": "2026-10-01T04:33:51Z", "conclusion": "cancelled", "head_branch": "docs/genericize-owner-paths", "head_sha": "92546e761028223db47342abb0a6dacfe77d7623", "repo": "medlars/verdictui", "run_attempt": "1", "run_id": "36815115571", "schema_version": "1.0.0", "workflow": "CI"}
