@@ -1,0 +1,1 @@
+{"completed_at": "2026-10-01T19:30:45Z", "conclusion": "success", "head_branch": "ci/playwright-install-budget", "head_sha": "46ff5bd35f8b8a9b0457cc95fecc0280c0c6d5fe", "repo": "medlars/verdictui", "run_attempt": "1", "run_id": "36912623226", "schema_version": "1.0.0", "workflow": "CI"}
