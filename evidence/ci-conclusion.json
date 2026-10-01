@@ -1,0 +1,1 @@
+{"completed_at": "2026-10-01T16:49:38Z", "conclusion": "failure", "head_branch": "chore/runv2-harness-resync", "head_sha": "588ab072e94eacb14eacc0630081df60623bcddf", "repo": "medlars/verdictui", "run_attempt": "1", "run_id": "36893392096", "schema_version": "1.0.0", "workflow": "CI"}
