@@ -130,6 +130,9 @@ jobs:
       - name: Verify CI evidence identity contract
         run: python "$GITHUB_WORKSPACE/scripts/test_ci_evidence_identity.py"
 
+      - name: Verify VerdictUI CI artifact and fixture contracts
+        run: python "$GITHUB_WORKSPACE/scripts/test_ci_evidence_artifacts.py"
+
       - name: Check out governance-v2
         if: ${{ !cancelled() }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
