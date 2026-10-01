@@ -1,0 +1,1 @@
+{"completed_at": "2026-10-01T07:28:43Z", "conclusion": "success", "head_branch": "fix/cis-a4499587-agents-md-read-pointers", "head_sha": "741d0b830bc400d3fee9ff763b277840ae20d631", "repo": "medlars/verdictui", "run_attempt": "1", "run_id": "36828982769", "schema_version": "1.0.0", "workflow": "CI"}
