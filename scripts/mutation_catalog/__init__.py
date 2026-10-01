@@ -29,6 +29,7 @@ from mutation_catalog_types import Mutation, Runner
 
 from mutation_catalog._broker import MUTATIONS as _BROKER
 from mutation_catalog._cli import MUTATIONS as _CLI
+from mutation_catalog._cli_surfaces import MUTATIONS as _CLI_SURFACES
 from mutation_catalog._integration import MUTATIONS as _INTEGRATION
 from mutation_catalog._kernel import MUTATIONS as _KERNEL
 from mutation_catalog._macros import MUTATIONS as _MACROS
@@ -36,9 +37,11 @@ from mutation_catalog._misc import MUTATIONS as _MISC
 from mutation_catalog._native import MUTATIONS as _NATIVE
 from mutation_catalog._probe import MUTATIONS as _PROBE
 from mutation_catalog._scripts import MUTATIONS as _SCRIPTS
+from mutation_catalog._scripts_pm_stages import MUTATIONS as _SCRIPTS_PM_STAGES
 from mutation_catalog._web import MUTATIONS as _WEB
 from mutation_catalog._web_lint import MUTATIONS as _WEB_LINT
 from mutation_catalog._web_paint import MUTATIONS as _WEB_PAINT
+from mutation_catalog._web_runtime import MUTATIONS as _WEB_RUNTIME
 from mutation_catalog._web_snapshot import MUTATIONS as _WEB_SNAPSHOT
 from mutation_catalog._workbench import MUTATIONS as _WORKBENCH
 from mutation_catalog._workbench_adoption import MUTATIONS as _WORKBENCH_ADOPTION
@@ -54,10 +57,13 @@ MUTATIONS: list[Mutation] = (
     + _KERNEL
     + _MACROS
     + _CLI
+    + _CLI_SURFACES
     + _SCRIPTS
+    + _SCRIPTS_PM_STAGES
     + _MISC
     + _NATIVE
     + _WEB
+    + _WEB_RUNTIME
     + _WEB_SNAPSHOT
     + _WEB_LINT
     + _WEB_PAINT

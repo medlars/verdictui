@@ -19,12 +19,17 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CANDIDATE_WORKFLOWS = (".github/workflows/ci.yml", ".github/workflows/test-suite.yml")
 WORKFLOW_RELPATH = next(p for p in CANDIDATE_WORKFLOWS if (REPO_ROOT / p).is_file())
+EVIDENCE_REF_WORKFLOW_RELPATH = ".github/workflows/ci-evidence-ref.yml"
 EMITTER_NAME = "Emit run-v2 evidence (shadow)"
 VERIFIER_NAME = "Verify run-v2 evidence was produced"
 UPLOAD_NAME = "Upload run-v2 evidence"
 REGRESSION_NAME = "Verify CI evidence identity contract"
+RUN_V2_ARTIFACT_PREFIX = "run-v2-evidence-"
+PRODUCER_ARTIFACT_NAME = RUN_V2_ARTIFACT_PREFIX + "${{ github.sha }}"
+CONSUMER_ARTIFACT_SHELL_NAME = RUN_V2_ARTIFACT_PREFIX + "${HEAD_SHA}"
 
 WORKFLOW_TEXT = (REPO_ROOT / WORKFLOW_RELPATH).read_text(encoding="utf-8")
+EVIDENCE_REF_WORKFLOW_TEXT = (REPO_ROOT / EVIDENCE_REF_WORKFLOW_RELPATH).read_text(encoding="utf-8")
 
 
 def extract_step(workflow_text, name):
@@ -46,6 +51,20 @@ def extract_step(workflow_text, name):
             continue
         break
     return "\n".join(block)
+
+
+def upload_artifact_name(workflow_text: str) -> str:
+    upload = extract_step(workflow_text, UPLOAD_NAME)
+    in_with = False
+    for ln in upload.splitlines():
+        if re.match(r"\s*with:\s*$", ln):
+            in_with = True
+            continue
+        if in_with:
+            match = re.match(r"\s*name:\s*(.+)$", ln)
+            if match:
+                return match.group(1).strip()
+    raise AssertionError("upload-artifact with.name not found in upload step")
 
 
 def extract_run(step_text):
@@ -601,6 +620,21 @@ FIXTURE_NO_RUN = textwrap.dedent(
             uses: actions/checkout@v4
 """
 )
+
+
+class TestArtifactNameContract(unittest.TestCase):
+    def test_producer_upload_artifact_name_matches_contract(self):
+        self.assertEqual(upload_artifact_name(WORKFLOW_TEXT), PRODUCER_ARTIFACT_NAME)
+
+    def test_consumer_download_artifact_name_matches_contract(self):
+        needle = f'--name "{CONSUMER_ARTIFACT_SHELL_NAME}"'
+        self.assertIn(needle, EVIDENCE_REF_WORKFLOW_TEXT)
+
+    def test_consumer_head_sha_binds_to_workflow_run_commit(self):
+        self.assertRegex(
+            EVIDENCE_REF_WORKFLOW_TEXT,
+            r"HEAD_SHA:\s*\$\{\{\s*github\.event\.workflow_run\.head_sha\s*\}\}",
+        )
 
 
 class TestExtractionNegatives(unittest.TestCase):

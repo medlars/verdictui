@@ -72,6 +72,7 @@
 | `Tests/VerdictUIWitnessTests/ThirdPartyAuditTests.swift`            | Drives AXReader at a LIVE third-party app — the Wave 8 gate's usefulness question; found the missing breadth bound (CIS-1E89B85D) | Active | 2026-08-12 |
 | `Tests/VerdictUIWitnessTests/LieCatchTests.swift`                   | Wave 8 SD1 honesty gate: every planted lie caught, each citing the probe that lied, with a positive control that SKIPS when the window server cannot publish | Active | 2026-08-12 |
 | `Tests/VerdictUIWitnessTests/HostLifetimeMarginTests.swift` | The host must outlive the reader's wait for it: host lifetime and `readyTimeout` are two deadlines from different instants, so equal values leave zero margin by construction (CIS-2C757660) | Active | 2026-08-30 |
+| `Tests/VerdictUIWitnessTests/WitnessHostAdoptionTests.swift` | A witness launch adopts only the host it started, never one already running under the shared bundle id (CTS-7685E2ED) | Active | 2026-09-29 |
 | `Tests/VerdictUIProbeTests/LieScenarioMeasurement.swift`            | Proves each planted lie reaches the probe tree AND is invisible to the inner loop — the precondition that makes a witness catch meaningful | Active | 2026-08-12 |
 | `Tests/VerdictUIWitnessTests/CrossValidationTests.swift`             | The SD6 permission path: every reader failure becomes a warning finding, and a WORKING reader must not emit one (the always-true control)           | Active | 2026-08-12 |
 | `Tests/VerdictUIKernelTests/SemanticNodeTests.swift`                 | Roles, attributes, structural paths, node Codable                                                                                                      | Active | 2026-08-04 |
@@ -193,6 +194,7 @@
 | `Tests/test_verdictui_pm.py`                                         | Python tests for PM stages, floor-check, and the contract validator                                                                                    | Active | 2026-08-04 |
 | `Tests/test_kernel_symbol_audit.py`                                  | Python tests for the kernel public-surface audit                                                                                                       | Active | 2026-08-04 |
 | `Tests/test_capture_trigger_coverage.py`                            | Asserts the capture workflow's `workflow_run` trigger names every workflow in this repo — one omitted is inert while looking watched, so its failures file no issue | Active | 2026-08-31 |
+| `Tests/test_no_owner_home_paths.py` | Fails if a tracked file names a real `/Users/<account>` home directory; this repo is public, so evidence paths are written `~/...` (generic fixture placeholders allowed) | Active | 2026-10-01 |
 | `Tests/test_swift_test_execution.py` | Behavioral native-runner entry-point and completed-summary admission controls | Active | 2026-09-24 |
 | `Tests/test_mutation_check.py`                                       | Python tests for the mutation harness: catalog integrity, baseline precondition, both runners                                                          | Active | 2026-08-04 |
 | `Tests/test_claude_md_ssot.py`                                       | Pins `CLAUDE.md`: SSoT rows resolve to real files and symbols, every referenced path exists                                                            | Active | 2026-08-04 |
@@ -255,17 +257,22 @@
 | `scripts/verdictui_pm_support.py` | PM shared state — project paths, constants, logging, contention probe, timing lane. SINGLE OWNER of every name the suite monkeypatches, reached as `S.<name>` so a patch binds at call time | Active | 2026-08-30 |
 | `scripts/verdictui_pm_swift.py` | PM SwiftPM layer — lock files, runner acquisition, streamed test, locked product build, process-group termination | Active | 2026-08-30 |
 | `scripts/verdictui_pm_stages.py` | PM stage mixin — build, test, floor, contracts, architecture, lint, demo, governance wrappers | Active | 2026-08-30 |
-| `scripts/verdictui_pm_smoke.py` | PM stage mixin — CLI/transport smoke, mutation catalog, installed parity, stale buffer, SLO benches, pytest | Active | 2026-08-30 |
+| `scripts/verdictui_pm_smoke.py` | PM stage mixin — CLI/transport smoke, mutation catalog, installed parity, stale buffer, pytest | Active | 2026-09-29 |
+| `scripts/verdictui_pm_bench.py` | PM stage mixin — SLO 1 runtime bench and SLO 3 warm-MCP latency gates (split from `verdictui_pm_smoke.py`, CIS-8BBA6638) | Active | 2026-09-29 |
 | `scripts/floor-check.py`                                             | Floor compliance audit                                                                                                                                 | Active | 2026-08-04 |
 | `scripts/kernel-symbol-audit.py`                                     | Exit-gate checker: every public kernel symbol documented and mentioned by a test                                                                       | Active | 2026-08-04 |
 | `scripts/verify-swift-test-output.py` | Standalone CI test-summary admission with command status and explicit skip accounting | Active | 2026-09-24 |
+| `scripts/package-desktop-zip.sh` | Builds the desktop release zip with no AppleDouble/`__MACOSX` entries; `--verify` refuses such entries and re-runs codesign after both `unzip` and `ditto -x` | Active | 2026-09-30 |
+| `scripts/test-package-desktop-zip.sh` | CI proof for the packager: a signed fixture with xattrs passes, the plain-`ditto` zip of it is refused | Active | 2026-09-30 |
 | `scripts/mutation-check.py`                                          | Mutation harness — breaks a guard on purpose and fails if no test notices                                                                              | Active | 2026-08-04 |
 | `scripts/mutation_catalog/__init__.py` | Reassembles `MUTATIONS` from the parts below in a fixed order; separate from the harness so a row may quote harness code without self-matching (`no.md` #16) | Active | 2026-08-28 |
 | `scripts/mutation_catalog/_probe.py` | Mutation rows targeting `Sources/VerdictUIProbe` | Active | 2026-08-28 |
 | `scripts/mutation_catalog/_kernel.py` | Mutation rows targeting `Sources/VerdictUIKernel` | Active | 2026-08-28 |
 | `scripts/mutation_catalog/_macros.py` | Mutation rows targeting `Sources/VerdictUIMacros` | Active | 2026-08-28 |
-| `scripts/mutation_catalog/_cli.py` | Mutation rows targeting the CLI, witness and demo scenarios | Active | 2026-08-28 |
-| `scripts/mutation_catalog/_scripts.py` | Mutation rows targeting the Python harness under `scripts/` | Active | 2026-08-28 |
+| `scripts/mutation_catalog/_cli.py` | Mutation rows targeting scenario act, consumer packages, builds and runners | Active | 2026-09-29 |
+| `scripts/mutation_catalog/_cli_surfaces.py` | Mutation rows targeting the demo, daemon, MCP transport and witness surfaces (split from `_cli.py`, CIS-DEF25670) | Active | 2026-09-29 |
+| `scripts/mutation_catalog/_scripts.py` | Mutation rows targeting Swift/CI summary admission and OS-wait guards under `scripts/` | Active | 2026-09-29 |
+| `scripts/mutation_catalog/_scripts_pm_stages.py` | Mutation rows targeting PM stages, bench gates and the mutation harness (split from `_scripts.py`, CIS-27F7D87A) | Active | 2026-09-29 |
 | `scripts/mutation_catalog/_misc.py` | Mutation rows targeting `Tests/`, `Package.swift`, docs and CLAUDE.md | Active | 2026-08-28 |
 | `scripts/stale-buffer-check.py`                                      | Detects a tracked file overwritten by a stale editor buffer — mtime older than the commit that touched it (CIS-638133AE)                                | Active | 2026-08-09 |
 | `Tests/test_stale_buffer_check.py`                                   | Guards the stale-buffer detector, mostly controls: an ordinary fresh edit must NOT fire                                                                 | Active | 2026-08-09 |
@@ -273,6 +280,8 @@
 | `scripts/dev.sh`                                                     | One-command setup + build + test                                                                                                                       | Active | 2026-08-04 |
 | `scripts/release.sh` | Release procedure: guards (burned versions, clean main == origin/main, tag vs `ReleaseVersion.current`), tag, GitHub release, tap formula with a served-tarball sha256; `--dry-run` stops after the guards | Active | 2026-09-20 |
 | `Tests/test_release_script.py` | Each release guard refused against a throwaway repo with a local bare origin; nothing reaches GitHub | Active | 2026-09-20 |
+| `scripts/land-tap-formula.sh` | Lands the committed tap formula bump through a release branch PR with squash auto-merge and waits for MERGED; the tap's main is never pushed | Active | 2026-09-29 |
+| `Tests/test_land_tap_formula.py` | Tap landing against a local bare origin and a stub `gh`: lands, reuses an open PR, fails on a closed PR or at the deadline, never pushes main | Active | 2026-09-29 |
 | `scripts/test_ci_evidence_identity.py`                               | Regression harness binding every run-v2 consumer verifier to THIS invocation's producer (CIS-04F12B01)                                                  | Active | 2026-09-12 |
 | `.github/scripts/check_pinned_actions.py`                            | Buckets SHA-pinned actions four ways (stale / up to date / unresolvable / ahead) — shared verbatim with FinanceFlow and Archivist                             | Active | 2026-08-31 |
 | `.github/scripts/resolve_action_sha.py`                              | Resolves a release tag to the COMMIT it points at, never `target_commitish` (a branch name); returns `Unresolvable` as a distinct state                    | Active | 2026-08-31 |
@@ -345,7 +354,8 @@
 | `examples/ConsumerApp/verify-integration.py` | verify-integration: external consumer acceptance fixture | Active | 2026-09-23 |
 | `examples/LiveAppFixture/Fixture.swift` | Fixture: external consumer acceptance fixture | Active | 2026-09-23 |
 | `scripts/mutation_catalog/_native.py` | _native: guard mutation witnesses | Active | 2026-09-23 |
-| `scripts/mutation_catalog/_web.py` | _web: session, transport, browser and credential guard mutation witnesses | Active | 2026-09-24 |
+| `scripts/mutation_catalog/_web.py` | _web: lifecycle evidence, document fixture, retirement and guarded-process guard mutation witnesses | Active | 2026-09-29 |
+| `scripts/mutation_catalog/_web_runtime.py` | _web_runtime: frame coherence, fixture, session and credential-resolver guard mutation witnesses (split from `_web.py`, CIS-8BE68FCB) | Active | 2026-09-29 |
 | `scripts/mutation_catalog/_web_lint.py` | _web_lint: WebLint guard mutation witnesses (split from _web.py, CTS-61F7E641) | Active | 2026-09-24 |
 | `scripts/mutation_catalog/_web_paint.py` | _web_paint: paint-semantics, frame and inline geometry guard mutation witnesses | Active | 2026-09-24 |
 | `scripts/mutation_catalog/_web_snapshot.py` | _web_snapshot: DOMSnapshot assembly and accessible-name guard mutation witnesses | Active | 2026-09-24 |
@@ -389,7 +399,8 @@
 | `Tests/VerdictUIWorkbenchCoreTests/WorkbenchAcceptanceSupportTests.swift` | Real CFBoolean, file archival, NotificationCenter lifetime and never-shown NSWindow witnesses | Active | 2026-09-25 |
 | `scripts/mutation_catalog/_workbench_motion.py` | Native motion and cleanup mutation witnesses | Active | 2026-09-25 |
 | `Sources/VerdictUIWorkbench/WorkbenchAcceptance.swift` | Quiet real WKWebView/bridge workflow, native snapshots and observed DOM export | Active | 2026-09-24 |
-| `scripts/workbench-acceptance.py` | Own native acceptance process and isolated fixtures; validate retained observations | Active | 2026-09-24 |
+| `scripts/workbench-acceptance.py` | Own native acceptance process and isolated fixtures; validate the retained report | Active | 2026-09-29 |
+| `scripts/workbench_acceptance_receipts.py` | Native receipt, artifact and motion validators for the acceptance driver (split out, CIS-67024614) | Active | 2026-09-29 |
 | `Tests/test_workbench_acceptance.py` | Reject incomplete phases, corrupted images/history/tree and unbound native reports | Active | 2026-09-24 |
 | `Sources/VerdictUIWorkbenchCore/WorkbenchResources.swift` | Resolve exact native copied assets in nested and flat SwiftPM bundles | Active | 2026-09-24 |
 | `Tests/VerdictUIWorkbenchCoreTests/WorkbenchResourcesTests.swift` | Real filesystem layout and redirection refusal controls | Active | 2026-09-24 |
