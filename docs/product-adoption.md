@@ -1035,9 +1035,11 @@ and subject when renamed or saved; the loaded WKWebView page must match the
 verified packaged resource path. The integrated release must retain its own
 fresh observation and image review after final source changes before admission.
 The launch-owned guardian repair has actual native/browser and compiled-consumer
-owner-death controls, with unrelated sentinel processes left alive. These controls
-cover inherited process groups. A real SwiftPM manifest demonstrated that a child
-can create a separate group and escape that boundary; CIS-4F278A0F remains open.
+owner-death controls, with unrelated sentinel processes left alive. A real
+SwiftPM manifest demonstrated that a child can create a separate group and
+escape a group boundary (CIS-4F278A0F), so commands now lead a launch-created
+session that such children cannot leave; `BuildSessionContainmentTests` kills
+the CLI mid-manifest-evaluation and finds no surviving session member.
 Credential helpers and graceful consumer reload have separate controls: ordinary
 cancellation alone does not establish crash cleanup or persisted browser state.
 

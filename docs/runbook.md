@@ -110,7 +110,10 @@ Omitting the key preserves 300 seconds. The `project-build` progress event on
 stderr includes the effective `buildTimeoutSeconds` alongside `product` and
 `configuration`. Cancellation and failed-build refusal still prevent executing
 a stale runner. The deadline changes neither Swift build arguments nor process
-ownership; separate-group SwiftPM containment (CIS-4F278A0F) remains open.
+ownership. The build runs as the leader of a session the launch creates, so
+SwiftPM descendants that start their own process group (the evaluated manifest,
+compilers) are still removed when the CLI exits, is interrupted, or is killed.
+A descendant that calls `setsid()` itself is outside that contract.
 
 A consumer whose Swift package is nested can additionally set `"buildPackagePath":
 "app"` alongside `buildProduct`. The default is `"."`. The path must be a
