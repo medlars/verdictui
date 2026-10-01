@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Fixed the desktop download archive: the 1.1.3 zip carried macOS metadata
+  (`._*`) files that broke the app's signature when extracted with `unzip`.
+  Archives are now built with `scripts/package-desktop-zip.sh`, which refuses
+  any archive whose app fails signature verification after `unzip` or `ditto`
+  extraction, and CI runs its self-test. The 1.1.3 download was re-archived
+  from the same notarized app.
+
 ## [1.1.4] — 2026-09-23
 
 - Added scenario `act` to the shared CLI, using the same typed engine and

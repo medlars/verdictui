@@ -1,7 +1,3 @@
-// Wave 6: the argument-parser declarations.
-//
-// Kept in the LIBRARY rather than in the executable so a test can construct and
-// run any of them. `main.swift` is four lines and holds no behaviour.
 import ArgumentParser
 import Darwin
 import Foundation

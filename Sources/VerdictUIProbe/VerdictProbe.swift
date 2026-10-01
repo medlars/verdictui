@@ -1,19 +1,4 @@
-// VerdictUIProbe — SwiftUI instrumentation runtime.
-//
-// Wave 2 Task 2: the preference spine. Task 1's `ProbeLayout` can see how a size
-// was negotiated but not *where* the result landed; a `GeometryReader` can see
-// where it landed but not how it was negotiated. This file joins the two — one
-// modifier per probed view emitting a `ProbeRecord` upward, one modifier at the
-// root collecting them, merging in the recorder's measurements, and handing the
-// assembled `SemanticNode` tree to a sink the harness owns.
-//
-// It replaces the Wave 0 seed wholesale. The seed's `VerdictFramesKey` carried a
-// `[String: Rect]` in `.global` space; both halves of that were wrong for a
-// verification engine. A dictionary throws away layout order, which is the only
-// tiebreak available when frames are ambiguous, and `.global` is measured from
-// the host window's placement, so the same view in a window moved 20 pt to the
-// right produces a different tree. Nothing outside this package consumed the
-// seed, so it is gone rather than deprecated.
+// VerdictUIProbe — preference spine: per-probe records, root collection, tree assembly.
 import SwiftUI
 import VerdictUIKernel
 

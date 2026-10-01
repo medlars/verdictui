@@ -194,6 +194,7 @@
 | `Tests/test_verdictui_pm.py`                                         | Python tests for PM stages, floor-check, and the contract validator                                                                                    | Active | 2026-08-04 |
 | `Tests/test_kernel_symbol_audit.py`                                  | Python tests for the kernel public-surface audit                                                                                                       | Active | 2026-08-04 |
 | `Tests/test_capture_trigger_coverage.py`                            | Asserts the capture workflow's `workflow_run` trigger names every workflow in this repo — one omitted is inert while looking watched, so its failures file no issue | Active | 2026-08-31 |
+| `Tests/test_no_owner_home_paths.py` | Fails if a tracked file names a real `/Users/<account>` home directory; this repo is public, so evidence paths are written `~/...` (generic fixture placeholders allowed) | Active | 2026-10-01 |
 | `Tests/test_swift_test_execution.py` | Behavioral native-runner entry-point and completed-summary admission controls | Active | 2026-09-24 |
 | `Tests/test_mutation_check.py`                                       | Python tests for the mutation harness: catalog integrity, baseline precondition, both runners                                                          | Active | 2026-08-04 |
 | `Tests/test_claude_md_ssot.py`                                       | Pins `CLAUDE.md`: SSoT rows resolve to real files and symbols, every referenced path exists                                                            | Active | 2026-08-04 |
@@ -261,6 +262,8 @@
 | `scripts/floor-check.py`                                             | Floor compliance audit                                                                                                                                 | Active | 2026-08-04 |
 | `scripts/kernel-symbol-audit.py`                                     | Exit-gate checker: every public kernel symbol documented and mentioned by a test                                                                       | Active | 2026-08-04 |
 | `scripts/verify-swift-test-output.py` | Standalone CI test-summary admission with command status and explicit skip accounting | Active | 2026-09-24 |
+| `scripts/package-desktop-zip.sh` | Builds the desktop release zip with no AppleDouble/`__MACOSX` entries; `--verify` refuses such entries and re-runs codesign after both `unzip` and `ditto -x` | Active | 2026-09-30 |
+| `scripts/test-package-desktop-zip.sh` | CI proof for the packager: a signed fixture with xattrs passes, the plain-`ditto` zip of it is refused | Active | 2026-09-30 |
 | `scripts/mutation-check.py`                                          | Mutation harness — breaks a guard on purpose and fails if no test notices                                                                              | Active | 2026-08-04 |
 | `scripts/mutation_catalog/__init__.py` | Reassembles `MUTATIONS` from the parts below in a fixed order; separate from the harness so a row may quote harness code without self-matching (`no.md` #16) | Active | 2026-08-28 |
 | `scripts/mutation_catalog/_probe.py` | Mutation rows targeting `Sources/VerdictUIProbe` | Active | 2026-08-28 |
@@ -277,6 +280,8 @@
 | `scripts/dev.sh`                                                     | One-command setup + build + test                                                                                                                       | Active | 2026-08-04 |
 | `scripts/release.sh` | Release procedure: guards (burned versions, clean main == origin/main, tag vs `ReleaseVersion.current`), tag, GitHub release, tap formula with a served-tarball sha256; `--dry-run` stops after the guards | Active | 2026-09-20 |
 | `Tests/test_release_script.py` | Each release guard refused against a throwaway repo with a local bare origin; nothing reaches GitHub | Active | 2026-09-20 |
+| `scripts/land-tap-formula.sh` | Lands the committed tap formula bump through a release branch PR with squash auto-merge and waits for MERGED; the tap's main is never pushed | Active | 2026-09-29 |
+| `Tests/test_land_tap_formula.py` | Tap landing against a local bare origin and a stub `gh`: lands, reuses an open PR, fails on a closed PR or at the deadline, never pushes main | Active | 2026-09-29 |
 | `scripts/test_ci_evidence_identity.py`                               | Regression harness binding every run-v2 consumer verifier to THIS invocation's producer (CIS-04F12B01)                                                  | Active | 2026-09-12 |
 | `.github/scripts/check_pinned_actions.py`                            | Buckets SHA-pinned actions four ways (stale / up to date / unresolvable / ahead) — shared verbatim with FinanceFlow and Archivist                             | Active | 2026-08-31 |
 | `.github/scripts/resolve_action_sha.py`                              | Resolves a release tag to the COMMIT it points at, never `target_commitish` (a branch name); returns `Unresolvable` as a distinct state                    | Active | 2026-08-31 |
