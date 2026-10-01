@@ -1,7 +1,8 @@
 # VerdictUI — Ship Readiness
 
-> Project-floor pointer (updated 2026-09-29). **Release 1.1.0** is published and
-> installed; use the links below for current scope—not the pre-1.0 scaffold list.
+> Project-floor pointer (updated 2026-10-01). The 1.1 line first shipped as 1.1.0;
+> the latest published release is **1.1.4**. Use the links below for current
+> scope—not the pre-1.0 scaffold list.
 
 | Field | Value |
 |-------|-------|
