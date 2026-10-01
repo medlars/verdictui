@@ -64,15 +64,26 @@ public struct CommandEnvironment: Sendable {
     public static func standard(root: URL = URL(fileURLWithPath: ".")) -> CommandEnvironment {
         if let environment = VerdictUIRunner.environment { return environment }
 
+        let workingDirectory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let discoveredRoot = ProjectScenarios.findProjectRoot(startingAt: workingDirectory)
+        let runningBinary =
+            Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0])
+        let usesFallbackCatalog: Bool = {
+            guard let discoveredRoot else { return true }
+            return !ProjectScenarios.runnerBelongsToProject(
+                runningBinary: runningBinary, projectRoot: discoveredRoot)
+        }()
+
         return CommandEnvironment(
-            usesFallbackCatalog: true,
+            usesFallbackCatalog: usesFallbackCatalog,
             engine: VerdictEngine(
                 registry: DemoScenarios.registry,
                 baselines: BaselineStore.standard(root: root)
             ),
             output: StandardOutput(),
             pixelArtifactRoot: root.appendingPathComponent(
-                PixelArtifact.directory, isDirectory: true)
+                PixelArtifact.directory, isDirectory: true),
+            projectRoot: usesFallbackCatalog ? nil : discoveredRoot
         )
     }
 }
