@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Homebrew now installs a signed, notarized universal binary published to the
+  public `medlars/verdictui-releases` repo instead of building the source
+  tarball, so the source repo can be private. `scripts/release.sh` builds,
+  signs, notarizes and scans the archive (`scripts/package-cli-release.sh`)
+  before its first public mutation, then bumps the tap formula
+  (`scripts/bump-tap-formula.sh`).
 - Fixed the desktop download archive: the 1.1.3 zip carried macOS metadata
   (`._*`) files that broke the app's signature when extracted with `unzip`.
   Archives are now built with `scripts/package-desktop-zip.sh`, which refuses

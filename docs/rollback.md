@@ -1,8 +1,9 @@
 # VerdictUI — Rollback
 
-VerdictUI is released as a git tag plus a GitHub release, installed through a
-Homebrew formula in `medlars/homebrew-tap` that BUILDS FROM SOURCE
-(`swift build -c release --product verdictui`). The desktop app is a separate
+VerdictUI is released as a git tag plus a GitHub release in the private source
+repo, and a signed, notarized universal CLI archive on the public
+`medlars/verdictui-releases` repo. The Homebrew formula in `medlars/homebrew-tap`
+installs that prebuilt archive. The desktop app is a separate
 signed and notarized GitHub release asset. A formula rollback changes what
 `brew` fetches; it does not replace binaries or desktop apps already installed.
 
@@ -19,10 +20,10 @@ signed and notarized GitHub release asset. A formula rollback changes what
 
 ## Procedure
 
-1. Identify the last good version: `gh release list -R medlars/verdictui`.
+1. Identify the last good version: `gh release list -R medlars/verdictui-releases`.
 2. In `medlars/homebrew-tap`, `git revert` the `verdictui X.Y.Z` commit so
-   `Formula/verdictui.rb` points at the previous tag's tarball and its sha256.
-   Push it to `main`.
+   `Formula/verdictui.rb` points at the previous release's archive and its
+   sha256. Land it through a PR with auto-merge (DIR-045); never push `main`.
 3. Prove the tap serves the old version rather than trusting the push:
    `brew update && brew info medlars/tap/verdictui` must print the previous
    version, and `brew reinstall medlars/tap/verdictui && verdictui --version`
@@ -34,10 +35,10 @@ signed and notarized GitHub release asset. A formula rollback changes what
 
 If no previous verified desktop bundle exists, withdraw the defective desktop
 asset and explain the limitation in the release notes while fixing forward.
-The source-built CLI can remain available if its acceptance still passes.
+The prebuilt CLI can remain available if its acceptance still passes.
 For a first defective CLI release with no valid predecessor, withdraw its
 formula and explain why in the tap README, as on 2026-08-14 (`no.md` #54).
 
 **v1.0.0 is never a rollback target.** Its tag was deleted because the commit it
-pointed at carried personal data; its tarball 404s, and `scripts/release.sh`
+pointed at carried personal data; it has no archive, and `scripts/release.sh`
 refuses the version.

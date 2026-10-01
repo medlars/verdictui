@@ -1,17 +1,19 @@
 #!/bin/bash
-# Cut a VerdictUI release: tag, GitHub release, then the Homebrew tap formula.
+# Cut a VerdictUI release: tag, packaged CLI on the public assets repo, then the tap formula.
 # Usage: scripts/release.sh <X.Y.Z> [--dry-run]
 #
-# VerdictUI ships a SOURCE-BUILT Homebrew formula (the tap runs `swift build`),
-# so this script publishes the CLI source release and formula. The optional
-# desktop archive is signed/notarized separately per docs/signing.md. Here, every check runs before the first mutation, and
-# --dry-run stops after the checks.
+# The source repo is private (CIS-467913BC), so the Homebrew formula installs a
+# signed, notarized universal binary published to the public assets-only repo.
+# The optional desktop archive is signed/notarized separately per docs/signing.md.
+# Every check, and the build/sign/notarize/scan of the archive, runs before the
+# first public mutation; --dry-run stops after the checks.
 set -euo pipefail
 
 # Versions whose tags were deleted with a burned commit (no.md #54). Reusing one
 # would resurrect a reference to a sha the PII remediation existed to unreach.
 BURNED_VERSIONS=(1.0.0)
 REPO="medlars/verdictui"
+ASSETS_REPO="medlars/verdictui-releases"
 TAP="medlars/homebrew-tap"
 
 version="${1:-}"
@@ -41,28 +43,32 @@ src_version="$(sed -n 's/.*static let current = "\(.*\)".*/\1/p' Sources/Verdict
 echo "checks passed for v$version"
 [ "$dry_run" -eq 0 ] || { echo "dry run: no tag, release or formula change made"; exit 0; }
 
+pkg_dir="$(mktemp -d -t verdictui-release)"
+trap 'rm -rf "$pkg_dir"' EXIT
+bash "$root/scripts/package-cli-release.sh" "$version" "$pkg_dir"
+asset="verdictui-$version-macos-universal.zip"
+local_sha="$(cut -d' ' -f1 "$pkg_dir/$asset.sha256")"
+
 git tag -a "v$version" -m "VerdictUI $version"
 git push origin "v$version"
 gh release create "v$version" --repo "$REPO" --title "VerdictUI $version" --generate-notes
+gh release create "v$version" --repo "$ASSETS_REPO" --target main --title "verdictui $version" \
+  --notes "Prebuilt universal macOS binary, signed with Developer ID (team P6R899T379) and notarized by Apple. Install: \`brew install medlars/tap/verdictui\`." \
+  "$pkg_dir/$asset" "$pkg_dir/$asset.sha256"
 
-# Measure the sha256 from the tarball the HOST serves, and require HTTP 200: a
+# Measure the sha256 from the asset the HOST serves, and require HTTP 200: a
 # locally computed hash describes a different artifact (no.md #75).
-tarball="$(mktemp -t verdictui-release)"
-trap 'rm -f "$tarball"' EXIT
-url="https://github.com/$REPO/archive/refs/tags/v$version.tar.gz"
-code="$(curl -sSL -o "$tarball" -w '%{http_code}' --max-time 120 "$url")"
-[ "$code" = "200" ] || fail "tarball $url returned HTTP $code"
-gzip -t "$tarball" || fail "tarball is not a valid gzip archive"
-sha="$(shasum -a 256 "$tarball" | cut -d' ' -f1)"
+served="$pkg_dir/served.zip"
+url="https://github.com/$ASSETS_REPO/releases/download/v$version/$asset"
+code="$(curl -sSL -o "$served" -w '%{http_code}' --max-time 120 "$url")"
+[ "$code" = "200" ] || fail "asset $url returned HTTP $code"
+sha="$(shasum -a 256 "$served" | cut -d' ' -f1)"
+[ "$sha" = "$local_sha" ] || fail "served asset sha256 $sha differs from the packaged $local_sha"
 
 tap_dir="$(mktemp -d -t verdictui-tap)"
 gh repo clone "$TAP" "$tap_dir" -- -q
+bash "$root/scripts/bump-tap-formula.sh" "$tap_dir/Formula/verdictui.rb" "$version" "$sha"
 cd "$tap_dir"
-# The pinned ArgumentParser 1.8.2 requires Swift 6.0 (its Package.swift);
-# Xcode 16.0 supplies that compiler. Repair the original 15.0 tap floor.
-sed -i '' -e "s|archive/refs/tags/v[0-9.]*\.tar\.gz|archive/refs/tags/v$version.tar.gz|" \
-          -e "s|sha256 \"[0-9a-f]*\"|sha256 \"$sha\"|" \
-          -e 's|depends_on xcode: \["15.0", :build\]|depends_on xcode: ["16.0", :build]|' Formula/verdictui.rb
 git add -- Formula/verdictui.rb
 git commit -q -m "verdictui $version"
 tap_pr="$(bash "$root/scripts/land-tap-formula.sh" "$tap_dir" "$version")"
