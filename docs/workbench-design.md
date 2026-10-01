@@ -103,7 +103,7 @@ insufficient. The running state has six active loops; idle/final/reduced-motion
 states have none. No process is slowed to make an animation visible.
 
 Artifacts and reproducible harness:
-`/Users/eiman/.codex/visualizations/2026/09/23/01a0cd0e-b53d-7052-ad1d-cd9b7ef78b87/workbench-design/`.
+`~/.codex/visualizations/2026/09/23/01a0cd0e-b53d-7052-ad1d-cd9b7ef78b87/workbench-design/`.
 Review `webkit-running-1000.png`, `webkit-findings-1000.png`,
 `webkit-findings-360.png`, `webkit-checks-360.png`, `verification.json`, and the
 rectangle JSON files. Run `python3.14 verify_workbench.py <repository-root>`.
