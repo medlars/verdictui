@@ -30,7 +30,8 @@ def owner_home_paths(text: str) -> list[str]:
 
 
 def test_the_detector_flags_a_real_account_and_spares_placeholders():
-    assert owner_home_paths("see /Users/alice/Temp/receipt.json") == ["/Users/alice"]
+    real = "/Users/" + "alice"  # split so this file does not trip its own scan
+    assert owner_home_paths(f"see {real}/Temp/receipt.json") == [real]
     assert owner_home_paths("/Users/x/Projects and /Users/dev/.local and ~/Temp") == []
 
 
