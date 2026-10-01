@@ -328,7 +328,7 @@ jobs:
   python-scripts:
     name: Lint PM scripts
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -380,8 +380,21 @@ jobs:
           done
           exit 1
 
-      - name: Python test suite (PM + kernel symbol audit)
+      - name: Cache Playwright browsers
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-1.61.0-chromium-${{ runner.os }}
+
+      # Its own step and budget: `--with-deps` runs apt, which took ~8 of the
+      # job's former 10 minutes on 2026-10-01 and cancelled a green suite one
+      # second after pytest finished (CIS-9DD618AC).
+      - name: Install Playwright Chromium
+        timeout-minutes: 12
         run: |
           pip install --quiet pytest PyYAML==6.0.3 Pillow==12.3.0 playwright==1.61.0
           python3 -m playwright install --with-deps chromium
-          python3 -m pytest Tests/ -q
+
+      - name: Python test suite (PM + kernel symbol audit)
+        timeout-minutes: 8
+        run: python3 -m pytest Tests/ -q
