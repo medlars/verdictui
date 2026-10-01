@@ -363,23 +363,23 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="guardian ignores parent death with leaked writer",
         path="Sources/VerdictUIProcessGuardian/ProcessGuardian.c",
-        old="if (getppid() != parent) return 1;",
-        new="if (getppid() != parent && 0) return 1;",
+        old="int parent_changed = getppid() != parent;",
+        new="int parent_changed = 0;",
         test=_TEST + "BrowserCrashGuardianTests/testLeakedWriterCannotDefeatActualParentDeath",
     ),
     Mutation(
         name="guardian ignores sole writer EOF",
         path="Sources/VerdictUIProcessGuardian/ProcessGuardian.c",
-        old="return read(lifetime, &byte, 1) <= 0;",
-        new="(void)read(lifetime, &byte, 1); return 0;",
+        old="if (count <= 0) return 1;",
+        new="if (count <= 0) return parent_changed;",
         test=_TEST
         + "BrowserCrashGuardianTests/testSoleLifetimeWriterCloseCleansGroupWhileParentStaysAlive",
     ),
     Mutation(
-        name="guardian kills leader without browser group",
+        name="guardian session sweep never escalates to KILL",
         path="Sources/VerdictUIProcessGuardian/ProcessGuardian.c",
-        old="(void)kill(0, SIGKILL);",
-        new="(void)kill(getpid(), SIGKILL);",
+        old="now - start >= grace_ms ? SIGKILL : 0",
+        new="now - start >= grace_ms ? SIGTERM : 0",
         test=_TEST
         + "BrowserCrashGuardianTests/testParentSIGKILLReapsBrowserGroupWithoutTouchingUnrelatedSentinel",
     ),
@@ -392,18 +392,18 @@ MUTATIONS: list[Mutation] = [
         + "BrowserCrashGuardianTests/testDescriptorsAboveLoweredLimitAreClosedAndBrowserSignalsReset",
     ),
     Mutation(
-        name="guardian browser escapes owned group",
+        name="guardian sweep trusts process groups instead of the owned session",
         path="Sources/VerdictUIProcessGuardian/ProcessGuardian.c",
-        old="posix_spawnattr_setpgroup(&attributes, guardian)",
-        new="posix_spawnattr_setpgroup(&attributes, guardian - guardian)",
+        old="if (pid <= 0 || getsid(pid) != session) continue;",
+        new="if (pid <= 0 || getpgid(pid) != session) continue;",
         test=_TEST
         + "BrowserCrashGuardianTests/testParentSIGKILLReapsBrowserGroupWithoutTouchingUnrelatedSentinel",
     ),
     Mutation(
         name="guardian browser keeps ignored signal handlers",
         path="Sources/VerdictUIProcessGuardian/ProcessGuardian.c",
-        old="POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_SETSIGDEF |",
-        new="POSIX_SPAWN_SETPGROUP |",
+        old="POSIX_SPAWN_SETSID | POSIX_SPAWN_SETSIGDEF |",
+        new="POSIX_SPAWN_SETSID |",
         test=_TEST
         + "BrowserCrashGuardianTests/testDescriptorsAboveLoweredLimitAreClosedAndBrowserSignalsReset",
     ),

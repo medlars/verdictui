@@ -64,6 +64,11 @@ public final class OwnedCommandProcess: @unchecked Sendable {
         if launched.error != 0 || launched.group_ready == 0 || launched.browser_pid <= 0 {
             close(launched.lifetime_fd)
             try guardian.finishGuardian(grace: 2)
+            if launched.browser_pid > 0 {
+                let browser = OwnedCommandProcess(pid: launched.browser_pid, ownership: .browser)
+                try browser.finishSession()
+                try browser.finishBrowser()
+            }
             throw Failure.system(launched.error == 0 ? EPROTO : launched.error)
         }
         let browser = OwnedCommandProcess(pid: launched.browser_pid, ownership: .browser)
@@ -122,7 +127,21 @@ public final class OwnedCommandProcess: @unchecked Sendable {
         try reapRetainedChild()
     }
 
-    /// Called only after the guardian proved no active group members remain.
+    /// KILLs every live member of the session this launch created. The retained,
+    /// unreaped command is the authority: while it is held, its PID (the session
+    /// id) cannot be reallocated, so membership never names an unrelated process.
+    func finishSession() throws {
+        lock.lock(); defer { lock.unlock() }
+        if let retentionFailure { throw Failure.system(retentionFailure) }
+        if reaped { return }
+        guard case .browser = ownership else { throw Failure.invalidLaunch }
+        try confirmRetainedChild()
+        let error = vui_session_sweep(processIdentifier, 0, 2000)
+        if error == ETIMEDOUT { throw Failure.guardianCleanupTimeout }
+        if error != 0 { throw Failure.system(error) }
+    }
+
+    /// Called only after the owned session has no live member.
     func finishBrowser() throws {
         lock.lock(); defer { lock.unlock() }
         if let retentionFailure { throw Failure.system(retentionFailure) }
@@ -312,7 +331,7 @@ public final class OwnedCommandProcess: @unchecked Sendable {
         switch ownership {
         case .command: _ = try? stop(grace: 0)
         case .guardian: try? finishGuardian()
-        case .browser: try? finishBrowser()
+        case .browser: try? finishSession(); try? finishBrowser()
         }
     }
 }

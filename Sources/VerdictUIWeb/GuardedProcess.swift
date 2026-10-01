@@ -15,9 +15,18 @@ private final class ProcessLifetime: @unchecked Sendable {
 
 /// A launch-owned command and its crash guardian. The public PID and exit code
 /// describe the command; only retained child identities authorize termination.
-/// Inherited groups are contained, including after the launching host dies.
-/// Descendants creating another session/group are outside this contract,
-/// including some standard SwiftPM build subprocesses.
+///
+/// The command leads a new session created by this launch, and its PID is the
+/// session id. Descendants that start their own process group (SwiftPM's
+/// manifest and build tools do) stay in that session, because setpgid() cannot
+/// leave one. Cleanup signals every live session member: here, while the
+/// unreaped command pins the id, and in the guardian when this host dies,
+/// including by SIGKILL.
+///
+/// Outside the contract: a descendant that calls setsid() itself; a host killed
+/// between posix_spawn returning and the guardian's one-record session write;
+/// and a PID-space wrap during a bounded sweep (members are verified by getsid
+/// immediately before each signal).
 public final class GuardedProcess: @unchecked Sendable {
     private let lock = NSRecursiveLock()
     private let guardian: OwnedCommandProcess
@@ -25,6 +34,7 @@ public final class GuardedProcess: @unchecked Sendable {
     private let lifetime: ProcessLifetime
     private let exitSource: DispatchSourceProcess
     public let processIdentifier: pid_t
+    var guardianProcessIdentifier: pid_t { guardian.processIdentifier }
     private var completedCode: Int32?
 
     private init(_ launch: OwnedCommandProcess.GuardedLaunch) {
@@ -85,7 +95,7 @@ public final class GuardedProcess: @unchecked Sendable {
         return try finish(grace: 0)
     }
 
-    /// Group completion precedes child reaping and caller resource release.
+    /// Session completion precedes child reaping and caller resource release.
     /// Retain both owners after a cleanup failure so callers can remain unavailable.
     @discardableResult
     func finish(grace: TimeInterval) throws -> Int32 {
@@ -94,6 +104,7 @@ public final class GuardedProcess: @unchecked Sendable {
         lifetime.closeWriter()
         exitSource.cancel()
         try guardian.finishGuardian(grace: grace)
+        try child.finishSession()
         try child.finishBrowser()
         guard let code = try child.status() else { throw OwnedCommandProcess.Failure.guardianCleanupTimeout }
         completedCode = code

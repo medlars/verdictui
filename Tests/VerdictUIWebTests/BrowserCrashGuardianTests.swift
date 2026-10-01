@@ -54,7 +54,10 @@ final class BrowserCrashGuardianTests: XCTestCase {
         let owner = try fixture.owner()
         defer { if owner.isRunning { owner.terminate() } }
         let launch = try fixture.record("launched"), browser = try fixture.record("browser"), leaf = try fixture.record("leaf")
-        XCTAssertEqual(browser[1], launch[0]); XCTAssertEqual(leaf[1], launch[0])
+        XCTAssertEqual(launch[1], browser[0])
+        XCTAssertEqual(browser[1], browser[0], "the browser leads the session its launch created")
+        XCTAssertEqual(leaf[1], leaf[0], "the leaf left the browser's process group")
+        XCTAssertEqual(leaf[2], browser[0], "but cannot leave the owned session")
         XCTAssertNotEqual(browser[0], launch[0], "public PID is the actual browser, not guardian")
         XCTAssertEqual(kill(owner.processIdentifier, SIGKILL), 0)
         XCTAssertTrue(waitUntil(4, { !active(browser[0]) && !active(leaf[0]) && !active(launch[0]) }))
@@ -307,8 +310,9 @@ int main(int argc, char **argv) {
         signal(SIGTERM, strcmp(mode, "browser") ? graceful_term : SIG_IGN);
         pid_t leaf = fork();
         if (leaf == 0) {
+            if (setpgid(0, 0) != 0) _exit(96);
             signal(SIGTERM, !strcmp(mode, "coordinated") ? SIG_DFL : SIG_IGN);
-            record(root, "leaf", getpid(), getpgrp(), 0, 0);
+            record(root, "leaf", getpid(), getpgrp(), getsid(0), 0);
             if (!strcmp(mode, "coordinated")) {
                 for (int i = 0; i < 800 && !exists(root, "flush-request"); ++i) usleep(10000);
                 record(root, "child-flushed", getpid(), getpgrp(), 0, 0);

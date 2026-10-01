@@ -287,6 +287,7 @@
 | `Tests/test_land_tap_formula.py` | Tap landing against a local bare origin and a stub `gh`: lands, reuses an open PR, fails on a closed PR or at the deadline, never pushes main | Active | 2026-09-29 |
 | `scripts/test_ci_evidence_artifacts.py` | VerdictUI-only CI contracts beside the byte-identical run-v2 identity harness: the agreed run-v2 artifact name and the Swift-test fixture interpreter (CIS-1A534A20) | Active | 2026-10-01 |
 | `scripts/test_ci_evidence_identity.py`                               | Regression harness binding every run-v2 consumer verifier to THIS invocation's producer (CIS-04F12B01)                                                  | Active | 2026-09-12 |
+| `scripts/test_ci_evidence_artifacts.py` | Run-v2 evidence artifact harness checks, including fixture-Python setup ordering before Swift tests | Active | 2026-10-01 |
 | `.github/scripts/check_pinned_actions.py`                            | Buckets SHA-pinned actions four ways (stale / up to date / unresolvable / ahead) — shared verbatim with FinanceFlow and Archivist                             | Active | 2026-08-31 |
 | `.github/scripts/resolve_action_sha.py`                              | Resolves a release tag to the COMMIT it points at, never `target_commitish` (a branch name); returns `Unresolvable` as a distinct state                    | Active | 2026-08-31 |
 | `.github/scripts/create-actions-update-issue.cjs`                    | Opens/refreshes ONE issue when a pinned action goes stale — idempotent, so a weekly cron does not pile up duplicates                                    | Active | 2026-08-09 |
@@ -340,6 +341,7 @@
 | `Tests/VerdictUICLICoreTests/DaemonClientTests.swift` | DaemonClientTests: behavioral and refusal regression coverage | Active | 2026-09-23 |
 | `Tests/VerdictUICLICoreTests/LiveRuntimeTests.swift` | LiveRuntimeTests: behavioral and refusal regression coverage | Active | 2026-09-23 |
 | `Tests/VerdictUICLICoreTests/ProjectChecksTests.swift` | ProjectChecksTests: behavioral and refusal regression coverage | Active | 2026-09-23 |
+| `Tests/VerdictUICLICoreTests/BuildSessionContainmentTests.swift` | Launch-owned session containment: no own-group or real SwiftPM build descendant survives CLI exit, SIGINT/TERM/HUP or SIGKILL (CIS-4F278A0F) | Active | 2026-10-01 |
 | `Tests/VerdictUICLICoreTests/ProjectRunnerTests.swift` | Actual nested Swift package build, path/budget prelaunch rejection, deadline/override/cancellation and progress controls | Active | 2026-09-24 |
 | `Tests/VerdictUICLICoreTests/WebRuntimeTests.swift` | WebRuntimeTests: behavioral and refusal regression coverage | Active | 2026-09-23 |
 | `Tests/VerdictUIWebTests/DOMSnapshotAssemblyTests.swift` | DOMSnapshotAssemblyTests: behavioral and refusal regression coverage | Active | 2026-09-23 |

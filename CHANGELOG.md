@@ -8,6 +8,14 @@
   signs, notarizes and scans the archive (`scripts/package-cli-release.sh`)
   before its first public mutation, then bumps the tap formula
   (`scripts/bump-tap-formula.sh`).
+
+- Fixed consumer builds leaving SwiftPM processes running after the CLI exited,
+  was interrupted or was killed. SwiftPM's evaluated manifest and compilers start
+  their own process groups and escaped the launcher's group; launched commands
+  now lead a session the launch creates, and the owner or its crash guardian
+  removes every remaining session member. SIGINT, SIGTERM and SIGHUP during a
+  consumer build finish that cleanup before the CLI exits with 128 + signal.
+
 - Fixed the desktop download archive: the 1.1.3 zip carried macOS metadata
   (`._*`) files that broke the app's signature when extracted with `unzip`.
   Archives are now built with `scripts/package-desktop-zip.sh`, which refuses

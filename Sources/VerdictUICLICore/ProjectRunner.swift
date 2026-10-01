@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import os
 import VerdictUIKernel
 import VerdictUIProbe
 
@@ -55,6 +56,41 @@ public enum ProjectRunner {
 
     public struct Failure: Error, CustomStringConvertible {
         public let description: String
+        /// The signal that interrupted a consumer build, after its session was swept.
+        public var interruption: Int32? = nil
+    }
+
+    static let buildInterruptions = [SIGINT, SIGTERM, SIGHUP]
+
+    /// Turns interrupting signals into build cancellation, so the owned build
+    /// session is swept before the launcher exits. Signals the process already
+    /// ignores stay ignored. Death without a handler, including SIGKILL, is the
+    /// launch guardian's job.
+    private static func withBuildInterruption<Result>(
+        _ body: (_ received: () -> Int32?) throws -> Result
+    ) rethrows -> Result {
+        let received = OSAllocatedUnfairLock<Int32?>(initialState: nil)
+        var installed: [(Int32, sigaction, any DispatchSourceSignal)] = []
+        for number in buildInterruptions {
+            var current = sigaction()
+            guard sigaction(number, nil, &current) == 0,
+                unsafeBitCast(current.__sigaction_u.__sa_handler, to: Int.self)
+                    != unsafeBitCast(SIG_IGN, to: Int.self)
+            else { continue }
+            let source = DispatchSource.makeSignalSource(signal: number, queue: .global())
+            source.setEventHandler { received.withLock { if $0 == nil { $0 = number } } }
+            source.resume()
+            signal(number, SIG_IGN)
+            installed.append((number, current, source))
+        }
+        defer {
+            for (number, previous, source) in installed {
+                var restored = previous
+                sigaction(number, &restored, nil)
+                source.cancel()
+            }
+        }
+        return try body { received.withLock { $0 } }
     }
 
     public struct Destination: Equatable, Sendable {
@@ -146,27 +182,33 @@ public enum ProjectRunner {
                 "buildTimeoutSeconds": timeout,
             ], options: [.sortedKeys])
         FileHandle.standardError.write(event + Data([10]))
-        let process = try GuardedProcess.spawn(
-            executable: swiftExecutable, arguments: arguments,
-            directory: projectRoot, environment: ProcessInfo.processInfo.environment,
-            standardOutput: STDERR_FILENO, standardError: STDERR_FILENO)
-        do {
-            let deadline = ProcessInfo.processInfo.systemUptime + timeout
-            while try process.status() == nil {
-                guard !shouldCancel(), ProcessInfo.processInfo.systemUptime < deadline else {
-                    throw Failure(
-                        description: shouldCancel()
-                            ? "consumer build cancelled"
-                            : "consumer build timed out after \(timeout) seconds")
+        try withBuildInterruption { interruption in
+            let process = try GuardedProcess.spawn(
+                executable: swiftExecutable, arguments: arguments,
+                directory: projectRoot, environment: ProcessInfo.processInfo.environment,
+                standardOutput: STDERR_FILENO, standardError: STDERR_FILENO)
+            do {
+                let deadline = ProcessInfo.processInfo.systemUptime + timeout
+                while try process.status() == nil {
+                    if let number = interruption() {
+                        throw Failure(description: "consumer build interrupted by signal \(number)",
+                                      interruption: number)
+                    }
+                    guard !shouldCancel(), ProcessInfo.processInfo.systemUptime < deadline else {
+                        throw Failure(
+                            description: shouldCancel()
+                                ? "consumer build cancelled"
+                                : "consumer build timed out after \(timeout) seconds")
+                    }
+                    _ = process.waitForExitEvent(timeout: 0.025)
                 }
-                _ = process.waitForExitEvent(timeout: 0.025)
+                guard try process.stop(grace: 0) == 0 else {
+                    throw Failure(description: "consumer build failed; stale runner was not executed")
+                }
+            } catch {
+                try process.stop(grace: 0.2)
+                throw error
             }
-            guard try process.stop(grace: 0) == 0 else {
-                throw Failure(description: "consumer build failed; stale runner was not executed")
-            }
-        } catch {
-            try process.stop(grace: 0.2)
-            throw error
         }
     }
 
@@ -188,7 +230,13 @@ public enum ProjectRunner {
             )
         }
         if let root = ProjectScenarios.findProjectRoot(startingAt: current) {
-            try buildIfConfigured(projectRoot: root)
+            do {
+                try buildIfConfigured(projectRoot: root)
+            } catch let failure as Failure {
+                guard let number = failure.interruption else { throw failure }
+                FileHandle.standardError.write(Data("verdictui: \(failure)\n".utf8))
+                Darwin.exit(128 + number)
+            }
         }
         guard
             let target = try destination(
