@@ -1,0 +1,1 @@
+{"completed_at": "2026-10-01T07:23:19Z", "conclusion": "success", "head_branch": "cursor/fix-fallback-catalog-flag-c51d", "head_sha": "4148a4806afe241b43cd0a696692e1ccafb60655", "repo": "medlars/verdictui", "run_attempt": "1", "run_id": "36828643998", "schema_version": "1.0.0", "workflow": "CI"}
