@@ -1,0 +1,1 @@
+{"completed_at": "2026-10-01T06:40:24Z", "conclusion": "success", "head_branch": "cursor/ship-readiness-floor-e4ab", "head_sha": "866ce8db82e40ea410bd44f9a7921722825d74b0", "repo": "medlars/verdictui", "run_attempt": "1", "run_id": "36824921083", "schema_version": "1.0.0", "workflow": "CI"}
