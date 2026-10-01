@@ -157,9 +157,9 @@ final class ProjectChecksTests: XCTestCase {
         let leader = try await Self.pid("leader.pid", in: root)
         let child = try await Self.pid("child.pid", in: root)
         defer { operation.cancel() }
-        XCTAssertEqual(getpgid(child), getpgid(leader))
-        XCTAssertNotEqual(getpgid(leader), leader, "guardian, not command, anchors the group")
-        XCTAssertNotEqual(leader, getpgrp(), "must never signal the test runner's group")
+        XCTAssertEqual(getsid(child), leader)
+        XCTAssertEqual(getsid(leader), leader, "the launch, not discovery, created the command's session")
+        XCTAssertNotEqual(leader, getsid(0), "must never signal the test runner's session")
         operation.cancel()
         do { _ = try await operation.value; XCTFail("cancelled operation succeeded") }
         catch is CancellationError {} catch { XCTFail("\(error)") }

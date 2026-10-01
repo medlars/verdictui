@@ -102,8 +102,9 @@ final class GuardedProcessTests: XCTestCase {
         let process = try GuardedProcess.spawn(executable: URL(fileURLWithPath: "/bin/sleep"), arguments: ["10"],
             directory: try root(), environment: [:])
         defer { _ = try? process.stop(grace: 0) }
-        let guardian = getpgid(process.processIdentifier)
+        let guardian = process.guardianProcessIdentifier
         XCTAssertNotEqual(guardian, process.processIdentifier)
+        XCTAssertEqual(getsid(process.processIdentifier), process.processIdentifier, "the command leads its own session")
         var info = siginfo_t()
         XCTAssertEqual(waitid(P_PID, id_t(guardian), &info, WEXITED | WNOHANG | WNOWAIT), 0)
         XCTAssertEqual(info.si_pid, 0, "test holds its own direct live guardian unreaped")
