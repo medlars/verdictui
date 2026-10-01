@@ -299,7 +299,7 @@ jobs:
         if: ${{ !cancelled() && steps.runv2_emit.outcome == 'success' && steps.runv2_verify.outcome == 'success' && hashFiles('evidence/run-v2.json') != '' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: run-evidence
+          name: run-v2-evidence-${{ github.sha }}
           path: evidence/run-v2.json
           if-no-files-found: error
   secret-scan:
