@@ -1,5 +1,7 @@
-@~/Projects/shared/rules.md
-@no.md
+Codex does not resolve Claude-style `@` imports, so read these files explicitly before any work:
+
+- Read `~/Projects/shared/rules.md` — fleet-wide rules every project inherits.
+- Read `no.md` — this repo's log of rejected options; do not re-propose them.
 
 # VerdictUI
 
