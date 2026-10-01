@@ -1,7 +1,6 @@
 import ArgumentParser
 import Foundation
 import SwiftUI
-import VerdictUIDemoScenarios
 import VerdictUIKernel
 import VerdictUIProbe
 import VerdictUIWitness
@@ -65,9 +64,8 @@ public struct CommandEnvironment: Sendable {
         if let environment = VerdictUIRunner.environment { return environment }
 
         return CommandEnvironment(
-            usesFallbackCatalog: true,
             engine: VerdictEngine(
-                registry: DemoScenarios.registry,
+                registry: ScenarioRegistry([]),
                 baselines: BaselineStore.standard(root: root)
             ),
             output: StandardOutput(),
@@ -584,7 +582,7 @@ public enum VariantParsing {
         colorSchemes: [String],
         dynamicTypeSizes: [String]
     ) throws -> [Variant] {
-        Sweep<CleanSettingsScenario>.matrix(
+        Variant.matrix(
             locales: locales,
             colorSchemes: try colorSchemes.map(colorScheme),
             dynamicTypeSizes: try dynamicTypeSizes.map(dynamicTypeSize)

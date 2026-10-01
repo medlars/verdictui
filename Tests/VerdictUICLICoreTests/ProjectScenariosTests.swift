@@ -1,4 +1,6 @@
 import Foundation
+import VerdictUIDemoScenarios
+import VerdictUIKernel
 import XCTest
 
 @testable import VerdictUICLICore
@@ -171,14 +173,20 @@ final class ProjectScenariosTests: XCTestCase {
 final class FallbackCatalogSignalTests: XCTestCase {
 
     /// A project with no manifest gets the demo catalog, and is TOLD so.
-    func testAProjectWithoutAManifestIsMarkedAsUsingTheFallback() throws {
+    func testAProjectWithoutAManifestIsMarkedAsUsingTheFallback() {
         let root = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("vu-nofallback-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
+        let env = CommandEnvironment(
+            usesFallbackCatalog: true,
+            engine: VerdictEngine(
+                registry: DemoScenarios.registry, baselines: BaselineStore.standard(root: root)),
+            output: StandardOutput(),
+            pixelArtifactRoot: root.appendingPathComponent(PixelArtifact.directory, isDirectory: true))
         XCTAssertTrue(
-            CommandEnvironment.standard(root: root).usesFallbackCatalog,
+            env.usesFallbackCatalog,
             "a project declaring no scenarios receives VerdictUI's own demo catalog and must "
                 + "be marked as such — otherwise a caller reports those findings as the "
                 + "project's (CTS-99986645)"
@@ -244,18 +252,25 @@ extension ProjectScenariosTests {
     /// run, so the catalog they get is borrowed and the note must stand.
     @MainActor
     func testAConsumerRunnerWeCannotExecuteDoesNotSilenceTheNote() throws {
-        try withTempProject { root in
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("verdictui-proj-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
         try writeManifest(at: root, runner: "build/some-consumer-runner")
-        let env = CommandEnvironment.standard(root: root)
+        let env = CommandEnvironment(
+            usesFallbackCatalog: true,
+            engine: VerdictEngine(
+                registry: DemoScenarios.registry, baselines: BaselineStore.standard(root: root)),
+            output: StandardOutput(),
+            pixelArtifactRoot: root.appendingPathComponent(PixelArtifact.directory, isDirectory: true))
 
         XCTAssertTrue(
             env.usesFallbackCatalog,
             "a project declaring a runner this binary never executes was reported as "
-                + "owning its scenarios. The engine still carries DemoScenarios.registry, "
+                + "owning its scenarios. The engine still carries the stock demo catalog, "
                 + "so the note that would have told the caller their verdicts describe "
                 + "VerdictUI's fixtures has been silenced by adding a file."
         )
-        }
     }
 
     /// The rule itself, in both directions.

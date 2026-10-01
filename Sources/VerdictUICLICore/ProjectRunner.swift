@@ -11,13 +11,18 @@ public enum VerdictUIRunner {
     public static func main(
         registry: ScenarioRegistry,
         root: URL? = nil,
-        arguments: [String]? = nil
+        arguments: [String]? = nil,
+        usesFallbackCatalog: Bool = false,
+        allowsExternalWitness: Bool = false
     ) async {
         let directory =
             root ?? ProjectScenarios.findProjectRoot(
                 startingAt: URL(fileURLWithPath: FileManager.default.currentDirectoryPath))
             ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-        await withRegistry(registry, root: directory) {
+        await withRegistry(
+            registry, root: directory, usesFallbackCatalog: usesFallbackCatalog,
+            allowsExternalWitness: allowsExternalWitness
+        ) {
             await VerdictUITool.main(arguments)
         }
     }
@@ -26,11 +31,15 @@ public enum VerdictUIRunner {
     static func withRegistry<Result: Sendable>(
         _ registry: ScenarioRegistry,
         root: URL,
+        usesFallbackCatalog: Bool = false,
+        allowsExternalWitness: Bool = false,
         operation: () async throws -> Result
     ) async rethrows -> Result {
         let environment = CommandEnvironment(
+            usesFallbackCatalog: usesFallbackCatalog,
             engine: VerdictEngine(
-                registry: registry, baselines: .standard(root: root), allowsExternalWitness: false
+                registry: registry, baselines: .standard(root: root),
+                allowsExternalWitness: allowsExternalWitness
             ),
             output: StandardOutput(),
             pixelArtifactRoot: root.appendingPathComponent(PixelArtifact.directory, isDirectory: true),
