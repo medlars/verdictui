@@ -1,0 +1,2 @@
+# Vendored by claude-config scripts/vendor-deletion-screen.py -- checked at its source.
+extend-exclude = ["*.py"]

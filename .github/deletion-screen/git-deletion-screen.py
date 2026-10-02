@@ -1,0 +1,172 @@
+#!/usr/bin/env python3.14
+"""Screen the deletion lines a commit adds or changes (owner rule INS-18201669, CTS-E1F0D681).
+
+Runs for EVERY editor, because it runs at git: the global pre-commit dispatcher
+calls it with --staged, and CI calls it with --range BASE..HEAD. A deletion line
+the change adds that is not provably temporary/build and has no
+`# DELETION-REVIEW: 1) reason 2) consequences 3) backup 4) following steps`
+within three lines above it stops the commit. Lines the change does not touch
+are not judged here; the census reports those.
+
+  git-deletion-screen.py --staged            (inside a repository)
+  git-deletion-screen.py --range BASE..HEAD
+
+Exit 0 = nothing to review, 1 = review required (sites listed), 2 = could not
+read the change (a finding, never a pass).
+"""
+
+from __future__ import annotations
+
+import argparse
+import importlib.util
+import json
+import os
+import pwd
+import re
+import subprocess
+import sys
+import time
+from pathlib import Path
+from types import ModuleType
+
+__all__ = ["added_lines", "main", "screen"]
+
+# Beside this file when vendored into a repo for CI (scripts/vendor-deletion-screen.py),
+# else the claude-config layout.
+_HERE = Path(__file__).resolve().parent
+LIB = next(
+    (p for p in (_HERE / "script_deletions.py", _HERE.parent / "hooks" / "lib" / "script_deletions.py") if p.is_file()),
+    _HERE.parent / "hooks" / "lib" / "script_deletions.py",
+)
+_HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
+
+
+def _classifier() -> ModuleType:
+    spec = importlib.util.spec_from_file_location("script_deletions", LIB)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"classifier missing at {LIB}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _git(*args: str) -> str:
+    # errors="replace": a staged binary (a release DMG) is not UTF-8. Decoding it
+    # strictly crashed the screen and aborted the commit; replaced bytes classify
+    # as no language, so the file is skipped while every script is still screened.
+    out = subprocess.run(
+        ["git", *args], capture_output=True, text=True, errors="replace", timeout=60, check=False
+    )
+    if out.returncode != 0:
+        raise RuntimeError(f"git {' '.join(args)}: {out.stderr.strip()}")
+    return out.stdout
+
+
+def added_lines(diff: str) -> set[int]:
+    """New-side line numbers a unified diff (-U0) adds or changes."""
+    lines: set[int] = set()
+    for line in diff.splitlines():
+        m = _HUNK.match(line)
+        if m:
+            start, count = int(m.group(1)), int(m.group(2) or "1")
+            lines.update(range(start, start + count))
+    return lines
+
+
+def screen(diff_args: list[str], show_prefix: str) -> list[str]:
+    sd = _classifier()
+    names = _git("diff", *diff_args, "--name-only", "--diff-filter=ACMR").split("\n")
+    findings: list[str] = []
+    for name in filter(None, names):
+        # A file whose content cannot be read is "could not observe" (exit 2), not "clean".
+        text = _git("show", f"{show_prefix}{name}")
+        lang = sd.language_of(name, text.split("\n", 1)[0])
+        if lang is None:
+            continue
+        touched = added_lines(_git("diff", *diff_args, "-U0", "--", name))
+        for site in sd.classify(text, lang):
+            if site.verdict == "needs-review" and site.lineno in touched:
+                findings.append(f"  {name}:{site.lineno}  {site.line[:120]}\n      {site.reason}")
+    return findings
+
+
+def unattended() -> bool:
+    """No terminal and no agent session: nobody can add a review, so a refusal would lose the commit."""
+    forced = os.environ.get("DELETION_SCREEN_FORCE_MODE")
+    if forced:
+        return forced == "unattended"
+    if any(stream.isatty() for stream in (sys.stdin, sys.stderr) if stream is not None):
+        return False
+    agent = os.environ.get("CLAUDECODE") or os.environ.get("CLAUDE_CODE_SESSION_ID")
+    return not (agent or any(k.startswith("CODEX_") for k in os.environ))
+
+
+def record(outcome: str, findings: list[str]) -> None:
+    """Every refusal and every unattended pass-through lands in one queue a person can review."""
+    default = Path(pwd.getpwuid(os.getuid()).pw_dir) / ".claude/state/deletion-review-queue.jsonl"
+    queue = Path(os.environ.get("DELETION_REVIEW_QUEUE") or default)
+    row = {
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "outcome": outcome,
+        "repo": os.getcwd(),
+        "parent": os.environ.get("_", ""),
+        "findings": findings,
+    }
+    try:
+        queue.parent.mkdir(parents=True, exist_ok=True)
+        with queue.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(row) + "\n")
+    except OSError as exc:
+        print(f"deletion-screen: could not write the review queue {queue}: {exc}", file=sys.stderr)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n\n")[0])
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--staged", action="store_true")
+    mode.add_argument("--range")
+    args = parser.parse_args()
+    if args.staged:
+        diff_args, prefix = ["--cached"], ":"
+    else:
+        head = args.range.split("..", 1)[1] or "HEAD"
+        diff_args, prefix = [args.range], f"{head}:"
+    # Owner 2026-10-01: an unattended job is checked or let through, never refused.
+    # Only the local --staged run applies this; CI (--range) is the check.
+    let_through = args.staged and unattended()
+    try:
+        findings = screen(diff_args, prefix)
+    except RuntimeError as exc:
+        print(f"deletion-screen: COULD NOT READ the change: {exc}", file=sys.stderr)
+        if let_through:
+            record("unattended-unreadable-let-through", [str(exc)])
+            return 0
+        return 2
+    if not findings:
+        return 0
+    if let_through:
+        record("unattended-let-through", findings)
+        print(
+            "deletion-screen: UNATTENDED commit let through with unreviewed deletions; queued for review:\n"
+            + "\n".join(findings),
+            file=sys.stderr,
+        )
+        return 0
+    if args.staged:
+        record("refused", findings)
+    print(
+        "DELETION REVIEW REQUIRED (owner rule INS-18201669) -- this change adds deletions whose\n"
+        "target is not provably temporary or a build/cache directory:\n"
+        + "\n".join(findings)
+        + "\n\nAdd this comment on one of the three lines above each one (each answer 10+ characters):\n"
+        "  # DELETION-REVIEW: 1) <reason it must go> 2) <consequences: what breaks or is lost>"
+        " 3) <backup: where, or why none is needed> 4) <following steps after deleting>\n"
+        "Or point the deletion at a mktemp/TemporaryDirectory path. `git commit --no-verify` skips\n"
+        "this screen; the deletion census (scripts/deletion-census.py) still reports the site.",
+        file=sys.stderr,
+    )
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

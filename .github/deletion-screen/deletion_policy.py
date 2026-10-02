@@ -1,0 +1,324 @@
+"""Owner deletion rules for destructive-action-gate.sh (INS-18201669, CTS-7186D7DE).
+
+The owner's rule is a TRIPLE-CHECK, not a prohibition. A matched deletion stops
+once with the facts (what it would destroy) and asks for a review; the same
+command re-run with a first line
+
+    # DELETION-REVIEW: 1) reason 2) consequences 3) backup 4) following steps
+
+(each answer 10+ characters, the shape of the gate's DESTRUCTIVE-ACK) proceeds.
+Exit 3 = review required, exit 0 = proceed.
+
+Matched: ~/Projects, $HOME or an ancestor; a recursive delete of an unresolved
+variable (on 2026-09-30 one resolved to ~/Projects and wiped 25 repos,
+CIS-E94F28E0); a repo root; a file under $HOME removed with `rm` rather than
+`trash`. For the first three the backup answer must name a backup that exists
+(rule 1: back up a repo before deleting it). Temp roots and build/cache dirs
+are never matched.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import os
+import re
+import shlex
+import subprocess
+import sys
+import time
+from pathlib import Path
+from typing import NamedTuple
+
+__all__ = ["EXEMPT_PARTS", "TOKEN_TTL_S", "Finding", "backup_token_valid", "findings", "main", "review_answers"]
+
+EXEMPT_PARTS = frozenset(
+    {
+        "build",
+        ".build",
+        "dist",
+        "out",
+        "target",
+        "node_modules",
+        "__pycache__",
+        "DerivedData",
+        ".tox",
+        ".venv",
+        "venv",
+        ".pytest_cache",
+        ".mypy_cache",
+        ".ruff_cache",
+        ".cache",
+    }
+)
+TOKEN_TTL_S = 24 * 3600
+REVIEW_REQUIRED = 3  # not 2: python itself exits 2 when the script cannot be opened
+_ASSIGN = re.compile(r"""(?:^|[\s;&|(])([A-Za-z_][A-Za-z0-9_]*)=("[^"\n]*"|'[^'\n]*'|\$\([^)\n]*\)|[^\s;&|]+)""")
+_VAR = re.compile(r"\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?")
+_HEREDOC = re.compile(r"<<-?\s*['\"]?([A-Za-z_][A-Za-z0-9_]*)['\"]?")
+_GLOB = re.compile(r"[*?\[]")
+_WRAPPERS = frozenset({"sudo", "command", "env", "nice", "nohup", "time"})
+# Words that open a compound command: `if x; then rm -rf ~/Projects; fi` put
+# `then` in the verb slot, so the rm was never seen (found 2026-10-01).
+_KEYWORDS = frozenset({"{", "}", "!", "if", "then", "else", "elif", "do", "while", "until", "exec", "xargs"})
+
+
+def _strip_heredocs(text: str) -> str:
+    out: list[str] = []
+    terminator: str | None = None
+    for line in text.splitlines():
+        if terminator is not None:
+            if line.strip() == terminator:
+                terminator = None
+            continue
+        out.append(line)
+        match = _HEREDOC.search(line)
+        if match:
+            terminator = match.group(1)
+    return "\n".join(out)
+
+
+def _assignments(text: str) -> dict[str, str | None]:
+    found: dict[str, str | None] = {}
+    for name, raw in _ASSIGN.findall(text):
+        value = raw.strip("'\"")
+        found[name] = "/tmp/mktemp" if value.startswith("$(mktemp") else (None if "$(" in value or "`" in value else value)
+    return found
+
+
+def _segments(text: str) -> list[list[str]]:
+    # Lines are joined with `;`, so shlex's own comment handling would let one
+    # `#` hide every LATER line -- a leading `# anything` disabled this policy.
+    # Drop whole-line comments here and end a segment at an unquoted `#` word.
+    code = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+    lexer = shlex.shlex(code.replace("\n", " ; "), posix=True, punctuation_chars=";&|()")
+    lexer.whitespace_split = True
+    lexer.commenters = ""
+    segments: list[list[str]] = [[]]
+    in_comment = False
+    for token in lexer:
+        if token and all(ch in ";&|()" for ch in token):
+            segments.append([])
+            in_comment = False
+        elif in_comment or token.startswith("#"):
+            in_comment = True
+        else:
+            segments[-1].append(token)
+    return [seg for seg in segments if seg]
+
+
+def _verb(segment: list[str]) -> tuple[str | None, list[str]]:
+    i = 0
+    while i < len(segment):
+        word = segment[i]
+        if (
+            re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", word)
+            or word in _WRAPPERS
+            or word in _KEYWORDS
+            or (i > 0 and segment[i - 1] == "nice" and word.startswith("-"))
+        ):
+            i += 1
+            continue
+        return os.path.basename(word), segment[i + 1 :]
+    return None, []
+
+
+def _expand(arg: str, env: dict[str, str | None]) -> str | None:
+    if arg == "~" or arg.startswith("~/"):
+        arg = os.environ.get("HOME", "") + arg[1:]
+    unresolved = False
+
+    def sub(match: re.Match[str]) -> str:
+        nonlocal unresolved
+        name = match.group(1)
+        if name in env and env[name] is not None:
+            return str(env[name])
+        if name in ("HOME", "TMPDIR", "PWD") and os.environ.get(name):
+            return os.environ[name]
+        unresolved = True
+        return ""
+
+    expanded = _VAR.sub(sub, arg)
+    if unresolved or "$(" in arg or "`" in arg:
+        return None
+    return expanded
+
+
+def _real(path: str) -> Path:
+    return Path(os.path.realpath(os.path.join(os.getcwd(), path)))
+
+
+def _token_dir() -> Path:
+    default = Path(os.environ.get("HOME", "")) / ".claude" / "state" / "repo-backups"
+    return Path(os.environ.get("CLAUDE_BACKUP_TOKEN_DIR") or default)
+
+
+def backup_token_valid(repo: Path) -> bool:
+    # A lookup key shared with `shasum -a 1` in the backup script, not a security hash.
+    key = hashlib.sha1(str(repo).encode(), usedforsecurity=False).hexdigest()[:16]
+    token = _token_dir() / f"repo-backup-{key}"
+    try:
+        if time.time() - token.stat().st_mtime > TOKEN_TTL_S:
+            return False
+        archive = Path(token.read_text().strip())
+        return archive.is_file() and archive.stat().st_size > 0
+    except OSError:
+        return False
+
+
+def _within(path: Path, root: Path) -> bool:
+    return path == root or root in path.parents
+
+
+def _parse_args(verb: str, args: list[str]) -> tuple[bool, list[str]]:
+    recursive = verb == "trash"
+    targets: list[str] = []
+    end_of_flags = False
+    for arg in args:
+        if not end_of_flags and arg == "--":
+            end_of_flags = True
+        elif not end_of_flags and arg.startswith("-"):
+            short = not arg.startswith("--") and re.search("[rR]", arg)
+            recursive = recursive or arg == "--recursive" or bool(short)
+        else:
+            targets.append(arg)
+    return recursive, targets
+
+
+class Finding(NamedTuple):
+    target: str
+    why: str
+    needs_backup: bool
+
+
+def _facts(path: Path) -> str:
+    """What the deletion would destroy, so the review answers from evidence."""
+    if not path.exists():
+        return "does not exist"
+    if path.is_file():
+        return f"file, {path.stat().st_size} bytes"
+    count = 0
+    for _ in path.rglob("*"):
+        count += 1
+        if count >= 20000:
+            break
+    parts = [f"{count}{'+' if count >= 20000 else ''} entries"]
+    if (path / ".git").exists():
+        for label, cmd in (
+            ("uncommitted", ["git", "-C", str(path), "status", "--porcelain"]),
+            ("unpushed commits", ["git", "-C", str(path), "log", "--oneline", "@{u}..HEAD"]),
+        ):
+            try:
+                out = subprocess.run(cmd, capture_output=True, text=True, timeout=3, check=False)
+                parts.append(f"{len(out.stdout.splitlines())} {label}" if out.returncode == 0 else f"{label}: unknown")
+            except OSError, subprocess.TimeoutExpired:
+                parts.append(f"{label}: unknown")
+    return ", ".join(parts)
+
+
+def _target_finding(verb: str, target: Path, home: Path) -> Finding | None:
+    projects = home / "Projects"
+    if target == home or _within(projects, target):
+        return Finding(str(target), "is ~/Projects, $HOME or an ancestor of them", True)
+    # Temp roots live outside $HOME, so they fall out here with everything else
+    # the gate's other arms already judge.
+    if not _within(target, home):
+        return None
+    if EXEMPT_PARTS.intersection(target.relative_to(home).parts) or target.suffix == ".pyc":
+        return None
+    repo = target.parent if target.name == ".git" else target
+    if (repo / ".git").exists() or repo.parent == projects:
+        return Finding(str(repo), f"is a repository ({_facts(repo)})", True)
+    if verb == "rm":
+        # `trash` is recoverable from the Trash; `rm` is not, so only rm is reviewed.
+        return Finding(str(target), f"is a file under $HOME removed with rm, not trash ({_facts(target)})", False)
+    return None
+
+
+def findings(verb: str, args: list[str], env: dict[str, str | None]) -> list[Finding]:
+    home = Path(os.path.realpath(os.environ.get("HOME", "/nonexistent")))
+    recursive, targets = _parse_args(verb, args)
+    found: list[Finding] = []
+    for raw in targets:
+        expanded = _expand(raw, env)
+        if expanded is None:
+            if recursive:
+                found.append(Finding(raw, "is an unresolved variable; on 2026-09-30 one resolved to ~/Projects", True))
+            continue
+        # A glob is judged by its static prefix: `~/Projects/*` deletes every repo.
+        static = _GLOB.split(expanded, maxsplit=1)[0] or "."
+        hit = _target_finding(verb, _real(static.rstrip("/") or "/"), home)
+        if hit:
+            found.append(hit)
+    return found
+
+
+def review_answers(text: str) -> list[str] | None:
+    """The four answers on the command's first line, or None if absent/incomplete."""
+    first = text.split("\n", 1)[0]
+    match = re.match(r"\s*#\s*DELETION-REVIEW:(.*)$", first)
+    if not match:
+        return None
+    rest = match.group(1)
+    answers: list[str] = []
+    for i in range(1, 5):
+        if f"{i})" not in rest:
+            return None
+        rest = rest.split(f"{i})", 1)[1]
+        answer = rest.split(f"{i + 1})", 1)[0] if i < 4 else rest
+        if len(re.sub(r"\s", "", answer)) < 10:
+            return None
+        answers.append(answer.strip())
+    return answers
+
+
+def _backup_ok(finding: Finding, backup_answer: str) -> bool:
+    if backup_token_valid(Path(finding.target)):
+        return True
+    named = re.findall(r"(?:~|/)[^\s,;)\n]+", backup_answer)
+    return any(Path(os.path.expanduser(p)).exists() for p in named)
+
+
+def _review_request(found: list[Finding], answers: list[str] | None) -> str:
+    lines = [
+        "DELETION REVIEW REQUIRED (owner rule INS-18201669) -- triple-check before deleting:",
+        *(f"  * {f.target} {f.why}" for f in found),
+        "",
+        "Re-run with this as the command's FIRST line (each answer 10+ characters):",
+        "  # DELETION-REVIEW: 1) <reason it must go> 2) <consequences: what breaks or is lost>"
+        " 3) <backup: the archive path, or why none is needed> 4) <following steps after deleting>",
+    ]
+    if any(f.needs_backup for f in found):
+        lines += [
+            "Answer 3 must name a backup that exists. For a repository:",
+            '  bash ~/.claude/scripts/backup-repo-before-delete.sh "<repo>"',
+        ]
+    if answers is not None:
+        lines.insert(1, "  (the review given names no existing backup for a repository/root target)")
+    lines.append("Prefer `trash <path>` over rm: the Trash is itself a backup.")
+    return "\n".join(lines)
+
+
+def main() -> int:
+    raw_text = sys.stdin.read()
+    text = _strip_heredocs(raw_text)
+    env = _assignments(text)
+    try:
+        segments = _segments(text)
+    except ValueError:
+        return 0  # unparseable quoting: the gate's own arms still judge it
+    found: list[Finding] = []
+    for segment in segments:
+        verb, args = _verb(segment)
+        if verb in ("rm", "trash"):
+            found += findings(verb, args, env)
+    if not found:
+        return 0
+    answers = review_answers(raw_text)
+    if answers and all(_backup_ok(f, answers[2]) for f in found if f.needs_backup):
+        return 0
+    print(_review_request(found, answers), file=sys.stderr)
+    return REVIEW_REQUIRED
+
+
+if __name__ == "__main__":
+    sys.exit(main())
