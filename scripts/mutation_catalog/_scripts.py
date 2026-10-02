@@ -287,4 +287,17 @@ MUTATIONS: list[Mutation] = [
         ),
         runner=Runner.PYTEST,
     ),
+    Mutation(
+        # CIS-D1582551: a dark launch on a Light host did not get dark, so its
+        # colours say nothing about the app.
+        name="appearance sweep judges a dark launch the host never realised",
+        path="scripts/appearance-sweep.py",
+        old='if host_dark is not None and host_dark.get("dark") is not True:',
+        new="if False:",
+        test=(
+            "Tests/test_appearance_sweep.py"
+            "::test_a_dark_launch_on_a_light_host_is_unavailable_not_failed_or_passed"
+        ),
+        runner=Runner.PYTEST,
+    ),
 ]

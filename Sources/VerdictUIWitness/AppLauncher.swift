@@ -53,6 +53,25 @@ public enum AppLauncher {
         return args
     }
 
+    /// Whether launching with ``variantArguments(locale:colorScheme:)`` can
+    /// actually produce `colorScheme` on a host of the given appearance.
+    ///
+    /// Measured on a hosted Light-mode runner (CIS-D1582551, run 36986731637):
+    /// `-AppleInterfaceStyle Dark`, `-NSAppearanceName NSAppearanceNameDarkAqua`
+    /// and a bare `defaults write -g AppleInterfaceStyle Dark` all leave the
+    /// launched app light; only the system appearance makes it dark. Forced
+    /// Aqua makes it light on a Dark host (d3defd3, and the same run).
+    public static func realises(colorScheme: String?, hostIsDark: Bool) -> Bool {
+        colorScheme?.lowercased() != "dark" || hostIsDark
+    }
+
+    /// The system appearance a freshly launched app inherits. Read from this
+    /// process's effective appearance, not the `AppleInterfaceStyle` default,
+    /// which can say Dark while apps still launch light (same run).
+    public static func hostIsDark() -> Bool {
+        NSApplication.shared.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+    }
+
     /// Launch `bundle` as a new instance and return its pid once `surface`
     /// reads, or throw after `timeout`.
     public static func launch(

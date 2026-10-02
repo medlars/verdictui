@@ -126,6 +126,45 @@ final class LiveCommandTests: XCTestCase {
         XCTAssertEqual(AppLauncher.variantArguments(locale: nil, colorScheme: nil), [])
     }
 
+    /// CIS-D1582551, measured on a hosted Light runner (run 36986731637): no
+    /// launch argument yields a dark app there, while forced Aqua yields a
+    /// light one on a Dark host. Only the system appearance can make dark.
+    func testOnlyADarkHostCanRealiseADarkCellWhileLightIsAlwaysRealisable() {
+        XCTAssertFalse(AppLauncher.realises(colorScheme: "dark", hostIsDark: false))
+        XCTAssertTrue(AppLauncher.realises(colorScheme: "Dark", hostIsDark: true))
+        XCTAssertTrue(AppLauncher.realises(colorScheme: "light", hostIsDark: true))
+        XCTAssertTrue(AppLauncher.realises(colorScheme: "light", hostIsDark: false))
+        XCTAssertTrue(AppLauncher.realises(colorScheme: nil, hostIsDark: false))
+    }
+
+    /// A dark cell on a Light host is reported UNAVAILABLE without launching
+    /// anything — never a light render labelled dark, never a verdict.
+    func testADarkCellOnALightHostIsReportedUnavailableWithoutALaunch() async {
+        let (environment, output) = self.environment()
+        let code = await LiveSweepCommand(
+            target: LiveTarget(app: "/nonexistent/Never.app"), locales: [],
+            colorSchemes: ["dark"], hostIsDark: { false }
+        ).run(environment, pretty: false)
+        XCTAssertEqual(code, .couldNotVerify)
+        XCTAssertFalse(
+            output.standardError.contains("not an application bundle"),
+            "an unrealisable cell must not be launched: \(output.standardError)")
+        XCTAssertTrue(output.standardOutput.contains(#""status":"unavailable""#), output.standardOutput)
+        XCTAssertTrue(output.standardOutput.contains("Light"), output.standardOutput)
+    }
+
+    /// On a Dark host the same dark cell IS launched (here: refused as not an
+    /// app), so the unavailable path is keyed on the host, not on the scheme.
+    func testADarkCellOnADarkHostIsLaunched() async {
+        let (environment, output) = self.environment()
+        let code = await LiveSweepCommand(
+            target: LiveTarget(app: "/nonexistent/Never.app"), locales: [],
+            colorSchemes: ["dark"], hostIsDark: { true }
+        ).run(environment, pretty: false)
+        XCTAssertEqual(code, .couldNotVerify)
+        XCTAssertTrue(output.standardError.contains("not an application bundle"), output.standardError)
+    }
+
     // MARK: - colour on a rendered scenario (no permissions needed)
 
     /// The in-process render is windowless and needs no Screen Recording, so

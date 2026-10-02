@@ -1,9 +1,13 @@
 name: Appearance Sweep (manual)
 
-# CTS-EA04B049: the one direction of `sweep --color-schemes` that cannot be
-# measured on the owner's Mac without flipping its system appearance is a DARK
-# launch on a LIGHT host. A hosted runner is the Light-mode host, so measure it
-# there. Manual only: it needs a GUI session and is not a merge gate.
+# CTS-EA04B049 / CIS-D1582551: the one direction of `sweep --color-schemes` that
+# cannot be measured on the owner's Mac without flipping its system appearance is
+# a DARK launch on a LIGHT host. Measured here (run 36986731637): no launch
+# argument makes an app dark on a Light host; only the system appearance does.
+# So on the Light runner the dark cell must be reported UNAVAILABLE (never a
+# pass, never an app defect); then the ephemeral runner is switched to Dark and
+# the forced-Aqua light launch must measure lighter than the dark one.
+# Manual only: it needs a GUI session and is not a merge gate.
 
 on:
   workflow_dispatch:
@@ -26,10 +30,35 @@ jobs:
           python-version: '3.14'
 
       - name: Build verdictui
-        run: swift build --build-system native --product verdictui
-
-      - name: Measure root background per launch appearance
         run: |
-          python3.14 scripts/appearance-sweep.py \
-            --binary "$(swift build --build-system native --show-bin-path)/verdictui" \
+          swift build --build-system native --product verdictui
+          echo "VERDICTUI_BIN=$(swift build --build-system native --show-bin-path)/verdictui" >> "$GITHUB_ENV"
+
+      - name: Light host - the product sweep reports the dark cell unavailable
+        run: |
+          python3.14 scripts/appearance-sweep.py --binary "$VERDICTUI_BIN" \
+            --app /System/Applications/Dictionary.app --product-sweep unavailable
+
+      - name: Light host - a dark launch measures as unavailable (exit 2), not pass or fail
+        run: |
+          set +e
+          python3.14 scripts/appearance-sweep.py --binary "$VERDICTUI_BIN" \
+            --app /System/Applications/Dictionary.app
+          code=$?
+          echo "measurement exit $code (expected 2)"
+          test "$code" -eq 2
+
+      - name: Switch the ephemeral runner's system appearance to Dark
+        run: |
+          osascript -e 'tell application "System Events" to tell appearance preferences to set dark mode to true'
+          test "$(osascript -e 'tell application "System Events" to tell appearance preferences to get dark mode')" = true
+
+      - name: Dark host - the product sweep launches and judges the dark cell
+        run: |
+          python3.14 scripts/appearance-sweep.py --binary "$VERDICTUI_BIN" \
+            --app /System/Applications/Dictionary.app --product-sweep realised
+
+      - name: Dark host - forced-Aqua light launch measures lighter than dark
+        run: |
+          python3.14 scripts/appearance-sweep.py --binary "$VERDICTUI_BIN" \
             --app /System/Applications/Dictionary.app
