@@ -357,16 +357,21 @@ public struct LiveSweepCommand: Sendable {
     public let colorSchemes: [String]
     public let dynamicTypeSizes: [String]
     public let colors: Bool
+    /// The host's system appearance; injected so the unavailable path is
+    /// testable without flipping a real Mac's appearance.
+    let hostIsDark: @MainActor @Sendable () -> Bool
 
     public init(
         target: LiveTarget, locales: [String], colorSchemes: [String],
-        dynamicTypeSizes: [String] = [], colors: Bool = false
+        dynamicTypeSizes: [String] = [], colors: Bool = false,
+        hostIsDark: @escaping @MainActor @Sendable () -> Bool = { AppLauncher.hostIsDark() }
     ) {
         self.target = target
         self.locales = locales
         self.colorSchemes = colorSchemes
         self.dynamicTypeSizes = dynamicTypeSizes
         self.colors = colors
+        self.hostIsDark = hostIsDark
     }
 
     public enum Problem: Error, Equatable, CustomStringConvertible {
@@ -411,10 +416,15 @@ public struct LiveSweepCommand: Sendable {
         }
     }
 
+    /// A cell carries a verdict, or — when its scheme could not be realised
+    /// on this host — `status: unavailable` and the reason, never a verdict
+    /// about a render in the wrong appearance (CIS-D1582551).
     struct CellReport: Encodable {
         let locale: String?
         let colorScheme: String?
-        let verdict: Verdict
+        let status: String
+        let verdict: Verdict?
+        let reason: String?
     }
 
     struct Report: Encodable {
@@ -428,23 +438,39 @@ public struct LiveSweepCommand: Sendable {
             let matrix = try cells()
             try target.validate()
             var reports: [CellReport] = []
+            let darkHost = hostIsDark()
             for cell in matrix {
+                guard AppLauncher.realises(colorScheme: cell.colorScheme, hostIsDark: darkHost) else {
+                    reports.append(
+                        CellReport(
+                            locale: cell.locale, colorScheme: cell.colorScheme, status: "unavailable",
+                            verdict: nil,
+                            reason: "the host is in Light mode and no launch argument makes an app "
+                                + "dark; switch the system appearance to Dark to sweep this cell"))
+                    continue
+                }
                 let extra = AppLauncher.variantArguments(
                     locale: cell.locale, colorScheme: cell.colorScheme)
                 let tree = try await target.withPid(extraArguments: extra) { pid in
                     try target.readTree(pid: pid, colors: colors)
                 }
                 let name = [cell.locale, cell.colorScheme].compactMap { $0 }.joined(separator: "/")
+                let verdict = JudgeCommand.judge(
+                    tree: tree, viewportWidth: 0, viewportHeight: 0,
+                    scenarioName: "sweep \(name)", requiresProbedNodes: false)
                 reports.append(
                     CellReport(
                         locale: cell.locale, colorScheme: cell.colorScheme,
-                        verdict: JudgeCommand.judge(
-                            tree: tree, viewportWidth: 0, viewportHeight: 0,
-                            scenarioName: "sweep \(name)", requiresProbedNodes: false)))
+                        status: verdict.status == .pass ? "pass" : "fail", verdict: verdict,
+                        reason: nil))
             }
             environment.output.writeOut(
                 try VerdictOutput.json(Report(app: target.app ?? "", cells: reports), pretty: pretty))
-            return reports.allSatisfy { $0.verdict.status == .pass } ? .pass : .verdictFailed
+            // A failed cell is evidence about the UI whatever else happened; an
+            // unavailable one only means the matrix is incomplete.
+            if reports.contains(where: { $0.status == "fail" }) { return .verdictFailed }
+            if reports.contains(where: { $0.status == "unavailable" }) { return .couldNotVerify }
+            return .pass
         }
     }
 }

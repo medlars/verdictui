@@ -324,4 +324,21 @@ MUTATIONS: list[Mutation] = [
         new="running.last",
         test="WitnessHostAdoptionTests/testTheNewestHostThatThisLaunchStartedIsAdopted",
     ),
+    Mutation(
+        # CIS-D1582551: no launch argument makes an app dark on a Light host,
+        # so claiming it can labels a light render dark.
+        name="a dark cell is called realisable on a Light host",
+        path="Sources/VerdictUIWitness/AppLauncher.swift",
+        old='colorScheme?.lowercased() != "dark" || hostIsDark',
+        new="true",
+        test="LiveCommandTests/testOnlyADarkHostCanRealiseADarkCellWhileLightIsAlwaysRealisable",
+    ),
+    Mutation(
+        # CIS-D1582551: the sweep must consult the host before launching a cell.
+        name="a sweep launches a dark cell on a Light host instead of reporting it unavailable",
+        path="Sources/VerdictUICLICore/LiveCommands.swift",
+        old="AppLauncher.realises(colorScheme: cell.colorScheme, hostIsDark: darkHost)",
+        new="AppLauncher.realises(colorScheme: cell.colorScheme, hostIsDark: !darkHost || true)",
+        test="LiveCommandTests/testADarkCellOnALightHostIsReportedUnavailableWithoutALaunch",
+    ),
 ]
