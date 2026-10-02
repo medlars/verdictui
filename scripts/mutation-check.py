@@ -233,6 +233,7 @@ def sweep_marker() -> Iterator[None]:
         yield
     finally:
         # `missing_ok`: a sweep must never fail because its own marker is gone.
+        # DELETION-REVIEW: 1) Remove the sweep marker file when the mutation sweep ends, so a background PM stops treating the tree as mid-mutation. 2) Consequences: none, the marker is a small pid and timestamp file this process wrote at the start of the same context manager; missing_ok covers an already-removed file. 3) Backup: none needed, it is a transient marker with no user data. 4) Following steps: the context manager exits and the sweep result is reported.
         SWEEP_MARKER.unlink(missing_ok=True)
 
 

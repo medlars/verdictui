@@ -521,6 +521,7 @@ def _can_write_existing_directory(path: Path) -> bool:
     try:
         os.close(fd)
     finally:
+        # DELETION-REVIEW: 1) Remove the zero-byte write probe created to test real write access to a SwiftPM cache directory. 2) Consequences: none, the probe name carries this process id and a monotonic stamp and was created by os.open with O_EXCL a few lines above; only that file is removed, the directory is never touched. 3) Backup: none needed, the probe holds no data. 4) Following steps: return True, meaning the directory is writable.
         probe.unlink(missing_ok=True)
     return True
 

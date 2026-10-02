@@ -373,6 +373,7 @@ class TestValidateContractsFailureBranches:
         """A round-trip check over zero fixtures proves nothing, so it must not pass."""
         contracts, kernel = self._stage(tmp_path)
         for fixture in (contracts / "fixtures").glob("*.json"):
+            # DELETION-REVIEW: 1) Delete every fixture json in the staged contracts copy to prove a round-trip check over zero fixtures fails. 2) Consequences: none outside the test, the staged tree lives under the pytest tmp_path and is a copy made by _stage, not the repository originals. 3) Backup: none needed, _stage recreates the copy for every test. 4) Following steps: run the gate and assert exit code 1.
             fixture.unlink()
         code, output = self._run(contracts, kernel)
         assert code == 1

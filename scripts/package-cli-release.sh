@@ -88,6 +88,7 @@ codesign -dv "$stage/$name/verdictui" 2>&1 | grep -qx "TeamIdentifier=$TEAM_ID" 
   || fail "signature is not from team $TEAM_ID"
 xattr -c "$stage/$name/verdictui" "$stage/$name/LICENSE"
 
+# DELETION-REVIEW: 1) Remove a previous release zip and its .sha256 so the archive is rebuilt cleanly from the freshly signed binary. 2) Consequences: the earlier zip for this version in the chosen output directory is replaced; only the two files named after the release archive are removed. 3) Backup: none needed, the zip is rebuilt from the signed binary on the next line and published release assets are stored on the release page. 4) Following steps: zip the stage directory, scan the zip and write the new checksum.
 rm -f "$zip" "$zip.sha256"
 (cd "$stage" && COPYFILE_DISABLE=1 zip -q -X -r "$zip" "$name")
 scan_zip "$zip"

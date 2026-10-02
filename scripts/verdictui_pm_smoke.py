@@ -73,6 +73,7 @@ def _save_pytest_evidence(
         temporary = None
     finally:
         if temporary is not None:
+            # DELETION-REVIEW: 1) Remove the leftover temporary evidence file when os.replace did not complete, so no partial evidence is left. 2) Consequences: none, the temporary name is only set to None after a successful replace, so this runs only for an unreplaced temp file the same function created; the final evidence file is untouched. 3) Backup: none needed, the temp holds only the evidence being written and the stage will regenerate it. 4) Following steps: the original exception propagates to the PM stage.
             os.unlink(temporary)
 
 

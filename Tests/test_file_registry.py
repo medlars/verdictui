@@ -237,6 +237,7 @@ class TestFileRegistry:
                 "so build output and generated artifacts will start demanding rows"
             )
         finally:
+            # DELETION-REVIEW: 1) Remove the temporary probe file the test wrote under Tests/ to prove the registry scan is tracked-only, so it never lingers as an untracked source file. 2) Consequences: none, the name carries this process id and the test asserts it did not exist beforehand, so only the file this test wrote can be removed. 3) Backup: none needed, a one-line comment file regenerated on every run. 4) Following steps: the finally block ends and the test ends.
             intruder.unlink(missing_ok=True)
 
     def test_every_tracked_suffix_is_classified(self) -> None:

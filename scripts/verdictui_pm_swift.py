@@ -38,6 +38,7 @@ def _clear_project_swiftpm_lock_files(project_root: Path) -> int:
     removed = 0
     for path in Path(tempfile.gettempdir()).glob(f"*{build_token}*.lock"):
         try:
+            # DELETION-REVIEW: 1) Clear stale SwiftPM command lock files for this project build path so a dead run cannot block the next swift command. 2) Consequences: only .lock files in the system temp directory whose name contains this project build token are removed; a lock held by a live process is only a marker and SwiftPM recreates it. 3) Backup: none needed, lock files carry no data. 4) Following steps: count the removed locks and log them; missing files are skipped and other OSErrors are reported.
             path.unlink()
             removed += 1
         except FileNotFoundError:
