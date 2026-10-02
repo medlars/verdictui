@@ -1,0 +1,25 @@
+# Vendored by claude-config scripts/vendor-deletion-screen.py -- do not edit here.
+# Screens the deletions this pull request adds (owner rule INS-18201669): each one must
+# be provably temporary/build or carry a `# DELETION-REVIEW:` comment. It catches what
+# the local pre-commit screen cannot: `git commit --no-verify` and github.com edits.
+name: deletion-screen
+on: pull_request
+permissions:
+  contents: read
+jobs:
+  deletion-screen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+      - name: Screen added deletions
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          base=$(git merge-base "origin/$BASE_REF" HEAD)
+          python .github/deletion-screen/git-deletion-screen.py --range "$base..HEAD"

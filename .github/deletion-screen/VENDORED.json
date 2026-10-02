@@ -1,0 +1,7 @@
+{
+ ".github/deletion-screen/deletion_policy.py": "d293256911b7e7ffb6690863d79730e64902ec73658887ea17d650d5fcbdea22",
+ ".github/deletion-screen/git-deletion-screen.py": "d3dd41b0b242c3744d5bb1f7826f57e0158687f7c44a3dac12bd643f70963bc4",
+ ".github/deletion-screen/ruff.toml": "990db2de3a79e1322751024ca5fcee297598c91c27f90a4fb7c51382eb2efd06",
+ ".github/deletion-screen/script_deletions.py": "022ab161a19dd8f87b3df072be3b6fe7a1bb6bc90a309f2256c82d2611f9fada",
+ ".github/workflows/deletion-screen.yml": "d8e1eaa48de359891475f61b47ae5bd772ab2bbedb5472b012bda88e05f0d43a"
+}
