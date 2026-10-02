@@ -1,0 +1,1 @@
+{"completed_at": "2026-10-02T03:54:51Z", "conclusion": "failure", "head_branch": "ci/deletion-screen", "head_sha": "2c7522e1fe37d23c64769412aca384251ddcc676", "repo": "medlars/verdictui", "run_attempt": "1", "run_id": "36961271380", "schema_version": "1.0.0", "workflow": "CI"}
