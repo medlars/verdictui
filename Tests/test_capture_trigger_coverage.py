@@ -61,6 +61,11 @@ def test_capture_trigger_watches_every_workflow_in_the_repo() -> None:
         f"workflows never watched by the capture trigger: {sorted(missing)} — "
         "a failure in them files no issue and closes none, while looking healthy"
     )
+    phantom = _watched() - _present()
+    assert not phantom, (
+        f"capture trigger lists workflows that do not exist in this repo: {sorted(phantom)} — "
+        "remove stale names so workflow_run only watches real workflows"
+    )
 
 
 @pytest.mark.skipif(not CAPTURE.exists(), reason="repo has no capture workflow")
