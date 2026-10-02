@@ -32,4 +32,4 @@ jobs:
         run: |
           python3.14 scripts/appearance-sweep.py \
             --binary "$(swift build --build-system native --show-bin-path)/verdictui" \
-            --app /System/Applications/Calculator.app
+            --app /System/Applications/Dictionary.app
