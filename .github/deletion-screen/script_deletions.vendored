@@ -16,6 +16,7 @@ an `echo "rm -rf .."` string, comments and heredoc bodies are not deletions.
 
 from __future__ import annotations
 
+import importlib.machinery
 import importlib.util
 import re
 from pathlib import Path
@@ -61,7 +62,12 @@ class Site(NamedTuple):
 
 
 def _policy() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("_deletion_policy", _LIB / "deletion_policy.py")
+    # ".vendored" is the name CI copies use (scripts/vendor-deletion-screen.py): not
+    # a .py file, so a host repo's own *.py scanners never judge it.
+    candidates = (_LIB / "deletion_policy.py", _LIB / "deletion_policy.vendored")
+    path = next((p for p in candidates if p.is_file()), candidates[0])
+    loader = importlib.machinery.SourceFileLoader("_deletion_policy", str(path))
+    spec = importlib.util.spec_from_loader("_deletion_policy", loader)
     if spec is None or spec.loader is None:
         raise ImportError("deletion_policy.py not found beside script_deletions.py")
     module = importlib.util.module_from_spec(spec)

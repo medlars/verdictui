@@ -1,7 +1,6 @@
 {
- ".github/deletion-screen/deletion_policy.py": "d293256911b7e7ffb6690863d79730e64902ec73658887ea17d650d5fcbdea22",
- ".github/deletion-screen/git-deletion-screen.py": "d3dd41b0b242c3744d5bb1f7826f57e0158687f7c44a3dac12bd643f70963bc4",
- ".github/deletion-screen/ruff.toml": "990db2de3a79e1322751024ca5fcee297598c91c27f90a4fb7c51382eb2efd06",
- ".github/deletion-screen/script_deletions.py": "022ab161a19dd8f87b3df072be3b6fe7a1bb6bc90a309f2256c82d2611f9fada",
- ".github/workflows/deletion-screen.yml": "d8e1eaa48de359891475f61b47ae5bd772ab2bbedb5472b012bda88e05f0d43a"
+ ".github/deletion-screen/deletion_policy.vendored": "d16a97bc1df5855dbda7fcef2d367b26ee9b871cce76e73415728de464f5381b",
+ ".github/deletion-screen/git-deletion-screen": "4525e5f8e07fa522514b89a5856cec99a2cecc897912a320a8230b97d090e6d8",
+ ".github/deletion-screen/script_deletions.vendored": "345c73442939043810232866ee21504b311bc169ddcc80ccbbb4e6c0afa4e2b2",
+ ".github/workflows/deletion-screen.yml": "6ee8325b7bf2b88cca4f299d1d4b594cd1c41ff82c3f33a4fa198139517dae04"
 }

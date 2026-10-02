@@ -22,4 +22,4 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
         run: |
           base=$(git merge-base "origin/$BASE_REF" HEAD)
-          python .github/deletion-screen/git-deletion-screen.py --range "$base..HEAD"
+          python .github/deletion-screen/git-deletion-screen --range "$base..HEAD"

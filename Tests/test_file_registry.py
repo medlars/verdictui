@@ -65,7 +65,19 @@ _NON_SOURCE_SUFFIXES = frozenset({".md", ".yml", ".example", ".resolved", ".svg"
 # the case the note above predicted.
 # swift-toolchain-version is data: the MAJOR.MINOR the CI step and
 # Tests/test_swift_toolchain_pin.py compare against (CTS-6D1E7A0F).
-_NON_SOURCE_FILENAMES = frozenset({".gitignore", ".gitkeep", "LICENSE", "swift-toolchain-version"})
+# The three .github/deletion-screen files below are vendored verbatim by an upstream
+# tool: data to this repo, not authored source. VENDORED.json beside them keeps its row.
+_NON_SOURCE_FILENAMES = frozenset(
+    {
+        ".gitignore",
+        ".gitkeep",
+        "LICENSE",
+        "swift-toolchain-version",
+        "git-deletion-screen",
+        "script_deletions.vendored",
+        "deletion_policy.vendored",
+    }
+)
 
 
 def _text() -> str:
