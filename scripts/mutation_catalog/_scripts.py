@@ -300,4 +300,27 @@ MUTATIONS: list[Mutation] = [
         ),
         runner=Runner.PYTEST,
     ),
+    Mutation(
+        # CIS-9FB9263C: fixed-offset slicing turns `FFFFFF` into a plausible
+        # but wrong brightness instead of an error.
+        name="appearance sweep luminance accepts a colour that is not #RRGGBB",
+        path="scripts/appearance-sweep.py",
+        old="    if not _HEX_COLOR.fullmatch(hex_color):\n",
+        new="    if False:\n",
+        test="Tests/test_appearance_sweep.py::test_luminance_refuses_anything_but_rrggbb",
+        runner=Runner.PYTEST,
+    ),
+    Mutation(
+        # CIS-9FB9263C: an uncaught launch failure exits 1, which reads as a
+        # defect in the app; an unmeasured launch must reach the verdict as 2.
+        name="appearance sweep crashes instead of reporting a failed launch unmeasured",
+        path="scripts/appearance-sweep.py",
+        old="    except (subprocess.SubprocessError, OSError) as error:\n",
+        new="    except OSError as error:\n",
+        test=(
+            "Tests/test_appearance_sweep.py"
+            "::test_measure_is_unmeasured_not_a_crash_when_the_launch_fails"
+        ),
+        runner=Runner.PYTEST,
+    ),
 ]

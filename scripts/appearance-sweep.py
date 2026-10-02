@@ -27,6 +27,7 @@ LAUNCH_ARGS = {
 }
 # Tolerates JSON, `key: value` and `key=value` renderings of the attribute.
 _BACKGROUND = re.compile(r"color\.background\W{0,6}(#[0-9A-Fa-f]{6})")
+_HEX_COLOR = re.compile(r"#[0-9A-Fa-f]{6}")
 _APPEARANCE_QUERY = (
     'tell application "System Events" to tell appearance preferences to get dark mode'
 )
@@ -41,7 +42,13 @@ def modal_background(output: str) -> str | None:
 
 
 def luminance(hex_color: str) -> float:
-    """Rec. 709 relative brightness in 0...255 of `#RRGGBB`."""
+    """Rec. 709 relative brightness in 0...255 of `#RRGGBB`.
+
+    Anything else raises: sliced at fixed offsets, `FFFFFF` or `#FFFFFF80`
+    would yield a plausible but wrong brightness.
+    """
+    if not _HEX_COLOR.fullmatch(hex_color):
+        raise ValueError(f"not a #RRGGBB colour: {hex_color!r}")
     r, g, b = (int(hex_color[i : i + 2], 16) for i in (1, 3, 5))
     return 0.2126 * r + 0.7152 * g + 0.0722 * b
 
@@ -134,11 +141,11 @@ def _measure(binary: Path, app: Path, scheme: str) -> str | None:
     process_name = app.stem
     subprocess.run(["pkill", "-x", process_name], check=False, timeout=30)
     time.sleep(2)
-    subprocess.run(
-        ["open", "-n", "-a", str(app), "--args", *LAUNCH_ARGS[scheme]], check=True, timeout=60
-    )
-    time.sleep(SETTLE_SECONDS)
     try:
+        subprocess.run(
+            ["open", "-n", "-a", str(app), "--args", *LAUNCH_ARGS[scheme]], check=True, timeout=60
+        )
+        time.sleep(SETTLE_SECONDS)
         pid = subprocess.run(
             ["pgrep", "-nx", process_name], capture_output=True, text=True, check=True, timeout=30
         ).stdout.strip()
