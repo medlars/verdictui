@@ -1,0 +1,1 @@
+{"completed_at": "2026-10-02T06:39:34Z", "conclusion": "success", "head_branch": "cursor/remove-dependency-graph-phantom-1e5c", "head_sha": "82776afdb763d2f566ac9658383cc5a260a59483", "repo": "medlars/verdictui", "run_attempt": "1", "run_id": "36973476636", "schema_version": "1.0.0", "workflow": "CI"}
