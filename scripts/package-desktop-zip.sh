@@ -46,6 +46,7 @@ app="${1%/}"
 out="$2"
 [ -d "$app" ] && [[ "$app" == *.app ]] || fail "$app is not an .app bundle"
 /usr/bin/codesign --verify --deep --strict "$app" || fail "$app does not verify before archiving"
+# DELETION-REVIEW: 1) Remove an existing output archive so ditto writes a fresh zip instead of merging into an old one. 2) Consequences: the file at the output path passed by the caller is replaced; the script requires exactly two arguments, and the caller names the archive to be produced. 3) Backup: none needed, the archive is rebuilt from the verified app bundle on the next line. 4) Following steps: create the zip with ditto and verify it (no AppleDouble entries, codesign passes after unzip).
 rm -f "$out"
 COPYFILE_DISABLE=1 /usr/bin/ditto -c -k --norsrc --noextattr --noqtn --noacl --keepParent "$app" "$out"
 verify_zip "$out"

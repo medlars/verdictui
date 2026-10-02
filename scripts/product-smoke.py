@@ -636,6 +636,7 @@ class Smoke:
                 result.get("status") == expected and len(result.get("checks", [])) == 2,
                 "project checks omitted targets/status",
             )
+        # DELETION-REVIEW: 1) Remove the temporary .verdictui/checks.json config at the end of the project-checks smoke so it does not leak into later steps. 2) Consequences: none, config lives under the smoke run temporary project directory (self.tmp / checked-project), not a user project. 3) Backup: none needed, the smoke rewrites the config each loop iteration. 4) Following steps: return to the next smoke check.
         config.unlink()
 
 

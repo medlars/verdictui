@@ -70,6 +70,7 @@ def _load_named(name: str, path: Path) -> Any:
     cache = path.parent / "__pycache__"
     if cache.is_dir():
         for stale in cache.glob(f"{path.stem}.*.pyc"):
+            # DELETION-REVIEW: 1) Remove stale compiled .pyc caches of the module under test so the loader reads the bytes on disk instead of a same-second cached copy. 2) Consequences: only __pycache__/<module>.*.pyc files for this one module are removed. 3) Backup: none needed, Python regenerates bytecode caches on the next import and the source .py is untouched. 4) Following steps: load the module from its source path and run the control.
             stale.unlink(missing_ok=True)
     spec = importlib.util.spec_from_file_location(name, str(path))
     mod = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]

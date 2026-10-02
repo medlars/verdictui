@@ -159,6 +159,7 @@ def _write(path: Path, value: dict[str, Any]) -> None:
             os.fsync(stream.fileno())
         os.replace(temporary, path)
     finally:
+        # DELETION-REVIEW: 1) Remove the temporary .build-identity- file in the finally block when os.replace did not move it, so no partial identity file is left. 2) Consequences: none, the final build identity file is untouched unless the replace succeeded, and after success the temp name no longer exists (missing_ok). 3) Backup: none needed, the temp was created by mkstemp a few lines above and holds only the json being written. 4) Following steps: the exception, if any, propagates to the caller.
         Path(temporary).unlink(missing_ok=True)
 
 

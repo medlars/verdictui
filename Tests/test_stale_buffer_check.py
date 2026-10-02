@@ -133,6 +133,7 @@ class TestStaleOverwrites:
         """`stat` raises for a deleted path. That is a different problem, and a
         detector that crashes on it reports nothing about the files it COULD
         have judged."""
+        # DELETION-REVIEW: 1) Delete a tracked file in the fixture repository to prove the detector skips a deleted path instead of crashing. 2) Consequences: none outside the test, the repo fixture is a throwaway git repository under the pytest tmp_path. 3) Backup: none needed, the fixture rebuilds the repository for every test. 4) Following steps: assert stale_overwrites returns an empty list.
         (repo / "tracked.txt").unlink()
         assert _mod.stale_overwrites(repo) == []
 
