@@ -382,7 +382,8 @@
 | `Tests/test_product_smoke.py` | test_product_smoke: real-product verification and regression evidence | Active | 2026-09-23 |
 | `scripts/product-smoke.py` | product-smoke: real-product verification and regression evidence | Active | 2026-09-23 |
 | `scripts/appearance-sweep.py` | Measures a real app's root background under light and dark launches on a Light-mode host (CTS-EA04B049) | Active | 2026-10-02 |
-| `Tests/test_appearance_sweep.py` | Pins the appearance-sweep verdict: no effect, wrong direction and unmeasured are distinct outcomes | Active | 2026-10-02 |
+| `Tests/test_appearance_sweep.py` | Pins the appearance-sweep verdict: no effect, wrong direction and unmeasured are distinct outcomes; `luminance` refuses non-`#RRGGBB`; `_measure` runs against stub launch commands | Active | 2026-10-02 |
+| `Tests/test_appearance_sweep_workflow.py` | Runs each step of the `appearance` job's real shell against stub swift/osascript/python3.14 | Active | 2026-10-02 |
 | `.github/workflows/appearance-sweep.yml` | Manual hosted-runner job that measures the dark-on-Light launch direction | Active | 2026-10-02 |
 | `Sources/VerdictUICLICore/ProjectRunnerBroker.swift` | Consumer rebuild broker and regression evidence | Active | 2026-09-23 |
 | `Tests/VerdictUICLICoreTests/ProjectRunnerBrokerTests.swift` | Consumer rebuild broker and regression evidence | Active | 2026-09-23 |
