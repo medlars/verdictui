@@ -1,0 +1,1 @@
+{"completed_at": "2026-10-02T13:32:22Z", "conclusion": "success", "head_branch": "test/tw2-appearance-sweep", "head_sha": "ae08f1a19ae531e51efaf80751748f8d31affe9e", "repo": "medlars/verdictui", "run_attempt": "1", "run_id": "37012150513", "schema_version": "1.0.0", "workflow": "CI"}
