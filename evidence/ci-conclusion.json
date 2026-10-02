@@ -1,0 +1,1 @@
+{"completed_at": "2026-10-02T07:13:22Z", "conclusion": "success", "head_branch": "drain/cts-ea04b049", "head_sha": "194305229d0d1c0ada1b7b56cd752f1d1f5d94b9", "repo": "medlars/verdictui", "run_attempt": "1", "run_id": "36975808919", "schema_version": "1.0.0", "workflow": "CI"}
