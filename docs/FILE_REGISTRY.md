@@ -10,6 +10,7 @@
 | `.verdictui/checks.json` | Actual Workbench workflow check, never demo catalog | Active | 2026-09-23 |
 | `.verdictui/coverage.json` | Explicit measured Workbench surface scope | Active | 2026-09-23 |
 | `.verdictui/run-workbench.py` | Executable actual Workbench consumer protocol | Active | 2026-09-23 |
+| `.github/deletion-screen/VENDORED.json` | Provenance record for the vendored deletion-screen files (claude-config scripts/vendor-deletion-screen.py, owner rule INS-18201669); rewritten by re-vendoring, never by hand | Active | 2026-10-02 |
 | `scripts/workbench_coverage.py` | Source-bound native workflow and independent paint admission | Active | 2026-09-23 |
 | `Tests/test_workbench_coverage.py` | Stale attempt, build and image review admission controls | Active | 2026-09-23 |
 | `Sources/VerdictUIWeb/GuardedProcess.swift` | Shared launch-owned command lifetime, actual status and caller grace over the crash guardian | Active | 2026-09-24 |
