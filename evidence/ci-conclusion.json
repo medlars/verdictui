@@ -1,0 +1,1 @@
+{"completed_at": "2026-10-02T04:04:54Z", "conclusion": "cancelled", "head_branch": "ci/deletion-screen-v2", "head_sha": "1712f98dc2c2fab1a5cab7ed243cbea3ae490db9", "repo": "medlars/verdictui", "run_attempt": "1", "run_id": "36962317077", "schema_version": "1.0.0", "workflow": "CI"}
