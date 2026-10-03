@@ -1,6 +1,6 @@
 # VerdictUI TODO
 
-- [ ] (2026-09-26) Resume full finalization under CTS-CEB33F0B. Save is a checkpoint, not a green closeout: installed/physical acceptance, Codex settings inspection and fresh service ownership remain unresolved; the active dashboard P0 belongs to another repair task. Preserve peer WIP and original failing evidence.
+- [x] (2026-09-26) Resume full finalization under CTS-CEB33F0B. Save is a checkpoint, not a green closeout: installed/physical acceptance, Codex settings inspection and fresh service ownership remain unresolved; the active dashboard P0 belongs to another repair task. Preserve peer WIP and original failing evidence. — CLOSED as a TODO mirror 2026-10-03 (CIS-81DE90C1): the program is tracked in CTS-CEB33F0B. Re-measured: quiet-window product smoke PASS; tap 1.1.4 parity; MCP-configured binary serves 19 tools (was 18); dashboard service up and admitted. Open parts live in CIS-F1FD4BC2, CIS-A58FA4AA, CIS-8FAD7552, CIS-153395C2, CIS-1D1F7D8F, CIS-90572B0E, CIS-341EC18F, CIS-FF4F566C.
 
 - [x] (2026-09-25) Admit draft PR45 `8a38e92a` CI36191994143: 256 named render cases, 183 pass/73 preserved failures/zero errors or skips; all 56 focused checks and separate 13 comparator/13 native consumer checks pass. Hosted Python passes 353. Collector complete/errors empty, original exit 1 retained, all 165 references unchanged, eight changed hosted PNGs match local bytes. Fourteen local guard images lack hosted exports. Root rehashed 649 evidence files; overall CI remains failed, so this does not close visual acceptance.
 
