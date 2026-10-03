@@ -1,0 +1,1 @@
+{"completed_at": "2026-10-03T20:36:47Z", "conclusion": "success", "event": "pull_request", "head_branch": "cursor/wave-status-archive-0266", "head_repository": "medlars/verdictui", "head_sha": "9e6f649018359fba693aa8545abf100b9a5b8302", "repo": "medlars/verdictui", "run_attempt": "1", "run_id": "37151487134", "schema_version": "1.1.0", "workflow": "CI"}
