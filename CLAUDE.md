@@ -27,7 +27,7 @@ python3.14 scripts/verdictui-pm.py --quick # health check
    "needs Accessibility permission, an owner action" that was never measured and was false; one
    probe retired it in under a minute (`no.md` #42).
 3. Start working without asking what to do — announce in one line what is being resumed.
-4. **Before the session ends**: update `docs/wave-status.md` (tasks done, precise next action, session-log line), commit, push. Leaving it stale breaks the next session's resume.
+4. **Before the session ends**: update `docs/wave-status.md` (tasks done, precise next action) and append a session-log line to [`docs/archive/wave-status-history.md`](docs/archive/wave-status-history.md), commit, push. Leaving it stale breaks the next session's resume.
 
 ## Product completion contract (2026-09-23)
 
