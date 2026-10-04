@@ -64,6 +64,27 @@ def test_capture_trigger_watches_every_workflow_in_the_repo() -> None:
 
 
 @pytest.mark.skipif(not CAPTURE.exists(), reason="repo has no capture workflow")
+def test_capture_trigger_only_watches_workflows_that_exist() -> None:
+    stale = _watched() - _present()
+    assert not stale, (
+        f"capture trigger lists workflows that do not exist in this repo: {sorted(stale)} — "
+        "stale names look watched but never fire workflow_run, so failures there go unreported"
+    )
+
+
+@pytest.mark.skipif(not CAPTURE.exists(), reason="repo has no capture workflow")
+def test_positive_control_a_stale_watched_name_is_caught() -> None:
+    """The stale-name assertion, fed a phantom entry, must FAIL."""
+    present = _present()
+    if not present:
+        pytest.skip("no sibling workflows to name")
+    watched = _watched() | {"__phantom_workflow_never_in_repo__"}
+    with pytest.raises(AssertionError):
+        stale = watched - present
+        assert not stale, sorted(stale)
+
+
+@pytest.mark.skipif(not CAPTURE.exists(), reason="repo has no capture workflow")
 def test_positive_control_an_unwatched_workflow_is_caught() -> None:
     """The same assertion, fed a list with one real workflow removed, must FAIL.
 
