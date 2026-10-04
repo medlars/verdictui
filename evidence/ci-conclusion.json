@@ -1,0 +1,1 @@
+{"completed_at": "2026-10-04T06:31:57Z", "conclusion": "success", "event": "pull_request", "head_branch": "cursor/fix-capture-workflow-watch-list-c5c4", "head_repository": "medlars/verdictui", "head_sha": "d5247c48aa3cb71d385e45aab8f250b8576f9839", "repo": "medlars/verdictui", "run_attempt": "1", "run_id": "37182552609", "schema_version": "1.1.0", "workflow": "CI"}
