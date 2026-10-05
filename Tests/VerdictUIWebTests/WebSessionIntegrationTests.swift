@@ -115,7 +115,7 @@ final class WebSessionIntegrationTests: XCTestCase {
         let secret = UUID().uuidString + UUID().uuidString
         let badSecret = UUID().uuidString
         let hash = SHA256.hash(data: Data(secret.utf8)).map { String(format: "%02x", $0) }.joined()
-        var url = URLComponents(url: server.origin.appendingPathComponent("login.html"), resolvingAgainstBaseURL: false)!
+        var url = try XCTUnwrap(URLComponents(url: server.origin.appendingPathComponent("login.html"), resolvingAgainstBaseURL: false))
         url.queryItems = [URLQueryItem(name: "hash", value: hash)]
         let manager = WebSessionManager(root: root, environment: [
             "VERDICTUI_WEB_CRED_GOOD": secret, "VERDICTUI_WEB_CRED_BAD": badSecret, "VERDICTUI_WEB_OP": ""])
