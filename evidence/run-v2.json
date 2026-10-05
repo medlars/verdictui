@@ -1,0 +1,63 @@
+{
+  "authority": "ci_unprotected",
+  "completed_at": "2026-10-05T07:39:05.305729Z",
+  "content_digest": "41ba1cd141ac04d8dcfed27b981e5c36e9d4d2ae8110c72ad5998bb739a347c1",
+  "evaluator": {
+    "name": "governance-v2.ci-emitter",
+    "version": "1.0.0"
+  },
+  "expires_at": "2026-10-06T07:39:05.305729Z",
+  "project": {
+    "aliases": [],
+    "canonical_id": "verdictui",
+    "registry_version": "projects-shared@2b5993a3bcb4ac7089389b35b382c15a31637692"
+  },
+  "run_id": "497550b5-be82-4cec-b984-4a5123d7ba34",
+  "runner": {
+    "identity": "github-actions/run/37277892479",
+    "kind": "ci",
+    "os": "macOS",
+    "python_version": "3.14.7"
+  },
+  "schema_version": "2.0.0",
+  "source": {
+    "branch": "main",
+    "commit_sha": "2b5993a3bcb4ac7089389b35b382c15a31637692",
+    "dirty": false,
+    "repo": "medlars/verdictui",
+    "source_end_fingerprint": "2b5993a3bcb4ac7089389b35b382c15a316376922b5993a3bcb4ac7089389b35",
+    "source_start_fingerprint": "2b5993a3bcb4ac7089389b35b382c15a316376922b5993a3bcb4ac7089389b35"
+  },
+  "stages": [
+    {
+      "applicable": true,
+      "duration_s": 0.0,
+      "evaluator_version": "swift-test/6.3",
+      "evidence_refs": [
+        {
+          "kind": "log",
+          "locator": "github://medlars/verdictui/actions/runs/37277892479"
+        }
+      ],
+      "reason_code": "ok",
+      "required": true,
+      "score": 100.0,
+      "stage_id": "tests",
+      "state": "PASS"
+    }
+  ],
+  "started_at": "2026-10-05T07:39:05.305729Z",
+  "summary": {
+    "confidence": 1.0,
+    "counts": {
+      "applicable": 1,
+      "passed": 1,
+      "required": 1
+    },
+    "grade": "A",
+    "quality_score": 100.0,
+    "reasons": [],
+    "release_verdict": "PASS",
+    "stale": false
+  }
+}
