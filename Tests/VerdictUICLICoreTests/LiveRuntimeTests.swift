@@ -140,10 +140,10 @@ final class LiveRuntimeBusyRetryTests: XCTestCase {
     private struct Other: Error {}
     private let busy = AXReader.Failure.noWindow(axError: AXError.cannotComplete.rawValue)
 
-    func testBusyThenSuccessReturnsTheValueAfterBackoff() throws {
+    func testBusyThenSuccessReturnsTheValueAfterBackoff() async throws {
         var calls = 0
         var slept: [UInt32] = []
-        let value = try LiveRuntime.retryingBusy(sleep: { slept.append($0) }) { () -> Int in
+        let value = try await LiveRuntime.retryingBusy(pause: { slept.append($0) }) { () -> Int in
             calls += 1
             if calls < 3 { throw self.busy }
             return 42
@@ -153,27 +153,34 @@ final class LiveRuntimeBusyRetryTests: XCTestCase {
         XCTAssertEqual(slept, [100, 250])
     }
 
-    func testBusyOnEveryAttemptReportsTheAttemptCount() {
+    func testBusyOnEveryAttemptReportsTheAttemptCount() async {
         var calls = 0
-        XCTAssertThrowsError(try LiveRuntime.retryingBusy(maxAttempts: 3, sleep: { _ in }) { () -> Int in
-            calls += 1
-            throw self.busy
-        }) { error in
-            guard case LiveRuntime.Failure.busy(let attempts) = error else {
-                return XCTFail("expected busy, got \(error)")
+        do {
+            _ = try await LiveRuntime.retryingBusy(maxAttempts: 3, pause: { _ in }) { () -> Int in
+                calls += 1
+                throw self.busy
             }
+            XCTFail("expected busy")
+        } catch LiveRuntime.Failure.busy(let attempts) {
             XCTAssertEqual(attempts, 3)
-            XCTAssertTrue("\(error)".contains("3 read attempts"))
+            XCTAssertTrue("\(LiveRuntime.Failure.busy(attempts: attempts))".contains("3 read attempts"))
+        } catch {
+            XCTFail("expected busy, got \(error)")
         }
         XCTAssertEqual(calls, 3)
     }
 
-    func testOtherFailuresAreNotRetried() {
+    func testOtherFailuresAreNotRetried() async {
         var calls = 0
-        XCTAssertThrowsError(try LiveRuntime.retryingBusy(sleep: { _ in }) { () -> Int in
-            calls += 1
-            throw Other()
-        })
+        do {
+            _ = try await LiveRuntime.retryingBusy(pause: { _ in }) { () -> Int in
+                calls += 1
+                throw Other()
+            }
+            XCTFail("expected the failure")
+        } catch {
+            XCTAssertTrue(error is Other)
+        }
         XCTAssertEqual(calls, 1)
         XCTAssertFalse(LiveRuntime.isBusy(AXReader.Failure.noWindow(axError: 0)))
     }
