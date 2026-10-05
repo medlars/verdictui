@@ -1,9 +1,7 @@
 import ArgumentParser
 import Foundation
-import SwiftUI
 import VerdictUIKernel
 import VerdictUIProbe
-import VerdictUIWitness
 import VerdictUIWeb
 
 /// The scenarios and baseline location a command runs against.
