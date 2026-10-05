@@ -12,6 +12,8 @@ enum ExtendedMCP {
             "value": .init(type: "string", description: "Text, key chord, or drag destination x,y as appropriate."),
             "expect_text": .init(type: "string", description: "Text that must be observed after acting; mismatch is a FAIL verdict."),
             "timeout": .init(type: "number", description: "Observation deadline in seconds, positive and at most 60."),
+            "detail": .init(type: "string", description: "live_act response size: summary (default: no tree, first findings plus counts per rule), delta (no tree) or full."),
+            "max_findings": .init(type: "integer", description: "Cap on findings returned in full; the rest are counted by rule."),
         ]
         return [
             MCPTool(name: "live_inspect", description: "Read a real running macOS application's accessibility tree.", inputSchema: MCPSchema(properties: live)),
@@ -72,17 +74,25 @@ enum ExtendedMCP {
             }
             timeout = number
         }
-        for name in ["app", "surface", "path", "action", "value", "expect_text"] {
+        for name in ["app", "surface", "path", "action", "value", "expect_text", "detail"] {
             if let value = arguments[name], value.stringValue == nil {
                 throw LiveRuntime.Failure.invalidRequest("\(name) must be a string")
             }
+        }
+        var maxFindings: Int?
+        if let supplied = arguments["max_findings"] {
+            guard let number = supplied.numberValue, let exact = Int(exactly: number) else {
+                throw LiveRuntime.Failure.invalidRequest("max_findings must be an integer")
+            }
+            maxFindings = exact
         }
         return LiveRequest(
             pid: pid, app: arguments["app"]?.stringValue,
             surface: arguments["surface"]?.stringValue ?? "window:0",
             path: arguments["path"]?.stringValue, action: arguments["action"]?.stringValue,
             value: arguments["value"]?.stringValue,
-            expectText: arguments["expect_text"]?.stringValue, timeout: timeout
+            expectText: arguments["expect_text"]?.stringValue, timeout: timeout,
+            detail: arguments["detail"]?.stringValue, maxFindings: maxFindings
         )
     }
 }

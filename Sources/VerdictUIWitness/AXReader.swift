@@ -588,6 +588,9 @@ public enum AXReader {
         if role == .toggle, let number = copy(element, kAXValueAttribute) as? NSNumber {
             attributes["toggleOn"] = .bool(number.intValue != 0)
         }
+        if axRole == kAXScrollAreaRole {
+            attributes[SemanticNode.scrollContainerKey] = .bool(true)
+        }
         if (copy(element, kAXEnabledAttribute) as? Bool) == false {
             attributes[Self.enabledKey] = .bool(false)
         }
@@ -628,7 +631,7 @@ public enum AXReader {
             frame: rect,
             text: text(of: element, role: role),
             attributes: attributes,
-            isVisible: true,
+            isVisible: !Self.isUnopenedMenuMember(axRole: axRole, frameIsEmpty: rect.isEmpty),
             children: children
         )
     }
@@ -665,6 +668,12 @@ public enum AXReader {
         default:
             return .custom(axRole.isEmpty ? "unknown" : axRole)
         }
+    }
+
+    /// AppKit reports every item of a menu that has not been opened with a zero-size frame, so
+    /// it is not a rendering defect and must not reach the geometry rules (CTS-0693CE36).
+    static func isUnopenedMenuMember(axRole: String, frameIsEmpty: Bool) -> Bool {
+        frameIsEmpty && (axRole == kAXMenuItemRole || axRole == kAXMenuRole)
     }
 
     /// The element's visible text.

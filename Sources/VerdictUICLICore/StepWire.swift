@@ -36,6 +36,10 @@ public struct StepResultWire: Codable, Sendable, Equatable {
     public let elapsedMs: Double
     /// The after-tree, only when the caller asked for it.
     public let tree: CompactTree?
+    /// Findings per rule across ALL findings, present in `summary` detail.
+    public let findingCounts: [String: Int]?
+    /// How many findings were cut from `findings` by the cap; absent when none were.
+    public let omittedFindings: Int?
 
     public init(
         probe: String,
@@ -44,8 +48,12 @@ public struct StepResultWire: Codable, Sendable, Equatable {
         findings: [Finding],
         settled: Bool,
         elapsedMs: Double,
-        tree: CompactTree? = nil
+        tree: CompactTree? = nil,
+        findingCounts: [String: Int]? = nil,
+        omittedFindings: Int? = nil
     ) {
+        self.findingCounts = findingCounts
+        self.omittedFindings = omittedFindings
         self.probe = probe
         self.status = status
         self.delta = delta
@@ -73,5 +81,7 @@ public struct StepResultWire: Codable, Sendable, Equatable {
         // `after` is nil only when the before-capture failed, in which case
         // there is no after-tree to send and the findings already say why.
         self.tree = includeTree ? step.after.map { CompactTree($0) } : nil
+        self.findingCounts = nil
+        self.omittedFindings = nil
     }
 }

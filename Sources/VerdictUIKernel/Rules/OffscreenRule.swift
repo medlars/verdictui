@@ -15,7 +15,7 @@ public struct OffscreenRule: LintRule {
 
     public func evaluate(_ root: SemanticNode, context: LintContext) -> [Finding] {
         let viewport = context.viewport
-        return root.flattened().compactMap { node in
+        return Self.outsideScrollContainers(root).compactMap { node in
             guard node.isVisible, !node.frame.isEmpty, node.role != .spacer else { return nil }
             guard !viewport.intersects(node.frame) else { return nil }
             return context.makeFinding(
@@ -31,5 +31,15 @@ public struct OffscreenRule: LintRule {
                 defaultSeverity: .error
             )
         }
+    }
+
+    /// Every node except the descendants of a scroll container: content below the fold of a
+    /// scroll view is scrolled out of view, not offscreen (CTS-78766395).
+    private static func outsideScrollContainers(_ node: SemanticNode) -> [SemanticNode] {
+        var result = [node]
+        if !node.isScrollContainer {
+            for child in node.children { result += outsideScrollContainers(child) }
+        }
+        return result
     }
 }

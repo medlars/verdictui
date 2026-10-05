@@ -21,6 +21,9 @@ extension VerdictUITool {
         @Option public var value: String?
         @Option(name: .long) public var expectText: String?
         @Option public var timeout = 5.0
+        @Option(help: "summary (default), delta or full; summary drops the tree and caps findings.")
+        public var detail: String?
+        @Option(name: .long) public var maxFindings: Int?
         @Flag public var pretty = false
 
         @MainActor
@@ -29,7 +32,8 @@ extension VerdictUITool {
             let response = await VerdictDaemon.handle(
                 DaemonRequest(method: "live_" + operation.rawValue, live: LiveRequest(
                     pid: pid, app: app, surface: surface, path: path, action: action,
-                    value: value, expectText: expectText, timeout: timeout
+                    value: value, expectText: expectText, timeout: timeout,
+                    detail: detail, maxFindings: maxFindings
                 )), engine: environment.engine
             )
             try VerdictUITool.finish(try ExternalCommandOutput.write(

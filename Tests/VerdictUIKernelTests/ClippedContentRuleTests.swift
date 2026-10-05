@@ -41,6 +41,39 @@ final class ClippedContentRuleTests: XCTestCase {
         )
     }
 
+    // MARK: - Scrolled content (CTS-78766395)
+
+    func testRowsBelowTheFoldOfAScrollAreaAreNotClippedOrOffscreen() {
+        let row = node("row", role: .text, Rect(x: 0, y: 900, width: 200, height: 20))
+        let scroll = node(
+            "scroll", Rect(x: 0, y: 0, width: 200, height: 100),
+            attributes: [SemanticNode.scrollContainerKey: .bool(true)], children: [row])
+        let tree = root([scroll])
+
+        XCTAssertEqual(rule.evaluate(tree, context: context()), [])
+        XCTAssertEqual(OffscreenRule().evaluate(tree, context: context()), [])
+    }
+
+    /// The other direction: the same geometry in a container that does NOT scroll is still a defect.
+    func testTheSameRowInANonScrollingContainerIsStillReported() {
+        let row = node("row", role: .text, Rect(x: 0, y: 900, width: 200, height: 20))
+        let box = node("box", Rect(x: 0, y: 0, width: 200, height: 100), children: [row])
+        let tree = root([box])
+
+        XCTAssertEqual(rule.evaluate(tree, context: context()).map(\.nodeID), ["row"])
+        XCTAssertEqual(OffscreenRule().evaluate(tree, context: context()).map(\.nodeID), ["row"])
+    }
+
+    func testABoxInsideScrolledContentCanStillClip() {
+        let label = node("label", role: .text, Rect(x: 0, y: 900, width: 300, height: 20))
+        let card = node("card", Rect(x: 0, y: 890, width: 200, height: 40), children: [label])
+        let scroll = node(
+            "scroll", Rect(x: 0, y: 0, width: 200, height: 100),
+            attributes: [SemanticNode.scrollContainerKey: .bool(true)], children: [card])
+
+        XCTAssertEqual(rule.evaluate(root([scroll]), context: context()).map(\.nodeID), ["label"])
+    }
+
     // MARK: - The defect
 
     func testContentWiderThanItsContainerIsReported() {
