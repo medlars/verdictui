@@ -2,8 +2,12 @@
 # Screens the deletions this pull request adds (owner rule INS-18201669): each one must
 # be provably temporary/build or carry a `# DELETION-REVIEW:` comment. It catches what
 # the local pre-commit screen cannot: `git commit --no-verify` and github.com edits.
+# workflow_dispatch serves PRs a GITHUB_TOKEN opens: they fire no pull_request run,
+# so the required check would never report and the PR would stay BLOCKED.
 name: deletion-screen
-on: pull_request
+on:
+  pull_request:
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
@@ -19,7 +23,7 @@ jobs:
           python-version: "3.14"
       - name: Screen added deletions
         env:
-          BASE_REF: ${{ github.base_ref }}
+          BASE_REF: ${{ github.base_ref || github.event.repository.default_branch }}
         run: |
           base=$(git merge-base "origin/$BASE_REF" HEAD)
           python .github/deletion-screen/git-deletion-screen --range "$base..HEAD"

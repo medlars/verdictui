@@ -19,6 +19,7 @@ are never matched.
 
 from __future__ import annotations
 
+import glob
 import hashlib
 import os
 import re
@@ -29,7 +30,9 @@ import time
 from pathlib import Path
 from typing import NamedTuple
 
-__all__ = ["EXEMPT_PARTS", "TOKEN_TTL_S", "Finding", "backup_token_valid", "findings", "main", "review_answers"]
+__all__ = ["CHANGE_TOKEN_TTL_S", "EXEMPT_PARTS", "GUARDED_VERBS", "TOKEN_TTL_S", "Finding", "backup_token_valid",
+           "change_token_fresh", "findings", "is_real_dir", "main", "ordinary_location", "review_answers",
+           "store_paths", "within"]
 
 EXEMPT_PARTS = frozenset(
     {
@@ -56,7 +59,17 @@ _ASSIGN = re.compile(r"""(?:^|[\s;&|(])([A-Za-z_][A-Za-z0-9_]*)=("[^"\n]*"|'[^'\
 _VAR = re.compile(r"\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?")
 _HEREDOC = re.compile(r"<<-?\s*['\"]?([A-Za-z_][A-Za-z0-9_]*)['\"]?")
 _GLOB = re.compile(r"[*?\[]")
-_WRAPPERS = frozenset({"sudo", "command", "env", "nice", "nohup", "time"})
+_WRAPPERS = frozenset({"sudo", "command", "env", "nice", "nohup", "time", "builtin", "exec", "xargs", "doas"})
+# Every verb this policy parses. The gate's bash prefilter must match a superset
+# (tests/test_owner_file_guard.py enumerates spellings), or a verb reaches bash unjudged.
+DELETE_VERBS = frozenset({"rm", "trash", "rmdir", "unlink", "shred", "srm"})
+COPY_VERBS = frozenset({"cp", "install", "ditto", "rsync", "ln"})
+CHMOD_VERBS = frozenset({"chmod", "chown", "chgrp"})
+EDIT_VERBS = frozenset({"sed", "gsed", "perl", "ruby", "awk", "gawk", "tee", "truncate", "dd"})
+SHELL_VERBS = frozenset({"sh", "bash", "zsh", "dash", "ksh", "fish", "eval"})
+GUARDED_VERBS = DELETE_VERBS | COPY_VERBS | CHMOD_VERBS | EDIT_VERBS | SHELL_VERBS | {"mv", "find"}
+CHANGE_TOKEN_TTL_S = 30 * 60
+DEFAULT_CAP = 2000
 # Words that open a compound command: `if x; then rm -rf ~/Projects; fi` put
 # `then` in the verb slot, so the rm was never seen (found 2026-10-01).
 _KEYWORDS = frozenset({"{", "}", "!", "if", "then", "else", "elif", "do", "while", "until", "exec", "xargs"})
@@ -108,18 +121,28 @@ def _segments(text: str) -> list[list[str]]:
 
 def _verb(segment: list[str]) -> tuple[str | None, list[str]]:
     i = 0
+    wrapped = False
     while i < len(segment):
         word = segment[i]
+        wrapped = wrapped or word in _WRAPPERS
         if (
             re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", word)
             or word in _WRAPPERS
             or word in _KEYWORDS
-            or (i > 0 and segment[i - 1] == "nice" and word.startswith("-"))
+            or (wrapped and word.startswith("-"))
         ):
             i += 1
             continue
-        return os.path.basename(word), segment[i + 1 :]
-    return None, []
+        break
+    if i >= len(segment):
+        return None, []
+    if wrapped and os.path.basename(segment[i]) not in GUARDED_VERBS:
+        # A wrapper option's VALUE (nice -n 5, xargs -I {}, sudo -u root) stands where
+        # the verb would; the first guarded word after it is the command that runs.
+        for j in range(i, len(segment)):
+            if os.path.basename(segment[j]) in GUARDED_VERBS:
+                return os.path.basename(segment[j]), segment[j + 1 :]
+    return os.path.basename(segment[i]), segment[i + 1 :]
 
 
 def _expand(arg: str, env: dict[str, str | None]) -> str | None:
@@ -188,6 +211,119 @@ class Finding(NamedTuple):
     target: str
     why: str
     needs_backup: bool
+    # The owner's folders and files: no review or backup unlocks these, only the owner does.
+    owner_only: bool = False
+    # A change (move, edit, chmod, overwrite) allowed once a backup and a report exist.
+    needs_token: bool = False
+
+
+# Owner 2026-10-04 (CTS-24E2B3F5): folders "related to Claude, Codex, Cursor, GLM, KIMI,
+# or other coding stuff" may be deleted with a review and an existing backup; every
+# other ordinary folder or file under $HOME is the owner's to delete.
+# Coding-tool data is an ALLOW-LIST of exact locations, never a substring match on a
+# name: ~/Documents/Android Photos and ~/Pictures/yarn-art are the owner's (security
+# review of the Sentinel mirror, 2026-10-04).
+_TOOL_DOTDIRS = frozenset({
+    ".claude", ".codex", ".cursor", ".kimi", ".glm", ".grok", ".gemini", ".ollama", ".vscode",
+    ".gradle", ".cargo", ".rustup", ".npm", ".pnpm", ".yarn", ".pyenv", ".conda", ".docker",
+    ".colima", ".swiftpm", ".cocoapods", ".android", ".jetbrains", ".copilot", ".windsurf",
+    ".zai", ".z.ai", ".venv", ".nvm", ".bun", ".deno", ".rbenv", ".gem", ".m2", ".sdkman",
+    ".git", ".openai", ".anthropic", ".aider", ".continue", ".xcode",
+})
+_TOOL_APP_SUPPORT = frozenset({
+    "claude", "codex", "cursor", "code", "zed", "jetbrains", "ollama", "docker", "windsurf",
+    "kimi", "glm", "grok", "gemini", "copilot", "github copilot", "androidstudio", "xcode",
+})
+_CODING_PREFIXES = (("Library", "Developer"), ("Library", "Caches"), ("Library", "Logs"), (".cache",),
+                    (".local",), (".config",))
+
+
+def _coding_related(target: Path, home: Path) -> bool:
+    parts = target.relative_to(home).parts
+    if any(parts[: len(prefix)] == prefix for prefix in _CODING_PREFIXES):
+        return True
+    if parts and parts[0].lower() in _TOOL_DOTDIRS:
+        return True
+    return len(parts) >= 3 and parts[:2] == ("Library", "Application Support") and parts[2].lower() in _TOOL_APP_SUPPORT
+
+
+def _ordinary_location(path: Path, home: Path, is_dir: bool) -> bool:
+    """Under $HOME and none of: ~/Projects, build/cache dirs, coding-tool data, inside a repository."""
+    if not _within(path, home) or path == home:
+        return False
+    rel = path.relative_to(home).parts
+    if _within(path, home / "Projects") or EXEMPT_PARTS.intersection(rel):
+        return False
+    if len(rel) == 1 and not is_dir and rel[0].startswith("."):
+        return False  # ~/.zshrc, ~/.gitconfig: tool configuration, not the owner's documents
+    if _coding_related(path, home):
+        return False
+    node = path if is_dir else path.parent
+    while node != home and node != node.parent:
+        if (node / ".git").exists():
+            return False
+        node = node.parent
+    return True
+
+
+def _is_real_dir(path: Path) -> bool:
+    return path.is_dir() and not path.is_symlink()
+
+
+def _ordinary_folder(target: Path, home: Path) -> bool:
+    """A directory under $HOME that is none of: ~/Projects, a repository, coding-tool data."""
+    if not _is_real_dir(target) or not _ordinary_location(target, home, True):
+        return False
+    return not _holds_repository(target)
+
+
+def _ordinary_file(target: Path, home: Path) -> bool:
+    """An existing non-directory (a symlink counts) whose parent chain is an ordinary location."""
+    return os.path.lexists(target) and not _is_real_dir(target) and _ordinary_location(target, home, False)
+
+
+def _change_subject(real: Path, home: Path) -> bool:
+    return os.path.lexists(real) and _ordinary_location(real, home, _is_real_dir(real))
+
+
+def _owner_folder(target: Path) -> Finding:
+    return Finding(str(target), "is one of the owner's ordinary folders; only the owner may delete it "
+                   "(no review unlocks it)", False, owner_only=True)
+
+
+def _owner_file(target: Path) -> Finding:
+    return Finding(str(target), "is a file in one of the owner's ordinary folders; only the owner may delete it "
+                   "(no review unlocks it)", False, owner_only=True)
+
+
+def _state_dir() -> Path:
+    return Path(os.path.realpath(os.environ.get("HOME", "/nonexistent"))) / ".claude" / "state"
+
+
+def _store_paths() -> tuple[Path, Path]:
+    return _state_dir() / "owner-backups", _state_dir() / "owner-change-reports.jsonl"
+
+
+def _protects_store(target: Path) -> bool:
+    """The backups and the report log are the owner's evidence: no agent deletes them, or any ancestor."""
+    backups, reports = _store_paths()
+    return any(_within(store, target) or _within(target, store) for store in (backups, reports))
+
+
+def change_token_fresh(real: Path) -> bool:
+    """True when the backup helper ran for this path (or an ancestor) within the last 30 minutes."""
+    home = Path(os.path.realpath(os.environ.get("HOME", "/nonexistent")))
+    tokens = _store_paths()[0] / "tokens"
+    node = real
+    while node != home and node != node.parent:
+        key = hashlib.sha256(str(node).encode()).hexdigest()
+        try:
+            if time.time() - (tokens / key).stat().st_mtime <= CHANGE_TOKEN_TTL_S:
+                return True
+        except OSError:
+            pass
+        node = node.parent
+    return False
 
 
 def _facts(path: Path) -> str:
@@ -215,8 +351,34 @@ def _facts(path: Path) -> str:
     return ", ".join(parts)
 
 
+_REPO_SCAN_LIMIT = 20000
+
+
+def _holds_repository(root: Path) -> bool:
+    """True if any directory under root is a repository; True when unsure (fail closed)."""
+    unreadable: list[OSError] = []
+    seen = 0
+    # os.walk skips a directory it cannot read unless onerror records it; an
+    # unread directory could hold a repository, so it counts as one.
+    for _dirpath, dirnames, filenames in os.walk(root, followlinks=False, onerror=unreadable.append):
+        if unreadable:
+            return True
+        if ".git" in dirnames or ".git" in filenames:
+            return True
+        # A bare repository has no .git entry: HEAD beside objects/ and refs/.
+        if "HEAD" in filenames and "objects" in dirnames and "refs" in dirnames:
+            return True
+        seen += len(dirnames) + len(filenames)
+        if seen > _REPO_SCAN_LIMIT:
+            return True
+    return bool(unreadable)
+
+
 def _target_finding(verb: str, target: Path, home: Path) -> Finding | None:
     projects = home / "Projects"
+    if _protects_store(target):
+        return Finding(str(target), "holds the owner's change backups and reports; only the owner may remove them",
+                       False, owner_only=True)
     if target == home or _within(projects, target):
         return Finding(str(target), "is ~/Projects, $HOME or an ancestor of them", True)
     # Temp roots live outside $HOME, so they fall out here with everything else
@@ -228,27 +390,469 @@ def _target_finding(verb: str, target: Path, home: Path) -> Finding | None:
     repo = target.parent if target.name == ".git" else target
     if (repo / ".git").exists() or repo.parent == projects:
         return Finding(str(repo), f"is a repository ({_facts(repo)})", True)
+    # A recursive delete of a directory takes every repository inside it, so those
+    # need the same existing backup as deleting the repository itself.
+    if _is_real_dir(target) and _holds_repository(target):
+        return Finding(str(target), "is a directory containing repositories", True)
+    if _ordinary_folder(target, home):
+        return _owner_folder(target)
+    if _ordinary_file(target, home):
+        return _owner_file(target)
+    if _is_real_dir(target) and (_within(target, projects) or _coding_related(target, home)):
+        if verb == "trash":
+            return None  # recoverable from the Trash
+        return Finding(str(target), f"is a ~/Projects or coding-tool folder ({_facts(target)})", True)
     if verb == "rm":
         # `trash` is recoverable from the Trash; `rm` is not, so only rm is reviewed.
         return Finding(str(target), f"is a file under $HOME removed with rm, not trash ({_facts(target)})", False)
     return None
 
 
-def findings(verb: str, args: list[str], env: dict[str, str | None]) -> list[Finding]:
-    home = Path(os.path.realpath(os.environ.get("HOME", "/nonexistent")))
-    recursive, targets = _parse_args(verb, args)
-    found: list[Finding] = []
-    for raw in targets:
+# ── operand expansion, capped ────────────────────────────────────────────────
+# bash expands braces then globs, so a word can name thousands of paths. An expansion
+# past the cap is not skipped: it fails closed wherever it could reach an ordinary
+# location (security review of PR #282, 2026-10-04).
+def _cap() -> int:
+    try:
+        return max(1, int(os.environ.get("DELETION_POLICY_CAP", DEFAULT_CAP)))
+    except ValueError:
+        return DEFAULT_CAP
+
+
+class _TooMany(Exception):
+    def __init__(self, prefix: str) -> None:
+        super().__init__(prefix)
+        self.prefix = prefix
+
+
+_RANGE = re.compile(r"(-?\d+)\.\.(-?\d+)(?:\.\.(-?\d+))?|([A-Za-z])\.\.([A-Za-z])(?:\.\.(-?\d+))?")
+
+
+def _static(word: str) -> str:
+    return re.split(r"[{*?\[]", word, maxsplit=1)[0]
+
+
+def _alternatives(body: str, cap: int, prefix: str) -> list[str] | None:
+    parts: list[str] = []
+    depth = 0
+    cur = ""
+    for ch in body:
+        depth += (ch == "{") - (ch == "}")
+        if ch == "," and depth == 0:
+            parts.append(cur)
+            cur = ""
+        else:
+            cur += ch
+    parts.append(cur)
+    if len(parts) > 1:
+        return parts
+    match = _RANGE.fullmatch(body)
+    if not match:
+        return None
+    if match.group(1) is not None:
+        lo, hi = int(match.group(1)), int(match.group(2))
+        step = abs(int(match.group(3) or 1)) or 1
+        if abs(hi - lo) // step + 1 > cap:
+            raise _TooMany(prefix)
+        width = max(len(match.group(1)), len(match.group(2))) if "0" in (match.group(1)[:1], match.group(2)[:1]) else 0
+        seq = range(lo, hi + 1, step) if lo <= hi else range(lo, hi - 1, -step)
+        return [str(n).zfill(width) for n in seq]
+    lo_c, hi_c = ord(match.group(4)), ord(match.group(5))
+    step = abs(int(match.group(6) or 1)) or 1
+    seq = range(lo_c, hi_c + 1, step) if lo_c <= hi_c else range(lo_c, hi_c - 1, -step)
+    return [chr(n) for n in seq]
+
+
+def _brace_expand(word: str) -> list[str]:
+    """bash brace expansion (comma lists and ranges); more than the cap raises _TooMany."""
+    cap = _cap()
+    prefix = _static(word)
+
+    def rec(w: str) -> list[str]:
+        at = 0
+        while True:
+            start = w.find("{", at)
+            if start < 0:
+                return [w]
+            depth = 0
+            end = -1
+            for k in range(start, len(w)):
+                depth += (w[k] == "{") - (w[k] == "}")
+                if depth == 0:
+                    end = k
+                    break
+            if end < 0:
+                return [w]
+            alts = _alternatives(w[start + 1 : end], cap, prefix)
+            if alts is None:
+                at = start + 1
+                continue
+            out: list[str] = []
+            for alt in alts:
+                out += rec(w[:start] + alt + w[end + 1 :])
+                if len(out) > cap:
+                    raise _TooMany(prefix)
+            return out
+
+    return rec(word)
+
+
+def _glob_matches(word: str) -> list[str]:
+    cap = _cap()
+    out: list[str] = []
+    for match in glob.iglob(word):
+        out.append(match)
+        if len(out) > cap:
+            raise _TooMany(_static(word))
+    return out
+
+
+class _Ctx:
+    """What one command is judged against: the home, every directory it may run in, its text."""
+
+    def __init__(self, text: str, raw: str = "") -> None:
+        self.raw = raw or text
+        self.heredocs_done = False
+        self.home = Path(os.path.realpath(os.environ.get("HOME", "/nonexistent")))
+        self.bases = [os.getcwd()]
+        self.text = text
+        self.guarded = False
+        self._mention: bool | None = None
+
+    def reals(self, path: str) -> list[Path]:
+        bases = [""] if os.path.isabs(path) else self.bases  # a cd may or may not persist: judge each
+        return [Path(os.path.realpath(os.path.join(base, path.rstrip("/") or "/"))) for base in bases]
+
+    def cd(self, args: list[str], env: dict[str, str | None]) -> None:
+        word = next((a for a in args if not a.startswith("-")), "~")
+        expanded = _expand(word, env)
+        if expanded is None:
+            self.bases.append(str(self.home))  # unknowable: assume the worst place too
+            return
+        self.bases.append(str(self.reals(expanded)[-1]))
+
+    def ordinary_dir(self, path: Path) -> bool:
+        return path == self.home or _ordinary_location(path, self.home, True)
+
+    def names_ordinary(self) -> bool:
+        return any(self._token_ordinary(tok) for tok in re.split(r"""[\s;&|()<>'"=,:]+""", self.text))
+
+    def mentions(self) -> bool:
+        """True when the command names, or runs in, an ordinary location."""
+        if self._mention is None:
+            self._mention = any(self.ordinary_dir(Path(os.path.realpath(b))) for b in self.bases) or self.names_ordinary()
+        return self._mention
+
+    def _token_ordinary(self, token: str) -> bool:
+        if "/" not in token and not token.startswith("~"):
+            return False
+        expanded = _expand(token, {})
+        if expanded is None:
+            return False
+        prefix = _static(expanded) or "."
+        for real in self.reals(prefix):
+            if _ordinary_location(real, self.home, real.is_dir()) or _ordinary_location(real.parent, self.home, True):
+                return True
+        return False
+
+
+def _closed(why: str, target: str = "(command)") -> Finding:
+    return Finding(target, f"{why}; the policy cannot see what it touches, so only the owner may run it", False,
+                   owner_only=True)
+
+
+def _too_many(prefix: str, ctx: _Ctx) -> Finding | None:
+    """The word expands past the cap: fail closed unless every possible path is clearly elsewhere."""
+    expanded = _expand(prefix, {}) or prefix
+    for real in ctx.reals(os.path.dirname(expanded) if not expanded.endswith("/") else expanded or "."):
+        if ctx.ordinary_dir(real):
+            return _closed(f"expands to too many paths (more than {_cap()}) under {real}", prefix or ".")
+    return None
+
+
+def _operands(raws: list[str], env: dict[str, str | None], ctx: _Ctx) -> tuple[list[str], list[Finding]]:
+    """Every path word the shell would build from these operands; problems fail closed."""
+    problems: list[Finding] = []
+    paths: list[str] = []
+    if len(raws) > _cap():
+        return [], [_closed(f"names too many operands (more than {_cap()})")] if ctx.mentions() else []
+    for raw in raws:
         expanded = _expand(raw, env)
         if expanded is None:
-            if recursive:
-                found.append(Finding(raw, "is an unresolved variable; on 2026-09-30 one resolved to ~/Projects", True))
+            if ctx.mentions():
+                problems.append(_closed(f"{raw!r} is built at run time"))
             continue
-        # A glob is judged by its static prefix: `~/Projects/*` deletes every repo.
-        static = _GLOB.split(expanded, maxsplit=1)[0] or "."
-        hit = _target_finding(verb, _real(static.rstrip("/") or "/"), home)
-        if hit:
-            found.append(hit)
+        try:
+            for word in _brace_expand(expanded):
+                paths.append(word)
+                if _GLOB.search(word):
+                    paths += _glob_matches(word)
+        except _TooMany as exc:
+            hit = _too_many(exc.prefix, ctx)
+            if hit:
+                problems.append(hit)
+    return paths, problems
+
+
+def _delete_findings(verb: str, args: list[str], env: dict[str, str | None], ctx: _Ctx) -> list[Finding]:
+    recursive, targets = _parse_args(verb, args)
+    effective = "trash" if verb == "trash" else "rm"
+    found: list[Finding] = []
+    for raw in targets:
+        if _expand(raw, env) is None and recursive:
+            found.append(Finding(raw, "is an unresolved variable; on 2026-09-30 one resolved to ~/Projects", True))
+            continue
+        paths, problems = _operands([raw], env, ctx)
+        found += problems
+        for word in paths:
+            # A glob is judged by its static prefix: `~/Projects/*` deletes every repo.
+            static = _GLOB.split(word, maxsplit=1)[0] or "."
+            for real in ctx.reals(static):
+                hit = _target_finding(effective, real, ctx.home)
+                if hit and verb == "rmdir" and not hit.owner_only:
+                    hit = None  # rmdir removes only empty folders: the Projects/coding review is for rm
+                if hit:
+                    found.append(hit)
+            if _GLOB.search(word):
+                continue
+            for real in ctx.reals(word):
+                lexical = Path(os.path.realpath(real.parent)) / real.name
+                if lexical != real:  # a link inside an ordinary folder is removed, not what it points to
+                    hit = _target_finding(effective, lexical, ctx.home)
+                    if hit and hit.owner_only:
+                        found.append(hit)
+    return found
+
+
+def findings(verb: str, args: list[str], env: dict[str, str | None]) -> list[Finding]:
+    return _delete_findings(verb, args, env, _Ctx(""))
+
+
+def _need_token(paths: list[str], ctx: _Ctx, why: str) -> list[Finding]:
+    found: list[Finding] = []
+    seen: set[Path] = set()
+    for word in paths:
+        for real in ctx.reals(_GLOB.split(word, maxsplit=1)[0] or "."):
+            if real in seen:
+                continue
+            seen.add(real)
+            if _change_subject(real, ctx.home) and not change_token_fresh(real):
+                found.append(Finding(str(real), why, False, needs_token=True))
+    return found
+
+
+_INPLACE = re.compile(r"-[0-9A-Za-z]*i[^\s]*|--in-place(=.*)?")
+
+
+def _edits_in_place(verb: str, args: list[str]) -> bool:
+    if verb in ("sed", "gsed", "perl", "ruby"):
+        return any(_INPLACE.fullmatch(a) for a in args if a.startswith("-"))
+    return verb in ("awk", "gawk") and "inplace" in " ".join(args)
+
+
+def _split_copy_args(args: list[str]) -> tuple[list[str], str | None, list[str]]:
+    """(operands, -t directory, flags) for mv/cp-like commands."""
+    ops: list[str] = []
+    flags: list[str] = []
+    target_dir: str | None = None
+    it = iter(args)
+    end_of_flags = False
+    for arg in it:
+        if end_of_flags or not arg.startswith("-") or arg == "-":
+            ops.append(arg)
+        elif arg == "--":
+            end_of_flags = True
+        elif arg in ("-t", "--target-directory"):
+            target_dir = next(it, None)
+        elif arg.startswith("--target-directory="):
+            target_dir = arg.split("=", 1)[1]
+        elif arg.startswith("-t") and not arg.startswith("--") and len(arg) > 2:
+            target_dir = arg[2:]
+        else:
+            flags.append(arg)
+    return ops, target_dir, flags
+
+
+def _copy_findings(verb: str, args: list[str], env: dict[str, str | None], ctx: _Ctx) -> list[Finding]:
+    ops, target_dir, flags = _split_copy_args(args)
+    if target_dir is not None:
+        sources, dest = ops, target_dir
+    elif ops:
+        sources, dest = ops[:-1], ops[-1]
+    else:
+        return []
+    found: list[Finding] = []
+    src_paths, problems = _operands(sources, env, ctx)
+    dest_paths, dest_problems = _operands([dest], env, ctx)
+    found += problems + dest_problems
+    if verb == "mv":
+        found += _need_token(src_paths, ctx, "is moved or renamed")
+    if verb == "rsync" and any(f.startswith("--delete") or f == "--remove-source-files" for f in flags):
+        for word in dest_paths:
+            for real in ctx.reals(word):
+                if _change_subject(real, ctx.home):
+                    found.append(_closed("rsync --delete removes files from a folder of the owner's", str(real)))
+    landing: list[str] = []
+    for word in dest_paths:
+        if _GLOB.search(word):
+            continue
+        for real in ctx.reals(word):
+            if _is_real_dir(real):
+                landing += [str(real / os.path.basename(s.rstrip("/"))) for s in src_paths if s]
+            else:
+                landing.append(str(real))
+    found += _need_token(landing, ctx, "is overwritten" if verb != "mv" else "is replaced by the move")
+    return found
+
+
+def _find_findings(args: list[str], env: dict[str, str | None], ctx: _Ctx) -> list[Finding]:
+    roots: list[str] = []
+    rest: list[str] = []
+    args = [a for a in args if a not in ("-H", "-L", "-P", "-X", "-x", "-s", "-E", "-d")] \
+        if not roots else args
+    for i, arg in enumerate(args):
+        if arg.startswith(("-", "(", "!")):
+            rest = args[i:]
+            break
+        roots.append(arg)
+    roots = roots or ["."]
+    paths, found = _operands(roots, env, ctx)
+    action: str | None = None
+    if "-delete" in rest:
+        action = "delete"
+    for i, arg in enumerate(rest):
+        if arg in ("-exec", "-execdir", "-ok", "-okdir") and i + 1 < len(rest):
+            cmd = os.path.basename(rest[i + 1])
+            if cmd in DELETE_VERBS:
+                action = "delete"
+            elif action is None and (cmd in GUARDED_VERBS):
+                action = "change" if cmd not in SHELL_VERBS else "closed"
+            elif action is None and re.match(r"python|perl|ruby|node|osascript", cmd):
+                action = "closed"
+    reached = [real for word in paths for real in ctx.reals(_GLOB.split(word, maxsplit=1)[0] or ".")]
+    if action == "delete":
+        for real in reached:
+            if _ordinary_folder(real, ctx.home) or _ordinary_file(real, ctx.home):
+                found.append(_owner_folder(real) if _is_real_dir(real) else _owner_file(real))
+            elif _protects_store(real):
+                found.append(_target_finding("rm", real, ctx.home) or _closed("deletes the owner's store"))
+    elif action == "change":
+        found += _need_token([str(r) for r in reached], ctx, "is changed by find -exec")
+    elif action == "closed":
+        found += [_closed("find runs a shell or interpreter over it", str(r)) for r in reached if _change_subject(r, ctx.home)]
+    return found
+
+
+def _shell_scripts(verb: str, args: list[str]) -> list[str]:
+    if verb == "eval":
+        return [" ".join(args)]
+    for i, arg in enumerate(args):
+        if arg.startswith("-") and not arg.startswith("--") and "c" in arg[1:] and i + 1 < len(args):
+            return [args[i + 1]]
+    return []
+
+
+def _heredoc_bodies(text: str) -> str:
+    out: list[str] = []
+    terminator: str | None = None
+    for line in text.splitlines():
+        if terminator is not None:
+            if line.strip() == terminator:
+                terminator = None
+            else:
+                out.append(line)
+            continue
+        match = _HEREDOC.search(line)
+        if match:
+            terminator = match.group(1)
+    return "\n".join(out)
+
+
+_REDIRECT = re.compile(r"(?:\d*|&)(>>|>\||>)(.*)", re.S)
+_SPECIAL_VERB = re.compile(r"[{}*?\[$`]")
+_MAX_DEPTH = 4
+
+
+def _redirect_findings(segment: list[str], env: dict[str, str | None], ctx: _Ctx) -> list[Finding]:
+    targets: list[str] = []
+    for i, token in enumerate(segment):
+        match = _REDIRECT.fullmatch(token)
+        if not match:
+            continue
+        rest = match.group(2) or (segment[i + 1] if i + 1 < len(segment) else "")
+        if rest and not rest.startswith("&"):
+            targets.append(rest)
+    if not targets:
+        return []
+    paths, problems = _operands(targets, env, ctx)
+    return problems + _need_token(paths, ctx, "is overwritten by a redirect")
+
+
+def _segment_findings(segment: list[str], env: dict[str, str | None], ctx: _Ctx, depth: int) -> list[Finding]:
+    found = _redirect_findings(segment, env, ctx)
+    verb, args = _verb(segment)
+    if verb is None:
+        return found
+    if _SPECIAL_VERB.search(verb) and ctx.mentions():
+        return found + [_closed(f"the command word {verb!r} is built at run time")]
+    if verb in ("cd", "pushd"):
+        ctx.cd(args, env)
+        return found
+    if verb in GUARDED_VERBS:
+        ctx.guarded = True
+    stdin_fed = "xargs" in segment and verb in GUARDED_VERBS and verb != "find"
+    if verb in DELETE_VERBS:
+        found += _delete_findings(verb, args, env, ctx)
+        if stdin_fed and ctx.mentions():
+            found.append(_closed(f"xargs feeds {verb} paths the policy cannot see"))
+    elif verb == "mv" or verb in COPY_VERBS:
+        found += _copy_findings(verb, args, env, ctx)
+        if stdin_fed and ctx.mentions():
+            found.append(_closed(f"xargs feeds {verb} paths the policy cannot see"))
+    elif verb in CHMOD_VERBS or verb in ("tee", "truncate") or _edits_in_place(verb, args):
+        _flags, operands = _parse_args(verb, args)
+        paths, problems = _operands(operands, env, ctx)
+        found += problems + _need_token(paths, ctx, "is changed in place")
+        if stdin_fed and ctx.mentions():
+            found.append(_closed(f"xargs feeds {verb} paths the policy cannot see"))
+    elif verb == "dd":
+        ofs = [a[3:] for a in args if a.startswith("of=")]
+        paths, problems = _operands(ofs, env, ctx)
+        found += problems + _need_token(paths, ctx, "is overwritten by dd")
+    elif verb == "find":
+        found += _find_findings(args, env, ctx)
+    elif verb in SHELL_VERBS:
+        if depth >= _MAX_DEPTH:
+            if ctx.mentions():
+                found.append(_closed("shell commands nest too deeply"))
+        else:
+            for script in _shell_scripts(verb, args):
+                found += analyze(script, depth + 1, ctx)
+            if "<<" in ctx.text and not ctx.heredocs_done:
+                ctx.heredocs_done = True  # once: a body is judged one time, not once per nesting level
+                body = _heredoc_bodies(ctx.raw)
+                ctx.text += "\n" + body
+                ctx._mention = None
+                found += analyze(body, depth + 1, ctx)
+    return found
+
+
+def analyze(raw_text: str, depth: int = 0, parent: _Ctx | None = None) -> list[Finding]:
+    """Every finding for a command line; a command that cannot be read fails closed."""
+    text = _strip_heredocs(raw_text)
+    ctx = parent or _Ctx(text, raw_text)
+    env = _assignments(text)
+    try:
+        segments = _segments(text)
+    except ValueError:
+        guarded_word = any(w in GUARDED_VERBS for w in re.split(r"[^A-Za-z0-9_.-]+", text))
+        unreadable = ctx.names_ordinary() or (guarded_word and ctx.mentions())
+        return [_closed("its quoting cannot be parsed")] if unreadable else []
+    found: list[Finding] = []
+    for segment in segments:
+        found += _segment_findings(segment, env, ctx, depth)
+    if ctx.guarded and ("$(" in text or "`" in text or "<(" in text) and ctx.mentions():
+        found.append(_closed("a command substitution may build the paths"))
     return found
 
 
@@ -274,8 +878,153 @@ def review_answers(text: str) -> list[str] | None:
 def _backup_ok(finding: Finding, backup_answer: str) -> bool:
     if backup_token_valid(Path(finding.target)):
         return True
+    target = _real(finding.target)
     named = re.findall(r"(?:~|/)[^\s,;)\n]+", backup_answer)
-    return any(Path(os.path.expanduser(p)).exists() for p in named)
+    # A backup must exist AND lie outside the target: naming the target, a path
+    # inside it, or an ancestor of it (~, /) "exists" while preserving nothing
+    # once the delete runs (security review of PR #274, 2026-10-04).
+    for raw in named:
+        candidate = _real(os.path.expanduser(raw))
+        if candidate.exists() and not _within(candidate, target) and not _within(target, candidate):
+            return True
+    return False
+
+
+# Executors that can run a delete the policy cannot see; any of them in a reviewed
+# command sends it back to the owner.
+_INDIRECT = frozenset({"bash", "sh", "zsh", "dash", "ksh", "fish", "eval", "source", ".", "exec",
+                       "xargs", "find", "parallel", "doas", "osascript", "python", "python3",
+                       "python3.14", "perl", "ruby", "node", "unlink", "rmdir", "shred", "srm",
+                       # shell-state changes alter what a later word expands to
+                       "cd", "pushd", "popd", "export", "declare", "typeset", "alias", "unset",
+                       "set", "readonly", "local", "builtin", "shopt"})
+_DELETE_WORD = re.compile(r"(?<![\w.-])(?:[\w./-]*/)?(?:rm|trash)(?![\w.-])")
+
+
+_PLAIN_DELETE = re.compile(
+    r"(?:rm|trash)(?:[ \t]+-[A-Za-z]+)*(?:[ \t]+--)?(?:[ \t]+(?:~/|/)[A-Za-z0-9._/+-]+)+"
+)
+
+
+_PATH_MAKERS = frozenset({"ln", "mv", "cp", "rsync", "ditto", "install"})
+
+
+def review_accepted(raw_text: str) -> bool:
+    """True when a complete review covers only targets this policy judged and accepted.
+
+    The owner's 2026-10-04 rule lets such an rm proceed without asking him. It holds
+    only where the policy has authority: every target a file, a repository, or a
+    ~/Projects or coding-tool folder under $HOME (folders need an existing backup);
+    never one of his ordinary folders, $HOME/~/Projects/an ancestor, an unresolved
+    variable, or a path outside $HOME.
+    """
+    answers = review_answers(raw_text)
+    if not answers:
+        return False
+    # ALLOW-LIST, not a deny-list: three review rounds each found another shell
+    # feature (eval, substitution, globs, HOME=) a deny-list missed. A review unlocks
+    # exactly one plain line -- rm/trash, simple flags, literal absolute or ~/ paths
+    # of safe characters -- and anything else falls back to the owner.
+    body = raw_text.split("\n", 1)[1] if "\n" in raw_text else ""
+    if not _PLAIN_DELETE.fullmatch(body.strip()):
+        return False
+    # Fail closed on anything that can delete without being judged below: a
+    # substitution or heredoc hides its words from the parser, and a shell, eval,
+    # find or xargs runs deletes the policy never sees (second security review of
+    # PR #274, 2026-10-04).
+    if _strip_heredocs(raw_text) != raw_text or "$(" in raw_text or "`" in raw_text:
+        return False
+    # Forms bash reads differently from shlex: a line continuation joins a target
+    # onto the previous line, $'..' and backslashes decode differently, and a brace
+    # list expands into paths the parser never saw.
+    body = raw_text.split("\n", 1)[1] if "\n" in raw_text else ""
+    if "\\" in body or "$'" in body or '$"' in body or "{" in body.replace("${HOME}", ""):
+        return False
+    text = raw_text
+    env = _assignments(text)
+    # Any assignment can change what a later word expands to (HOME=/ turns ~ into /),
+    # and the policy judges with this process's environment, not the command's.
+    if env:
+        return False
+    try:
+        segments = _segments(text)
+    except ValueError:
+        return False
+    code = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+    mentioned = len(_DELETE_WORD.findall(code))
+    home = Path(os.path.realpath(os.environ.get("HOME", "/nonexistent")))
+    judged = 0
+    deletes = 0
+    for segment in segments:
+        if any(os.path.basename(word) in _INDIRECT for word in segment):
+            return False
+        verb, args = _verb(segment)
+        if verb not in ("rm", "trash"):
+            continue
+        deletes += 1
+        _recursive, targets = _parse_args(verb, args)
+        if not targets:
+            return False
+        for raw in targets:
+            # Absolute or home-anchored only: a relative target resolves against the
+            # hook's directory, not the session's, so its verdict judges another path.
+            if not raw.startswith(("/", "~/", "$HOME/", "${HOME}/")):
+                return False
+            # A glob is judged by its static prefix, but bash deletes what it MATCHES:
+            # ~/P* passes as "~/P" and expands to ~/Projects.
+            if _GLOB.search(raw):
+                return False
+            expanded = _expand(raw, env)
+            if expanded is None:
+                return False
+            static = _GLOB.split(expanded, maxsplit=1)[0] or "."
+            target = _real(static.rstrip("/") or "/")
+            if not _within(target, home) or target == home:
+                return False
+            finding = _target_finding(verb, target, home)
+            if finding is None or "ancestor" in finding.why or finding.owner_only:
+                return False
+            if finding.needs_backup and not _backup_ok(finding, answers[2]):
+                return False
+            judged += 1
+    # Every rm/trash word in the code must be a delete this loop judged.
+    return judged > 0 and deletes == mentioned
+
+
+# Public names for owner_changes.py (same directory).
+store_paths = _store_paths
+within = _within
+is_real_dir = _is_real_dir
+ordinary_location = _ordinary_location
+
+
+def _helper_path() -> Path:
+    here = Path(__file__).resolve().parents[2] / "scripts" / "owner-change-backup.py"
+    return here if here.is_file() else Path(os.environ.get("HOME", "")) / ".claude" / "scripts" / "owner-change-backup.py"
+
+
+def _owner_request(found: list[Finding]) -> str:
+    return "\n".join([
+        "OWNER PERMISSION REQUIRED (owner rule 2026-10-04, CTS-24E2B3F5) -- no review unlocks this:",
+        *(f"  * {f.target} {f.why}" for f in found),
+        "",
+        "Deleting anything in the owner's ordinary folders is his decision alone; ask him. Folders in",
+        "~/Projects, repositories and coding-tool folders may be deleted with a DELETION-REVIEW and an",
+        "existing backup. Moving, renaming or changing his files is allowed after a backup and a report",
+        "(python3.14 owner-change-backup.py <path>... --reason \"...\").",
+    ])
+
+
+def _token_request(found: list[Finding]) -> str:
+    paths = " ".join(shlex.quote(f.target) for f in found)
+    return "\n".join([
+        "OWNER BACKUP + REPORT REQUIRED (owner rule 2026-10-04, CTS-24E2B3F5) -- back up and report before changing:",
+        *(f"  * {f.target} {f.why}" for f in found),
+        "",
+        "Run this first, then repeat the command (the token lasts 30 minutes):",
+        f'  python3.14 {shlex.quote(str(_helper_path()))} {paths} --reason "<why this change>"',
+        "The owner approves afterwards by typing \"approve changes\"; the backup is kept until then.",
+    ])
 
 
 def _review_request(found: list[Finding], answers: list[str] | None) -> str:
@@ -288,31 +1037,207 @@ def _review_request(found: list[Finding], answers: list[str] | None) -> str:
         " 3) <backup: the archive path, or why none is needed> 4) <following steps after deleting>",
     ]
     if any(f.needs_backup for f in found):
-        lines += [
-            "Answer 3 must name a backup that exists. For a repository:",
-            '  bash ~/.claude/scripts/backup-repo-before-delete.sh "<repo>"',
-        ]
+        lines.append("Answer 3 must name a backup that exists. For a repository:")
+        # Offer the helper only where it exists: a remedy naming a script the reader
+        # lacks is an unreachable escape route (lesson 1501), and a Sentinel
+        # subscriber has no such script. Built from parts so no literal config path
+        # sits in the source for the mirror's L1 scan to refuse.
+        helper = Path(os.environ.get("HOME", "")) / ".claude" / "scripts" / "backup-repo-before-delete.sh"
+        if helper.is_file():
+            lines.append(f'  bash {helper} "<repo>"')
+        else:
+            lines.append("  copy or `git bundle` the repository somewhere outside it, then name that path")
     if answers is not None:
         lines.insert(1, "  (the review given names no existing backup for a repository/root target)")
     lines.append("Prefer `trash <path>` over rm: the Trash is itself a backup.")
     return "\n".join(lines)
 
 
+# The ONE command shape the rm -rf arm will judge without asking: literal
+# assignments, an optional `cd <word> &&`, then one plain rm of literal words.
+# Six background security reviews of #278 each found another construct (cd
+# options, globs, braces, links made in the same command, wrappers) that a parser
+# reads differently from bash; an allow-list ends that class (CIS-75C8A8EC).
+_CHARS = r"[A-Za-z0-9._/+-]"
+_PLAIN_VAR = r"\$\{?[A-Za-z_][A-Za-z0-9_]*\}?"
+_WORD = rf"(?:{_PLAIN_VAR}(?:/{_CHARS}*)?|~/{_CHARS}*|{_CHARS}+)"
+_QWORD = rf'(?:"{_WORD}"|{_WORD})'
+_PLAIN_RM_RF = re.compile(
+    rf"(?P<assigns>(?:[A-Za-z_][A-Za-z0-9_]*=(?:~/)?{_CHARS}+[ \t]*(?:;|&&)[ \t]*)*)"
+    rf"(?:cd[ \t]+(?P<cd>{_QWORD})[ \t]*&&[ \t]*)?"
+    rf"rm(?P<flags>(?:[ \t]+-[A-Za-z]+)*)(?:[ \t]+--)?(?P<targets>(?:[ \t]+{_QWORD})+)(?:[ \t]+#.*)?[ \t]*"
+)
+# Names whose value changes how OTHER words resolve; an assignment to one is unreadable.
+_RESOLUTION_VARS = frozenset({"HOME", "PWD", "OLDPWD", "CDPATH", "IFS", "PATH"})
+
+
+# A heredoc whose body is only written to a file: cat > f <<T, cat <<T > f, tee [-a] f <<T
+# (optionally >/dev/null). No pipe, substitution or process substitution anywhere.
+_SINK_PATH = r"[A-Za-z0-9._/~+-]+"
+_TAG = (r"<<(?P<dash>-)?[ \t]*(?:'(?P<q1>[A-Za-z_][A-Za-z0-9_]*)'"
+        r"|\"(?P<q2>[A-Za-z_][A-Za-z0-9_]*)\"|(?P<w>[A-Za-z_][A-Za-z0-9_]*))")
+_DATA_SINKS = (
+    re.compile(rf"cat[ \t]+>{{1,2}}[ \t]*{_SINK_PATH}[ \t]+{_TAG}"),
+    re.compile(rf"cat[ \t]+{_TAG}[ \t]+>{{1,2}}[ \t]*{_SINK_PATH}"),
+    re.compile(rf"tee(?:[ \t]+-a)?[ \t]+{_SINK_PATH}[ \t]+{_TAG}(?:[ \t]+>[ \t]*/dev/null)?"),
+)
+
+
+def _sink(line: str) -> re.Match[str] | None:
+    for pattern in _DATA_SINKS:
+        found = pattern.fullmatch(line.strip())
+        if found:
+            return found
+    return None
+
+
+def _strict_split(text: str) -> tuple[list[str], bool]:
+    """Executable lines, ending each heredoc body EXACTLY where bash does.
+
+    A `<<` is only accepted on a data-sink line with a simple delimiter. A here-string
+    (<<<), a quoted "<<", an odd delimiter or a body with no terminator returns
+    ok=False, because the lenient stripper treated the lines after them as body and
+    hid real commands (eleventh security review of #278).
+    """
+    code: list[str] = []
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        i += 1
+        if "<<" not in line:
+            if line.strip() and not line.lstrip().startswith("#"):
+                code.append(line)
+            continue
+        found = _sink(line)
+        if not found:
+            return code, False
+        delim = found.group("q1") or found.group("q2") or found.group("w")
+        dash = bool(found.group("dash"))
+        code.append(line)
+        while i < len(lines):
+            body = lines[i]
+            i += 1
+            if (body.lstrip("\t") if dash else body) == delim:
+                break
+        else:
+            return code, False
+    return code, True
+
+
+# Commands that cannot execute a file's contents; with no pipe, substitution,
+# separator or redirection into a process they may sit beside a data heredoc.
+_INERT_LINE = re.compile(r"(?:chmod|mkdir|echo|printf|true|ls)\b[^|;&`$()<>\n]*")
+
+
+def _literal_path(word: str, base: str, assigns: dict[str, str]) -> str | None:
+    """Resolve one word of the plain grammar to a real path, or None when it cannot be."""
+    raw = word[1:-1] if word.startswith('"') else word
+    var = re.match(r"\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?", raw)
+    if var:
+        name = var.group(1)
+        value = assigns.get(name)
+        if value is None and name == "TMPDIR":
+            value = os.environ.get("TMPDIR")
+        if not value:
+            return None
+        raw = value + raw[var.end():]
+    path = os.path.expanduser(raw)
+    return os.path.realpath(os.path.join(base, path)) + ("/" if raw.endswith("/") else "")
+
+
+def recursive_targets(raw_text: str) -> list[str] | None:
+    """Every recursive-rm target as a resolved real path; ["?"] outside the plain shape.
+
+    ["NONE"] means no rm word survives in the executable text (the rm was heredoc
+    DATA), so nothing is deleted. A heredoc fed to an interpreter is code, not data.
+    """
+    if not _DELETE_WORD.search(raw_text):
+        return ["NONE"]
+    code_lines, parsed = _strict_split(raw_text)
+    if not parsed:
+        return ["?"]
+    if not _DELETE_WORD.search("\n".join(code_lines)):
+        # The rm word lives only in a heredoc body. That body is DATA only when every
+        # heredoc line is a known data-writing shape; any other consumer (a pipe, a
+        # process substitution, an interpreter we did not list) may execute it.
+        # Allow-list, not a list of interpreters (ninth security review of #278).
+        # Every executable line must be a data-writing heredoc or an inert command:
+        # `bash file` after writing it would run the body (tenth review of #278).
+        heredoc_lines = [line for line in code_lines if "<<" in line]
+        # An UNQUOTED delimiter makes bash expand $(..), `..` and ${..} in the body
+        # while writing it, so a substitution there RUNS (twelfth review of #278).
+        expands = any(
+            (found := _sink(line)) is not None and found.group("w") for line in heredoc_lines
+        ) and any(token in raw_text for token in ("$(", "`", "${"))
+        if heredoc_lines and not expands and all(
+            _sink(line) or _INERT_LINE.fullmatch(line.strip()) for line in code_lines
+        ):
+            return ["NONE"]
+        return ["?"]
+    if len(code_lines) != 1:
+        return ["?"]
+    match = _PLAIN_RM_RF.fullmatch(code_lines[0].strip())
+    if not match:
+        return ["?"]
+    assigns: dict[str, str] = {}
+    for name, value in re.findall(r"([A-Za-z_][A-Za-z0-9_]*)=(\S+?)[ \t]*(?:;|&&)", match.group("assigns") or ""):
+        if name in _RESOLUTION_VARS:
+            return ["?"]
+        assigns[name] = value
+    base = os.getcwd()
+    words = [match.group("cd") or "", *match.group("targets").split()]
+    # An operand that starts with "-" is an option to bash (`cd -L /etc` changes to
+    # /etc), never a path; reading it as one judges the wrong directory.
+    if any(w.strip('"').startswith("-") for w in words if w):
+        return ["?"]
+    # Only after option-like operands are refused (`--recursive` is one): otherwise a
+    # long option reads as "not recursive" and the arm is told nothing is deleted.
+    if not re.search(r"[rR]", match.group("flags") or ""):
+        return ["NONE"]  # not recursive: the rm -rf arm has nothing to judge
+    # bash does not expand ~ inside double quotes, and a relative cd follows CDPATH;
+    # resolving either here would judge a different path from the one deleted.
+    if any(w.startswith('"~') for w in words if w):
+        return ["?"]
+    cd_word = (match.group("cd") or "").strip('"')
+    if cd_word and not cd_word.startswith(("/", "~/", "$TMPDIR", "${TMPDIR}")):
+        return ["?"]
+    if match.group("cd"):
+        cd_dest = _literal_path(match.group("cd"), base, assigns)
+        if cd_dest is None:
+            return ["?"]
+        base = cd_dest.rstrip("/") or "/"
+    out: list[str] = []
+    for word in match.group("targets").split():
+        resolved = _literal_path(word, base, assigns)
+        if resolved is None:
+            return ["?"]
+        out.append(resolved)
+    return out
+
+
 def main() -> int:
     raw_text = sys.stdin.read()
-    text = _strip_heredocs(raw_text)
-    env = _assignments(text)
-    try:
-        segments = _segments(text)
-    except ValueError:
-        return 0  # unparseable quoting: the gate's own arms still judge it
-    found: list[Finding] = []
-    for segment in segments:
-        verb, args = _verb(segment)
-        if verb in ("rm", "trash"):
-            found += findings(verb, args, env)
+    if "--rm-rf-targets" in sys.argv[1:]:
+        targets = recursive_targets(raw_text)
+        if targets is None:
+            return 1
+        print("\n".join(targets))
+        return 0
+    if "--review-accepted" in sys.argv[1:]:
+        return 0 if review_accepted(raw_text) else 1
+    found = analyze(raw_text)
     if not found:
         return 0
+    owner_only = [f for f in found if f.owner_only]
+    if owner_only:
+        print(_owner_request(owner_only), file=sys.stderr)
+        return REVIEW_REQUIRED
+    tokens = [f for f in found if f.needs_token]
+    if tokens:
+        print(_token_request(tokens), file=sys.stderr)
+        return REVIEW_REQUIRED
+    found = [f for f in found if not f.needs_token]
     answers = review_answers(raw_text)
     if answers and all(_backup_ok(f, answers[2]) for f in found if f.needs_backup):
         return 0

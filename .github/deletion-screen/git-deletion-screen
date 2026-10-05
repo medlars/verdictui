@@ -82,11 +82,32 @@ def added_lines(diff: str) -> set[int]:
     return lines
 
 
+def changed_files(diff_args: list[str]) -> list[str]:
+    """Added/changed regular files. `--raw -z` gives the raw name (no octal quoting of
+    non-ASCII) and the mode, so a submodule pointer (160000) or a symlink (120000),
+    which has no blob to show, is skipped instead of failing the whole commit."""
+    out = _git("diff", *diff_args, "--raw", "-z", "--no-abbrev", "--diff-filter=ACMR").split("\0")
+    files: list[str] = []
+    i = 0
+    while i < len(out) - 1:
+        meta = out[i]
+        if not meta.startswith(":"):
+            i += 1
+            continue
+        fields = meta[1:].split()
+        new_mode, status = fields[1], fields[4]
+        # A rename or copy carries two paths (old, new); every other status carries one.
+        name = out[i + 2] if status[:1] in ("R", "C") else out[i + 1]
+        i += 3 if status[:1] in ("R", "C") else 2
+        if new_mode not in ("160000", "120000"):
+            files.append(name)
+    return files
+
+
 def screen(diff_args: list[str], show_prefix: str) -> list[str]:
     sd = _classifier()
-    names = _git("diff", *diff_args, "--name-only", "--diff-filter=ACMR").split("\n")
     findings: list[str] = []
-    for name in filter(None, names):
+    for name in changed_files(diff_args):
         # A file whose content cannot be read is "could not observe" (exit 2), not "clean".
         text = _git("show", f"{show_prefix}{name}")
         lang = sd.language_of(name, text.split("\n", 1)[0])
@@ -99,6 +120,14 @@ def screen(diff_args: list[str], show_prefix: str) -> list[str]:
     return findings
 
 
+def in_temp_repo() -> bool:
+    """True when the repository being committed to lives under the system temp dir."""
+    top = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=False)
+    real = os.path.realpath(top.stdout.strip()) if top.returncode == 0 else ""
+    roots = {os.path.realpath(r) for r in (os.environ.get("TMPDIR", ""), "/tmp", "/private/var/folders") if r}
+    return bool(real) and any(real.startswith(r.rstrip("/") + "/") for r in roots)
+
+
 def unattended() -> bool:
     """No terminal and no agent session: nobody can add a review, so a refusal would lose the commit."""
     forced = os.environ.get("DELETION_SCREEN_FORCE_MODE")
@@ -106,7 +135,7 @@ def unattended() -> bool:
         return forced == "unattended"
     if any(stream.isatty() for stream in (sys.stdin, sys.stderr) if stream is not None):
         return False
-    agent = os.environ.get("CLAUDECODE") or os.environ.get("CLAUDE_CODE_SESSION_ID")
+    agent = os.environ.get("CLAUDECODE") or os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get("CURSOR_AGENT")
     return not (agent or any(k.startswith("CODEX_") for k in os.environ))
 
 
@@ -140,29 +169,25 @@ def main() -> int:
     else:
         head = args.range.split("..", 1)[1] or "HEAD"
         diff_args, prefix = [args.range], f"{head}:"
-    # Owner 2026-10-01: an unattended job is checked or let through, never refused.
-    # Only the local --staged run applies this; CI (--range) is the check.
-    let_through = args.staged and unattended()
+    # Owner 2026-10-02 ("refuse unattended jobs", reversing 2026-10-01): an unattended
+    # commit is refused like any other. Nobody sees its stderr, so the refusal is queued
+    # under its own outcome and the hourly deletion-review-queue-check tickets it.
+    if args.staged and in_temp_repo() and not os.environ.get("DELETION_SCREEN_TEMP_REPOS"):
+        # A test fixture's throwaway repository under the system temp dir is not a job and
+        # holds nothing to lose; refusing its commits breaks other repos' test suites.
+        return 0
+    unattended_commit = args.staged and unattended()
     try:
         findings = screen(diff_args, prefix)
     except RuntimeError as exc:
         print(f"deletion-screen: COULD NOT READ the change: {exc}", file=sys.stderr)
-        if let_through:
-            record("unattended-unreadable-let-through", [str(exc)])
-            return 0
+        if unattended_commit:
+            record("unattended-unreadable-refused", [str(exc)])
         return 2
     if not findings:
         return 0
-    if let_through:
-        record("unattended-let-through", findings)
-        print(
-            "deletion-screen: UNATTENDED commit let through with unreviewed deletions; queued for review:\n"
-            + "\n".join(findings),
-            file=sys.stderr,
-        )
-        return 0
     if args.staged:
-        record("refused", findings)
+        record("unattended-refused" if unattended_commit else "refused", findings)
     print(
         "DELETION REVIEW REQUIRED (owner rule INS-18201669) -- this change adds deletions whose\n"
         "target is not provably temporary or a build/cache directory:\n"
