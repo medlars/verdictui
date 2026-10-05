@@ -95,10 +95,10 @@ public enum LiveRuntime {
         return try await target.withPid { pid in
             let surface = try target.resolvedSurface() ?? .window(0)
             if method == "live_inspect" {
-                return .tree(try readTreeRetryingBusy(pid: pid, surface: surface))
+                return .tree(try await readTreeRetryingBusy(pid: pid, surface: surface))
             }
             if method == "live_verify" {
-                let tree = try readTreeRetryingBusy(pid: pid, surface: surface)
+                let tree = try await readTreeRetryingBusy(pid: pid, surface: surface)
                 return .verdict(judge(tree, expected: request.expectText))
             }
             guard let action, let path = request.path else {
@@ -106,7 +106,7 @@ public enum LiveRuntime {
             }
             return .step(try await observe(
                 request: request,
-                read: { try readTreeRetryingBusy(pid: pid, surface: surface) },
+                read: { try await readTreeRetryingBusy(pid: pid, surface: surface) },
                 perform: { try AXReader.act(pid: pid, atPath: path, surface: surface, action: action) }
             ))
         }
@@ -115,8 +115,8 @@ public enum LiveRuntime {
     /// A briefly busy target answers kAXErrorCannotComplete (-25204) to a read it would
     /// serve moments later (measured on SagaMail 2026-10-04: the same inspect failed, then
     /// succeeded seconds later). Reads are retried; the input itself never is.
-    static func readTreeRetryingBusy(pid: pid_t, surface: AXReader.Surface) throws -> SemanticNode {
-        try retryingBusy { try AXReader.readTree(pid: pid, surface: surface) }
+    static func readTreeRetryingBusy(pid: pid_t, surface: AXReader.Surface) async throws -> SemanticNode {
+        try await retryingBusy { try AXReader.readTree(pid: pid, surface: surface) }
     }
 
     static func isBusy(_ error: Error) -> Bool {
@@ -127,16 +127,16 @@ public enum LiveRuntime {
     static func retryingBusy<T>(
         maxAttempts: Int = 4,
         backoffMilliseconds: [UInt32] = [100, 250, 500],
-        sleep: (UInt32) -> Void = { usleep($0 * 1000) },
+        pause: (UInt32) async -> Void = { try? await Task.sleep(for: .milliseconds($0)) },
         _ read: () throws -> T
-    ) throws -> T {
+    ) async throws -> T {
         var attempt = 1
         while true {
             do {
                 return try read()
             } catch where isBusy(error) {
                 guard attempt < maxAttempts else { throw Failure.busy(attempts: attempt) }
-                sleep(backoffMilliseconds[min(attempt - 1, backoffMilliseconds.count - 1)])
+                await pause(backoffMilliseconds[min(attempt - 1, backoffMilliseconds.count - 1)])
                 attempt += 1
             }
         }
@@ -146,12 +146,12 @@ public enum LiveRuntime {
     @MainActor
     static func observe(
         request: LiveRequest,
-        read: () throws -> SemanticNode,
+        read: () async throws -> SemanticNode,
         perform: () throws -> Void
     ) async throws -> StepResultWire {
         _ = try request.validatedTarget()
         let started = ContinuousClock.now
-        let before = try read()
+        let before = try await read()
         do { try perform() } catch { throw Failure.unavailable }
         let deadline = started + .seconds(request.timeout)
         var previous = before
@@ -162,7 +162,7 @@ public enum LiveRuntime {
         // expectation, keep observing until it is met or the deadline expires.
         while ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(50))
-            after = try read()
+            after = try await read()
             quiet = after == previous ? quiet + 1 : 0
             previous = after
             let reached = request.expectText.map { containsText(after, $0) } ?? true

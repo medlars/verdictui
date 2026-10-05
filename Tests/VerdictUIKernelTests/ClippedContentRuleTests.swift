@@ -50,6 +50,8 @@ final class ClippedContentRuleTests: XCTestCase {
             attributes: [SemanticNode.scrollContainerKey: .bool(true)], children: [row])
         let tree = root([scroll])
 
+        XCTAssertTrue(scroll.isScrollContainer)
+        XCTAssertFalse(row.isScrollContainer)
         XCTAssertEqual(rule.evaluate(tree, context: context()), [])
         XCTAssertEqual(OffscreenRule().evaluate(tree, context: context()), [])
     }
