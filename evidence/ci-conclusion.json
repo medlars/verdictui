@@ -1,0 +1,1 @@
+{"completed_at": "2026-10-05T07:00:08Z", "conclusion": "failure", "event": "pull_request", "head_branch": "drain/vu-live", "head_repository": "medlars/verdictui", "head_sha": "e057f799f5ba3b64b7c90a29a441971cf7392feb", "repo": "medlars/verdictui", "run_attempt": "1", "run_id": "37274187414", "schema_version": "1.1.0", "workflow": "CI"}
