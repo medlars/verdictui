@@ -355,6 +355,17 @@ public struct SemanticNode: Equatable, Sendable {
     }
 }
 
+extension SemanticNode {
+    /// Attribute a reader sets on a node whose children scroll inside it (an `AXScrollArea`).
+    public static let scrollContainerKey = "scrollContainer"
+
+    /// True for a container that scrolls its content: a descendant outside its frame is
+    /// scrolled out of view, not offscreen or clipped (CTS-78766395).
+    public var isScrollContainer: Bool {
+        attributes[Self.scrollContainerKey]?.boolValue == true
+    }
+}
+
 extension SemanticNode: Codable {
     private enum CodingKeys: String, CodingKey {
         case id, role, frame, text, attributes, isVisible, zIndex, textMetrics, structuralPath,

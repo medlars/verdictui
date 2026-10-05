@@ -77,7 +77,9 @@ public struct ClippedContentRule: LintRule {
             }
         }
 
-        let chain = Self.isEligible(node) ? ancestors + [node] : ancestors
+        // A scroll container clips by scrolling, so its content is not "escaping" it or any box
+        // outside it; only boxes nested inside the scrolled content can still clip (CTS-78766395).
+        let chain = node.isScrollContainer ? [] : (Self.isEligible(node) ? ancestors + [node] : ancestors)
         for child in node.children {
             collect(child, ancestors: chain, context: context, into: &findings)
         }

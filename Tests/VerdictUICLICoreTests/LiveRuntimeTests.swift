@@ -1,6 +1,8 @@
+import ApplicationServices
 import Foundation
 import XCTest
 import VerdictUIKernel
+import VerdictUIWitness
 @testable import VerdictUICLICore
 
 final class LiveRuntimeTests: XCTestCase {
@@ -66,13 +68,55 @@ final class LiveRuntimeTests: XCTestCase {
     func testObservedChangeReturnsDeltaAndPass() async throws {
         var saved = false
         let result = try await LiveRuntime.observe(
-            request: LiveRequest(pid: 1, path: "status", expectText: "Saved", timeout: 1),
+            request: LiveRequest(pid: 1, path: "status", expectText: "Saved", timeout: 1, detail: "full"),
             read: { self.tree(saved ? "Saved" : "Waiting") }, perform: { saved = true }
         )
         XCTAssertEqual(result.status, "PASS")
         XCTAssertTrue(result.settled)
         XCTAssertFalse(try XCTUnwrap(result.delta.expand()).isEmpty)
         XCTAssertNotNil(result.tree)
+    }
+
+    // CTS-F71E763F: the default answer is a summary, not the whole tree.
+    @MainActor
+    func testDefaultDetailOmitsTheTreeAndFullKeepsIt() async throws {
+        var saved = false
+        let result = try await LiveRuntime.observe(
+            request: LiveRequest(pid: 1, path: "status", expectText: "Saved", timeout: 1),
+            read: { self.tree(saved ? "Saved" : "Waiting") }, perform: { saved = true }
+        )
+        XCTAssertNil(result.tree)
+        XCTAssertEqual(result.status, "PASS")
+    }
+
+    func testSummaryCapsExamplesCountsEveryRuleAndKeepsTheStatusInputs() {
+        let findings = (0..<40).map { index in
+            Finding(rule: index.isMultiple(of: 2) ? "offscreen" : "clipped-content",
+                    severity: .error, nodeID: "n\(index)", message: "m")
+        }
+        let summary = LiveRuntime.shape(findings: findings, detail: "summary", maxFindings: nil)
+        XCTAssertEqual(summary.examples.count, 10)
+        XCTAssertEqual(summary.omitted, 30)
+        XCTAssertEqual(summary.counts, ["offscreen": 20, "clipped-content": 20])
+
+        let capped = LiveRuntime.shape(findings: findings, detail: "summary", maxFindings: 3)
+        XCTAssertEqual(capped.examples.count, 3)
+        XCTAssertEqual(capped.omitted, 37)
+
+        let delta = LiveRuntime.shape(findings: findings, detail: "delta", maxFindings: nil)
+        XCTAssertEqual(delta.examples.count, 40)
+        XCTAssertNil(delta.counts)
+        XCTAssertNil(delta.omitted)
+
+        let full = LiveRuntime.shape(findings: findings, detail: "full", maxFindings: 0)
+        XCTAssertEqual(full.examples.count, 0)
+        XCTAssertEqual(full.omitted, 40)
+    }
+
+    func testInvalidDetailOrNegativeCapIsRefused() {
+        XCTAssertThrowsError(try LiveRequest(pid: 1, detail: "everything").validatedTarget())
+        XCTAssertThrowsError(try LiveRequest(pid: 1, maxFindings: -1).validatedTarget())
+        XCTAssertNoThrow(try LiveRequest(pid: 1, detail: "delta", maxFindings: 0).validatedTarget())
     }
 
     @MainActor
@@ -88,5 +132,49 @@ final class LiveRuntimeTests: XCTestCase {
             XCTAssertTrue(String(describing: error).contains("unavailable"))
             XCTAssertFalse(String(describing: error).contains("fixture-secret"))
         }
+    }
+}
+
+// CTS-3DB96403: a briefly busy app answers kAXErrorCannotComplete (-25204); reads retry.
+final class LiveRuntimeBusyRetryTests: XCTestCase {
+    private struct Other: Error {}
+    private let busy = AXReader.Failure.noWindow(axError: AXError.cannotComplete.rawValue)
+
+    func testBusyThenSuccessReturnsTheValueAfterBackoff() throws {
+        var calls = 0
+        var slept: [UInt32] = []
+        let value = try LiveRuntime.retryingBusy(sleep: { slept.append($0) }) { () -> Int in
+            calls += 1
+            if calls < 3 { throw self.busy }
+            return 42
+        }
+        XCTAssertEqual(value, 42)
+        XCTAssertEqual(calls, 3)
+        XCTAssertEqual(slept, [100, 250])
+    }
+
+    func testBusyOnEveryAttemptReportsTheAttemptCount() {
+        var calls = 0
+        XCTAssertThrowsError(try LiveRuntime.retryingBusy(maxAttempts: 3, sleep: { _ in }) { () -> Int in
+            calls += 1
+            throw self.busy
+        }) { error in
+            guard case LiveRuntime.Failure.busy(let attempts) = error else {
+                return XCTFail("expected busy, got \(error)")
+            }
+            XCTAssertEqual(attempts, 3)
+            XCTAssertTrue("\(error)".contains("3 read attempts"))
+        }
+        XCTAssertEqual(calls, 3)
+    }
+
+    func testOtherFailuresAreNotRetried() {
+        var calls = 0
+        XCTAssertThrowsError(try LiveRuntime.retryingBusy(sleep: { _ in }) { () -> Int in
+            calls += 1
+            throw Other()
+        })
+        XCTAssertEqual(calls, 1)
+        XCTAssertFalse(LiveRuntime.isBusy(AXReader.Failure.noWindow(axError: 0)))
     }
 }

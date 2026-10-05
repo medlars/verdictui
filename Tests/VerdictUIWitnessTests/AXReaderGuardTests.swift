@@ -54,3 +54,16 @@ final class AXReaderGuardTests: XCTestCase {
         }
     }
 }
+
+// CTS-0693CE36: items of a menu that is not open have zero-size frames and must be invisible.
+final class AXReaderUnopenedMenuTests: XCTestCase {
+    func testZeroSizeMenuItemsAndMenusAreUnopenedMembers() {
+        XCTAssertTrue(AXReader.isUnopenedMenuMember(axRole: "AXMenuItem", frameIsEmpty: true))
+        XCTAssertTrue(AXReader.isUnopenedMenuMember(axRole: "AXMenu", frameIsEmpty: true))
+    }
+
+    func testAnOpenMenuItemAndAZeroSizeButtonStayVisible() {
+        XCTAssertFalse(AXReader.isUnopenedMenuMember(axRole: "AXMenuItem", frameIsEmpty: false))
+        XCTAssertFalse(AXReader.isUnopenedMenuMember(axRole: "AXButton", frameIsEmpty: true))
+    }
+}

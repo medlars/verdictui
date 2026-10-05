@@ -1,3 +1,4 @@
+import ApplicationServices
 import Foundation
 import VerdictUIKernel
 import VerdictUIWitness
@@ -12,11 +13,15 @@ public struct LiveRequest: Codable, Sendable, Equatable {
     public var value: String?
     public var expectText: String?
     public var timeout: Double
+    /// `summary` (default), `delta` or `full`; see ``LiveRuntime/shape(findings:detail:maxFindings:)``.
+    public var detail: String?
+    /// Cap on findings returned in full; the rest are counted by rule.
+    public var maxFindings: Int?
 
     public init(
         pid: Int32? = nil, app: String? = nil, surface: String = "window:0",
         path: String? = nil, action: String? = nil, value: String? = nil,
-        expectText: String? = nil, timeout: Double = 5
+        expectText: String? = nil, timeout: Double = 5, detail: String? = nil, maxFindings: Int? = nil
     ) {
         self.pid = pid
         self.app = app
@@ -26,6 +31,8 @@ public struct LiveRequest: Codable, Sendable, Equatable {
         self.value = value
         self.expectText = expectText
         self.timeout = timeout
+        self.detail = detail
+        self.maxFindings = maxFindings
     }
 
     public func validatedTarget() throws -> LiveTarget {
@@ -37,6 +44,12 @@ public struct LiveRequest: Codable, Sendable, Equatable {
         }
         if let expectText, expectText.isEmpty {
             throw LiveRuntime.Failure.invalidRequest("expected text must not be empty")
+        }
+        if let detail, !LiveRuntime.details.contains(detail) {
+            throw LiveRuntime.Failure.invalidRequest("detail must be summary, delta or full")
+        }
+        if let maxFindings, maxFindings < 0 {
+            throw LiveRuntime.Failure.invalidRequest("max_findings must not be negative")
         }
         let target = LiveTarget(pid: pid, app: app, timeout: timeout, surface: surface)
         try target.validate()
@@ -52,10 +65,14 @@ public enum LiveRuntime {
     public enum Failure: Error, CustomStringConvertible {
         case invalidRequest(String)
         case unavailable
+        /// Every attempt to read the app answered "cannot complete" (AXError -25204).
+        case busy(attempts: Int)
 
         public var description: String {
             switch self {
             case .invalidRequest(let reason): return reason
+            case .busy(let attempts):
+                return "the app stayed busy (AXError -25204) through \(attempts) read attempts; no verdict produced"
             case .unavailable: return "native input or observation unavailable; no verdict produced"
             }
         }
@@ -78,10 +95,10 @@ public enum LiveRuntime {
         return try await target.withPid { pid in
             let surface = try target.resolvedSurface() ?? .window(0)
             if method == "live_inspect" {
-                return .tree(try AXReader.readTree(pid: pid, surface: surface))
+                return .tree(try readTreeRetryingBusy(pid: pid, surface: surface))
             }
             if method == "live_verify" {
-                let tree = try AXReader.readTree(pid: pid, surface: surface)
+                let tree = try readTreeRetryingBusy(pid: pid, surface: surface)
                 return .verdict(judge(tree, expected: request.expectText))
             }
             guard let action, let path = request.path else {
@@ -89,9 +106,39 @@ public enum LiveRuntime {
             }
             return .step(try await observe(
                 request: request,
-                read: { try AXReader.readTree(pid: pid, surface: surface) },
+                read: { try readTreeRetryingBusy(pid: pid, surface: surface) },
                 perform: { try AXReader.act(pid: pid, atPath: path, surface: surface, action: action) }
             ))
+        }
+    }
+
+    /// A briefly busy target answers kAXErrorCannotComplete (-25204) to a read it would
+    /// serve moments later (measured on SagaMail 2026-10-04: the same inspect failed, then
+    /// succeeded seconds later). Reads are retried; the input itself never is.
+    static func readTreeRetryingBusy(pid: pid_t, surface: AXReader.Surface) throws -> SemanticNode {
+        try retryingBusy { try AXReader.readTree(pid: pid, surface: surface) }
+    }
+
+    static func isBusy(_ error: Error) -> Bool {
+        guard case AXReader.Failure.noWindow(let code) = error else { return false }
+        return code == AXError.cannotComplete.rawValue
+    }
+
+    static func retryingBusy<T>(
+        maxAttempts: Int = 4,
+        backoffMilliseconds: [UInt32] = [100, 250, 500],
+        sleep: (UInt32) -> Void = { usleep($0 * 1000) },
+        _ read: () throws -> T
+    ) throws -> T {
+        var attempt = 1
+        while true {
+            do {
+                return try read()
+            } catch where isBusy(error) {
+                guard attempt < maxAttempts else { throw Failure.busy(attempts: attempt) }
+                sleep(backoffMilliseconds[min(attempt - 1, backoffMilliseconds.count - 1)])
+                attempt += 1
+            }
         }
     }
 
@@ -140,12 +187,34 @@ public enum LiveRuntime {
                 message: "The input was posted and the resulting tree observed; no expected outcome was supplied."
             ))
         }
+        let detail = request.detail ?? "summary"
+        let shaped = shape(findings: verdict.findings, detail: detail, maxFindings: request.maxFindings)
         return StepResultWire(
             probe: request.path ?? "live-root",
             status: Verdict.Status.derived(from: verdict.findings).rawValue,
-            delta: CompactDelta(delta), findings: verdict.findings, settled: settled,
-            elapsedMs: elapsedMilliseconds(started), tree: CompactTree(after)
+            delta: CompactDelta(delta), findings: shaped.examples, settled: settled,
+            elapsedMs: elapsedMilliseconds(started),
+            tree: detail == "full" ? CompactTree(after) : nil,
+            findingCounts: shaped.counts, omittedFindings: shaped.omitted
         )
+    }
+
+    static let details: Set<String> = ["summary", "delta", "full"]
+    static let summaryFindingLimit = 10
+
+    /// One live act can return 150 KB (full tree plus every finding, measured on a menubar,
+    /// CTS-F71E763F). `summary` (default) drops the tree and returns the first findings plus a
+    /// count per rule; `delta` drops the tree only; `full` keeps everything. `maxFindings` caps
+    /// the examples in any mode, and the status is always derived from ALL findings.
+    static func shape(
+        findings: [Finding], detail: String, maxFindings: Int?
+    ) -> (examples: [Finding], counts: [String: Int]?, omitted: Int?) {
+        let limit = maxFindings ?? (detail == "summary" ? summaryFindingLimit : Int.max)
+        let examples = Array(findings.prefix(limit))
+        let omitted = findings.count - examples.count
+        let counts: [String: Int]? = detail == "summary" && !findings.isEmpty
+            ? Dictionary(findings.map { ($0.rule, 1) }, uniquingKeysWith: +) : nil
+        return (examples, counts, omitted > 0 ? omitted : nil)
     }
 
     static func containsText(_ tree: SemanticNode, _ text: String) -> Bool {

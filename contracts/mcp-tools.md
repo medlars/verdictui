@@ -62,10 +62,15 @@ a compact semantic tree; no scenario registration is required.
 Judges the real application's tree and optional required text. A failed layout
 or missing expected text is an answered call (`isError:false`, verdict FAIL).
 
-### `live_act(pid | app, path, action, value?, expect_text?, timeout?)`
+### `live_act(pid | app, path, action, value?, expect_text?, timeout?, detail?, max_findings?)`
 
 Reads the before-tree, targets one app, acts and observes until stable or the
-deadline. Returns the existing step schema with delta, findings and after-tree.
+deadline. Returns the existing step schema with delta and findings. `detail`
+sizes the answer (CTS-F71E763F): `summary` (default) omits the after-tree, returns
+the first 10 findings plus `findingCounts` (per rule, all findings) and
+`omittedFindings`; `delta` omits only the tree; `full` adds the after-tree.
+`max_findings` caps the returned findings in any mode; `status` is always derived
+from every finding.
 Actions include press/click/type/set-value/key/drag/hover; `value` holds text,
 key chords such as `command+a`, or a drag destination `x,y`. Paths come from
 `live_inspect`. `timeout` is positive and at most 60 seconds. Without
