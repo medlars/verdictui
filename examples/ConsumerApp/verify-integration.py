@@ -200,7 +200,8 @@ def crash_capable_source(source: str, request: Path) -> str:
 
 def reload_proof(launcher: Path, root: Path) -> None:
     """A real separate package changes code while transport PID remains stable."""
-    with tempfile.TemporaryDirectory(prefix="vui-reload-", dir="/tmp") as temporary:
+    # B108: a fixed /tmp parent for a throwaway copy of the example that this script deletes.
+    with tempfile.TemporaryDirectory(prefix="vui-reload-", dir="/tmp") as temporary:  # nosec B108
         copied = Path(temporary) / "ConsumerApp"
         shutil.copytree(
             root, copied, ignore=shutil.ignore_patterns(".build", ".swiftpm", "__pycache__")

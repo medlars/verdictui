@@ -86,7 +86,7 @@ def host_is_dark() -> bool | None:
     """
     try:
         done = subprocess.run(
-            ["osascript", "-e", _APPEARANCE_QUERY],
+            ["osascript", "-e", _APPEARANCE_QUERY],  # nosec B607 - osascript from the fixed system PATH
             capture_output=True,
             text=True,
             check=False,
@@ -139,15 +139,21 @@ def _product_sweep(binary: Path, app: Path, expected: str) -> int:
 
 def _measure(binary: Path, app: Path, scheme: str) -> str | None:
     process_name = app.stem
-    subprocess.run(["pkill", "-x", process_name], check=False, timeout=30)
+    subprocess.run(["pkill", "-x", process_name], check=False, timeout=30)  # nosec B607 - fixed system PATH
     time.sleep(2)
     try:
         subprocess.run(
-            ["open", "-n", "-a", str(app), "--args", *LAUNCH_ARGS[scheme]], check=True, timeout=60
+            ["open", "-n", "-a", str(app), "--args", *LAUNCH_ARGS[scheme]],  # nosec B607
+            check=True,
+            timeout=60,
         )
         time.sleep(SETTLE_SECONDS)
         pid = subprocess.run(
-            ["pgrep", "-nx", process_name], capture_output=True, text=True, check=True, timeout=30
+            ["pgrep", "-nx", process_name],  # nosec B607
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=30,
         ).stdout.strip()
         done = subprocess.run(
             [str(binary), "inspect", "--pid", pid, "--colors"],
@@ -164,7 +170,7 @@ def _measure(binary: Path, app: Path, scheme: str) -> str | None:
         print(f"[{scheme}] could not measure: {error}", file=sys.stderr)
         return None
     finally:
-        subprocess.run(["pkill", "-x", process_name], check=False, timeout=30)
+        subprocess.run(["pkill", "-x", process_name], check=False, timeout=30)  # nosec B607 - fixed system PATH
 
 
 def main(argv: list[str]) -> int:
