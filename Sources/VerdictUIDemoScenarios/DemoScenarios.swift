@@ -72,6 +72,10 @@ public struct DemoScenarioEntry {
     /// way and for the same reason as ``host``: the concrete type is erased.
     private let witnessView: @Sendable @MainActor () -> AnyView
 
+    /// The ``ScenarioRegistry`` view of this member, built from the same
+    /// `viewport` and `make` as the demo entry so the catalog lists scenarios once.
+    fileprivate let registryEntry: ScenarioEntry
+
     /// - Parameters:
     ///   - viewport: value for ``recommendedViewport``.
     ///   - probeIDs: value for ``probeIDs``.
@@ -96,6 +100,7 @@ public struct DemoScenarioEntry {
             // defect — an engine accusing the UI of its own harness's choice.
             AnyView(WitnessScenarioRoot(scenario: make(), state: ScenarioState()))
         }
+        self.registryEntry = ScenarioEntry(viewport: viewport, make: make)
     }
 
     /// The scenario's view, for hosting in the Wave 8 witness window.
@@ -207,32 +212,11 @@ public enum DemoScenarios {
     /// probe ids. Collapsing them would either push a demo-only assertion into
     /// the consumer surface or drop it entirely.
     ///
-    /// So this rebuilds rather than casts, and the scenarios are named
-    /// explicitly. That is the same cost ``ScenarioRegistry``'s own doc comment
-    /// accepts for static registration, and for the same reason: a scenario
-    /// missing here fails visibly at the list rather than by being absent from
-    /// a CLI run nobody audits.
+    /// So each ``DemoScenarioEntry`` carries a ``ScenarioEntry`` built from the
+    /// same registration, and ``registry`` is ``all`` mapped — one hand-maintained
+    /// list, two surfaces.
     public static var registry: ScenarioRegistry {
-        ScenarioRegistry([
-            ScenarioEntry(viewport: TruncatingLabelScenario.recommendedViewport) {
-                TruncatingLabelScenario()
-            },
-            ScenarioEntry(viewport: OverlappingBadgesScenario.recommendedViewport) {
-                OverlappingBadgesScenario()
-            },
-            ScenarioEntry(viewport: OffscreenButtonScenario.recommendedViewport) {
-                OffscreenButtonScenario()
-            },
-            ScenarioEntry(viewport: UndersizedTapTargetScenario.recommendedViewport) {
-                UndersizedTapTargetScenario()
-            },
-            ScenarioEntry(viewport: ToggleLayoutScenario.recommendedViewport) {
-                ToggleLayoutScenario()
-            },
-            ScenarioEntry(viewport: CleanSettingsScenario.recommendedViewport) {
-                CleanSettingsScenario()
-            },
-        ])
+        ScenarioRegistry(all.map(\.registryEntry))
     }
 }
 
