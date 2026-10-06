@@ -72,6 +72,11 @@ public struct DemoScenarioEntry {
     /// way and for the same reason as ``host``: the concrete type is erased.
     private let witnessView: @Sendable @MainActor () -> AnyView
 
+    /// Builds the ``ScenarioEntry`` for this catalog member. Stored for the same
+    /// reason as ``host``: the concrete scenario type exists only inside
+    /// ``init(viewport:probeIDs:make:)``.
+    private let makeRegistryEntry: @Sendable () -> ScenarioEntry
+
     /// - Parameters:
     ///   - viewport: value for ``recommendedViewport``.
     ///   - probeIDs: value for ``probeIDs``.
@@ -96,6 +101,17 @@ public struct DemoScenarioEntry {
             // defect — an engine accusing the UI of its own harness's choice.
             AnyView(WitnessScenarioRoot(scenario: make(), state: ScenarioState()))
         }
+        self.makeRegistryEntry = {
+            ScenarioEntry(viewport: viewport, make: make)
+        }
+    }
+
+    /// The ``ScenarioEntry`` this catalog member registers as.
+    ///
+    /// ``DemoScenarios/registry`` maps ``all`` through this; one catalog list,
+    /// two entry shapes.
+    public func scenarioEntry() -> ScenarioEntry {
+        makeRegistryEntry()
     }
 
     /// The scenario's view, for hosting in the Wave 8 witness window.
@@ -207,32 +223,9 @@ public enum DemoScenarios {
     /// probe ids. Collapsing them would either push a demo-only assertion into
     /// the consumer surface or drop it entirely.
     ///
-    /// So this rebuilds rather than casts, and the scenarios are named
-    /// explicitly. That is the same cost ``ScenarioRegistry``'s own doc comment
-    /// accepts for static registration, and for the same reason: a scenario
-    /// missing here fails visibly at the list rather than by being absent from
-    /// a CLI run nobody audits.
+    /// Derived from ``all`` so the catalog and the registry cannot drift.
     public static var registry: ScenarioRegistry {
-        ScenarioRegistry([
-            ScenarioEntry(viewport: TruncatingLabelScenario.recommendedViewport) {
-                TruncatingLabelScenario()
-            },
-            ScenarioEntry(viewport: OverlappingBadgesScenario.recommendedViewport) {
-                OverlappingBadgesScenario()
-            },
-            ScenarioEntry(viewport: OffscreenButtonScenario.recommendedViewport) {
-                OffscreenButtonScenario()
-            },
-            ScenarioEntry(viewport: UndersizedTapTargetScenario.recommendedViewport) {
-                UndersizedTapTargetScenario()
-            },
-            ScenarioEntry(viewport: ToggleLayoutScenario.recommendedViewport) {
-                ToggleLayoutScenario()
-            },
-            ScenarioEntry(viewport: CleanSettingsScenario.recommendedViewport) {
-                CleanSettingsScenario()
-            },
-        ])
+        ScenarioRegistry(all.map { $0.scenarioEntry() })
     }
 }
 
