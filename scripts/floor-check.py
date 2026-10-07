@@ -7,10 +7,12 @@ Run: python3.14 scripts/floor-check.py
 
 import json
 import re
-import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from trusted_exe import trusted_exe  # noqa: E402 - vendored sibling
 
 ROOT = Path(__file__).resolve().parents[1]
 SLUG = "verdictui"
@@ -103,7 +105,10 @@ for skill_dir in [SLUG, f"{SLUG}-audit"]:
 
 # GitHub remote — absolute git path (B607: partial paths resolve via caller's PATH)
 _GIT_REMOTE_TIMEOUT_SECONDS = 30
-_git = shutil.which("git")
+try:
+    _git = trusted_exe("git")
+except FileNotFoundError:
+    _git = None
 if _git is None:
     GAPS.append({"item": "GitHub remote", "path": ".git/config", "status": "git not installed"})
 else:

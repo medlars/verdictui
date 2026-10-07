@@ -21,6 +21,9 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from trusted_exe import trusted_exe  # noqa: E402 - vendored sibling
+
 _USER_HOME = Path.home()
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PROJECT_NAME = "VerdictUI"
@@ -357,7 +360,7 @@ def contention_evidence() -> ContentionEvidence | None:
     for pattern in CONTENTION_PROCESS_PATTERNS:
         try:
             probe = subprocess.run(  # noqa: S603 — argv is a module constant
-                ["pgrep", "-f", pattern],
+                [trusted_exe("pgrep"), "-f", pattern],
                 capture_output=True,
                 text=True,
                 timeout=CONTENTION_PROBE_TIMEOUT_SECONDS,

@@ -18,6 +18,9 @@ from typing import Any
 
 import workbench_identity as identity
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from trusted_exe import trusted_exe  # noqa: E402 - vendored sibling
+
 SCOPE = ["workbench-connected-workflow"]
 ROOT = Path(__file__).resolve().parents[1]
 CRITERIA = {"alignment", "clipping", "contrast", "state-clarity", "motion-preference"}
@@ -64,7 +67,7 @@ def start(root: Path):
         raise ValueError("coverage directory cannot be a symlink")
     relative = ".verdictui/coverage-attempt.json"
     ignored = subprocess.run(
-        ["git", "-C", str(root), "check-ignore", "--", relative],
+        [trusted_exe("git"), "-C", str(root), "check-ignore", "--", relative],
         capture_output=True,
         timeout=5,
         check=False,
