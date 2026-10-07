@@ -29,6 +29,11 @@ from verdictui_pm_swift import (
     _run_locked_swift_build_product,
 )
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from trusted_exe import trusted_exe  # noqa: E402 - vendored sibling
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 _PYTEST_EVIDENCE_PATH = S.PROJECT_ROOT / "logs" / "pytest-latest.json"
 WORKBENCH_NATIVE_TIMEOUT = 40
 
@@ -476,7 +481,7 @@ class VerdictUISmokeMixin:
             try:
                 prepared = subprocess.run(
                     [
-                        "bash",
+                        trusted_exe("bash"),
                         str(S.PROJECT_ROOT / "scripts/build-workbench-acceptance.sh"),
                         "debug",
                     ],
