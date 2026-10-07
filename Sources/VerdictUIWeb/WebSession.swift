@@ -228,9 +228,7 @@ public actor WebSession {
                 try await Task.sleep(for: .milliseconds(50))
             }
             await transport.close()
-            if await browser.isRunning() {
-                try await browser.terminate(grace: 1)
-            }
+            try await browser.terminate(grace: 1)
             lock.release()
         }
         closingTask = task

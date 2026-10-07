@@ -668,9 +668,11 @@ final class WebCredentialLifecycleTests: XCTestCase {
     func testSessionCloseDispatchesBrowserCloseBeforeCredentialDrain() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("verdictui-close-order-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }
-        let resolver = root.appendingPathComponent("slow-resolver")
+        let resolver = FileManager.default.temporaryDirectory
+            .appendingPathComponent("verdictui-slow-resolver-\(UUID().uuidString)")
         try "#!/bin/sh\nsleep 2\n".write(to: resolver, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: resolver.path)
+        defer { try? FileManager.default.removeItem(at: resolver) }
         let lock = try ProfileLock.acquire(profile: "owned", registry: ProfileRegistry(root: root))
         let identity = OrderlyBrowserIdentity(profileLockPath: lock.path)
         let browser = HeadlessBrowser(process: identity,
@@ -690,8 +692,8 @@ final class WebCredentialLifecycleTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(100))
         XCTAssertTrue(identity.events.contains("Browser.close"),
             "Browser.close must be dispatched while credential teardown is still in flight")
-        resolve.cancel()
         try await closing.value
+        resolve.cancel()
     }
 
     private func exerciseMCPShutdown(crash: Bool, delayedBrowserExit: Bool = false) async throws {
