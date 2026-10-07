@@ -99,37 +99,10 @@ public enum AppKitTreeRunner {
         case couldNotProduce = 2
     }
 
-    /// Run the runner against the process's own arguments and exit.
-    ///
-    /// Terminates the process, which is what a `main.swift` wants. Use
-    /// ``run(arguments:subjects:output:)`` to drive the same logic from a test
-    /// without ending the test process.
-    ///
-    /// ### Call this from `main.swift` via ``launch(subjects:)``, not directly
-    ///
-    /// Top-level code in `main.swift` is NOT main-actor-isolated, so calling
-    /// this `@MainActor` method there fails to compile under Swift 6 with
-    /// "call to main actor-isolated static method in a synchronous nonisolated
-    /// context". Measured against a real consumer package before this note
-    /// existed: three errors, none of which name the fix. ``launch(subjects:)``
-    /// is nonisolated and does the hop itself.
-    ///
-    /// The rename is a `renamed:` deprecation rather than a doc note, because a
-    /// doc note is only read by someone who already suspects a problem — and the
-    /// person hitting this is looking at three isolation errors that name
-    /// neither this method nor the fix. The compiler's fix-it names both.
-    @available(*, deprecated, renamed: "launch(subjects:)", message: """
-        call launch(subjects:) from main.swift — top-level code is not \
-        main-actor-isolated, so calling this @MainActor method there fails to compile
-        """)
-    public static func main(subjects: [AppKitSubject]) -> Never {
-        exit(runMain(subjects: subjects).rawValue)
-    }
-
-    /// ``main(subjects:)`` without the `exit` — the process's own arguments,
-    /// written to the process's own streams, returning the status instead of
-    /// terminating. Split out so ``launch(subjects:)`` can exit from the main
-    /// queue, and so a test can drive the argv path without ending itself.
+    /// The process's own arguments, written to the process's own streams,
+    /// returning the status instead of terminating. Split out so
+    /// ``launch(subjects:)`` can exit from the main queue, and so a test can
+    /// drive the argv path without ending itself.
     static func runMain(subjects: [AppKitSubject]) -> Status {
         run(
             arguments: Array(CommandLine.arguments.dropFirst()),
