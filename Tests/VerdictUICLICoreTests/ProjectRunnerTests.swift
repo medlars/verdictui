@@ -200,6 +200,49 @@ extension ProjectRunnerTests {
         }
     }
 
+    func testBuiltRunnerPathUsesShowBinPathNotSymlink() throws {
+        try project(runner: ".build/debug/Consumer") { root in
+            try JSONSerialization.data(withJSONObject: ["runner": ".build/debug/Consumer", "buildProduct": "Consumer"])
+                .write(to: root.appendingPathComponent(".verdictui/config.json"))
+            let nativeBin = root.appendingPathComponent(".build/arm64-apple-macosx/debug", isDirectory: true)
+            try FileManager.default.createDirectory(at: nativeBin, withIntermediateDirectories: true)
+            let nativeRunner = nativeBin.appendingPathComponent("Consumer")
+            try Data("#!/bin/sh\necho native\n".utf8).write(to: nativeRunner)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: nativeRunner.path)
+
+            let staleBin = root.appendingPathComponent("stale/debug", isDirectory: true)
+            try FileManager.default.createDirectory(at: staleBin, withIntermediateDirectories: true)
+            let staleRunner = staleBin.appendingPathComponent("Consumer")
+            try Data("#!/bin/sh\necho stale\n".utf8).write(to: staleRunner)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: staleRunner.path)
+            try FileManager.default.createSymbolicLink(
+                at: root.appendingPathComponent(".build/debug"), withDestinationURL: staleBin)
+
+            let executable = root.appendingPathComponent("swift-stub")
+            let rootPath = root.path
+            try Data(
+                ("""
+                #!/bin/sh
+                ROOT='\(rootPath)'
+                for arg; do
+                  if [ "$arg" = --show-bin-path ]; then
+                    echo "$ROOT/.build/arm64-apple-macosx/debug"
+                    exit 0
+                  fi
+                done
+                printf '%s\\n' "$@" > arguments.txt
+                exit 0
+                """).utf8
+            ).write(to: executable)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
+
+            let resolved = try XCTUnwrap(
+                ProjectRunner.buildIfConfigured(projectRoot: root, swiftExecutable: executable))
+            XCTAssertEqual(resolved.standardizedFileURL, nativeRunner.standardizedFileURL)
+            XCTAssertNotEqual(resolved.standardizedFileURL, staleRunner.standardizedFileURL)
+        }
+    }
+
     func testBuildUsesSafeArgumentsProjectRootAndReleaseConfiguration() throws {
         try buildProject(settings: ["buildProduct": "Consumer;echo-not-a-shell", "configuration": "release"],
                          script: "printf '%s\\n' \"$@\" > arguments.txt\npwd > cwd.txt") { root, executable in
@@ -207,6 +250,7 @@ extension ProjectRunnerTests {
             let arguments = try String(contentsOf: root.appendingPathComponent("arguments.txt"), encoding: .utf8)
             XCTAssertTrue(arguments.contains("--product=Consumer;echo-not-a-shell\n"))
             XCTAssertTrue(arguments.contains("--configuration=release\n"))
+            XCTAssertTrue(arguments.contains("--build-system\nnative\n"))
             XCTAssertTrue(arguments.contains("--package-path\n\(root.resolvingSymlinksInPath().path)\n"))
             let cwd = try String(contentsOf: root.appendingPathComponent("cwd.txt"), encoding: .utf8)
                 .trimmingCharacters(in: .whitespacesAndNewlines)

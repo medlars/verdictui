@@ -161,20 +161,69 @@ public enum ProjectRunner {
         ].contains(verb)
     }
 
+    private static func swiftBuildArguments(
+        build: ProjectScenarios.BuildConfiguration, extra: [String] = []
+    ) -> [String] {
+        [
+            "swift", "build", "--package-path", build.packageRoot.path,
+            "--product=\(build.product)", "--configuration=\(build.configuration)",
+            "--build-system", "native", "--jobs", "2",
+        ] + extra
+    }
+
+    private static func builtProductExecutable(
+        build: ProjectScenarios.BuildConfiguration,
+        projectRoot: URL,
+        swiftExecutable: URL,
+        environment: [String: String]
+    ) throws -> URL {
+        let output = Pipe()
+        let process = try GuardedProcess.spawn(
+            executable: swiftExecutable,
+            arguments: swiftBuildArguments(build: build, extra: ["--show-bin-path"]),
+            directory: projectRoot, environment: environment,
+            standardOutput: output.fileHandleForWriting.fileDescriptor,
+            standardError: STDERR_FILENO)
+        defer { try? output.fileHandleForWriting.close() }
+        while try process.status() == nil {
+            _ = process.waitForExitEvent(timeout: 0.025)
+        }
+        guard try process.stop(grace: 0) == 0 else {
+            throw Failure(description: "could not resolve built runner location")
+        }
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        guard
+            let directory = String(data: data, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+            !directory.isEmpty
+        else {
+            throw Failure(description: "could not resolve built runner location")
+        }
+        let executable = URL(fileURLWithPath: directory, isDirectory: true)
+            .appendingPathComponent(build.product)
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: executable.path, isDirectory: &isDirectory),
+            !isDirectory.boolValue,
+            FileManager.default.isExecutableFile(atPath: executable.path)
+        else {
+            throw Failure(description: "built runner is missing or not executable: \(executable.path)")
+        }
+        return executable
+    }
+
+    @discardableResult
     static func buildIfConfigured(
         projectRoot: URL,
         timeout: TimeInterval? = nil,
         swiftExecutable: URL = URL(fileURLWithPath: "/usr/bin/env"),
         shouldCancel: () -> Bool = { false }
-    ) throws {
+    ) throws -> URL? {
         guard let build = try ProjectScenarios.buildConfiguration(projectRoot: projectRoot) else {
-            return
+            return nil
         }
         let timeout = timeout ?? build.timeoutSeconds
-        let arguments = [
-            "swift", "build", "--package-path", build.packageRoot.path,
-            "--product=\(build.product)", "--configuration=\(build.configuration)", "--jobs", "2",
-        ]
+        let environment = ProcessInfo.processInfo.environment
+        let arguments = swiftBuildArguments(build: build)
         let event = try JSONSerialization.data(
             withJSONObject: [
                 "event": "project-build", "product": build.product,
@@ -185,7 +234,7 @@ public enum ProjectRunner {
         try withBuildInterruption { interruption in
             let process = try GuardedProcess.spawn(
                 executable: swiftExecutable, arguments: arguments,
-                directory: projectRoot, environment: ProcessInfo.processInfo.environment,
+                directory: projectRoot, environment: environment,
                 standardOutput: STDERR_FILENO, standardError: STDERR_FILENO)
             do {
                 let deadline = ProcessInfo.processInfo.systemUptime + timeout
@@ -210,6 +259,9 @@ public enum ProjectRunner {
                 throw error
             }
         }
+        return try builtProductExecutable(
+            build: build, projectRoot: projectRoot, swiftExecutable: swiftExecutable,
+            environment: environment)
     }
 
     static func isStockDaemon(
@@ -229,9 +281,10 @@ public enum ProjectRunner {
                     "project runner delegated back to verdictui; use VerdictUIRunner.main(registry:)"
             )
         }
+        var builtRunner: URL?
         if let root = ProjectScenarios.findProjectRoot(startingAt: current) {
             do {
-                try buildIfConfigured(projectRoot: root)
+                builtRunner = try buildIfConfigured(projectRoot: root)
             } catch let failure as Failure {
                 guard let number = failure.interruption else { throw failure }
                 FileHandle.standardError.write(Data("verdictui: \(failure)\n".utf8))
@@ -245,6 +298,11 @@ public enum ProjectRunner {
                 alreadyDelegated: ProcessInfo.processInfo.environment[delegationMarker] != nil
             )
         else { return }
+        let build = try ProjectScenarios.buildConfiguration(projectRoot: target.projectRoot)
+        let runner =
+            builtRunner.flatMap { built in
+                build.map { $0.product == built.lastPathComponent ? built : nil } ?? nil
+            } ?? target.executable
         // Resolve data/baseline paths consistently even when invoked from Sources/Feature.
         guard chdir(target.projectRoot.path) == 0,
             setenv(delegationMarker, target.projectRoot.path, 1) == 0
@@ -253,11 +311,11 @@ public enum ProjectRunner {
                 description: "could not prepare project runner: \(String(cString: strerror(errno)))"
             )
         }
-        let arguments = [target.executable.path] + CommandLine.arguments.dropFirst()
+        let arguments = [runner.path] + CommandLine.arguments.dropFirst()
         let pointers = arguments.map { strdup($0) }
         defer { pointers.forEach { free($0) } }
         var argv = pointers + [nil]
-        _ = argv.withUnsafeMutableBufferPointer { execv(target.executable.path, $0.baseAddress!) }
+        _ = argv.withUnsafeMutableBufferPointer { execv(runner.path, $0.baseAddress!) }
         throw Failure(
             description: "could not execute project runner: \(String(cString: strerror(errno)))")
     }
