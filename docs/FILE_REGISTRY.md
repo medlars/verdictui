@@ -259,6 +259,7 @@
 | `docs/business-decisions.md`                                         | Business/marketing decision history — founding Q&A, open-core model, naming                                                                            | Active | 2026-08-04 |
 | `scripts/verdictui-pm.py` | PM entrypoint — CLI, `VerdictUIPM` composition, stage order, query mode | Active | 2026-08-30 |
 | `scripts/verdictui_pm_support.py` | PM shared state — project paths, constants, logging, contention probe, timing lane. SINGLE OWNER of every name the suite monkeypatches, reached as `S.<name>` so a patch binds at call time | Active | 2026-08-30 |
+| `scripts/trusted_exe.py` | Vendored copy of shared-libs `trusted_exe`: resolves subprocess argv[0] from fixed system folders, never $PATH (bandit B607, owner decision CTS-5BBEA37B) | Active | 2026-10-07 |
 | `scripts/verdictui_pm_swift.py` | PM SwiftPM layer — lock files, runner acquisition, streamed test, locked product build, process-group termination | Active | 2026-08-30 |
 | `scripts/verdictui_pm_stages.py` | PM stage mixin — build, test, floor, contracts, architecture, lint, demo, governance wrappers | Active | 2026-08-30 |
 | `scripts/verdictui_pm_smoke.py` | PM stage mixin — CLI/transport smoke, mutation catalog, installed parity, stale buffer, pytest | Active | 2026-09-29 |
