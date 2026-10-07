@@ -131,16 +131,7 @@ public enum ProjectRunner {
         {
             return nil
         }
-        var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: executable.path, isDirectory: &isDirectory),
-            !isDirectory.boolValue,
-            FileManager.default.isExecutableFile(atPath: executable.path)
-        else {
-            throw Failure(
-                description:
-                    "project runner is missing or not executable: \(executable.path); build the consumer's runner first"
-            )
-        }
+        try validateDeclaredRunnerExecutable(at: executable)
         return Destination(executable: executable, projectRoot: root)
     }
 
@@ -159,6 +150,19 @@ public enum ProjectRunner {
         return [
             "list", "render", "verify", "actions", "act", "focus", "baseline", "sweep", "daemon", "mcp",
         ].contains(verb)
+    }
+
+    private static func validateDeclaredRunnerExecutable(at executable: URL) throws {
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: executable.path, isDirectory: &isDirectory),
+            !isDirectory.boolValue,
+            FileManager.default.isExecutableFile(atPath: executable.path)
+        else {
+            throw Failure(
+                description:
+                    "project runner is missing or not executable: \(executable.path); build the consumer's runner first"
+            )
+        }
     }
 
     private static func swiftBuildArguments(
@@ -188,7 +192,7 @@ public enum ProjectRunner {
         while try process.status() == nil {
             _ = process.waitForExitEvent(timeout: 0.025)
         }
-        guard try process.stop(grace: 0) == 0 else {
+        if try process.stop(grace: 0) != 0 {
             throw Failure(description: "could not resolve built runner location")
         }
         let data = output.fileHandleForReading.readDataToEndOfFile()
@@ -201,13 +205,7 @@ public enum ProjectRunner {
         }
         let executable = URL(fileURLWithPath: directory, isDirectory: true)
             .appendingPathComponent(build.product)
-        var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: executable.path, isDirectory: &isDirectory),
-            !isDirectory.boolValue,
-            FileManager.default.isExecutableFile(atPath: executable.path)
-        else {
-            throw Failure(description: "built runner is missing or not executable: \(executable.path)")
-        }
+        try validateDeclaredRunnerExecutable(at: executable)
         return executable
     }
 
