@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Removed the deprecated `@MainActor` AppKit runner process entry point in favor
+  of `AppKitTreeRunner.launch(subjects:)` from consumer `main.swift` and
+  `AppKitTreeRunner.run(...)` from tests.
+
 - Homebrew now installs a signed, notarized universal binary published to the
   public `medlars/verdictui-releases` repo instead of building the source
   tarball, so the source repo can be private. `scripts/release.sh` builds,

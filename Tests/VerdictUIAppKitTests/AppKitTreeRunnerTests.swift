@@ -1,5 +1,5 @@
 // The runner's own tests. `run(arguments:subjects:output:)` rather than
-// `main(subjects:)` because the latter calls `exit`, and a test that ends the
+// `launch(subjects:)` because the latter calls `exit`, and a test that ends the
 // test process reports nothing at all.
 import AppKit
 import VerdictUIKernel
