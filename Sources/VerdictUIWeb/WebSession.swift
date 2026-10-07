@@ -217,10 +217,9 @@ public actor WebSession {
             // SIGKILLs Chrome before it commits the profile (localStorage lost on
             // loaded CI runners, CIS-4ADF5658). Browser.close runs Chrome's own
             // orderly exit; the reply may never arrive because the socket closes.
-            // Dispatch Browser.close before credential teardown so MCP SIGTERM
-            // does not spend the orderly-exit budget while resolvers drain (CIS-8FAD7552).
-            _ = try? await transport.send(method: "Browser.close", timeout: .seconds(2))
+            // TEMP CI: reverted close order to prove regression test (CIS-8FAD7552).
             try await credentials.close()
+            _ = try? await transport.send(method: "Browser.close", timeout: .seconds(2))
             let deadline = ContinuousClock.now + .seconds(Self.orderlyExitGrace)
             while ContinuousClock.now < deadline {
                 if !(await browser.isRunning()) { break }
