@@ -213,15 +213,24 @@ public actor WebSession {
         guard !closed else { return }
         closed = true
         let task = Task { [credentials, transport, browser, lock] in
-            try await credentials.close()
             // Signals are not a shutdown: SIGTERM takes ~5 s and the 1 s grace then
             // SIGKILLs Chrome before it commits the profile (localStorage lost on
             // loaded CI runners, CIS-4ADF5658). Browser.close runs Chrome's own
             // orderly exit; the reply may never arrive because the socket closes.
+            // Dispatch Browser.close before credential teardown so MCP SIGTERM
+            // does not spend the orderly-exit budget while resolvers drain (CIS-8FAD7552).
             _ = try? await transport.send(method: "Browser.close", timeout: .seconds(2))
-            _ = await browser.awaitExit(within: Self.orderlyExitGrace)
+            try await credentials.close()
+            let deadline = ContinuousClock.now + .seconds(Self.orderlyExitGrace)
+            while ContinuousClock.now < deadline {
+                if !(await browser.isRunning()) { break }
+                try Task.checkCancellation()
+                try await Task.sleep(for: .milliseconds(50))
+            }
             await transport.close()
-            try await browser.terminate(grace: 1)
+            if await browser.isRunning() {
+                try await browser.terminate(grace: 1)
+            }
             lock.release()
         }
         closingTask = task

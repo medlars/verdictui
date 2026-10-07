@@ -665,6 +665,35 @@ final class WebCredentialLifecycleTests: XCTestCase {
         try await exerciseMCPShutdown(crash: false, delayedBrowserExit: true)
     }
 
+    func testSessionCloseDispatchesBrowserCloseBeforeCredentialDrain() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("verdictui-close-order-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let resolver = root.appendingPathComponent("slow-resolver")
+        try "#!/bin/sh\nsleep 2\n".write(to: resolver, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: resolver.path)
+        let lock = try ProfileLock.acquire(profile: "owned", registry: ProfileRegistry(root: root))
+        let identity = OrderlyBrowserIdentity(profileLockPath: lock.path)
+        let browser = HeadlessBrowser(process: identity,
+            endpoint: DevtoolsEndpoint(port: 12345, browserPath: "/devtools/browser/fixture"), profileDirectory: root)
+        let url = URL(fileURLWithPath: "/fixture")
+        let socket = OrderlyBrowserSocket(identity: identity)
+        let credentials = WebCredentials(environment: [
+            "VERDICTUI_WEB_OP": resolver.path,
+            "VERDICTUI_WEB_CRED_HOLD": "op://fixture/item/password",
+        ])
+        let session = WebSession(profile: "owned", browser: browser, transport: CDPTransport(socket: socket),
+            pageSessionID: "fixture", lock: lock, credentials: credentials,
+            viewport: Rect(x: 0, y: 0, width: 1280, height: 800), url: url)
+        let resolve = Task { _ = try? await credentials.resolve("HOLD") }
+        try await Task.sleep(for: .milliseconds(50))
+        let closing = Task { try await session.close() }
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertTrue(identity.events.contains("Browser.close"),
+            "Browser.close must be dispatched while credential teardown is still in flight")
+        resolve.cancel()
+        try await closing.value
+    }
+
     private func exerciseMCPShutdown(crash: Bool, delayedBrowserExit: Bool = false) async throws {
         let kind: LifecycleDiagnosticExport.Kind = crash ? .crash : delayedBrowserExit ? .late : .terminate
         let (root, executable) = try fixture(diagnosticKind: kind)
@@ -695,8 +724,20 @@ final class WebCredentialLifecycleTests: XCTestCase {
             let wrapper = root.appendingPathComponent("delayed-browser")
             let script = #"""
             #!/usr/bin/env python3
-            import json,os,pathlib,signal,subprocess,sys,threading,time
+            import json,os,pathlib,signal,subprocess,sys,threading,time,tempfile
             root=pathlib.Path(os.environ['RESOLVER_ROOT'])
+            def publish(name,payload):
+                path=root/name
+                fd,tmp=tempfile.mkstemp(dir=root,prefix=name+'.',suffix='.tmp')
+                try:
+                    os.write(fd,json.dumps(payload).encode())
+                    os.fsync(fd)
+                finally:
+                    os.close(fd)
+                os.replace(tmp,path)
+                dirfd=os.open(root,os.O_DIRECTORY)
+                try: os.fsync(dirfd)
+                finally: os.close(dirfd)
             errors=os.open(root/'wrapper-stderr.log',os.O_WRONLY|os.O_CREAT|os.O_APPEND,0o600)
             os.dup2(errors,2)
             os.close(errors)
@@ -709,7 +750,7 @@ final class WebCredentialLifecycleTests: XCTestCase {
             (root/'browser-identity.json').write_text(json.dumps({'at':time.clock_gettime(time.CLOCK_MONOTONIC),'pid':browser.pid,'pgid':os.getpgid(browser.pid)}))
             code=browser.wait()
             exited=time.clock_gettime(time.CLOCK_MONOTONIC)
-            (root/'browser-exit.json').write_text(json.dumps({'code':code,'at':exited}))
+            publish('browser-exit.json',{'code':code,'at':exited})
             # Bound the injected total delay, rather than adding nine seconds
             # after Chrome's variable exit latency. Swift publishes this start
             # atomically before SIGTERM using the same monotonic clock.
