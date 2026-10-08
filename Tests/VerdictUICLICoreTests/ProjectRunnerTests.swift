@@ -185,6 +185,25 @@ extension ProjectRunnerTests {
 }
 
 extension ProjectRunnerTests {
+    private func consumerSwiftStubScript(product: String, body: String) -> String {
+        """
+        #!/bin/sh
+        ROOT="$(pwd)"
+        PRODUCT='\(product)'
+        for arg; do
+          if [ "$arg" = --show-bin-path ]; then
+            touch "$ROOT/invoked-show-bin-path"
+            mkdir -p "$ROOT/stub-bin"
+            printf '#!/bin/sh\\nexit 0\\n' > "$ROOT/stub-bin/$PRODUCT"
+            chmod +x "$ROOT/stub-bin/$PRODUCT"
+            echo "$ROOT/stub-bin"
+            exit 0
+          fi
+        done
+        \(body)
+        """
+    }
+
     private func buildProject(
         settings: [String: Any], script: String = "exit 0",
         _ body: (URL, URL) throws -> Void
@@ -193,10 +212,22 @@ extension ProjectRunnerTests {
             var manifest = settings
             manifest["runner"] = "runner"
             try JSONSerialization.data(withJSONObject: manifest).write(to: root.appendingPathComponent(".verdictui/config.json"))
+            let product = settings["buildProduct"] as? String ?? "Consumer"
             let executable = root.appendingPathComponent("swift-stub")
-            try Data(("#!/bin/sh\n" + script + "\n").utf8).write(to: executable)
+            try Data(consumerSwiftStubScript(product: product, body: script).utf8).write(to: executable)
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
             try body(root, executable)
+        }
+    }
+
+    func testBuildTreeResolutionSkippedForExternalRunner() throws {
+        try buildProject(settings: ["buildProduct": "Consumer"], script: "touch invoked-build\n") { root, executable in
+            try JSONSerialization.data(withJSONObject: [
+                "runner": "/usr/bin/true", "buildProduct": "Consumer",
+            ]).write(to: root.appendingPathComponent(".verdictui/config.json"))
+            XCTAssertNil(try ProjectRunner.buildIfConfigured(projectRoot: root, swiftExecutable: executable))
+            XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("invoked-build").path))
+            XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("invoked-show-bin-path").path))
         }
     }
 

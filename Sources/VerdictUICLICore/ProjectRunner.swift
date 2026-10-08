@@ -165,6 +165,16 @@ public enum ProjectRunner {
         }
     }
 
+    /// True when the manifest runner is declared under the project's `.build` tree.
+    private static func declaresBuildTreeRunner(projectRoot: URL) throws -> Bool {
+        guard let runner = try ProjectScenarios.declaredRunnerStrict(projectRoot: projectRoot) else {
+            return false
+        }
+        let root = projectRoot.resolvingSymlinksInPath().standardizedFileURL
+        let prefix = root.path + "/.build/"
+        return runner.resolvingSymlinksInPath().path.hasPrefix(prefix)
+    }
+
     private static func swiftBuildArguments(
         build: ProjectScenarios.BuildConfiguration, extra: [String] = []
     ) -> [String] {
@@ -179,7 +189,8 @@ public enum ProjectRunner {
         build: ProjectScenarios.BuildConfiguration,
         projectRoot: URL,
         swiftExecutable: URL,
-        environment: [String: String]
+        environment: [String: String],
+        timeout: TimeInterval
     ) throws -> URL {
         let output = Pipe()
         let process = try GuardedProcess.spawn(
@@ -189,7 +200,14 @@ public enum ProjectRunner {
             standardOutput: output.fileHandleForWriting.fileDescriptor,
             standardError: STDERR_FILENO)
         defer { try? output.fileHandleForWriting.close() }
+        let deadline = ProcessInfo.processInfo.systemUptime + min(timeout, 120)
         while try process.status() == nil {
+            if ProcessInfo.processInfo.systemUptime >= deadline {
+                try process.stop(grace: 0.2)
+                throw Failure(
+                    description:
+                        "could not resolve built runner location within \(min(timeout, 120)) seconds")
+            }
             _ = process.waitForExitEvent(timeout: 0.025)
         }
         if try process.stop(grace: 0) != 0 {
@@ -257,9 +275,10 @@ public enum ProjectRunner {
                 throw error
             }
         }
+        guard try declaresBuildTreeRunner(projectRoot: projectRoot) else { return nil }
         return try builtProductExecutable(
             build: build, projectRoot: projectRoot, swiftExecutable: swiftExecutable,
-            environment: environment)
+            environment: environment, timeout: timeout)
     }
 
     static func isStockDaemon(
