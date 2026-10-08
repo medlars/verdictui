@@ -301,6 +301,9 @@ public enum ProjectRunner {
         guard let build = try ProjectScenarios.buildConfiguration(projectRoot: projectRoot) else {
             return
         }
+        if try discoverBuiltProduct(build: build) != nil {
+            return
+        }
         let timeout = timeout ?? build.timeoutSeconds
         let environment = ProcessInfo.processInfo.environment
         let arguments = swiftBuildArguments(build: build)
