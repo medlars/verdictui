@@ -230,15 +230,28 @@ public enum ProjectRunner {
         return executable
     }
 
-    @discardableResult
+    static func resolveBuiltRunnerExecutableAfterBuild(
+        projectRoot: URL,
+        timeout: TimeInterval? = nil,
+        swiftExecutable: URL = URL(fileURLWithPath: "/usr/bin/env")
+    ) throws -> URL? {
+        guard try declaresBuildTreeRunner(projectRoot: projectRoot),
+            let build = try ProjectScenarios.buildConfiguration(projectRoot: projectRoot)
+        else { return nil }
+        let resolutionTimeout = timeout ?? build.timeoutSeconds
+        return try builtProductExecutable(
+            build: build, projectRoot: projectRoot, swiftExecutable: swiftExecutable,
+            environment: ProcessInfo.processInfo.environment, timeout: resolutionTimeout)
+    }
+
     static func buildIfConfigured(
         projectRoot: URL,
         timeout: TimeInterval? = nil,
         swiftExecutable: URL = URL(fileURLWithPath: "/usr/bin/env"),
         shouldCancel: () -> Bool = { false }
-    ) throws -> URL? {
+    ) throws {
         guard let build = try ProjectScenarios.buildConfiguration(projectRoot: projectRoot) else {
-            return nil
+            return
         }
         let timeout = timeout ?? build.timeoutSeconds
         let environment = ProcessInfo.processInfo.environment
@@ -278,10 +291,6 @@ public enum ProjectRunner {
                 throw error
             }
         }
-        guard try declaresBuildTreeRunner(projectRoot: projectRoot) else { return nil }
-        return try builtProductExecutable(
-            build: build, projectRoot: projectRoot, swiftExecutable: swiftExecutable,
-            environment: environment, timeout: timeout)
     }
 
     static func isStockDaemon(
@@ -304,7 +313,8 @@ public enum ProjectRunner {
         var builtRunner: URL?
         if let root = ProjectScenarios.findProjectRoot(startingAt: current) {
             do {
-                builtRunner = try buildIfConfigured(projectRoot: root)
+                try buildIfConfigured(projectRoot: root)
+                builtRunner = try resolveBuiltRunnerExecutableAfterBuild(projectRoot: root)
             } catch let failure as Failure {
                 guard let number = failure.interruption else { throw failure }
                 FileHandle.standardError.write(Data("verdictui: \(failure)\n".utf8))

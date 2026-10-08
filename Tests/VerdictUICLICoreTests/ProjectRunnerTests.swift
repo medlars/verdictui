@@ -225,7 +225,10 @@ extension ProjectRunnerTests {
             try JSONSerialization.data(withJSONObject: [
                 "runner": "/usr/bin/true", "buildProduct": "Consumer",
             ]).write(to: root.appendingPathComponent(".verdictui/config.json"))
-            XCTAssertNil(try ProjectRunner.buildIfConfigured(projectRoot: root, swiftExecutable: executable))
+            try ProjectRunner.buildIfConfigured(projectRoot: root, swiftExecutable: executable)
+            XCTAssertNil(
+                try ProjectRunner.resolveBuiltRunnerExecutableAfterBuild(
+                    projectRoot: root, swiftExecutable: executable))
             XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("invoked-build").path))
             XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("invoked-show-bin-path").path))
         }
@@ -267,8 +270,10 @@ extension ProjectRunnerTests {
             ).write(to: executable)
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
 
+            try ProjectRunner.buildIfConfigured(projectRoot: root, swiftExecutable: executable)
             let resolved = try XCTUnwrap(
-                ProjectRunner.buildIfConfigured(projectRoot: root, swiftExecutable: executable))
+                try ProjectRunner.resolveBuiltRunnerExecutableAfterBuild(
+                    projectRoot: root, swiftExecutable: executable))
             XCTAssertEqual(resolved.standardizedFileURL, nativeRunner.standardizedFileURL)
             XCTAssertNotEqual(resolved.standardizedFileURL, staleRunner.standardizedFileURL)
         }
