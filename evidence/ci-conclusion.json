@@ -1,0 +1,1 @@
+{"completed_at": "2026-10-08T04:03:11Z", "conclusion": "failure", "event": "pull_request", "head_branch": "cursor/project-runner-native-bin-path-d287", "head_repository": "medlars/verdictui", "head_sha": "455c428ab5e7ae88de06acf56d5d3b297ee389d3", "repo": "medlars/verdictui", "run_attempt": "1", "run_id": "37724744513", "schema_version": "1.1.0", "workflow": "CI"}
