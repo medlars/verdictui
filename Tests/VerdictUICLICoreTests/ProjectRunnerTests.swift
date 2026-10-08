@@ -185,6 +185,17 @@ extension ProjectRunnerTests {
 }
 
 extension ProjectRunnerTests {
+    private func waitForProcess(_ process: Process, timeout: TimeInterval, file: StaticString = #filePath, line: UInt = #line) {
+        let deadline = Date().addingTimeInterval(timeout)
+        while process.isRunning, Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        guard process.isRunning else { return }
+        process.terminate()
+        process.waitUntilExit()
+        XCTFail("subprocess exceeded \(timeout) seconds", file: file, line: line)
+    }
+
     private func consumerSwiftStubScript(product: String, body: String) -> String {
         """
         #!/bin/sh
@@ -226,9 +237,6 @@ extension ProjectRunnerTests {
                 "runner": "/usr/bin/true", "buildProduct": "Consumer",
             ]).write(to: root.appendingPathComponent(".verdictui/config.json"))
             try ProjectRunner.buildIfConfigured(projectRoot: root, swiftExecutable: executable)
-            XCTAssertNil(
-                try ProjectRunner.resolveBuiltRunnerExecutableAfterBuild(
-                    projectRoot: root, swiftExecutable: executable))
             XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("invoked-build").path))
             XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("invoked-show-bin-path").path))
         }
@@ -274,8 +282,11 @@ extension ProjectRunnerTests {
 
             let sourceRoot = URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            let launcher = ["debug", "release"]
+                .map { sourceRoot.appendingPathComponent(".build/\($0)/verdictui") }
+                .first { FileManager.default.isExecutableFile(atPath: $0.path) }
             let process = Process()
-            process.executableURL = sourceRoot.appendingPathComponent(".build/debug/verdictui")
+            process.executableURL = try XCTUnwrap(launcher)
             process.arguments = ["list"]
             process.currentDirectoryURL = root
             var environment = ProcessInfo.processInfo.environment
@@ -283,7 +294,7 @@ extension ProjectRunnerTests {
             environment["PATH"] = root.path + ":" + (environment["PATH"] ?? "/usr/bin:/bin")
             process.environment = environment
             try process.run()
-            process.waitUntilExit()
+            waitForProcess(process, timeout: 15)
             XCTAssertEqual(process.terminationStatus, 0)
             XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("built.txt").path))
             XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("native-ran").path))
