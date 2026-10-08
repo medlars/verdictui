@@ -270,7 +270,7 @@ extension ProjectRunnerTests {
             try ProjectRunner.buildIfConfigured(projectRoot: root, swiftExecutable: executable)
             let resolved = try XCTUnwrap(
                 try ProjectRunner.resolveBuiltRunnerExecutableAfterBuild(
-                    projectRoot: root, swiftExecutable: executable, timeout: 5))
+                    projectRoot: root, timeout: 5, swiftExecutable: executable))
             XCTAssertEqual(resolved.standardizedFileURL, nativeRunner.standardizedFileURL)
             XCTAssertNotEqual(resolved.standardizedFileURL, staleRunner.standardizedFileURL)
         }
