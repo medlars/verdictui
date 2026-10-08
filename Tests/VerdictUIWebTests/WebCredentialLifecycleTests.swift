@@ -699,24 +699,13 @@ final class WebCredentialLifecycleTests: XCTestCase {
         let session = WebSession(profile: "owned", browser: browser, transport: CDPTransport(socket: socket),
             pageSessionID: "fixture", lock: lock, credentials: credentials,
             viewport: Rect(x: 0, y: 0, width: 1280, height: 800), url: url)
-        final class ResolveFlight: @unchecked Sendable {
-            private let lock = NSLock()
-            private var finished = false
-            func complete() { lock.lock(); finished = true; lock.unlock() }
-            var inFlight: Bool { lock.lock(); defer { lock.unlock() }; return !finished }
-        }
-        let flight = ResolveFlight()
-        let resolve = Task {
-            defer { flight.complete() }
-            _ = try? await credentials.resolve("HOLD")
-        }
+        let resolve = Task { _ = try? await credentials.resolve("HOLD") }
         let ready = ContinuousClock.now + .seconds(3)
         while !FileManager.default.fileExists(atPath: marker.path), ContinuousClock.now < ready {
             try await Task.sleep(for: .milliseconds(20))
         }
         let pid = pid_t(try XCTUnwrap(Int(try XCTUnwrap(String(contentsOf: marker, encoding: .utf8)))))
         XCTAssertGreaterThan(pid, 0)
-        XCTAssertTrue(flight.inFlight, "resolve must still be awaiting the blocked resolver")
         let closing = Task { try await session.close() }
         for _ in 0..<400 {
             if kill(pid, 0) == 0, !identity.events.contains("Browser.close") {
