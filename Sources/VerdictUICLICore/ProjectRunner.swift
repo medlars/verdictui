@@ -220,11 +220,11 @@ public enum ProjectRunner {
             let candidate = buildRoot.appendingPathComponent(name, isDirectory: true)
                 .appendingPathComponent(build.configuration)
                 .appendingPathComponent(build.product)
-            var isDirectory: ObjCBool = false
-            guard FileManager.default.fileExists(atPath: candidate.path, isDirectory: &isDirectory),
-                !isDirectory.boolValue,
-                FileManager.default.isExecutableFile(atPath: candidate.path)
-            else { continue }
+            do {
+                try validateDeclaredRunnerExecutable(at: candidate)
+            } catch {
+                continue
+            }
             matches.append(candidate.standardizedFileURL)
         }
         guard matches.count == 1, let match = matches.first else { return nil }
