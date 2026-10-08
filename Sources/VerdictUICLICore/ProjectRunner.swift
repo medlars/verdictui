@@ -167,14 +167,15 @@ public enum ProjectRunner {
 
     /// True when the manifest runner is declared under the project's `.build` tree.
     private static func declaresBuildTreeRunner(projectRoot: URL) throws -> Bool {
-        guard let runner = try ProjectScenarios.declaredRunnerStrict(projectRoot: projectRoot) else {
-            return false
-        }
-        let root = projectRoot.resolvingSymlinksInPath().standardizedFileURL
-        let prefix = root.path + "/.build/"
-        // Keep the manifest path literal: resolving symlinks can rewrite
-        // `.build/debug/...` into another directory and skip bin-path lookup.
-        return runner.standardizedFileURL.path.hasPrefix(prefix)
+        let manifest = projectRoot
+            .appendingPathComponent(ProjectScenarios.configDirectory, isDirectory: true)
+            .appendingPathComponent(ProjectScenarios.configFile)
+        guard FileManager.default.fileExists(atPath: manifest.path),
+            let data = try? Data(contentsOf: manifest),
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let runner = json["runner"] as? String
+        else { return false }
+        return runner.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix(".build/")
     }
 
     private static func swiftBuildArguments(
