@@ -178,23 +178,25 @@ public enum ProjectRunner {
         return runner.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix(".build/")
     }
 
-    private static func swiftBuildArguments(
-        build: ProjectScenarios.BuildConfiguration, extra: [String] = []
+    private static func swiftBuildCommandPrefix(
+        build: ProjectScenarios.BuildConfiguration, trailing: [String]
     ) -> [String] {
         [
             "swift", "build", "--package-path", build.packageRoot.path,
             "--product=\(build.product)", "--configuration=\(build.configuration)",
-            "--build-system", "native", "--jobs", "2",
-        ] + extra
+        ] + trailing
+    }
+
+    private static func swiftBuildArguments(
+        build: ProjectScenarios.BuildConfiguration, extra: [String] = []
+    ) -> [String] {
+        swiftBuildCommandPrefix(
+            build: build, trailing: ["--build-system", "native", "--jobs", "2"] + extra)
     }
 
     /// Bin-path lookup only — matches workbench scripts; avoids a second native build pass.
     private static func swiftShowBinPathArguments(build: ProjectScenarios.BuildConfiguration) -> [String] {
-        [
-            "swift", "build", "--package-path", build.packageRoot.path,
-            "--product=\(build.product)", "--configuration=\(build.configuration)",
-            "--show-bin-path",
-        ]
+        swiftBuildCommandPrefix(build: build, trailing: ["--show-bin-path"])
     }
 
     private static let showBinPathWaitCap: TimeInterval = 60
