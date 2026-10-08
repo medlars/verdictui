@@ -737,8 +737,8 @@ final class WebCredentialLifecycleTests: XCTestCase {
             viewport: Rect(x: 0, y: 0, width: 1280, height: 800), url: url)
         let resolve = Task { _ = try? await credentials.resolve("HOLD") }
         let ready = ContinuousClock.now + .seconds(3)
-        while !try CloseOrderWitness.lines(at: orderLog).contains(CloseOrderWitness.resolverReady),
-              ContinuousClock.now < ready {
+        while ContinuousClock.now < ready {
+            if try CloseOrderWitness.lines(at: orderLog).contains(CloseOrderWitness.resolverReady) { break }
             try await Task.sleep(for: .milliseconds(20))
         }
         XCTAssertTrue(try CloseOrderWitness.lines(at: orderLog).contains(CloseOrderWitness.resolverReady))
