@@ -188,6 +188,17 @@ public enum ProjectRunner {
         ] + extra
     }
 
+    /// Bin-path lookup only — matches workbench scripts; avoids a second native build pass.
+    private static func swiftShowBinPathArguments(build: ProjectScenarios.BuildConfiguration) -> [String] {
+        [
+            "swift", "build", "--package-path", build.packageRoot.path,
+            "--product=\(build.product)", "--configuration=\(build.configuration)",
+            "--show-bin-path",
+        ]
+    }
+
+    private static let showBinPathWaitCap: TimeInterval = 60
+
     private static func builtProductExecutable(
         build: ProjectScenarios.BuildConfiguration,
         projectRoot: URL,
@@ -195,21 +206,22 @@ public enum ProjectRunner {
         environment: [String: String],
         timeout: TimeInterval
     ) throws -> URL {
+        let waitBudget = min(timeout, showBinPathWaitCap)
         let output = Pipe()
         let process = try GuardedProcess.spawn(
             executable: swiftExecutable,
-            arguments: swiftBuildArguments(build: build, extra: ["--show-bin-path"]),
+            arguments: swiftShowBinPathArguments(build: build),
             directory: projectRoot, environment: environment,
             standardOutput: output.fileHandleForWriting.fileDescriptor,
             standardError: STDERR_FILENO)
         defer { try? output.fileHandleForWriting.close() }
-        let deadline = ProcessInfo.processInfo.systemUptime + min(timeout, 120)
+        let deadline = ProcessInfo.processInfo.systemUptime + waitBudget
         while try process.status() == nil {
             if ProcessInfo.processInfo.systemUptime >= deadline {
                 try process.stop(grace: 0.2)
                 throw Failure(
                     description:
-                        "could not resolve built runner location within \(min(timeout, 120)) seconds")
+                        "could not resolve built runner location within \(waitBudget) seconds")
             }
             _ = process.waitForExitEvent(timeout: 0.025)
         }
@@ -314,7 +326,8 @@ public enum ProjectRunner {
         if let root = ProjectScenarios.findProjectRoot(startingAt: current) {
             do {
                 try buildIfConfigured(projectRoot: root)
-                builtRunner = try resolveBuiltRunnerExecutableAfterBuild(projectRoot: root)
+                builtRunner = try resolveBuiltRunnerExecutableAfterBuild(
+                    projectRoot: root, timeout: showBinPathWaitCap)
             } catch let failure as Failure {
                 guard let number = failure.interruption else { throw failure }
                 FileHandle.standardError.write(Data("verdictui: \(failure)\n".utf8))
