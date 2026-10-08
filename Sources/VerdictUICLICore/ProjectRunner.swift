@@ -361,12 +361,9 @@ public enum ProjectRunner {
                     "project runner delegated back to verdictui; use VerdictUIRunner.main(registry:)"
             )
         }
-        var builtRunner: URL?
         if let root = ProjectScenarios.findProjectRoot(startingAt: current) {
             do {
                 try buildIfConfigured(projectRoot: root)
-                builtRunner = try resolveBuiltRunnerExecutableAfterBuild(
-                    projectRoot: root, timeout: showBinPathWaitCap)
             } catch let failure as Failure {
                 guard let number = failure.interruption else { throw failure }
                 FileHandle.standardError.write(Data("verdictui: \(failure)\n".utf8))
@@ -380,6 +377,8 @@ public enum ProjectRunner {
                 alreadyDelegated: ProcessInfo.processInfo.environment[delegationMarker] != nil
             )
         else { return }
+        let builtRunner = try resolveBuiltRunnerExecutableAfterBuild(
+            projectRoot: target.projectRoot, timeout: showBinPathWaitCap)
         let build = try ProjectScenarios.buildConfiguration(projectRoot: target.projectRoot)
         let runner =
             builtRunner.flatMap { built in
