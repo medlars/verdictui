@@ -1,0 +1,1 @@
+{"completed_at": "2026-10-08T05:26:31Z", "conclusion": "cancelled", "event": "pull_request", "head_branch": "cursor/project-runner-native-bin-path-d287", "head_repository": "medlars/verdictui", "head_sha": "47eedbe70bf70432a3f1173bb5f8aa63f47da369", "repo": "medlars/verdictui", "run_attempt": "1", "run_id": "37729863062", "schema_version": "1.1.0", "workflow": "CI"}
