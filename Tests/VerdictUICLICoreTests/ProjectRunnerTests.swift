@@ -236,24 +236,25 @@ extension ProjectRunnerTests {
 
     func testBuiltRunnerPathUsesShowBinPathNotSymlink() throws {
         try project(runner: ".build/debug/Consumer") { root in
-            try JSONSerialization.data(withJSONObject: ["runner": ".build/debug/Consumer", "buildProduct": "Consumer"])
-                .write(to: root.appendingPathComponent(".verdictui/config.json"))
+            try JSONSerialization.data(withJSONObject: [
+                "runner": ".build/debug/Consumer", "buildProduct": "Consumer",
+            ]).write(to: root.appendingPathComponent(".verdictui/config.json"))
             let nativeBin = root.appendingPathComponent(".build/arm64-apple-macosx/debug", isDirectory: true)
             try FileManager.default.createDirectory(at: nativeBin, withIntermediateDirectories: true)
             let nativeRunner = nativeBin.appendingPathComponent("Consumer")
-            try Data("#!/bin/sh\necho native\n".utf8).write(to: nativeRunner)
+            try Data("#!/bin/sh\ntouch native-ran\nexit 0\n".utf8).write(to: nativeRunner)
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: nativeRunner.path)
 
             let staleBin = root.appendingPathComponent("stale/debug", isDirectory: true)
             try FileManager.default.createDirectory(at: staleBin, withIntermediateDirectories: true)
             let staleRunner = staleBin.appendingPathComponent("Consumer")
-            try Data("#!/bin/sh\necho stale\n".utf8).write(to: staleRunner)
+            try Data("#!/bin/sh\ntouch stale-ran\nexit 0\n".utf8).write(to: staleRunner)
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: staleRunner.path)
             try FileManager.default.createSymbolicLink(
                 at: root.appendingPathComponent(".build/debug"), withDestinationURL: staleBin)
 
-            let executable = root.appendingPathComponent("swift-stub")
             let rootPath = root.path
+            let executable = root.appendingPathComponent("swift-stub")
             try Data(
                 ("""
                 #!/bin/sh
@@ -264,18 +265,29 @@ extension ProjectRunnerTests {
                     exit 0
                   fi
                 done
-                printf '%s\\n' "$@" > arguments.txt
+                echo built > built.txt
                 exit 0
                 """).utf8
             ).write(to: executable)
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
+            try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("swift"), withDestinationURL: executable)
 
-            try ProjectRunner.buildIfConfigured(projectRoot: root, swiftExecutable: executable)
-            let resolved = try XCTUnwrap(
-                try ProjectRunner.resolveBuiltRunnerExecutableAfterBuild(
-                    projectRoot: root, swiftExecutable: executable))
-            XCTAssertEqual(resolved.standardizedFileURL, nativeRunner.standardizedFileURL)
-            XCTAssertNotEqual(resolved.standardizedFileURL, staleRunner.standardizedFileURL)
+            let sourceRoot = URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            let process = Process()
+            process.executableURL = sourceRoot.appendingPathComponent(".build/debug/verdictui")
+            process.arguments = ["list"]
+            process.currentDirectoryURL = root
+            var environment = ProcessInfo.processInfo.environment
+            environment.removeValue(forKey: ProjectRunner.delegationMarker)
+            environment["PATH"] = root.path + ":" + (environment["PATH"] ?? "/usr/bin:/bin")
+            process.environment = environment
+            try process.run()
+            process.waitUntilExit()
+            XCTAssertEqual(process.terminationStatus, 0)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("built.txt").path))
+            XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("native-ran").path))
+            XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("stale-ran").path))
         }
     }
 
