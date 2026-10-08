@@ -668,9 +668,18 @@ final class WebCredentialLifecycleTests: XCTestCase {
     func testSessionCloseDispatchesBrowserCloseBeforeCredentialDrain() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("verdictui-close-order-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }
+        let marker = root.appendingPathComponent("resolver.pid")
         let resolver = FileManager.default.temporaryDirectory
             .appendingPathComponent("verdictui-slow-resolver-\(UUID().uuidString)")
-        try "#!/bin/sh\nsleep 2\n".write(to: resolver, atomically: true, encoding: .utf8)
+        let script = #"""
+            #!/usr/bin/env python3
+            import os, signal, time
+            with open(os.environ["VERDICTUI_CLOSE_ORDER_MARKER"], "w", encoding="utf-8") as handle:
+                handle.write(str(os.getpid()))
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+            time.sleep(60)
+            """#
+        try script.write(to: resolver, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: resolver.path)
         defer { try? FileManager.default.removeItem(at: resolver) }
         let lock = try ProfileLock.acquire(profile: "owned", registry: ProfileRegistry(root: root))
@@ -682,16 +691,28 @@ final class WebCredentialLifecycleTests: XCTestCase {
         let credentials = WebCredentials(environment: [
             "VERDICTUI_WEB_OP": resolver.path,
             "VERDICTUI_WEB_CRED_HOLD": "op://fixture/item/password",
+            "VERDICTUI_CLOSE_ORDER_MARKER": marker.path,
         ])
         let session = WebSession(profile: "owned", browser: browser, transport: CDPTransport(socket: socket),
             pageSessionID: "fixture", lock: lock, credentials: credentials,
             viewport: Rect(x: 0, y: 0, width: 1280, height: 800), url: url)
         let resolve = Task { _ = try? await credentials.resolve("HOLD") }
-        try await Task.sleep(for: .milliseconds(50))
+        let ready = ContinuousClock.now + .seconds(3)
+        while !FileManager.default.fileExists(atPath: marker.path), ContinuousClock.now < ready {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let pid = pid_t(Int(try XCTUnwrap(String(contentsOf: marker, encoding: .utf8))) ?? -1)
+        XCTAssertGreaterThan(pid, 0)
         let closing = Task { try await session.close() }
-        try await Task.sleep(for: .milliseconds(100))
-        XCTAssertTrue(identity.events.contains("Browser.close"),
-            "Browser.close must be dispatched while credential teardown is still in flight")
+        let observe = ContinuousClock.now + .seconds(5)
+        while ContinuousClock.now < observe {
+            if case .success = await closing.result { break }
+            if kill(pid, 0) == 0, !identity.events.contains("Browser.close") {
+                XCTFail("Browser.close must be dispatched while the credential resolver is still running")
+            }
+            if kill(pid, 0) != 0 { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
         try await closing.value
         resolve.cancel()
     }
