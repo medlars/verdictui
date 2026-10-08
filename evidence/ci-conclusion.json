@@ -1,0 +1,1 @@
+{"completed_at": "2026-10-08T00:53:57Z", "conclusion": "failure", "event": "pull_request", "head_branch": "cursor/cis-8fad7552-late-browser-exit-8858", "head_repository": "medlars/verdictui", "head_sha": "eb9d0aa5d71d04f98ce8d33614bdfb3e42d02fa5", "repo": "medlars/verdictui", "run_attempt": "1", "run_id": "37709164646", "schema_version": "1.1.0", "workflow": "CI"}
