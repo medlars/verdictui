@@ -194,11 +194,6 @@ public enum ProjectRunner {
             build: build, trailing: ["--build-system", "native", "--jobs", "2"] + extra)
     }
 
-    /// Bin-path lookup only — matches workbench scripts; avoids a second native build pass.
-    private static func swiftShowBinPathArguments(build: ProjectScenarios.BuildConfiguration) -> [String] {
-        swiftBuildCommandPrefix(build: build, trailing: ["--show-bin-path"])
-    }
-
     private static let showBinPathWaitCap: TimeInterval = 60
 
     private static let swiftPackageBuildArtifactNames: Set<String> = [
@@ -246,7 +241,7 @@ public enum ProjectRunner {
         let output = Pipe()
         let process = try GuardedProcess.spawn(
             executable: swiftExecutable,
-            arguments: swiftShowBinPathArguments(build: build),
+            arguments: swiftBuildArguments(build: build, extra: ["--show-bin-path"]),
             directory: projectRoot, environment: environment,
             standardOutput: output.fileHandleForWriting.fileDescriptor,
             standardError: STDERR_FILENO)
@@ -299,9 +294,6 @@ public enum ProjectRunner {
         shouldCancel: () -> Bool = { false }
     ) throws {
         guard let build = try ProjectScenarios.buildConfiguration(projectRoot: projectRoot) else {
-            return
-        }
-        if try discoverBuiltProduct(build: build) != nil {
             return
         }
         let timeout = timeout ?? build.timeoutSeconds
@@ -361,9 +353,12 @@ public enum ProjectRunner {
                     "project runner delegated back to verdictui; use VerdictUIRunner.main(registry:)"
             )
         }
+        var builtRunner: URL?
         if let root = ProjectScenarios.findProjectRoot(startingAt: current) {
             do {
                 try buildIfConfigured(projectRoot: root)
+                builtRunner = try resolveBuiltRunnerExecutableAfterBuild(
+                    projectRoot: root, timeout: showBinPathWaitCap)
             } catch let failure as Failure {
                 guard let number = failure.interruption else { throw failure }
                 FileHandle.standardError.write(Data("verdictui: \(failure)\n".utf8))
@@ -377,8 +372,6 @@ public enum ProjectRunner {
                 alreadyDelegated: ProcessInfo.processInfo.environment[delegationMarker] != nil
             )
         else { return }
-        let builtRunner = try resolveBuiltRunnerExecutableAfterBuild(
-            projectRoot: target.projectRoot, timeout: showBinPathWaitCap)
         let build = try ProjectScenarios.buildConfiguration(projectRoot: target.projectRoot)
         let runner =
             builtRunner.flatMap { built in
