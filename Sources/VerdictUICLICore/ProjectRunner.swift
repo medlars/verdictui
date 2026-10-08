@@ -172,7 +172,9 @@ public enum ProjectRunner {
         }
         let root = projectRoot.resolvingSymlinksInPath().standardizedFileURL
         let prefix = root.path + "/.build/"
-        return runner.resolvingSymlinksInPath().path.hasPrefix(prefix)
+        // Keep the manifest path literal: resolving symlinks can rewrite
+        // `.build/debug/...` into another directory and skip bin-path lookup.
+        return runner.standardizedFileURL.path.hasPrefix(prefix)
     }
 
     private static func swiftBuildArguments(
