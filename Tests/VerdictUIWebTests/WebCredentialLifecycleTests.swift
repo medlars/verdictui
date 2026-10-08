@@ -669,15 +669,17 @@ final class WebCredentialLifecycleTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("verdictui-close-order-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }
         let marker = root.appendingPathComponent("resolver.pid")
+        let fifo = root.appendingPathComponent("resolver.fifo")
+        mkfifo(fifo.path, 0o600)
         let resolver = FileManager.default.temporaryDirectory
             .appendingPathComponent("verdictui-slow-resolver-\(UUID().uuidString)")
         let script = #"""
             #!/usr/bin/env python3
-            import os, signal, time
+            import os
             with open(os.environ["VERDICTUI_CLOSE_ORDER_MARKER"], "w", encoding="utf-8") as handle:
                 handle.write(str(os.getpid()))
-            signal.signal(signal.SIGTERM, signal.SIG_IGN)
-            time.sleep(60)
+            with open(os.environ["VERDICTUI_CLOSE_ORDER_FIFO"], "r", encoding="utf-8"):
+                pass
             """#
         try script.write(to: resolver, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: resolver.path)
@@ -692,6 +694,7 @@ final class WebCredentialLifecycleTests: XCTestCase {
             "VERDICTUI_WEB_OP": resolver.path,
             "VERDICTUI_WEB_CRED_HOLD": "op://fixture/item/password",
             "VERDICTUI_CLOSE_ORDER_MARKER": marker.path,
+            "VERDICTUI_CLOSE_ORDER_FIFO": fifo.path,
         ])
         let session = WebSession(profile: "owned", browser: browser, transport: CDPTransport(socket: socket),
             pageSessionID: "fixture", lock: lock, credentials: credentials,
@@ -706,12 +709,12 @@ final class WebCredentialLifecycleTests: XCTestCase {
         let closing = Task { try await session.close() }
         let observe = ContinuousClock.now + .seconds(5)
         while ContinuousClock.now < observe {
-            if case .success = await closing.result { break }
             if kill(pid, 0) == 0, !identity.events.contains("Browser.close") {
                 XCTFail("Browser.close must be dispatched while the credential resolver is still running")
+                break
             }
             if kill(pid, 0) != 0 { break }
-            try await Task.sleep(for: .milliseconds(10))
+            try await Task.sleep(for: .milliseconds(5))
         }
         try await closing.value
         resolve.cancel()
