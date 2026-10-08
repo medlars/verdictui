@@ -185,17 +185,6 @@ extension ProjectRunnerTests {
 }
 
 extension ProjectRunnerTests {
-    private func waitForProcess(_ process: Process, timeout: TimeInterval, file: StaticString = #filePath, line: UInt = #line) {
-        let deadline = Date().addingTimeInterval(timeout)
-        while process.isRunning, Date() < deadline {
-            Thread.sleep(forTimeInterval: 0.05)
-        }
-        guard process.isRunning else { return }
-        process.terminate()
-        process.waitUntilExit()
-        XCTFail("subprocess exceeded \(timeout) seconds", file: file, line: line)
-    }
-
     private func consumerSwiftStubScript(product: String, body: String) -> String {
         """
         #!/bin/sh
