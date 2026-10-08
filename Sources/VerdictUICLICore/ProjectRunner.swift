@@ -201,6 +201,36 @@ public enum ProjectRunner {
 
     private static let showBinPathWaitCap: TimeInterval = 60
 
+    private static let swiftPackageBuildArtifactNames: Set<String> = [
+        "artifacts", "checkouts", "debug", "plugin-tools", "plugins", "release", "repositories",
+        "workspace-state.json",
+    ]
+
+    /// After a successful build, the product already sits under `.build/<triple>/<configuration>/`.
+    private static func discoverBuiltProduct(
+        build: ProjectScenarios.BuildConfiguration
+    ) throws -> URL? {
+        let buildRoot = build.packageRoot.appendingPathComponent(".build", isDirectory: true)
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: buildRoot.path) else {
+            return nil
+        }
+        var matches: [URL] = []
+        for name in names {
+            guard !swiftPackageBuildArtifactNames.contains(name) else { continue }
+            let candidate = buildRoot.appendingPathComponent(name, isDirectory: true)
+                .appendingPathComponent(build.configuration)
+                .appendingPathComponent(build.product)
+            var isDirectory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: candidate.path, isDirectory: &isDirectory),
+                !isDirectory.boolValue,
+                FileManager.default.isExecutableFile(atPath: candidate.path)
+            else { continue }
+            matches.append(candidate.standardizedFileURL)
+        }
+        guard matches.count == 1, let match = matches.first else { return nil }
+        return match
+    }
+
     private static func builtProductExecutable(
         build: ProjectScenarios.BuildConfiguration,
         projectRoot: URL,
@@ -208,6 +238,10 @@ public enum ProjectRunner {
         environment: [String: String],
         timeout: TimeInterval
     ) throws -> URL {
+        if let discovered = try discoverBuiltProduct(build: build) {
+            try validateDeclaredRunnerExecutable(at: discovered)
+            return discovered
+        }
         let waitBudget = min(timeout, showBinPathWaitCap)
         let output = Pipe()
         let process = try GuardedProcess.spawn(
