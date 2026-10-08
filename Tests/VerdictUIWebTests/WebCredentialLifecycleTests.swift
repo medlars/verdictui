@@ -707,12 +707,15 @@ final class WebCredentialLifecycleTests: XCTestCase {
         let pid = pid_t(try XCTUnwrap(Int(try XCTUnwrap(String(contentsOf: marker, encoding: .utf8)))))
         XCTAssertGreaterThan(pid, 0)
         let closing = Task { try await session.close() }
+        var aliveWithoutBrowserClose = 0
         for _ in 0..<400 {
-            if kill(pid, 0) == 0, !identity.events.contains("Browser.close") {
+            if kill(pid, 0) != 0 { break }
+            if identity.events.contains("Browser.close") { break }
+            aliveWithoutBrowserClose += 1
+            if aliveWithoutBrowserClose > 50 {
                 XCTFail("Browser.close must be dispatched while the credential resolver is still running")
                 break
             }
-            if kill(pid, 0) != 0 { break }
             try await Task.sleep(for: .milliseconds(1))
         }
         try await closing.value
