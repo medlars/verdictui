@@ -288,6 +288,28 @@ private actor CloseBarrier {
     }
 }
 
+/// Append-only close-order witness shared by the mock browser socket and resolver script.
+private enum CloseOrderWitness {
+    static let browserClose = "Browser.close"
+    static let credentialDrain = "credential-drain"
+    static let resolverReady = "resolver-ready"
+
+    static func append(_ line: String, to url: URL) throws {
+        let handle = try FileHandle(forWritingTo: url)
+        defer { try? handle.close() }
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data((line + "\n").utf8))
+        try handle.synchronize()
+    }
+
+    static func lines(at url: URL) throws -> [String] {
+        guard FileManager.default.fileExists(atPath: url.path) else { return [] }
+        return try String(contentsOf: url, encoding: .utf8)
+            .split(whereSeparator: \.isNewline)
+            .map(String.init)
+    }
+}
+
 private final class OrderlyBrowserIdentity: BrowserProcessIdentity, @unchecked Sendable {
     // Deliberately names a live unrelated process after our owned identity exits.
     let pid = ProcessInfo.processInfo.processIdentifier
@@ -320,14 +342,18 @@ private actor OrderlyBrowserSocket: CDPSocket {
     private var ended = false
     private let barrier: CloseBarrier?
     private let label: String
-    init(identity: OrderlyBrowserIdentity, barrier: CloseBarrier? = nil, label: String = "") {
+    private let closeOrderLog: URL?
+    init(identity: OrderlyBrowserIdentity, barrier: CloseBarrier? = nil, label: String = "",
+         closeOrderLog: URL? = nil) {
         self.identity = identity; self.barrier = barrier; self.label = label
+        self.closeOrderLog = closeOrderLog
     }
     func send(text: String) async throws {
         let request = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
         let method = try XCTUnwrap(request["method"] as? String)
         identity.record(method)
         if method == "Browser.close" {
+            if let closeOrderLog { try CloseOrderWitness.append(CloseOrderWitness.browserClose, to: closeOrderLog) }
             if let barrier { await barrier.arrive(label) }
             identity.orderlyExit()
         }
@@ -668,16 +694,26 @@ final class WebCredentialLifecycleTests: XCTestCase {
     func testSessionCloseDispatchesBrowserCloseBeforeCredentialDrain() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("verdictui-close-order-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }
-        let marker = root.appendingPathComponent("resolver.pid")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let orderLog = root.appendingPathComponent("close-order.log")
+        FileManager.default.createFile(atPath: orderLog.path, contents: nil)
         let fifo = root.appendingPathComponent("resolver.fifo")
         mkfifo(fifo.path, 0o600)
         let resolver = FileManager.default.temporaryDirectory
             .appendingPathComponent("verdictui-slow-resolver-\(UUID().uuidString)")
         let script = #"""
             #!/usr/bin/env python3
-            import os
-            with open(os.environ["VERDICTUI_CLOSE_ORDER_MARKER"], "w", encoding="utf-8") as handle:
-                handle.write(str(os.getpid()))
+            import os, signal
+            log = os.environ["VERDICTUI_CLOSE_ORDER_LOG"]
+            def note(line):
+                with open(log, "a", encoding="utf-8") as handle:
+                    handle.write(line + "\n")
+                    handle.flush()
+                    os.fsync(handle.fileno())
+            def on_term(*_):
+                note("credential-drain")
+            signal.signal(signal.SIGTERM, on_term)
+            note("resolver-ready")
             with open(os.environ["VERDICTUI_CLOSE_ORDER_FIFO"], "r", encoding="utf-8"):
                 pass
             """#
@@ -689,11 +725,11 @@ final class WebCredentialLifecycleTests: XCTestCase {
         let browser = HeadlessBrowser(process: identity,
             endpoint: DevtoolsEndpoint(port: 12345, browserPath: "/devtools/browser/fixture"), profileDirectory: root)
         let url = URL(fileURLWithPath: "/fixture")
-        let socket = OrderlyBrowserSocket(identity: identity)
+        let socket = OrderlyBrowserSocket(identity: identity, closeOrderLog: orderLog)
         let credentials = WebCredentials(environment: [
             "VERDICTUI_WEB_OP": resolver.path,
             "VERDICTUI_WEB_CRED_HOLD": "op://fixture/item/password",
-            "VERDICTUI_CLOSE_ORDER_MARKER": marker.path,
+            "VERDICTUI_CLOSE_ORDER_LOG": orderLog.path,
             "VERDICTUI_CLOSE_ORDER_FIFO": fifo.path,
         ])
         let session = WebSession(profile: "owned", browser: browser, transport: CDPTransport(socket: socket),
@@ -701,25 +737,20 @@ final class WebCredentialLifecycleTests: XCTestCase {
             viewport: Rect(x: 0, y: 0, width: 1280, height: 800), url: url)
         let resolve = Task { _ = try? await credentials.resolve("HOLD") }
         let ready = ContinuousClock.now + .seconds(3)
-        while !FileManager.default.fileExists(atPath: marker.path), ContinuousClock.now < ready {
+        while !try CloseOrderWitness.lines(at: orderLog).contains(CloseOrderWitness.resolverReady),
+              ContinuousClock.now < ready {
             try await Task.sleep(for: .milliseconds(20))
         }
-        let pid = pid_t(try XCTUnwrap(Int(try XCTUnwrap(String(contentsOf: marker, encoding: .utf8)))))
-        XCTAssertGreaterThan(pid, 0)
-        let closing = Task { try await session.close() }
-        var aliveWithoutBrowserClose = 0
-        for _ in 0..<400 {
-            if kill(pid, 0) != 0 { break }
-            if identity.events.contains("Browser.close") { break }
-            aliveWithoutBrowserClose += 1
-            if aliveWithoutBrowserClose > 50 {
-                XCTFail("Browser.close must be dispatched while the credential resolver is still running")
-                break
-            }
-            try await Task.sleep(for: .milliseconds(1))
-        }
-        try await closing.value
+        XCTAssertTrue(try CloseOrderWitness.lines(at: orderLog).contains(CloseOrderWitness.resolverReady))
+        try await session.close()
         resolve.cancel()
+        let order = try CloseOrderWitness.lines(at: orderLog)
+        let browserClose = try XCTUnwrap(order.firstIndex(of: CloseOrderWitness.browserClose),
+            "missing Browser.close witness in \(order)")
+        let credentialDrain = try XCTUnwrap(order.firstIndex(of: CloseOrderWitness.credentialDrain),
+            "missing credential-drain witness in \(order)")
+        XCTAssertLessThan(browserClose, credentialDrain,
+            "Browser.close must be recorded before credential teardown begins")
     }
 
     private func exerciseMCPShutdown(crash: Bool, delayedBrowserExit: Bool = false) async throws {
