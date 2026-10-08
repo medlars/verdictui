@@ -243,10 +243,7 @@ extension ProjectRunnerTests {
     }
 
     func testBuiltRunnerPathUsesShowBinPathNotSymlink() throws {
-        try project(runner: ".build/debug/Consumer") { root in
-            try JSONSerialization.data(withJSONObject: [
-                "runner": ".build/debug/Consumer", "buildProduct": "Consumer",
-            ]).write(to: root.appendingPathComponent(".verdictui/config.json"))
+        try buildProject(settings: ["buildProduct": "Consumer"], script: "echo built > built.txt") { root, executable in
             let nativeBin = root.appendingPathComponent(".build/arm64-apple-macosx/debug", isDirectory: true)
             try FileManager.default.createDirectory(at: nativeBin, withIntermediateDirectories: true)
             let nativeRunner = nativeBin.appendingPathComponent("Consumer")
@@ -262,7 +259,6 @@ extension ProjectRunnerTests {
                 at: root.appendingPathComponent(".build/debug"), withDestinationURL: staleBin)
 
             let rootPath = root.path
-            let executable = root.appendingPathComponent("swift-stub")
             try Data(
                 ("""
                 #!/bin/sh
@@ -274,19 +270,18 @@ extension ProjectRunnerTests {
                   fi
                 done
                 echo built > built.txt
-                exit 0
                 """).utf8
             ).write(to: executable)
-            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
+
+            try JSONSerialization.data(withJSONObject: [
+                "runner": ".build/debug/Consumer", "buildProduct": "Consumer", "buildTimeoutSeconds": 5,
+            ]).write(to: root.appendingPathComponent(".verdictui/config.json"))
             try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("swift"), withDestinationURL: executable)
 
             let sourceRoot = URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            let launcher = ["debug", "release"]
-                .map { sourceRoot.appendingPathComponent(".build/\($0)/verdictui") }
-                .first { FileManager.default.isExecutableFile(atPath: $0.path) }
             let process = Process()
-            process.executableURL = try XCTUnwrap(launcher)
+            process.executableURL = sourceRoot.appendingPathComponent(".build/debug/verdictui")
             process.arguments = ["list"]
             process.currentDirectoryURL = root
             var environment = ProcessInfo.processInfo.environment
