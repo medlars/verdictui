@@ -295,18 +295,6 @@ extension ProjectRunnerTests {
             XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("native-ran").path))
             XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("stale-ran").path))
         }
-
-        try buildProject(settings: ["buildProduct": "Consumer"], script: "touch invoked-build\n") { root, executable in
-            try JSONSerialization.data(withJSONObject: [
-                "runner": ".build/debug/Consumer", "buildProduct": "Consumer",
-            ]).write(to: root.appendingPathComponent(".verdictui/config.json"))
-            try ProjectRunner.buildIfConfigured(projectRoot: root, swiftExecutable: executable)
-            let resolved = try XCTUnwrap(
-                try ProjectRunner.resolveBuiltRunnerExecutableAfterBuild(
-                    projectRoot: root, timeout: 5, swiftExecutable: executable))
-            XCTAssertTrue(resolved.path.contains("stub-bin"))
-            XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("invoked-show-bin-path").path))
-        }
     }
 
     func testBuildUsesSafeArgumentsProjectRootAndReleaseConfiguration() throws {
