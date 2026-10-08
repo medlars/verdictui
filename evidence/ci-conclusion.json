@@ -1,0 +1,1 @@
+{"completed_at": "2026-10-08T07:30:51Z", "conclusion": "success", "event": "pull_request", "head_branch": "cursor/remove-unused-health-probe-2833", "head_repository": "medlars/verdictui", "head_sha": "98f82b254dd3793ce9b91c95794cb0065fddc5a0", "repo": "medlars/verdictui", "run_attempt": "1", "run_id": "37742398910", "schema_version": "1.1.0", "workflow": "CI"}
