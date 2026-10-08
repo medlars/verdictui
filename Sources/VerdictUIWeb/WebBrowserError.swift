@@ -31,9 +31,6 @@ public enum WebBrowserError: Error, Equatable, CustomStringConvertible {
     case devtoolsNotDiscovered(profileDirectory: String, within: TimeInterval)
     /// The endpoint file parsed but the port is not a usable TCP port.
     case invalidDevtoolsPort(raw: String)
-    /// The health probe did not answer 200. Carries the status the endpoint
-    /// DID return, or nil for a transport-level failure.
-    case healthProbeFailed(endpoint: String, status: Int?)
     /// The browser survived SIGTERM and SIGKILL — terminate refused to claim
     /// success it could not verify by pid liveness.
     case processRefusedToDie(pid: pid_t)
@@ -81,8 +78,6 @@ public enum WebBrowserError: Error, Equatable, CustomStringConvertible {
             return "DevToolsActivePort never appeared in \(dir) within \(Int(within))s."
         case let .invalidDevtoolsPort(raw):
             return "DevToolsActivePort does not name a usable port: \(raw.prefix(80))"
-        case let .healthProbeFailed(endpoint, status):
-            return "health probe on \(endpoint) returned \(status.map(String.init) ?? "no HTTP status")."
         case let .processRefusedToDie(pid):
             return "browser pid \(pid) survived SIGTERM and SIGKILL; refusing to report it terminated."
         case let .invalidProfileName(name):
