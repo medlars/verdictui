@@ -1,0 +1,1 @@
+{"completed_at": "2026-10-09T06:59:25Z", "conclusion": "success", "event": "pull_request", "head_branch": "cursor/remove-windowaudit-allwindowcount-1987", "head_repository": "medlars/verdictui", "head_sha": "4502bfa7b78fbeaf6578eaf6d407254e48ffc987", "repo": "medlars/verdictui", "run_attempt": "1", "run_id": "37895169960", "schema_version": "1.1.0", "workflow": "CI"}
