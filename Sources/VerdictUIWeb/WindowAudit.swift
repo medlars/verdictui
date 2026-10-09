@@ -15,8 +15,7 @@ import Foundation
 /// CGWindowList entries (rendering surfaces) but ONSCREEN=0 in every flag
 /// permutation measured — the windows are never composited to any display.
 /// "Zero ALL entries" is unsatisfiable on this channel; "zero composited
-/// windows" is the property the user experiences and the bar this gate
-/// holds. Reported alongside ALL as evidence.
+/// windows" is the property the user experiences and the bar this gate holds.
 #if os(macOS)
 import CoreGraphics
 
@@ -24,11 +23,6 @@ public enum WindowAudit {
     /// Windows the window server is COMPOSITING for `pid`.
     public static func onScreenWindowCount(forPID pid: pid_t) throws -> Int {
         try audit(options: [.optionOnScreenOnly], pid: pid)
-    }
-
-    /// Every window object for `pid`, composited or not (evidence only).
-    public static func allWindowCount(forPID pid: pid_t) throws -> Int {
-        try audit(options: [.optionAll], pid: pid)
     }
 
     /// The shared read: filter the window server's list by owner pid.
@@ -44,10 +38,6 @@ public enum WindowAudit {
 /// report zero windows, which is what returning 0 would claim.
 public enum WindowAudit {
     public static func onScreenWindowCount(forPID pid: pid_t) throws -> Int {
-        throw WebBrowserError.windowAuditUnsupportedPlatform
-    }
-
-    public static func allWindowCount(forPID pid: pid_t) throws -> Int {
         throw WebBrowserError.windowAuditUnsupportedPlatform
     }
 }
