@@ -1,0 +1,1 @@
+{"completed_at": "2026-10-09T06:54:28Z", "conclusion": "success", "event": "pull_request", "head_branch": "cursor/docs-remove-web-health-probe-fa89", "head_repository": "medlars/verdictui", "head_sha": "f05d764b650eba7edd0ea68560028ce2e5751282", "repo": "medlars/verdictui", "run_attempt": "1", "run_id": "37894776179", "schema_version": "1.1.0", "workflow": "CI"}
