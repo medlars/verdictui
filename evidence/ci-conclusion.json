@@ -1,0 +1,1 @@
+{"completed_at": "2026-10-10T06:47:59Z", "conclusion": "cancelled", "event": "push", "head_branch": "main", "head_repository": "medlars/verdictui", "head_sha": "796e95e8911c7892e5b80bcab1a13a832742be26", "repo": "medlars/verdictui", "run_attempt": "1", "run_id": "38032171203", "schema_version": "1.1.0", "workflow": "CI"}
