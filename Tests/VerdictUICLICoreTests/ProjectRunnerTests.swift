@@ -185,6 +185,36 @@ extension ProjectRunnerTests {
 }
 
 extension ProjectRunnerTests {
+    private func waitForProcess(_ process: Process, timeout: TimeInterval, file: StaticString = #filePath, line: UInt = #line) {
+        let deadline = Date().addingTimeInterval(timeout)
+        while process.isRunning, Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        guard process.isRunning else { return }
+        process.terminate()
+        process.waitUntilExit()
+        XCTFail("subprocess exceeded \(timeout) seconds", file: file, line: line)
+    }
+
+    private func consumerSwiftStubScript(product: String, body: String) -> String {
+        """
+        #!/bin/sh
+        ROOT="$(pwd)"
+        PRODUCT='\(product)'
+        for arg; do
+          if [ "$arg" = --show-bin-path ]; then
+            touch "$ROOT/invoked-show-bin-path"
+            mkdir -p "$ROOT/stub-bin"
+            printf '#!/bin/sh\\nexit 0\\n' > "$ROOT/stub-bin/$PRODUCT"
+            chmod +x "$ROOT/stub-bin/$PRODUCT"
+            echo "$ROOT/stub-bin"
+            exit 0
+          fi
+        done
+        \(body)
+        """
+    }
+
     private func buildProject(
         settings: [String: Any], script: String = "exit 0",
         _ body: (URL, URL) throws -> Void
@@ -193,10 +223,77 @@ extension ProjectRunnerTests {
             var manifest = settings
             manifest["runner"] = "runner"
             try JSONSerialization.data(withJSONObject: manifest).write(to: root.appendingPathComponent(".verdictui/config.json"))
+            let product = settings["buildProduct"] as? String ?? "Consumer"
             let executable = root.appendingPathComponent("swift-stub")
-            try Data(("#!/bin/sh\n" + script + "\n").utf8).write(to: executable)
+            try Data(consumerSwiftStubScript(product: product, body: script).utf8).write(to: executable)
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
             try body(root, executable)
+        }
+    }
+
+    func testBuildTreeResolutionSkippedForExternalRunner() throws {
+        try buildProject(settings: ["buildProduct": "Consumer"], script: "touch invoked-build\n") { root, executable in
+            try JSONSerialization.data(withJSONObject: [
+                "runner": "/usr/bin/true", "buildProduct": "Consumer",
+            ]).write(to: root.appendingPathComponent(".verdictui/config.json"))
+            try ProjectRunner.buildIfConfigured(projectRoot: root, swiftExecutable: executable)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("invoked-build").path))
+            XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("invoked-show-bin-path").path))
+        }
+    }
+
+    func testBuiltRunnerPathUsesShowBinPathNotSymlink() throws {
+        try buildProject(settings: ["buildProduct": "Consumer"], script: "echo built > built.txt") { root, executable in
+            let nativeBin = root.appendingPathComponent(".build/arm64-apple-macosx/debug", isDirectory: true)
+            try FileManager.default.createDirectory(at: nativeBin, withIntermediateDirectories: true)
+            let nativeRunner = nativeBin.appendingPathComponent("Consumer")
+            try Data("#!/bin/sh\ntouch native-ran\nexit 0\n".utf8).write(to: nativeRunner)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: nativeRunner.path)
+
+            let staleBin = root.appendingPathComponent("stale/debug", isDirectory: true)
+            try FileManager.default.createDirectory(at: staleBin, withIntermediateDirectories: true)
+            let staleRunner = staleBin.appendingPathComponent("Consumer")
+            try Data("#!/bin/sh\ntouch stale-ran\nexit 0\n".utf8).write(to: staleRunner)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: staleRunner.path)
+            try FileManager.default.createSymbolicLink(
+                at: root.appendingPathComponent(".build/debug"), withDestinationURL: staleBin)
+
+            let rootPath = root.path
+            try Data(
+                ("""
+                #!/bin/sh
+                ROOT='\(rootPath)'
+                for arg; do
+                  if [ "$arg" = --show-bin-path ]; then
+                    echo "$ROOT/.build/arm64-apple-macosx/debug"
+                    exit 0
+                  fi
+                done
+                echo built > built.txt
+                """).utf8
+            ).write(to: executable)
+
+            try JSONSerialization.data(withJSONObject: [
+                "runner": ".build/debug/Consumer", "buildProduct": "Consumer", "buildTimeoutSeconds": 5,
+            ]).write(to: root.appendingPathComponent(".verdictui/config.json"))
+            try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("swift"), withDestinationURL: executable)
+
+            let sourceRoot = URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            let process = Process()
+            process.executableURL = sourceRoot.appendingPathComponent(".build/debug/verdictui")
+            process.arguments = ["list"]
+            process.currentDirectoryURL = root
+            var environment = ProcessInfo.processInfo.environment
+            environment.removeValue(forKey: ProjectRunner.delegationMarker)
+            environment["PATH"] = root.path + ":" + (environment["PATH"] ?? "/usr/bin:/bin")
+            process.environment = environment
+            try process.run()
+            waitForProcess(process, timeout: 15)
+            XCTAssertEqual(process.terminationStatus, 0)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("built.txt").path))
+            XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("native-ran").path))
+            XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("stale-ran").path))
         }
     }
 
@@ -207,6 +304,7 @@ extension ProjectRunnerTests {
             let arguments = try String(contentsOf: root.appendingPathComponent("arguments.txt"), encoding: .utf8)
             XCTAssertTrue(arguments.contains("--product=Consumer;echo-not-a-shell\n"))
             XCTAssertTrue(arguments.contains("--configuration=release\n"))
+            XCTAssertTrue(arguments.contains("--build-system\nnative\n"))
             XCTAssertTrue(arguments.contains("--package-path\n\(root.resolvingSymlinksInPath().path)\n"))
             let cwd = try String(contentsOf: root.appendingPathComponent("cwd.txt"), encoding: .utf8)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
