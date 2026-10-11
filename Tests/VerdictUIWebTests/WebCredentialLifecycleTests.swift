@@ -288,6 +288,28 @@ private actor CloseBarrier {
     }
 }
 
+/// Append-only close-order witness shared by the mock browser socket and resolver script.
+private enum CloseOrderWitness {
+    static let browserClose = "Browser.close"
+    static let credentialDrain = "credential-drain"
+    static let resolverReady = "resolver-ready"
+
+    static func append(_ line: String, to url: URL) throws {
+        let handle = try FileHandle(forWritingTo: url)
+        defer { try? handle.close() }
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data((line + "\n").utf8))
+        try handle.synchronize()
+    }
+
+    static func lines(at url: URL) throws -> [String] {
+        guard FileManager.default.fileExists(atPath: url.path) else { return [] }
+        return try String(contentsOf: url, encoding: .utf8)
+            .split(whereSeparator: \.isNewline)
+            .map(String.init)
+    }
+}
+
 private final class OrderlyBrowserIdentity: BrowserProcessIdentity, @unchecked Sendable {
     // Deliberately names a live unrelated process after our owned identity exits.
     let pid = ProcessInfo.processInfo.processIdentifier
@@ -320,14 +342,18 @@ private actor OrderlyBrowserSocket: CDPSocket {
     private var ended = false
     private let barrier: CloseBarrier?
     private let label: String
-    init(identity: OrderlyBrowserIdentity, barrier: CloseBarrier? = nil, label: String = "") {
+    private let closeOrderLog: URL?
+    init(identity: OrderlyBrowserIdentity, barrier: CloseBarrier? = nil, label: String = "",
+         closeOrderLog: URL? = nil) {
         self.identity = identity; self.barrier = barrier; self.label = label
+        self.closeOrderLog = closeOrderLog
     }
     func send(text: String) async throws {
         let request = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
         let method = try XCTUnwrap(request["method"] as? String)
         identity.record(method)
         if method == "Browser.close" {
+            if let closeOrderLog { try CloseOrderWitness.append(CloseOrderWitness.browserClose, to: closeOrderLog) }
             if let barrier { await barrier.arrive(label) }
             identity.orderlyExit()
         }
@@ -665,6 +691,68 @@ final class WebCredentialLifecycleTests: XCTestCase {
         try await exerciseMCPShutdown(crash: false, delayedBrowserExit: true)
     }
 
+    func testSessionCloseDispatchesBrowserCloseBeforeCredentialDrain() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("verdictui-close-order-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let orderLog = root.appendingPathComponent("close-order.log")
+        FileManager.default.createFile(atPath: orderLog.path, contents: nil)
+        let fifo = root.appendingPathComponent("resolver.fifo")
+        mkfifo(fifo.path, 0o600)
+        let resolver = FileManager.default.temporaryDirectory
+            .appendingPathComponent("verdictui-slow-resolver-\(UUID().uuidString)")
+        let script = #"""
+            #!/usr/bin/env python3
+            import os, signal
+            log = os.environ["VERDICTUI_CLOSE_ORDER_LOG"]
+            def note(line):
+                with open(log, "a", encoding="utf-8") as handle:
+                    handle.write(line + "\n")
+                    handle.flush()
+                    os.fsync(handle.fileno())
+            def on_term(*_):
+                note("credential-drain")
+            signal.signal(signal.SIGTERM, on_term)
+            note("resolver-ready")
+            with open(os.environ["VERDICTUI_CLOSE_ORDER_FIFO"], "r", encoding="utf-8"):
+                pass
+            """#
+        try script.write(to: resolver, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: resolver.path)
+        defer { try? FileManager.default.removeItem(at: resolver) }
+        let lock = try ProfileLock.acquire(profile: "owned", registry: ProfileRegistry(root: root))
+        let identity = OrderlyBrowserIdentity(profileLockPath: lock.path)
+        let browser = HeadlessBrowser(process: identity,
+            endpoint: DevtoolsEndpoint(port: 12345, browserPath: "/devtools/browser/fixture"), profileDirectory: root)
+        let url = URL(fileURLWithPath: "/fixture")
+        let socket = OrderlyBrowserSocket(identity: identity, closeOrderLog: orderLog)
+        let credentials = WebCredentials(environment: [
+            "VERDICTUI_WEB_OP": resolver.path,
+            "VERDICTUI_WEB_CRED_HOLD": "op://fixture/item/password",
+            "VERDICTUI_CLOSE_ORDER_LOG": orderLog.path,
+            "VERDICTUI_CLOSE_ORDER_FIFO": fifo.path,
+        ])
+        let session = WebSession(profile: "owned", browser: browser, transport: CDPTransport(socket: socket),
+            pageSessionID: "fixture", lock: lock, credentials: credentials,
+            viewport: Rect(x: 0, y: 0, width: 1280, height: 800), url: url)
+        let resolve = Task { _ = try? await credentials.resolve("HOLD") }
+        let ready = ContinuousClock.now + .seconds(3)
+        while ContinuousClock.now < ready {
+            if try CloseOrderWitness.lines(at: orderLog).contains(CloseOrderWitness.resolverReady) { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertTrue(try CloseOrderWitness.lines(at: orderLog).contains(CloseOrderWitness.resolverReady))
+        try await session.close()
+        resolve.cancel()
+        let order = try CloseOrderWitness.lines(at: orderLog)
+        let browserClose = try XCTUnwrap(order.firstIndex(of: CloseOrderWitness.browserClose),
+            "missing Browser.close witness in \(order)")
+        let credentialDrain = try XCTUnwrap(order.firstIndex(of: CloseOrderWitness.credentialDrain),
+            "missing credential-drain witness in \(order)")
+        XCTAssertLessThan(browserClose, credentialDrain,
+            "Browser.close must be recorded before credential teardown begins")
+    }
+
     private func exerciseMCPShutdown(crash: Bool, delayedBrowserExit: Bool = false) async throws {
         let kind: LifecycleDiagnosticExport.Kind = crash ? .crash : delayedBrowserExit ? .late : .terminate
         let (root, executable) = try fixture(diagnosticKind: kind)
@@ -695,8 +783,20 @@ final class WebCredentialLifecycleTests: XCTestCase {
             let wrapper = root.appendingPathComponent("delayed-browser")
             let script = #"""
             #!/usr/bin/env python3
-            import json,os,pathlib,signal,subprocess,sys,threading,time
+            import json,os,pathlib,signal,subprocess,sys,threading,time,tempfile
             root=pathlib.Path(os.environ['RESOLVER_ROOT'])
+            def publish(name,payload):
+                path=root/name
+                fd,tmp=tempfile.mkstemp(dir=root,prefix=name+'.',suffix='.tmp')
+                try:
+                    os.write(fd,json.dumps(payload).encode())
+                    os.fsync(fd)
+                finally:
+                    os.close(fd)
+                os.replace(tmp,path)
+                dirfd=os.open(root,os.O_DIRECTORY)
+                try: os.fsync(dirfd)
+                finally: os.close(dirfd)
             errors=os.open(root/'wrapper-stderr.log',os.O_WRONLY|os.O_CREAT|os.O_APPEND,0o600)
             os.dup2(errors,2)
             os.close(errors)
@@ -709,7 +809,7 @@ final class WebCredentialLifecycleTests: XCTestCase {
             (root/'browser-identity.json').write_text(json.dumps({'at':time.clock_gettime(time.CLOCK_MONOTONIC),'pid':browser.pid,'pgid':os.getpgid(browser.pid)}))
             code=browser.wait()
             exited=time.clock_gettime(time.CLOCK_MONOTONIC)
-            (root/'browser-exit.json').write_text(json.dumps({'code':code,'at':exited}))
+            publish('browser-exit.json',{'code':code,'at':exited})
             # Bound the injected total delay, rather than adding nine seconds
             # after Chrome's variable exit latency. Swift publishes this start
             # atomically before SIGTERM using the same monotonic clock.
