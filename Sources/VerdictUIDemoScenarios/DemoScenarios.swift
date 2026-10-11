@@ -10,25 +10,8 @@ import VerdictUIProbe
 
 /// One catalog member, erased to something a `for` loop can hold.
 ///
-/// ### Why an existential does not work here
-///
-/// The obvious enumeration is `[any VerdictScenario]`, and it does not compile
-/// against the harness: ``OracleHost/init(scenario:viewport:deadline:)`` is
-/// generic over `Scenario: VerdictScenario` so the scenario's `Body` type
-/// survives into the hosted view tree, and a `VerdictScenario` existential
-/// cannot satisfy that constraint — the protocol has an associated type, so
-/// there is no `Body` for the compiler to instantiate `NSHostingView` with. The
-/// generic parameter is not incidental either; erasing it at the host boundary
-/// instead (`AnyView` per scenario) would put an extra layout-transparent node
-/// in every hosted tree for the sake of a loop.
-///
-/// ### What is erased instead
-///
-/// The *construction* is, not the scenario. Each entry stores a closure that
-/// builds the concrete scenario and hands it to the generic initializer inside
-/// its own generic context, where the type is still known. The entry itself is
-/// a plain struct, so `DemoScenarios.all` is an ordinary array and Task 6, the
-/// executable, and Wave 5's sweeps all iterate it the same way.
+/// See ``ScenarioEntry`` on ``ScenarioRegistry`` for why an existential
+/// `[any VerdictScenario]` is not used here.
 ///
 /// The alternatives were weighed and rejected. An `enum` with one case per
 /// scenario would put a `switch` in front of every use and would have to be
