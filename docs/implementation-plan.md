@@ -281,8 +281,8 @@ without recompiling per verify.
    - Hosts compiled scenario bundles; JSON-RPC over unix socket at `~/.verdictui/daemon.sock`; per-scenario `OracleHost` pool (LRU, cap N) so repeat verifies skip setup — target < 20 ms marginal verify.
    - **Rebuild loop**: watch the consumer package's build products; on change, reload scenario bundle (relaunch child "scenario host" process holding the dylib — avoids in-process dylib unload unsafety). Architecture: daemon (broker, long-lived) ⇄ scenario-host (per-build child, disposable). Crash of a host = structured error verdict, never daemon death.
 3. **Consumer integration story** (`docs/integration.md`):
-   - Consumer adds a `VerdictScenarios` target (their scenarios + demo pattern); `verdictui` builds it via `swift build --product` and loads the host against it. Validate the whole flow on a fresh sample project outside this repo (`examples/ConsumerApp/`).
-4. **Signing/notarization** (docs/signing.md executed): Developer ID, hardened runtime, notarized zip; `stage_auto_release` remains off until Wave 10, but the release script (`scripts/build-release.sh`) lands now and is exercised manually once.
+   - Consumer adds a `ConsumerScenarios` target (their scenarios + demo pattern); `verdictui` builds it via `swift build --product` and loads the host against it. Validate the whole flow on a fresh sample project outside this repo (`examples/ConsumerApp/`).
+4. **Signing/notarization** (docs/signing.md executed): Developer ID, hardened runtime, notarized zip; `stage_auto_release` remains off until Wave 10, but the release script (`scripts/release.sh`) lands now and is exercised manually once.
 5. **PM additions**: `stage_cli_smoke` — daemon start → verify demo scenario → assert PASS JSON → stop; runs in quick mode.
 
 ### Exit gate
