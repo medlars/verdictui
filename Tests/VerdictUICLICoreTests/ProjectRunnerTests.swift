@@ -349,6 +349,19 @@ extension ProjectRunnerTests {
         }
     }
 
+    func testResolverLeavesAnExternalDeclaredRunnerAlone() throws {
+        try buildProject(settings: ["buildProduct": "Consumer"]) { root, executable in
+            try JSONSerialization.data(withJSONObject: [
+                "runner": "/usr/bin/true", "buildProduct": "Consumer",
+            ]).write(to: root.appendingPathComponent(".verdictui/config.json"))
+
+            let resolved = resolveBuiltRunner(root: root, swift: executable)
+
+            XCTAssertNil(resolved, "a runner outside .build/ is not the build tree's product")
+            XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("invoked-show-bin-path").path))
+        }
+    }
+
     func testResolvedRunnerIgnoresStaleLeftoverInAnotherTripleDirectory() throws {
         try buildProject(settings: ["buildProduct": "Consumer"]) { root, executable in
             try JSONSerialization.data(withJSONObject: [

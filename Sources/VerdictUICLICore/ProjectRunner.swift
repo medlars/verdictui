@@ -342,11 +342,7 @@ public enum ProjectRunner {
                 alreadyDelegated: ProcessInfo.processInfo.environment[delegationMarker] != nil
             )
         else { return }
-        let build = try ProjectScenarios.buildConfiguration(projectRoot: target.projectRoot)
-        let runner =
-            builtRunner.flatMap { built in
-                build.map { $0.product == built.lastPathComponent ? built : nil } ?? nil
-            } ?? target.executable
+        let runner = builtRunner ?? target.executable
         // Resolve data/baseline paths consistently even when invoked from Sources/Feature.
         guard chdir(target.projectRoot.path) == 0,
             setenv(delegationMarker, target.projectRoot.path, 1) == 0
