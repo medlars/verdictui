@@ -221,12 +221,8 @@ public actor WebSession {
             // does not spend the orderly-exit budget while resolvers drain (CIS-8FAD7552).
             _ = try? await transport.send(method: "Browser.close", timeout: .seconds(2))
             try await credentials.close()
-            let deadline = ContinuousClock.now + .seconds(Self.orderlyExitGrace)
-            while ContinuousClock.now < deadline {
-                if !(await browser.isRunning()) { break }
-                try Task.checkCancellation()
-                try await Task.sleep(for: .milliseconds(50))
-            }
+            // awaitExit keeps polling under caller cancellation, so cleanup below always runs.
+            _ = await browser.awaitExit(within: Self.orderlyExitGrace)
             await transport.close()
             try await browser.terminate(grace: 1)
             lock.release()
