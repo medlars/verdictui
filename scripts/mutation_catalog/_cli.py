@@ -560,4 +560,32 @@ MUTATIONS: list[Mutation] = [
         new="guard !shouldCancel(), ProcessInfo.processInfo.systemUptime < deadline + 3600 else {",
         test="ProjectRunnerTests/testDeclaredBuildTimeoutReachesRunningCommand",
     ),
+    Mutation(
+        name="consumer build skips the native build system",
+        path="Sources/VerdictUICLICore/ProjectRunner.swift",
+        old='trailing: ["--build-system", "native", "--jobs", "2"] + extra)',
+        new='trailing: ["--jobs", "2"] + extra)',
+        test="ProjectRunnerTests/testBuildUsesSafeArgumentsProjectRootAndReleaseConfiguration",
+    ),
+    Mutation(
+        name="bin-path probe keeps its write end open and hangs the read",
+        path="Sources/VerdictUICLICore/ProjectRunner.swift",
+        old="        try? output.fileHandleForWriting.close()\n        let deadline = ProcessInfo.processInfo.systemUptime + waitBudget",
+        new="        let deadline = ProcessInfo.processInfo.systemUptime + waitBudget",
+        test="ProjectRunnerTests/testResolvedRunnerComesFromShowBinPathWhenSeveralTripleDirectoriesExist",
+    ),
+    Mutation(
+        name="bin-path probe takes the first stdout line instead of the last",
+        path="Sources/VerdictUICLICore/ProjectRunner.swift",
+        old=".last(where: { !$0.isEmpty })",
+        new=".first(where: { !$0.isEmpty })",
+        test="ProjectRunnerTests/testResolvedRunnerUsesLastLineOfShowBinPathOutput",
+    ),
+    Mutation(
+        name="an external declared runner is replaced by the build-tree product",
+        path="Sources/VerdictUICLICore/ProjectRunner.swift",
+        old='return runner.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix(".build/")',
+        new="return !runner.isEmpty",
+        test="ProjectRunnerTests/testResolverLeavesAnExternalDeclaredRunnerAlone",
+    ),
 ]
