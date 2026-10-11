@@ -1,7 +1,7 @@
 import Darwin
 import Foundation
 
-/// One headless browser session: launch, discover, probe, terminate.
+/// One headless browser session: launch, discover, terminate.
 ///
 /// ### Why owned process spawning and not LaunchServices (`open`)
 ///
@@ -134,62 +134,6 @@ public actor HeadlessBrowser {
             "--window-position=-32000,-32000",
             "about:blank",
         ]
-    }
-
-    /// What the health probe observed, as evidence rather than a bare bool.
-    public struct HealthReport: Equatable, Sendable {
-        /// The HTTP status the endpoint answered with.
-        public let status: Int
-        /// The `Browser` field of `/json/version`, when it parsed.
-        public let browser: String?
-    }
-
-    /// GET `<origin>/json/version`, expecting 200.
-    ///
-    /// Explicit timeouts on both the request and the session (the fleet
-    /// http-timeout rule: the default is a slow-motion outage). The session
-    /// is invalidated after the single request so nothing outlives the call.
-    public func healthProbe(timeout: TimeInterval = 5) async throws -> HealthReport {
-        guard let url = URL(string: "\(endpoint.httpOrigin)/json/version") else {
-            throw WebBrowserError.healthProbeFailed(endpoint: endpoint.httpOrigin, status: nil)
-        }
-        var request = URLRequest(url: url)
-        request.timeoutInterval = timeout
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.timeoutIntervalForRequest = timeout
-        configuration.timeoutIntervalForResource = timeout
-        let session = URLSession(configuration: configuration)
-        defer { session.finishTasksAndInvalidate() }
-        do {
-            let (data, response) = try await session.data(for: request)
-            guard let http = response as? HTTPURLResponse else {
-                throw WebBrowserError.healthProbeFailed(endpoint: endpoint.httpOrigin, status: nil)
-            }
-            guard http.statusCode == 200 else {
-                throw WebBrowserError.healthProbeFailed(
-                    endpoint: endpoint.httpOrigin, status: http.statusCode)
-            }
-            return HealthReport(
-                status: http.statusCode, browser: Self.browserField(from: data))
-        } catch let error as WebBrowserError {
-            throw error
-        } catch {
-            throw Self.wrapHealthTransport(error, origin: endpoint.httpOrigin)
-        }
-    }
-
-    /// Wrap transport errors into the typed error with the endpoint named.
-    private static func wrapHealthTransport(_ error: Error, origin: String) -> WebBrowserError {
-        if let web = error as? WebBrowserError { return web }
-        return .healthProbeFailed(endpoint: origin, status: nil)
-    }
-
-    /// The `Browser` field from the probe response BODY, or nil.
-    static func browserField(from data: Data) -> String? {
-        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return nil
-        }
-        return obj["Browser"] as? String
     }
 
     /// Poll liveness until death, bounded.
