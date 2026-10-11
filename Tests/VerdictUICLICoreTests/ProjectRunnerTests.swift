@@ -297,6 +297,101 @@ extension ProjectRunnerTests {
         }
     }
 
+    /// Runs the resolver on a helper thread so a regression that blocks (an unread pipe whose
+    /// write end the parent still holds) fails this test instead of hanging the whole suite.
+    private final class ResolveOutcome: @unchecked Sendable {
+        var url: URL?
+        var error: Error?
+    }
+
+    private func resolveBuiltRunner(root: URL, swift: URL, file: StaticString = #filePath, line: UInt = #line) -> URL? {
+        let outcome = ResolveOutcome()
+        let done = DispatchSemaphore(value: 0)
+        let worker = Thread {
+            do {
+                outcome.url = try ProjectRunner.resolveBuiltRunnerExecutableAfterBuild(
+                    projectRoot: root, timeout: 5, swiftExecutable: swift)
+            } catch {
+                outcome.error = error
+            }
+            done.signal()
+        }
+        worker.start()
+        guard done.wait(timeout: .now() + 20) == .success else {
+            XCTFail("resolveBuiltRunnerExecutableAfterBuild did not return within 20 seconds", file: file, line: line)
+            return nil
+        }
+        if let error = outcome.error { XCTFail("resolver threw: \(error)", file: file, line: line) }
+        return outcome.url
+    }
+
+    private func writeExecutable(_ url: URL, _ body: String) throws {
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(("#!/bin/sh\n" + body + "\n").utf8).write(to: url)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+    }
+
+    func testResolvedRunnerComesFromShowBinPathWhenSeveralTripleDirectoriesExist() throws {
+        try buildProject(settings: ["buildProduct": "Consumer"]) { root, executable in
+            try JSONSerialization.data(withJSONObject: [
+                "runner": ".build/debug/Consumer", "buildProduct": "Consumer",
+            ]).write(to: root.appendingPathComponent(".verdictui/config.json"))
+            for triple in ["arm64-apple-macosx", "arm64-apple-macosx15.0"] {
+                try writeExecutable(root.appendingPathComponent(".build/\(triple)/debug/Consumer"), "exit 0")
+            }
+
+            let resolved = resolveBuiltRunner(root: root, swift: executable)
+
+            XCTAssertEqual(
+                resolved?.resolvingSymlinksInPath().path,
+                root.appendingPathComponent("stub-bin/Consumer").resolvingSymlinksInPath().path)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("invoked-show-bin-path").path))
+        }
+    }
+
+    func testResolvedRunnerIgnoresStaleLeftoverInAnotherTripleDirectory() throws {
+        try buildProject(settings: ["buildProduct": "Consumer"]) { root, executable in
+            try JSONSerialization.data(withJSONObject: [
+                "runner": ".build/debug/Consumer", "buildProduct": "Consumer",
+            ]).write(to: root.appendingPathComponent(".verdictui/config.json"))
+            try writeExecutable(root.appendingPathComponent(".build/arm64-apple-macosx/debug/Consumer"), "touch stale-ran")
+
+            let resolved = resolveBuiltRunner(root: root, swift: executable)
+
+            XCTAssertEqual(
+                resolved?.resolvingSymlinksInPath().path,
+                root.appendingPathComponent("stub-bin/Consumer").resolvingSymlinksInPath().path,
+                "a lone leftover under .build/<triple> is not evidence of which build just ran")
+        }
+    }
+
+    func testResolvedRunnerUsesLastLineOfShowBinPathOutput() throws {
+        try buildProject(settings: ["buildProduct": "Consumer"]) { root, _ in
+            try JSONSerialization.data(withJSONObject: [
+                "runner": ".build/debug/Consumer", "buildProduct": "Consumer",
+            ]).write(to: root.appendingPathComponent(".verdictui/config.json"))
+            let noisy = root.appendingPathComponent("noisy-swift")
+            try writeExecutable(noisy, """
+            for arg; do
+              if [ "$arg" = --show-bin-path ]; then
+                mkdir -p "$PWD/noisy-bin"
+                printf '#!/bin/sh\\nexit 0\\n' > "$PWD/noisy-bin/Consumer"
+                chmod +x "$PWD/noisy-bin/Consumer"
+                echo "note: a toolchain banner on stdout"
+                echo "$PWD/noisy-bin"
+                exit 0
+              fi
+            done
+            """)
+
+            let resolved = resolveBuiltRunner(root: root, swift: noisy)
+
+            XCTAssertEqual(
+                resolved?.resolvingSymlinksInPath().path,
+                root.appendingPathComponent("noisy-bin/Consumer").resolvingSymlinksInPath().path)
+        }
+    }
+
     func testBuildUsesSafeArgumentsProjectRootAndReleaseConfiguration() throws {
         try buildProject(settings: ["buildProduct": "Consumer;echo-not-a-shell", "configuration": "release"],
                          script: "printf '%s\\n' \"$@\" > arguments.txt\npwd > cwd.txt") { root, executable in

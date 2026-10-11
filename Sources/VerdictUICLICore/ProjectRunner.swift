@@ -196,36 +196,6 @@ public enum ProjectRunner {
 
     private static let showBinPathWaitCap: TimeInterval = 60
 
-    private static let swiftPackageBuildArtifactNames: Set<String> = [
-        "artifacts", "checkouts", "debug", "plugin-tools", "plugins", "release", "repositories",
-        "workspace-state.json",
-    ]
-
-    /// After a successful build, the product already sits under `.build/<triple>/<configuration>/`.
-    private static func discoverBuiltProduct(
-        build: ProjectScenarios.BuildConfiguration
-    ) throws -> URL? {
-        let buildRoot = build.packageRoot.appendingPathComponent(".build", isDirectory: true)
-        guard let names = try? FileManager.default.contentsOfDirectory(atPath: buildRoot.path) else {
-            return nil
-        }
-        var matches: [URL] = []
-        for name in names {
-            guard !swiftPackageBuildArtifactNames.contains(name) else { continue }
-            let candidate = buildRoot.appendingPathComponent(name, isDirectory: true)
-                .appendingPathComponent(build.configuration)
-                .appendingPathComponent(build.product)
-            do {
-                try validateDeclaredRunnerExecutable(at: candidate)
-            } catch {
-                continue
-            }
-            matches.append(candidate.standardizedFileURL)
-        }
-        guard matches.count == 1, let match = matches.first else { return nil }
-        return match
-    }
-
     private static func builtProductExecutable(
         build: ProjectScenarios.BuildConfiguration,
         projectRoot: URL,
@@ -233,10 +203,6 @@ public enum ProjectRunner {
         environment: [String: String],
         timeout: TimeInterval
     ) throws -> URL {
-        if let discovered = try discoverBuiltProduct(build: build) {
-            try validateDeclaredRunnerExecutable(at: discovered)
-            return discovered
-        }
         let waitBudget = min(timeout, showBinPathWaitCap)
         let output = Pipe()
         let process = try GuardedProcess.spawn(
@@ -245,7 +211,9 @@ public enum ProjectRunner {
             directory: projectRoot, environment: environment,
             standardOutput: output.fileHandleForWriting.fileDescriptor,
             standardError: STDERR_FILENO)
-        defer { try? output.fileHandleForWriting.close() }
+        // The child owns its copy of the write end; keeping ours open would make the
+        // read-to-EOF below wait forever even after the child exits.
+        try? output.fileHandleForWriting.close()
         let deadline = ProcessInfo.processInfo.systemUptime + waitBudget
         while try process.status() == nil {
             if ProcessInfo.processInfo.systemUptime >= deadline {
@@ -262,7 +230,9 @@ public enum ProjectRunner {
         let data = output.fileHandleForReading.readDataToEndOfFile()
         guard
             let directory = String(data: data, encoding: .utf8)?
-                .trimmingCharacters(in: .whitespacesAndNewlines),
+                .split(whereSeparator: \.isNewline)
+                .map({ $0.trimmingCharacters(in: .whitespaces) })
+                .last(where: { !$0.isEmpty }),
             !directory.isEmpty
         else {
             throw Failure(description: "could not resolve built runner location")
