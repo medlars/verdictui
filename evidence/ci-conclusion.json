@@ -1,0 +1,1 @@
+{"completed_at": "2026-10-12T06:58:53Z", "conclusion": "success", "event": "pull_request", "head_branch": "chore/python-3.15", "head_repository": "medlars/verdictui", "head_sha": "0bd011eb5b4006c4879ff9dd7bbf062d5193f757", "repo": "medlars/verdictui", "run_attempt": "1", "run_id": "38214180857", "schema_version": "1.1.0", "workflow": "CI"}
