@@ -845,7 +845,7 @@ def store_mention_is_harmless(cmd: str) -> bool:
     # that value (~ and $HOME resolved here, never by trusting the text), is the sole assignment allowed.
     if words and words[0].startswith("PYTHONPATH="):
         home = os.environ.get("HOME", "")
-        trusted = {"shared-libs", "~/Projects/shared-libs", "$HOME/Projects/shared-libs", "/Users/eiman/Projects/shared-libs"}
+        trusted = {"shared-libs", "~/Projects/shared-libs", "$HOME/Projects/shared-libs"}
         if home:
             trusted.add(f"{home}/Projects/shared-libs")
         if words[0].partition("=")[2] not in trusted:
