@@ -1,0 +1,1 @@
+{"completed_at": "2026-10-12T08:57:21Z", "conclusion": "success", "event": "pull_request", "head_branch": "drain/cis-341ec18f-docs", "head_repository": "medlars/verdictui", "head_sha": "1c4336d0d70e7be8cc1adf327718e58e2d214959", "repo": "medlars/verdictui", "run_attempt": "1", "run_id": "38225178794", "schema_version": "1.1.0", "workflow": "CI"}
