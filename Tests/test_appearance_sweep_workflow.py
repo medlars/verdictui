@@ -3,7 +3,7 @@
 The job only runs on a manual dispatch on a hosted macOS runner, so nothing
 exercises its shell locally. These tests pull each step's real `run:` body out of
 the parsed YAML and run it under `bash -e` (GitHub's default shell) against stub
-`swift`, `osascript` and `python3.14` commands on PATH. The product-sweep steps
+`swift`, `osascript` and `python3.15` commands on PATH. The product-sweep steps
 run the REAL `scripts/appearance-sweep.py` against a stub verdictui binary; the
 measurement steps, whose script sleeps through two app launches, are judged on
 how the step treats each exit code the script can return.
@@ -44,7 +44,7 @@ case "$(basename "$0")" in
     case "$*" in
       *"get dark mode"*) echo "${STUB_DARK:-false}" ;;
     esac ;;
-  python3.14)
+  python3.15)
     [ -n "$STUB_PY_EXIT" ] && exit "$STUB_PY_EXIT"
     exec "$REAL_PYTHON" "$@" ;;
   verdictui)
@@ -97,7 +97,7 @@ class StepResult:
 def run_step(tmp_path: Path):
     bindir = tmp_path / "bin"
     bindir.mkdir()
-    for name in ("swift", "osascript", "python3.14", "verdictui"):
+    for name in ("swift", "osascript", "python3.15", "verdictui"):
         (bindir / name).write_text(_STUB)
         (bindir / name).chmod(0o755)
     (tmp_path / "calls").write_text("")
@@ -193,7 +193,7 @@ def test_light_host_measurement_passes_only_when_unavailable(run_step, code, pas
     assert (result.returncode == 0) is passes, result.output
     assert f"measurement exit {code} (expected 2)" in result.output
     binary = result.env["VERDICTUI_BIN"]
-    assert result.calls == [f"python3.14 scripts/appearance-sweep.py --binary {binary} --app {APP}"]
+    assert result.calls == [f"python3.15 scripts/appearance-sweep.py --binary {binary} --app {APP}"]
 
 
 @pytest.mark.parametrize(("code", "passes"), [("0", True), ("1", False), ("2", False)])

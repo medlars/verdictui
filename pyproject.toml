@@ -21,9 +21,9 @@ line-length = 100
 # the failure names a file nobody touched — which reads as a regression rather
 # than as an environment difference (`no.md` #14: suspect the apparatus).
 #
-# The fleet already runs Python 3.14 everywhere (shared/rules.md), so this
+# The fleet already runs Python 3.15 everywhere (shared/rules.md), so this
 # states what was already true instead of changing behaviour.
-target-version = "py314"
+target-version = "py315"
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]

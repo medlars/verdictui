@@ -61,10 +61,10 @@ final class WebFrameIntegrationTests: XCTestCase {
             return URL(fileURLWithPath: configured)
         }
         for entry in (environment["PATH"] ?? "").split(separator: ":") {
-            let candidate = URL(fileURLWithPath: String(entry)).appendingPathComponent("python3.14")
+            let candidate = URL(fileURLWithPath: String(entry)).appendingPathComponent("python3.15")
             if FileManager.default.isExecutableFile(atPath: candidate.path) { return candidate }
         }
-        throw WebBrowserError.invalidWebOperation(reason: "fixture requires VERDICTUI_TEST_PYTHON or python3.14 on PATH")
+        throw WebBrowserError.invalidWebOperation(reason: "fixture requires VERDICTUI_TEST_PYTHON or python3.15 on PATH")
     }
 
     private func server(root: URL, environment: [String: String] = ProcessInfo.processInfo.environment) async throws -> (FixtureProcess, Int) {
@@ -170,7 +170,7 @@ final class WebFrameIntegrationTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
-        let interpreter = root.appendingPathComponent("python3.14")
+        let interpreter = root.appendingPathComponent("python3.15")
         try "#!/bin/sh\nexit 0\n".write(to: interpreter, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: interpreter.path)
         XCTAssertEqual(try fixturePython(environment: ["PATH": "/missing:\(root.path)"]), interpreter)

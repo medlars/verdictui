@@ -112,8 +112,8 @@ there is no universal latency claim across these different paths.
 ```sh
 bash scripts/dev.sh
 swift test -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete
-python3.14 scripts/verdictui-pm.py --full
-python3.14 scripts/product-smoke.py --help
+python3.15 scripts/verdictui-pm.py --full
+python3.15 scripts/product-smoke.py --help
 ```
 
 The full PM includes separate-package consumer and real built-binary product

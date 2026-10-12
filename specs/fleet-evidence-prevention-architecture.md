@@ -15,7 +15,7 @@ MCP manifest referenced an absent release launcher instead of a consumer host.
 
 Adapters retain original input; stores enforce clause completion; shared evidence
 readers validate artifacts; CEO reports every registry row. No project imports
-another project. Python 3.14 and existing Swift targets remain the runtime.
+another project. Python 3.15 and existing Swift targets remain the runtime.
 No service, external subscription, or blanket permission change is added.
 Behavioral negative controls accompany each new guard. Source census observed both domain and adapter layers: 63 modules, 648 edges,
 zero cross-project imports/cycles/layer violations, zero unparseable files.

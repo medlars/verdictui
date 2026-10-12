@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.14
+#!/usr/bin/env python3.15
 """Detect a tracked file that was overwritten by a STALE editor buffer.
 
 The failure this catches, observed four times during Wave 2 (CIS-638133AE): an

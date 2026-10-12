@@ -266,7 +266,7 @@ final class ConsumerCrashFixture {
         try owner.run()
     }
     static let script = #"""
-    #!/usr/bin/env python3.14
+    #!/usr/bin/env python3.15
     import os,pathlib,signal,time
     signal.signal(signal.SIGTERM,signal.SIG_IGN)
     root=pathlib.Path.cwd()/'.verdictui'

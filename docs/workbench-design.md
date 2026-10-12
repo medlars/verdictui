@@ -106,7 +106,7 @@ Artifacts and reproducible harness:
 `~/.codex/visualizations/2026/09/23/01a0cd0e-b53d-7052-ad1d-cd9b7ef78b87/workbench-design/`.
 Review `webkit-running-1000.png`, `webkit-findings-1000.png`,
 `webkit-findings-360.png`, `webkit-checks-360.png`, `verification.json`, and the
-rectangle JSON files. Run `python3.14 verify_workbench.py <repository-root>`.
+rectangle JSON files. Run `python3.15 verify_workbench.py <repository-root>`.
 
 Frontend verification is complete. The native shell's real engine execution,
 packaging, and end-to-end evidence remain the integration lane's responsibility;
@@ -117,12 +117,12 @@ an injected bridge is not evidence that those native paths ran.
 The checked-in `scripts/workbench-smoke.py` now owns this acceptance flow. It
 accepts a repository root (defaults to its own repository) and `--artifact-dir`.
 The only test-only dependencies are `playwright==1.61.0` and `Pillow==12.3.0`,
-using Python 3.14. Install the matching official browser runtimes with
-`python3.14 -m playwright install chromium webkit`.
+using Python 3.15. Install the matching official browser runtimes with
+`python3.15 -m playwright install chromium webkit`.
 
 ```bash
-python3.14 scripts/workbench-smoke.py --artifact-dir /tmp/verdictui-workbench-smoke
-python3.14 -m pytest Tests/test_workbench_smoke.py -q
+python3.15 scripts/workbench-smoke.py --artifact-dir /tmp/verdictui-workbench-smoke
+python3.15 -m pytest Tests/test_workbench_smoke.py -q
 ```
 
 The terminal gate is `WORKBENCH SMOKE PASS` with a positive measured assertion
@@ -163,7 +163,7 @@ its Chromium runtime, and macOS's built-in `sips` and `iconutil`. Intermediate
 PNGs live in the temporary directory; only the resulting ICNS belongs in Git.
 
 ```bash
-python3.14 - <<'PY'
+python3.15 - <<'PY'
 from pathlib import Path
 import subprocess
 import tempfile

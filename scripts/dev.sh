@@ -11,4 +11,4 @@ echo "Testing..."
 swift test --build-system native
 
 echo ""
-echo "PM: python3.14 scripts/verdictui-pm.py --quick"
+echo "PM: python3.15 scripts/verdictui-pm.py --quick"

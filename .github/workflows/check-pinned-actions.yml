@@ -21,7 +21,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Set up Python 3.14
+      - name: Set up Python 3.15
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.14.7'
@@ -36,7 +36,7 @@ jobs:
         # moving major tag ("v1") read as stale and the issue told the reader to
         # move a SHA pin BACKWARDS. Shared verbatim with FinanceFlow (552812f03)
         # and Archivist so the rule has ONE implementation, not three that drift.
-        run: python3.14 .github/scripts/check_pinned_actions.py
+        run: python3.15 .github/scripts/check_pinned_actions.py
 
       - name: Create issue for action updates
         if: steps.check.outputs.updates_found == 'true'

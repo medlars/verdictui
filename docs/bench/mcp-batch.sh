@@ -12,7 +12,7 @@ N=${1:-25}
 [ -x "$BIN" ] || { echo "build first: swift build -c release --product verdictui" >&2; exit 2; }
 
 OUT=$(mktemp)
-START=$(python3.14 -c 'import time;print(time.time())')
+START=$(python3.15 -c 'import time;print(time.time())')
 {
   printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"bench","version":"1"}}}\n'
   for i in $(seq 1 "$N"); do
@@ -20,7 +20,7 @@ START=$(python3.14 -c 'import time;print(time.time())')
   done
 } | "$BIN" mcp > "$OUT" 2>/dev/null
 RC=${PIPESTATUS[1]}
-END=$(python3.14 -c 'import time;print(time.time())')
+END=$(python3.15 -c 'import time;print(time.time())')
 
 REPLIES=$(wc -l < "$OUT" | tr -d ' ')
 EXPECTED=$((N + 1))
@@ -36,7 +36,7 @@ if grep -q '"error"' "$OUT"; then
   rm -f "$OUT"; exit 1
 fi
 
-python3.14 -c "
+python3.15 -c "
 total = ($END - $START) * 1000
 print(f'MCP-BATCH replies={$REPLIES} total={total:.1f}ms per_call={total/$EXPECTED:.2f}ms')
 "

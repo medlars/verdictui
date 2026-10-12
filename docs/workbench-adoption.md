@@ -14,7 +14,7 @@ Prepare cold builds explicitly, then observe the current product:
 
 ```sh
 bash scripts/build-workbench-acceptance.sh debug
-python3.14 scripts/workbench_coverage.py observe
+python3.15 scripts/workbench_coverage.py observe
 ```
 
 The `.verdictui/run-workbench.py` executable also implements the consumer
@@ -33,7 +33,7 @@ an `images` map of every image filename to SHA256, and `criteria` containing
 `alignment`, `clipping`, `contrast`, `state-clarity`, `motion-preference`.
 
 ```sh
-python3.14 scripts/workbench_coverage.py review /absolute/path/to/review.json
+python3.15 scripts/workbench_coverage.py review /absolute/path/to/review.json
 ```
 
 Admission rechecks the complete native artifact report, actual binaries, source,

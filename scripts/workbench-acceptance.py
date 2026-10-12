@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.14
+#!/usr/bin/env python3.15
 """Drive the real packaged WKWebView app; no mock bridge or global app state."""
 
 from __future__ import annotations

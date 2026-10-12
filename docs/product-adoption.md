@@ -594,7 +594,7 @@ CLI/MCP/daemon tests, and 77 snapshot tests with five explicit live skips.
 Root admitted the raw consumer logs, JUnit identities and pinned dependency lock.
 The real-browser job failed before testing because setup-python attempted to
 write `/Users/runner` on the self-hosted machine. Reviewed correction `dc042475`
-uses the installed Python 3.14 and retains the private environment; 89 focused
+uses the installed Python 3.15 and retains the private environment; 89 focused
 controls pass. Its first PM returned A100 but failed qualification because
 another process changed the canonical PM runtime during execution. A new run
 completed against stable `b17b4d9`: all 18 stages passed A100 in 106.13 seconds
@@ -611,7 +611,7 @@ arguments, samples positively owned XCTest after 120 seconds, and fails with
 bounded owned-group cleanup after 180 seconds. An independent review reproduced
 a blocked-console defect before publication. Repairs `064255f3` and `13ba78ac`
 remove optional console mirroring, preserve complete raw logs, and explicitly
-provision Python 3.14 in the hosted job. All 120 focused controls and independent
+provision Python 3.15 in the hosted job. All 120 focused controls and independent
 backpressure/runtime checks pass. Published `2f44f9d5` passed all 18 PM stages
 at A100 with 2,886 Python passes, unchanged source/dependency/runtime/baselines,
 and a 792-input census with zero errors and 608 retained warnings. The census
@@ -983,8 +983,8 @@ prove the installed binary matches current source.
 ## Reproducible artifact gate
 
 ```bash
-python3.14 -m pytest Tests/test_product_smoke.py -q
-python3.14 scripts/product-smoke.py --binary /absolute/path/to/verdictui
+python3.15 -m pytest Tests/test_product_smoke.py -q
+python3.15 scripts/product-smoke.py --binary /absolute/path/to/verdictui
 ```
 
 The smoke script runs the supplied executable through real CLI and interactive

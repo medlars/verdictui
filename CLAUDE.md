@@ -12,7 +12,7 @@ SwiftUI verification engine that replaces the screenshot–wait–click–confir
 
 ```bash
 bash scripts/dev.sh                        # setup + build + test
-python3.14 scripts/verdictui-pm.py --quick # health check
+python3.15 scripts/verdictui-pm.py --quick # health check
 ```
 
 ## Session Continuity (read this first, every session)

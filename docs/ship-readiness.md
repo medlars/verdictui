@@ -28,4 +28,4 @@
 
 Consumer dogfood, fleet census gaps, and PM/CI gates are tracked in
 [wave-status.md](wave-status.md) and [TODO.md](../TODO.md). Run
-`python3.14 scripts/verdictui-pm.py` for the supervision gate.
+`python3.15 scripts/verdictui-pm.py` for the supervision gate.

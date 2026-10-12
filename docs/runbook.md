@@ -243,7 +243,7 @@ project directory. Read the live value out of the file rather than copying it
 from here, where it would go stale silently:
 
 ```bash
-python3.14 -c "import json;print(json.load(open('.mcp.json'))['mcpServers']['verdictui']['command'])"
+python3.15 -c "import json;print(json.load(open('.mcp.json'))['mcpServers']['verdictui']['command'])"
 ```
 
 It points at the **release** binary, so it survives the debug builds a working
@@ -380,7 +380,7 @@ and an empty tree is indistinguishable from a scenario that renders nothing.
 ## Health Check
 
 ```bash
-python3.14 scripts/verdictui-pm.py --quick    # Grade A required
+python3.15 scripts/verdictui-pm.py --quick    # Grade A required
 ```
 
 ## Known Failure Modes

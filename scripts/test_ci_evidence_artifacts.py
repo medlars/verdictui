@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.14
+#!/usr/bin/env python3.15
 """VerdictUI-only CI contracts that sit beside the shared run-v2 identity harness.
 
 scripts/test_ci_evidence_identity.py must stay byte-identical to the Agents
@@ -44,7 +44,7 @@ class TestFixturePython(unittest.TestCase):
         setup = harness.extract_step(harness.WORKFLOW_TEXT, "Set up fixture Python")
         tests = harness.extract_step(harness.WORKFLOW_TEXT, "Test (zero-warning)")
         self.assertIn("id: fixture_python", setup)
-        self.assertIn("python-version: '3.14'", setup)
+        self.assertIn("python-version: '3.15'", setup)
         self.assertRegex(setup, r"uses: actions/setup-python@[a-f0-9]{40}")
         self.assertLess(harness.WORKFLOW_TEXT.index(setup), harness.WORKFLOW_TEXT.index(tests))
         self.assertIn(

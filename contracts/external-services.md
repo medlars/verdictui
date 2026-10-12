@@ -10,4 +10,4 @@
 
 ## Dependency Health
 
-Run: `python3.14 contracts/validate-contracts.py`
+Run: `python3.15 contracts/validate-contracts.py`

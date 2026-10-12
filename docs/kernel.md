@@ -741,7 +741,7 @@ the wire format on purpose:
 
 ```bash
 VERDICTUI_WRITE_FIXTURES=1 swift test --filter ContractFixtureTests
-python3.14 contracts/validate-contracts.py
+python3.15 contracts/validate-contracts.py
 ```
 
 Then review the fixture diff as what it is — a change to a published contract.
