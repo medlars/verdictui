@@ -41,8 +41,11 @@ Create `.verdictui/config.json` in your package root:
 ```
 
 With `buildProduct`, the launcher runs `swift build --package-path <root>
---product=<name> --configuration=debug --jobs 2` before each scenario invocation.
-SwiftPM rebuilds only changed dependencies; unchanged invocations use its cache.
+--product=<name> --configuration=debug --build-system native --jobs 2` before each
+scenario invocation, then runs the executable that `swift build ... --show-bin-path`
+reports rather than the `runner` symlink, so a different SwiftPM build system cannot
+re-point `.build/debug` to a stale binary. SwiftPM rebuilds only changed dependencies;
+unchanged invocations use its cache.
 Set `configuration` to `release` and point `runner` at the release executable to
 use that build. Compiler output goes to stderr, preserving JSON and MCP stdout.
 A failed build refuses any old executable; a build exceeding 300 seconds is
