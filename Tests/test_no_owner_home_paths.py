@@ -25,7 +25,11 @@ def _tracked_text_files() -> list[Path]:
     # .github/deletion-screen holds files vendored verbatim from claude-config; its policy
     # lists the owner's shared-libs path as a trusted location (tracked upstream), so the
     # copy cannot be edited here without drifting from VENDORED.json.
-    return [ROOT / rel for rel in out.stdout.splitlines() if not rel.startswith(".github/deletion-screen/")]
+    return [
+        ROOT / rel
+        for rel in out.stdout.splitlines()
+        if not rel.startswith(".github/deletion-screen/")
+    ]
 
 
 def owner_home_paths(text: str) -> list[str]:
