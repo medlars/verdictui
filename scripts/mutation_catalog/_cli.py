@@ -591,9 +591,30 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="a declared build-tree wrapper is replaced by the build product",
         path="Sources/VerdictUICLICore/ProjectRunner.swift",
-        old="return (declared as NSString).lastPathComponent == product",
-        new="return true",
+        old="guard components.last == product else { return false }",
+        new="guard components.last != nil else { return false }",
         test="ProjectRunnerTests/testResolverLeavesADeclaredBuildTreeWrapperAlone",
+    ),
+    Mutation(
+        name="a same-named wrapper outside a configuration directory is replaced",
+        path="Sources/VerdictUICLICore/ProjectRunner.swift",
+        old='guard ["debug", "release"].contains(configuration) else { return false }',
+        new="guard !configuration.isEmpty else { return false }",
+        test="ProjectRunnerTests/testResolverLeavesASameNamedBuildTreeWrapperAlone",
+    ),
+    Mutation(
+        name="a same-named wrapper under a non-triple directory is replaced",
+        path="Sources/VerdictUICLICore/ProjectRunner.swift",
+        old='case 4: return components[1].contains("-")',
+        new="case 4: return !components[1].isEmpty",
+        test="ProjectRunnerTests/testResolverLeavesASameNamedBuildTreeWrapperAlone",
+    ),
+    Mutation(
+        name="a same-named wrapper nested deeper than SwiftPM's layout is replaced",
+        path="Sources/VerdictUICLICore/ProjectRunner.swift",
+        old="default: return false\n        }\n    }\n\n    private static func swiftBuildCommandPrefix(",
+        new="default: return true\n        }\n    }\n\n    private static func swiftBuildCommandPrefix(",
+        test="ProjectRunnerTests/testResolverLeavesASameNamedBuildTreeWrapperAlone",
     ),
     Mutation(
         name="a failed bin-path probe still selects the path it printed",

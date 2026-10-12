@@ -165,8 +165,9 @@ public enum ProjectRunner {
         }
     }
 
-    /// True when the manifest runner is the build tree's copy of `product`. A `.build/` runner
-    /// with another name is a declared wrapper, which the bin-path product must not replace.
+    /// True when the manifest runner is SwiftPM's own product path, `.build/<config>/<product>` or
+    /// `.build/<triple>/<config>/<product>`. Any other `.build/` runner, even one named `product`,
+    /// is a declared wrapper, which the bin-path product must not replace.
     private static func declaresBuildTreeProduct(projectRoot: URL, product: String) throws -> Bool {
         let manifest = projectRoot
             .appendingPathComponent(ProjectScenarios.configDirectory, isDirectory: true)
@@ -178,7 +179,16 @@ public enum ProjectRunner {
         else { return false }
         let declared = runner.trimmingCharacters(in: .whitespacesAndNewlines)
         guard declared.hasPrefix(".build/") else { return false }
-        return (declared as NSString).lastPathComponent == product
+        let components = (declared as NSString).pathComponents
+        guard components.last == product else { return false }
+        let configuration = components.dropLast().last ?? ""
+        guard ["debug", "release"].contains(configuration) else { return false }
+        // SwiftPM triples are always hyphenated (arm64-apple-macosx), so `.build/wrappers/debug/X` is not one.
+        switch components.count {
+        case 3: return true
+        case 4: return components[1].contains("-")
+        default: return false
+        }
     }
 
     private static func swiftBuildCommandPrefix(

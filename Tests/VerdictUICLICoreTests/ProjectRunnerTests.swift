@@ -385,6 +385,43 @@ extension ProjectRunnerTests {
         }
     }
 
+    func testResolverLeavesASameNamedBuildTreeWrapperAlone() throws {
+        // Named for buildProduct but outside SwiftPM's <config> or <triple>/<config> layout.
+        for runner in [
+            ".build/wrappers/Consumer", ".build/wrappers/debug/Consumer", ".build/debug/tools/Consumer",
+            ".build/tools/arm64-apple-macosx/debug/Consumer",
+        ] {
+            try buildProject(settings: ["buildProduct": "Consumer"]) { root, executable in
+                try JSONSerialization.data(withJSONObject: [
+                    "runner": runner, "buildProduct": "Consumer",
+                ]).write(to: root.appendingPathComponent(".verdictui/config.json"))
+
+                let resolved = resolveBuiltRunner(root: root, swift: executable)
+
+                XCTAssertNil(resolved, "\(runner): a same-named wrapper is not SwiftPM's product path")
+                XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("invoked-show-bin-path").path))
+            }
+        }
+    }
+
+    func testResolverReplacesEveryConventionalSwiftPMProductPath() throws {
+        // Control for the wrapper test: the narrowed match must still accept SwiftPM's own layouts.
+        for runner in [".build/release/Consumer", ".build/arm64-apple-macosx/debug/Consumer"] {
+            try buildProject(settings: ["buildProduct": "Consumer"]) { root, executable in
+                try JSONSerialization.data(withJSONObject: [
+                    "runner": runner, "buildProduct": "Consumer",
+                ]).write(to: root.appendingPathComponent(".verdictui/config.json"))
+
+                let resolved = resolveBuiltRunner(root: root, swift: executable)
+
+                XCTAssertEqual(
+                    resolved?.resolvingSymlinksInPath().path,
+                    root.appendingPathComponent("stub-bin/Consumer").resolvingSymlinksInPath().path,
+                    "\(runner): a conventional product path resolves through --show-bin-path")
+            }
+        }
+    }
+
     func testResolverRefusesAPlausiblePathFromAFailedShowBinPath() throws {
         try buildProject(settings: ["buildProduct": "Consumer"]) { root, _ in
             try JSONSerialization.data(withJSONObject: [
