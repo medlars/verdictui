@@ -27,7 +27,7 @@ evidence_stability() {
   local tmp; tmp=$(mktemp)
   for _ in $(seq 1 "$N"); do
     "$BIN" verify demo-undersized-tap-target 2>/dev/null \
-      | python3.14 -c "import sys,json;d=json.load(sys.stdin);f=d['findings'][0];print(f['nodeID'],f['rule'])" >> "$tmp" 2>/dev/null
+      | python3.15 -c "import sys,json;d=json.load(sys.stdin);f=d['findings'][0];print(f['nodeID'],f['rule'])" >> "$tmp" 2>/dev/null
   done
   local distinct; distinct=$(sort "$tmp" | uniq -c | tr -s ' ')
   echo "EVIDENCE distinct=$(sort "$tmp" | uniq | wc -l | tr -d ' ') :$distinct"

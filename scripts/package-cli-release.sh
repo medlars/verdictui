@@ -97,7 +97,7 @@ scan_zip "$zip"
 notary_json="$out_dir/$name-notary.json"
 xcrun notarytool submit "$zip" --keychain-profile "$NOTARY_PROFILE" --wait \
   --output-format json > "$notary_json"
-status="$(python3.14 -c 'import json,sys; print(json.load(open(sys.argv[1]))["status"])' "$notary_json")"
+status="$(python3.15 -c 'import json,sys; print(json.load(open(sys.argv[1]))["status"])' "$notary_json")"
 [ "$status" = "Accepted" ] || fail "notarization status is '$status' (see $notary_json)"
 
 (cd "$out_dir" && shasum -a 256 "$(basename "$zip")" > "$(basename "$zip").sha256")

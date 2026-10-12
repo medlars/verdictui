@@ -125,7 +125,7 @@ the application in the current directory.
 Verify consumer rebuilds and crash isolation against the actual launcher:
 
 ```bash
-python3.14 examples/ConsumerApp/verify-integration.py /absolute/verdictui --reload
+python3.15 examples/ConsumerApp/verify-integration.py /absolute/verdictui --reload
 ```
 
 The gate creates a separate package, changes real Swift code while keeping the

@@ -10,10 +10,10 @@ once measured to be meaningless.
 ```bash
 bash scripts/dev.sh                          # setup + build + test
 swift test -Xswiftc -warnings-as-errors      # the suite as CI runs it
-python3.14 scripts/verdictui-pm.py --quick   # project health (Grade A expected)
+python3.15 scripts/verdictui-pm.py --quick   # project health (Grade A expected)
 ```
 
-Requires a Swift 6 toolchain on macOS 13+ and Python 3.14 for the project
+Requires a Swift 6 toolchain on macOS 13+ and Python 3.15 for the project
 manager. The kernel is platform-pure and compiles without SwiftUI.
 
 ## The five rules that are not negotiable
@@ -114,7 +114,7 @@ what was measured, and the general rule that outlives the instance.
 3. Run the full suite and the PM:
    ```bash
    swift test -Xswiftc -warnings-as-errors
-   python3.14 scripts/verdictui-pm.py --quick
+   python3.15 scripts/verdictui-pm.py --quick
    ```
    Both must be green, and the PM grade must not regress.
 4. Update `CHANGELOG.md` and `docs/FILE_REGISTRY.md` for new files.

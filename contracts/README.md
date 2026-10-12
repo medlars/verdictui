@@ -1,6 +1,6 @@
 # VerdictUI — Contracts
 
-Pinned interface contracts. Run `python3.14 contracts/validate-contracts.py` to validate.
+Pinned interface contracts. Run `python3.15 contracts/validate-contracts.py` to validate.
 
 | Contract | File | Status |
 |----------|------|--------|

@@ -894,7 +894,7 @@ def _backup_ok(finding: Finding, backup_answer: str) -> bool:
 # command sends it back to the owner.
 _INDIRECT = frozenset({"bash", "sh", "zsh", "dash", "ksh", "fish", "eval", "source", ".", "exec",
                        "xargs", "find", "parallel", "doas", "osascript", "python", "python3",
-                       "python3.14", "perl", "ruby", "node", "unlink", "rmdir", "shred", "srm",
+                       "python3.15", "perl", "ruby", "node", "unlink", "rmdir", "shred", "srm",
                        # shell-state changes alter what a later word expands to
                        "cd", "pushd", "popd", "export", "declare", "typeset", "alias", "unset",
                        "set", "readonly", "local", "builtin", "shopt"})
@@ -1011,7 +1011,7 @@ def _owner_request(found: list[Finding]) -> str:
         "Deleting anything in the owner's ordinary folders is his decision alone; ask him. Folders in",
         "~/Projects, repositories and coding-tool folders may be deleted with a DELETION-REVIEW and an",
         "existing backup. Moving, renaming or changing his files is allowed after a backup and a report",
-        "(python3.14 owner-change-backup.py <path>... --reason \"...\").",
+        "(python3.15 owner-change-backup.py <path>... --reason \"...\").",
     ])
 
 
@@ -1022,7 +1022,7 @@ def _token_request(found: list[Finding]) -> str:
         *(f"  * {f.target} {f.why}" for f in found),
         "",
         "Run this first, then repeat the command (the token lasts 30 minutes):",
-        f'  python3.14 {shlex.quote(str(_helper_path()))} {paths} --reason "<why this change>"',
+        f'  python3.15 {shlex.quote(str(_helper_path()))} {paths} --reason "<why this change>"',
         "The owner approves afterwards by typing \"approve changes\"; the backup is kept until then.",
     ])
 

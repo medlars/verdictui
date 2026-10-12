@@ -27,7 +27,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: '3.14'
+          python-version: '3.15'
 
       - name: Build verdictui
         run: |
@@ -36,13 +36,13 @@ jobs:
 
       - name: Light host - the product sweep reports the dark cell unavailable
         run: |
-          python3.14 scripts/appearance-sweep.py --binary "$VERDICTUI_BIN" \
+          python3.15 scripts/appearance-sweep.py --binary "$VERDICTUI_BIN" \
             --app /System/Applications/Dictionary.app --product-sweep unavailable
 
       - name: Light host - a dark launch measures as unavailable (exit 2), not pass or fail
         run: |
           set +e
-          python3.14 scripts/appearance-sweep.py --binary "$VERDICTUI_BIN" \
+          python3.15 scripts/appearance-sweep.py --binary "$VERDICTUI_BIN" \
             --app /System/Applications/Dictionary.app
           code=$?
           echo "measurement exit $code (expected 2)"
@@ -55,10 +55,10 @@ jobs:
 
       - name: Dark host - the product sweep launches and judges the dark cell
         run: |
-          python3.14 scripts/appearance-sweep.py --binary "$VERDICTUI_BIN" \
+          python3.15 scripts/appearance-sweep.py --binary "$VERDICTUI_BIN" \
             --app /System/Applications/Dictionary.app --product-sweep realised
 
       - name: Dark host - forced-Aqua light launch measures lighter than dark
         run: |
-          python3.14 scripts/appearance-sweep.py --binary "$VERDICTUI_BIN" \
+          python3.15 scripts/appearance-sweep.py --binary "$VERDICTUI_BIN" \
             --app /System/Applications/Dictionary.app

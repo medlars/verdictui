@@ -1,7 +1,7 @@
-#!/usr/bin/env python3.14
+#!/usr/bin/env python3.15
 """Contract validation for VerdictUI.
 
-Run: python3.14 contracts/validate-contracts.py
+Run: python3.15 contracts/validate-contracts.py
 
 Three fail-closed checks over the verdict wire format:
 

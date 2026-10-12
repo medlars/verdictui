@@ -337,7 +337,7 @@ class ContentionEvidence:
             f"    120.23ms vs 9.63ms on another — a 12x swing on unchanged code.\n"
             f"    Re-measure on an exclusive tree before filing any of this as a defect:\n"
             f"      git worktree add -q --detach /tmp/wt-verify HEAD\n"
-            f"      cd /tmp/wt-verify && python3.14 scripts/verdictui-pm.py --quick\n"
+            f"      cd /tmp/wt-verify && python3.15 scripts/verdictui-pm.py --quick\n"
         )
 
 

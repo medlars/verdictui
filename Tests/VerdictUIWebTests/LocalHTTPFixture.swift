@@ -41,9 +41,9 @@ struct LocalHTTPFixture {
             return URL(fileURLWithPath: configured)
         }
         for directory in (environment["PATH"] ?? "").split(separator: ":") {
-            let candidate = URL(fileURLWithPath: String(directory)).appendingPathComponent("python3.14")
+            let candidate = URL(fileURLWithPath: String(directory)).appendingPathComponent("python3.15")
             if FileManager.default.isExecutableFile(atPath: candidate.path) { return candidate }
         }
-        throw WebBrowserError.invalidWebOperation(reason: "fixture requires VERDICTUI_TEST_PYTHON or python3.14 on PATH")
+        throw WebBrowserError.invalidWebOperation(reason: "fixture requires VERDICTUI_TEST_PYTHON or python3.15 on PATH")
     }
 }

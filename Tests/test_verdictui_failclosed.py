@@ -211,7 +211,7 @@ class TestStagePytest:
         runner fails at `pip install` before any assertion can run — measured
         on main run 31317809175 after aa6c39c."""
         workflow = (_PROJECT_ROOT / ".github" / "workflows" / "ci.yml").read_text()
-        assert 'python-version: "3.14"' in workflow or "python-version: '3.14'" in workflow, (
+        assert 'python-version: "3.15"' in workflow or "python-version: '3.15'" in workflow, (
             "python-scripts job must use Python >=3.14 so pm-base installs"
         )
         assert "Install pm_base" in workflow, "CI must still install pm_base for PM tests"

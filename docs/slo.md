@@ -3,7 +3,7 @@
 | # | SLO | Target | Measurement | Owner |
 |---|-----|--------|-------------|-------|
 | 1 | Inner-loop verify cycle (act → settle → verdict) on the demo app | < 100 ms p95 | PM `stage_runtime_bench` (`HarnessPerformanceTests`, `SLO1-PERFORM` line) | medlars@gmail.com |
-| 2 | PM quick pipeline health | Grade A on every run | `python3.14 scripts/verdictui-pm.py --quick` | medlars@gmail.com |
+| 2 | PM quick pipeline health | Grade A on every run | `python3.15 scripts/verdictui-pm.py --quick` | medlars@gmail.com |
 | 3 | Warm MCP round trip (`verify`) through the stdio transport | < 100 ms p95 | PM `stage_mcp_latency` (`MCPLatencyTests`, `SLO3-MCP` line) | medlars@gmail.com |
 | 4 | Cross-validated verify (in-process tree reconciled against the AX witness) | < 5 s per scenario | `LieCatchTests` / `verdictui verify --cross-validate`; recorded in `timing.crossValidateMs` | medlars@gmail.com |
 
@@ -34,7 +34,7 @@ drift apart silently.
   no tolerance to tune: the threshold is total because a partial one invites
   treating a red stage as noise, and the whole point of the gate is that it
   cannot be discounted.
-- **Enforced by**: `python3.14 scripts/verdictui-pm.py --quick`, which the
+- **Enforced by**: `python3.15 scripts/verdictui-pm.py --quick`, which the
   session protocol runs before every commit, and `--full` before a release.
 
 ### SLO 3 — the number an agent actually experiences

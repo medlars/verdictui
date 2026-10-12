@@ -108,7 +108,7 @@ Cold preparation has a separate build budget; automatic checks never hide a
 build inside their existing runtime deadline.
 
 ```sh
-python3.14 scripts/workbench-acceptance.py \
+python3.15 scripts/workbench-acceptance.py \
   --app /absolute/VerdictUI.app \
   --consumer-runner /absolute/ConsumerScenarios \
   --consumer-build-receipt /absolute/consumer.json \

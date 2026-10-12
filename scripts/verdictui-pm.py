@@ -1,5 +1,5 @@
-#!/usr/bin/env python3.14
-"""VerdictUI PM. Run: python3.14 scripts/verdictui-pm.py --quick
+#!/usr/bin/env python3.15
+"""VerdictUI PM. Run: python3.15 scripts/verdictui-pm.py --quick
 
 Entrypoint only. The implementation lives in five siblings in this directory:
 

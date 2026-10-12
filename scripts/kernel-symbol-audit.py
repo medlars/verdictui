@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.14
+#!/usr/bin/env python3.15
 """Audit the public surface of VerdictUIKernel against the Wave 1 exit gate.
 
 The gate is "every public kernel symbol has a doc comment and at least one test
@@ -26,7 +26,7 @@ Scope, stated rather than implied:
   initializer it looks for the enclosing type name, since `init` is not a
   searchable identifier.
 
-Run: python3.14 scripts/kernel-symbol-audit.py [--json]
+Run: python3.15 scripts/kernel-symbol-audit.py [--json]
 Exit code 1 if any gap is found.
 """
 

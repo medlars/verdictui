@@ -222,7 +222,7 @@ real and VerdictUI trades it away deliberately for evidence.
 ```bash
 swift build -c release --product verdictui
 swift test --filter HarnessPerformanceTests        # SLO 1
-python3.14 scripts/verdictui-pm.py --quick         # gates SLO 1 + SLO 3 + SLO 4
+python3.15 scripts/verdictui-pm.py --quick         # gates SLO 1 + SLO 3 + SLO 4
 bash docs/bench/mcp-batch.sh                       # warm MCP batch
 bash docs/bench/flake-100.sh                       # both flake directions
 ```

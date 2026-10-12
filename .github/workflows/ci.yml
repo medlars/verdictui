@@ -34,7 +34,7 @@ jobs:
         id: fixture_python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: '3.14'
+          python-version: '3.15'
 
       - name: Swift version (must equal .github/swift-toolchain-version)
         run: |
@@ -47,7 +47,7 @@ jobs:
           fi
 
       - name: Install native snapshot validator
-        run: python3.14 -m pip install Pillow==12.3.0
+        run: python3.15 -m pip install Pillow==12.3.0
 
       # Warnings-as-errors mirrors the PM's SWIFT_STRICT_FLAGS — keep in sync.
       - name: Build (including test targets, zero-warning)
@@ -66,7 +66,7 @@ jobs:
           status=0
           swift test --build-system native -Xswiftc -warnings-as-errors > "$log" 2>&1 || status=$?
           cat "$log"
-          python3.14 scripts/verify-swift-test-output.py "$log" --exit-code "$status"
+          python3.15 scripts/verify-swift-test-output.py "$log" --exit-code "$status"
 
       # DemoReportTests exercises the executable's body in-process; this catches
       # what it cannot: a process-level failure (broken @MainActor async entry,
@@ -86,7 +86,7 @@ jobs:
 
       - name: Verify real native Workbench workflow
         run: |
-          python3.14 - <<'PY'
+          python3.15 - <<'PY'
           import importlib.util, json, pathlib, sys
           root = pathlib.Path.cwd()
           spec = importlib.util.spec_from_file_location('workbench_acceptance_owner', root / 'scripts/workbench-acceptance.py')
@@ -337,7 +337,7 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           # pm-base Requires-Python >=3.14 (fleet mandate). 3.13 fails pip install.
-          python-version: "3.14"
+          python-version: "3.15"
 
       - name: Syntax check
         run: python3 -m py_compile scripts/*.py contracts/validate-contracts.py

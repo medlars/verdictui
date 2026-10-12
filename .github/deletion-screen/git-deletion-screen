@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.14
+#!/usr/bin/env python3.15
 """Screen the deletion lines a commit adds or changes (owner rule INS-18201669, CTS-E1F0D681).
 
 Runs for EVERY editor, because it runs at git: the global pre-commit dispatcher
