@@ -584,8 +584,47 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="an external declared runner is replaced by the build-tree product",
         path="Sources/VerdictUICLICore/ProjectRunner.swift",
-        old='return runner.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix(".build/")',
-        new="return !runner.isEmpty",
+        old='guard declared.hasPrefix(".build/") else { return false }',
+        new="guard !declared.isEmpty else { return false }",
         test="ProjectRunnerTests/testResolverLeavesAnExternalDeclaredRunnerAlone",
+    ),
+    Mutation(
+        name="a declared build-tree wrapper is replaced by the build product",
+        path="Sources/VerdictUICLICore/ProjectRunner.swift",
+        old="guard components.last == product else { return false }",
+        new="guard components.last != nil else { return false }",
+        test="ProjectRunnerTests/testResolverLeavesADeclaredBuildTreeWrapperAlone",
+    ),
+    Mutation(
+        name="a same-named wrapper outside a configuration directory is replaced",
+        path="Sources/VerdictUICLICore/ProjectRunner.swift",
+        old='guard ["debug", "release"].contains(configuration) else { return false }',
+        new="guard !configuration.isEmpty else { return false }",
+        test="ProjectRunnerTests/testResolverLeavesASameNamedBuildTreeWrapperAlone",
+    ),
+    Mutation(
+        name="a same-named wrapper under a non-triple directory is replaced",
+        path="Sources/VerdictUICLICore/ProjectRunner.swift",
+        old='case 4: return components[1].contains("-")',
+        new="case 4: return !components[1].isEmpty",
+        test="ProjectRunnerTests/testResolverLeavesASameNamedBuildTreeWrapperAlone",
+    ),
+    Mutation(
+        name="a same-named wrapper nested deeper than SwiftPM's layout is replaced",
+        path="Sources/VerdictUICLICore/ProjectRunner.swift",
+        old="default: return false\n        }\n    }\n\n    private static func swiftBuildCommandPrefix(",
+        new="default: return true\n        }\n    }\n\n    private static func swiftBuildCommandPrefix(",
+        test="ProjectRunnerTests/testResolverLeavesASameNamedBuildTreeWrapperAlone",
+    ),
+    Mutation(
+        name="a failed bin-path probe still selects the path it printed",
+        path="Sources/VerdictUICLICore/ProjectRunner.swift",
+        old=(
+            "        if try process.stop(grace: 0) != 0 {\n"
+            '            throw Failure(description: "could not resolve built runner location")\n'
+            "        }\n"
+        ),
+        new="        _ = try process.stop(grace: 0)\n",
+        test="ProjectRunnerTests/testResolverRefusesAPlausiblePathFromAFailedShowBinPath",
     ),
 ]

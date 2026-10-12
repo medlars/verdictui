@@ -305,6 +305,14 @@ extension ProjectRunnerTests {
     }
 
     private func resolveBuiltRunner(root: URL, swift: URL, file: StaticString = #filePath, line: UInt = #line) -> URL? {
+        let outcome = resolveBuiltRunnerOutcome(root: root, swift: swift, file: file, line: line)
+        if let error = outcome.error { XCTFail("resolver threw: \(error)", file: file, line: line) }
+        return outcome.url
+    }
+
+    private func resolveBuiltRunnerOutcome(
+        root: URL, swift: URL, file: StaticString = #filePath, line: UInt = #line
+    ) -> ResolveOutcome {
         let outcome = ResolveOutcome()
         let done = DispatchSemaphore(value: 0)
         let worker = Thread {
@@ -319,10 +327,9 @@ extension ProjectRunnerTests {
         worker.start()
         guard done.wait(timeout: .now() + 20) == .success else {
             XCTFail("resolveBuiltRunnerExecutableAfterBuild did not return within 20 seconds", file: file, line: line)
-            return nil
+            return ResolveOutcome()
         }
-        if let error = outcome.error { XCTFail("resolver threw: \(error)", file: file, line: line) }
-        return outcome.url
+        return outcome
     }
 
     private func writeExecutable(_ url: URL, _ body: String) throws {
@@ -350,15 +357,98 @@ extension ProjectRunnerTests {
     }
 
     func testResolverLeavesAnExternalDeclaredRunnerAlone() throws {
+        // `tools/Consumer` shares the product's name, so only the `.build/` check rejects it.
+        for runner in ["/usr/bin/true", "tools/Consumer"] {
+            try buildProject(settings: ["buildProduct": "Consumer"]) { root, executable in
+                try JSONSerialization.data(withJSONObject: [
+                    "runner": runner, "buildProduct": "Consumer",
+                ]).write(to: root.appendingPathComponent(".verdictui/config.json"))
+
+                let resolved = resolveBuiltRunner(root: root, swift: executable)
+
+                XCTAssertNil(resolved, "\(runner): a runner outside .build/ is not the build tree's product")
+                XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("invoked-show-bin-path").path))
+            }
+        }
+    }
+
+    func testResolverLeavesADeclaredBuildTreeWrapperAlone() throws {
         try buildProject(settings: ["buildProduct": "Consumer"]) { root, executable in
             try JSONSerialization.data(withJSONObject: [
-                "runner": "/usr/bin/true", "buildProduct": "Consumer",
+                "runner": ".build/debug/RunnerWrapper", "buildProduct": "Consumer",
             ]).write(to: root.appendingPathComponent(".verdictui/config.json"))
 
             let resolved = resolveBuiltRunner(root: root, swift: executable)
 
-            XCTAssertNil(resolved, "a runner outside .build/ is not the build tree's product")
+            XCTAssertNil(resolved, "a .build/ runner not named for buildProduct is a wrapper, not the product")
             XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("invoked-show-bin-path").path))
+        }
+    }
+
+    func testResolverLeavesASameNamedBuildTreeWrapperAlone() throws {
+        // Named for buildProduct but outside SwiftPM's <config> or <triple>/<config> layout.
+        for runner in [
+            ".build/wrappers/Consumer", ".build/wrappers/debug/Consumer", ".build/debug/tools/Consumer",
+            ".build/tools/arm64-apple-macosx/debug/Consumer",
+        ] {
+            try buildProject(settings: ["buildProduct": "Consumer"]) { root, executable in
+                try JSONSerialization.data(withJSONObject: [
+                    "runner": runner, "buildProduct": "Consumer",
+                ]).write(to: root.appendingPathComponent(".verdictui/config.json"))
+
+                let resolved = resolveBuiltRunner(root: root, swift: executable)
+
+                XCTAssertNil(resolved, "\(runner): a same-named wrapper is not SwiftPM's product path")
+                XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("invoked-show-bin-path").path))
+            }
+        }
+    }
+
+    func testResolverReplacesEveryConventionalSwiftPMProductPath() throws {
+        // Control for the wrapper test: the narrowed match must still accept SwiftPM's own layouts.
+        for runner in [".build/release/Consumer", ".build/arm64-apple-macosx/debug/Consumer"] {
+            try buildProject(settings: ["buildProduct": "Consumer"]) { root, executable in
+                try JSONSerialization.data(withJSONObject: [
+                    "runner": runner, "buildProduct": "Consumer",
+                ]).write(to: root.appendingPathComponent(".verdictui/config.json"))
+
+                let resolved = resolveBuiltRunner(root: root, swift: executable)
+
+                XCTAssertEqual(
+                    resolved?.resolvingSymlinksInPath().path,
+                    root.appendingPathComponent("stub-bin/Consumer").resolvingSymlinksInPath().path,
+                    "\(runner): a conventional product path resolves through --show-bin-path")
+            }
+        }
+    }
+
+    func testResolverRefusesAPlausiblePathFromAFailedShowBinPath() throws {
+        try buildProject(settings: ["buildProduct": "Consumer"]) { root, _ in
+            try JSONSerialization.data(withJSONObject: [
+                "runner": ".build/debug/Consumer", "buildProduct": "Consumer",
+            ]).write(to: root.appendingPathComponent(".verdictui/config.json"))
+            let failing = root.appendingPathComponent("failing-swift")
+            try writeExecutable(failing, """
+            for arg; do
+              if [ "$arg" = --show-bin-path ]; then
+                mkdir -p "$PWD/stale-bin"
+                printf '#!/bin/sh\\nexit 0\\n' > "$PWD/stale-bin/Consumer"
+                chmod +x "$PWD/stale-bin/Consumer"
+                echo "$PWD/stale-bin"
+                exit 1
+              fi
+            done
+            """)
+
+            let outcome = resolveBuiltRunnerOutcome(root: root, swift: failing)
+
+            XCTAssertNil(outcome.url, "a nonzero bin-path exit must not select the executable it printed")
+            XCTAssertEqual(
+                (outcome.error as? CustomStringConvertible)?.description,
+                "could not resolve built runner location")
+            XCTAssertTrue(
+                FileManager.default.isExecutableFile(atPath: root.appendingPathComponent("stale-bin/Consumer").path),
+                "the printed path must be a valid executable, or the refusal could come from validation")
         }
     }
 

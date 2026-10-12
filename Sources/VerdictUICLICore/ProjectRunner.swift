@@ -165,8 +165,10 @@ public enum ProjectRunner {
         }
     }
 
-    /// True when the manifest runner is declared under the project's `.build` tree.
-    private static func declaresBuildTreeRunner(projectRoot: URL) throws -> Bool {
+    /// True when the manifest runner is SwiftPM's own product path, `.build/<config>/<product>` or
+    /// `.build/<triple>/<config>/<product>`. Any other `.build/` runner, even one named `product`,
+    /// is a declared wrapper, which the bin-path product must not replace.
+    private static func declaresBuildTreeProduct(projectRoot: URL, product: String) throws -> Bool {
         let manifest = projectRoot
             .appendingPathComponent(ProjectScenarios.configDirectory, isDirectory: true)
             .appendingPathComponent(ProjectScenarios.configFile)
@@ -175,7 +177,18 @@ public enum ProjectRunner {
             let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
             let runner = json["runner"] as? String
         else { return false }
-        return runner.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix(".build/")
+        let declared = runner.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard declared.hasPrefix(".build/") else { return false }
+        let components = (declared as NSString).pathComponents
+        guard components.last == product else { return false }
+        let configuration = components.dropLast().last ?? ""
+        guard ["debug", "release"].contains(configuration) else { return false }
+        // SwiftPM triples are always hyphenated (arm64-apple-macosx), so `.build/wrappers/debug/X` is not one.
+        switch components.count {
+        case 3: return true
+        case 4: return components[1].contains("-")
+        default: return false
+        }
     }
 
     private static func swiftBuildCommandPrefix(
@@ -248,8 +261,8 @@ public enum ProjectRunner {
         timeout: TimeInterval? = nil,
         swiftExecutable: URL = URL(fileURLWithPath: "/usr/bin/env")
     ) throws -> URL? {
-        guard try declaresBuildTreeRunner(projectRoot: projectRoot),
-            let build = try ProjectScenarios.buildConfiguration(projectRoot: projectRoot)
+        guard let build = try ProjectScenarios.buildConfiguration(projectRoot: projectRoot),
+            try declaresBuildTreeProduct(projectRoot: projectRoot, product: build.product)
         else { return nil }
         let resolutionTimeout = timeout ?? build.timeoutSeconds
         return try builtProductExecutable(
