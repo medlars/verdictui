@@ -1,0 +1,1 @@
+{"completed_at": "2026-10-12T16:28:16Z", "conclusion": "success", "event": "pull_request", "head_branch": "chore/revendor-deletion-screen", "head_repository": "medlars/verdictui", "head_sha": "977a25e65890a006babe4b8e95faa26fdb7f58ab", "repo": "medlars/verdictui", "run_attempt": "1", "run_id": "38276057493", "schema_version": "1.1.0", "workflow": "CI"}
