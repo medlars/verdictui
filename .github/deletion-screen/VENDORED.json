@@ -1,6 +1,7 @@
 {
- ".github/deletion-screen/deletion_policy.vendored": "26c679a3534b09ead1653e17456dd1dc7b00725a305544e383cce3b828d37b80",
- ".github/deletion-screen/git-deletion-screen": "d60b343d1ea8a2b113610c9a1b298664e97a79982796000ff5a61dbb060e6341",
+ ".github/deletion-screen/deletion_policy.vendored": "4d4950d2fe2c39207c1808decdd1545eeaf2c7fea5f4f97d4c80d2442b58e8e5",
+ ".github/deletion-screen/git-deletion-screen": "e9031f9df24f72d053bb1264ac4994d0db97fd7c1135c8b8f7d476536d1114ab",
  ".github/deletion-screen/script_deletions.vendored": "345c73442939043810232866ee21504b311bc169ddcc80ccbbb4e6c0afa4e2b2",
- ".github/workflows/deletion-screen.yml": "6ae4361394880eae23cb198f6f10609aa5dddc402e82f5fad9d32d42d17e3edc"
+ ".github/deletion-screen/trusted_exe.vendored": "be0f233c1692f831624bb4c5a301e743568d957ef159f2be6f90a3901b67a6cb",
+ ".github/workflows/deletion-screen.yml": "df0b5cb54c9a9ec85744a25531bd656a01979abfbd7eab31e2189d7fc0f699cf"
 }
