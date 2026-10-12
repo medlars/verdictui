@@ -1,0 +1,36 @@
+# Vendored from medlars/projects-shared PR #2276 — see .github/fleet-linux-mini/README.md
+# MINI_ONLINE_AT: repo variable, Unix epoch seconds; stale after 240s.
+# Self-hosted only when heartbeat is fresh AND a runner is online with labels:
+# self-hosted, macOS, ARM64, mini — otherwise ubuntu-latest.
+name: pick-mini-runner
+
+on:
+  workflow_call:
+    outputs:
+      runs-on:
+        description: JSON array for the caller job runs-on (fromJSON in caller)
+        value: ${{ jobs.pick.outputs.runs-on }}
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  pick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      runs-on: ${{ steps.guard.outputs.runs-on }}
+      route: ${{ steps.guard.outputs.route }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Pick mini or hosted fallback
+        id: guard
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MINI_ONLINE_AT: ${{ vars.MINI_ONLINE_AT }}
+        run: bash .github/fleet-linux-mini/pick-mini-guard.sh
+
+      - name: Log route
+        run: echo "pick-mini route=${{ steps.guard.outputs.route }} runs-on=${{ steps.guard.outputs.runs-on }}"

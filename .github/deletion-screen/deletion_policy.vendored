@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import glob
 import hashlib
+import json
 import os
 import re
 import shlex
@@ -30,9 +31,22 @@ import time
 from pathlib import Path
 from typing import NamedTuple
 
-__all__ = ["CHANGE_TOKEN_TTL_S", "EXEMPT_PARTS", "GUARDED_VERBS", "TOKEN_TTL_S", "Finding", "backup_token_valid",
-           "change_token_fresh", "findings", "is_real_dir", "main", "ordinary_location", "review_answers",
-           "store_paths", "within"]
+__all__ = [
+    "CHANGE_TOKEN_TTL_S",
+    "EXEMPT_PARTS",
+    "GUARDED_VERBS",
+    "TOKEN_TTL_S",
+    "Finding",
+    "backup_token_valid",
+    "change_token_fresh",
+    "findings",
+    "is_real_dir",
+    "main",
+    "ordinary_location",
+    "review_answers",
+    "store_paths",
+    "within",
+]
 
 EXEMPT_PARTS = frozenset(
     {
@@ -59,7 +73,34 @@ _ASSIGN = re.compile(r"""(?:^|[\s;&|(])([A-Za-z_][A-Za-z0-9_]*)=("[^"\n]*"|'[^'\
 _VAR = re.compile(r"\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?")
 _HEREDOC = re.compile(r"<<-?\s*['\"]?([A-Za-z_][A-Za-z0-9_]*)['\"]?")
 _GLOB = re.compile(r"[*?\[]")
-_WRAPPERS = frozenset({"sudo", "command", "env", "nice", "nohup", "time", "builtin", "exec", "xargs", "doas"})
+_WRAPPERS = frozenset(
+    {
+        "sudo",
+        "command",
+        "env",
+        "nice",
+        "nohup",
+        "time",
+        "builtin",
+        "exec",
+        "xargs",
+        "doas",
+        "timeout",
+        "gtimeout",
+        "caffeinate",
+        "stdbuf",
+        "arch",
+        "xcrun",
+        "busybox",
+        "noglob",
+        "nocorrect",
+        "setsid",
+        "ionice",
+        "taskpolicy",
+        "unbuffer",
+        "chronic",
+    }
+)
 # Every verb this policy parses. The gate's bash prefilter must match a superset
 # (tests/test_owner_file_guard.py enumerates spellings), or a verb reaches bash unjudged.
 DELETE_VERBS = frozenset({"rm", "trash", "rmdir", "unlink", "shred", "srm"})
@@ -75,18 +116,61 @@ DEFAULT_CAP = 2000
 _KEYWORDS = frozenset({"{", "}", "!", "if", "then", "else", "elif", "do", "while", "until", "exec", "xargs"})
 
 
+def _heredoc_tag(line: str) -> str | None:
+    """The delimiter of a real heredoc opened on this line, else None.
+
+    bash opens a heredoc only for an UNQUOTED `<<` that is not the `<<<` here-string; a regex search
+    treated `cat <<< x` and `echo '<<EOF'` as heredocs and hid every later line (parser differential,
+    security review 2026-10-05). Arithmetic and $'..' are ambiguous: scanned as code.
+    """
+    if "((" in line:
+        return None  # arithmetic: `<<` may be a left shift, so the following lines are scanned as code
+    quote = ""
+    i = 0
+    while i < len(line):
+        ch = line[i]
+        if quote:
+            if ch == "\\" and quote in ('"', "$'"):
+                i += 1  # in "..." and $'...' a backslash escapes the next character
+            elif ch == quote[-1]:
+                quote = ""
+        elif line.startswith("$'", i):
+            quote = "$'"
+            i += 1
+        elif ch in "'\"":
+            quote = ch
+        elif ch == "\\":
+            i += 1
+        elif line.startswith("<<<", i):
+            i += 2
+        elif line.startswith("<<", i):
+            match = _HEREDOC.match(line, i)
+            if match:
+                return match.group(1)
+            i += 1
+        i += 1
+    return None
+
+
+def _terminated(lines: list[str], start: int, tag: str) -> bool:
+    return any(line.strip() == tag for line in lines[start:])
+
+
 def _strip_heredocs(text: str) -> str:
     out: list[str] = []
     terminator: str | None = None
-    for line in text.splitlines():
+    lines = text.splitlines()
+    for n, line in enumerate(lines):
         if terminator is not None:
             if line.strip() == terminator:
                 terminator = None
             continue
         out.append(line)
-        match = _HEREDOC.search(line)
-        if match:
-            terminator = match.group(1)
+        tag = _heredoc_tag(line)
+        # An unterminated heredoc is data to bash, but hiding the rest of the command on that
+        # reading is the unsafe side: scan it instead.
+        if tag and _terminated(lines, n + 1, tag):
+            terminator = tag
     return "\n".join(out)
 
 
@@ -94,8 +178,99 @@ def _assignments(text: str) -> dict[str, str | None]:
     found: dict[str, str | None] = {}
     for name, raw in _ASSIGN.findall(text):
         value = raw.strip("'\"")
-        found[name] = "/tmp/mktemp" if value.startswith("$(mktemp") else (None if "$(" in value or "`" in value else value)
+        # Placeholder path naming a temp root for the policy to judge; nothing is created or opened here.
+        found[name] = "/tmp/mktemp" if value.startswith("$(mktemp") else (None if "$(" in value or "`" in value else value)  # nosec B108
     return found
+
+
+_HIDE = {ch: chr(0xE000 + i) for i, ch in enumerate(";&|()")}
+_SHOW = {ord(v): k for k, v in _HIDE.items()}
+
+
+def _hide_escaped(code: str) -> str:
+    """Hide a separator only when bash reads it as a literal: unquoted and after an ODD backslash run.
+
+    A backslash escapes the next character, so `\\\\;` is an escaped backslash followed by a REAL
+    separator; a regex that hid any `\\;` swallowed the second command (review 2026-10-05). Quotes
+    are tracked so quoted text is left to the lexer, which already keeps it inside one word.
+    """
+    out: list[str] = []
+    quote = ""
+    i = 0
+    while i < len(code):
+        ch = code[i]
+        if quote:
+            out.append(ch)
+            if ch == "\\" and quote == '"' and i + 1 < len(code):
+                out.append(code[i + 1])
+                i += 1
+            elif ch == quote:
+                quote = ""
+        elif ch in "'\"":
+            quote = ch
+            out.append(ch)
+        elif ch == "\\" and i + 1 < len(code):
+            nxt = code[i + 1]
+            out.append(_HIDE.get(nxt, "\\" + nxt))
+            i += 1
+        elif ch == "&" and ((out and out[-1] in "<>") or code[i + 1 : i + 2] == ">"):
+            # `2>&1` and `&>file` are redirects, not a background separator: splitting there made
+            # `2>&1 rm x` read as the command `1 rm x` (differential, CIS-719E68BC).
+            out.append(_HIDE["&"])
+        else:
+            out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def _track_parens(token: str, after_dollar: bool, kinds: list[tuple[str, int]], n: int, good: set[int] | None) -> list[int]:
+    """Push/pop the parens of one punctuation token; return the token indexes of arithmetic spans it closed.
+
+    `kinds` holds (kind, opening token index), innermost last. A `$((` span is arithmetic only when
+    it closes with a contiguous `))`; `$((rm f) )` is a substitution holding a subshell in bash, so
+    `good` (from a first pass) gates which opens count as arithmetic and the rest are commands.
+    """
+    closed: list[int] = []
+    i = 0
+    while i < len(token):
+        ch = token[i]
+        if ch == "(":
+            if after_dollar and token.startswith("((", i) and (good is None or n in good):
+                kinds.append(("arith", n))
+                i += 1
+            elif after_dollar and token.startswith("((", i):
+                kinds.extend([("sub", n), ("group", n)])
+                i += 1
+            else:
+                kinds.append(("sub" if after_dollar else "group", n))
+            after_dollar = False
+        elif ch == ")" and kinds:
+            kind, start = kinds.pop()
+            if kind == "arith":
+                if token.startswith("))", i):
+                    closed.append(start)
+                    i += 1
+                else:
+                    kinds.append(("sub", start))  # a lone `)`: bash read `$( (`, so the span is not arithmetic
+        i += 1
+    return closed
+
+
+def _arithmetic_spans(tokens: list[str]) -> set[int]:
+    """Token indexes of every `$((` that closes with a contiguous `))`."""
+    kinds: list[tuple[str, int]] = []
+    good: set[int] = set()
+    for n, token in enumerate(tokens):
+        if token and all(ch in ";&|()" for ch in token):
+            good.update(_track_parens(token, bool(n and tokens[n - 1].endswith("$")), kinds, n, None))
+    return good
+
+
+def _in_arithmetic(kinds: list[tuple[str, int]]) -> bool:
+    for kind, _ in reversed(kinds):
+        if kind != "group":
+            return kind == "arith"
+    return False
 
 
 def _segments(text: str) -> list[list[str]]:
@@ -103,46 +278,205 @@ def _segments(text: str) -> list[list[str]]:
     # `#` hide every LATER line -- a leading `# anything` disabled this policy.
     # Drop whole-line comments here and end a segment at an unquoted `#` word.
     code = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+    # A backslash-escaped ; & | ( ) is a plain word character to bash (`find \\( -name x \\)`), but the
+    # lexer split on it and cut the command in pieces. Hide it behind a placeholder until the
+    # token is stored.
+    code = _hide_escaped(code)
     lexer = shlex.shlex(code.replace("\n", " ; "), posix=True, punctuation_chars=";&|()")
     lexer.whitespace_split = True
     lexer.commenters = ""
     segments: list[list[str]] = [[]]
     in_comment = False
-    for token in lexer:
+    tokens = list(lexer)
+    kinds: list[tuple[str, int]] = []  # open parens, innermost last: "arith" for `$((`, "sub" for `$(`, else "group"
+    good = _arithmetic_spans(tokens)
+    for n, token in enumerate(tokens):
         if token and all(ch in ";&|()" for ch in token):
+            _track_parens(token, bool(n and tokens[n - 1].endswith("$")), kinds, n, good)
             segments.append([])
             in_comment = False
+        elif _in_arithmetic(kinds):
+            continue  # `$(( a % 5 * $(date) ))`: the text between substitutions is arithmetic, not commands
         elif in_comment or token.startswith("#"):
             in_comment = True
         else:
-            segments[-1].append(token)
+            segments[-1].append(token.translate(_SHOW))
     return [seg for seg in segments if seg]
 
 
-def _verb(segment: list[str]) -> tuple[str | None, list[str]]:
-    i = 0
-    wrapped = False
+_LEADING_REDIRECT = re.compile(r"(?:\d*|&)(?:>>|>\||>|<)(&?\S+)?")
+
+
+class _WrapperOpts(NamedTuple):
+    flags: str = ""  # short letters that take no value
+    values: str = ""  # short letters whose value is the rest of the cluster or the next word
+    long_values: frozenset[str] = frozenset()  # options (any dash count) whose value is the next word
+    long_flags: frozenset[str] = frozenset()
+
+
+# Each wrapper's options, so an option VALUE (`env -u sed python3 ...`, `sudo -u op rm ...`) is never taken
+# for the command word. An option not listed here makes the resolution ambiguous, and then every possible
+# command word in the segment is judged (security reviews of #359, CTS-E967B657).
+_WRAPPER_OPTS: dict[str, _WrapperOpts] = {
+    "sudo": _WrapperOpts(
+        "AbEeHiKklnPSsVv",
+        "ughpUCDrtTR",
+        frozenset({"--user", "--group", "--host", "--prompt", "--other-user", "--close-from", "--chdir", "--chroot"})
+        | frozenset({"--role", "--type", "--command-timeout"}),
+        frozenset({"--preserve-env", "--login", "--shell", "--non-interactive", "--stdin", "--background"})
+        | frozenset({"--set-home", "--askpass", "--bell", "--reset-timestamp"}),
+    ),
+    "doas": _WrapperOpts("Lns", "uC"),
+    "env": _WrapperOpts(
+        "i0v", "uCP", frozenset({"--unset", "--chdir"}), frozenset({"--ignore-environment", "--null", "--debug"})
+    ),
+    "nice": _WrapperOpts("", "n", frozenset({"--adjustment"})),
+    "timeout": _WrapperOpts(
+        "fpv", "sk", frozenset({"--signal", "--kill-after"}), frozenset({"--foreground", "--preserve-status", "--verbose"})
+    ),
+    "xargs": _WrapperOpts(
+        "0oprtx",
+        "EIJLnPRSsd",
+        frozenset({"--max-args", "--max-procs", "--delimiter", "--arg-file", "--eof", "--max-lines"}),
+        frozenset({"--null", "--no-run-if-empty", "--verbose", "--exit", "--open-tty", "--interactive"}),
+    ),
+    "stdbuf": _WrapperOpts("", "ioe", frozenset({"--input", "--output", "--error"})),
+    "caffeinate": _WrapperOpts("dimsu", "tw"),
+    "exec": _WrapperOpts("cl", "a"),
+    "command": _WrapperOpts("pvV"),
+    "setsid": _WrapperOpts("fwc"),
+    "chronic": _WrapperOpts("ev"),
+    "unbuffer": _WrapperOpts("p"),
+    "ionice": _WrapperOpts("t", "cnp"),
+    "time": _WrapperOpts("lph"),
+    "arch": _WrapperOpts(
+        long_values=frozenset({"-e", "-d", "-arch"}),
+        long_flags=frozenset({"-arm64", "-arm64e", "-x86_64", "-x86_64h", "-i386", "-32", "-64", "-c"}),
+    ),
+    "xcrun": _WrapperOpts(
+        long_values=frozenset({"--sdk", "-sdk", "--toolchain", "-toolchain"}),
+        long_flags=frozenset({"-r", "--run", "-v", "--verbose", "-l", "--log", "-n", "--no-cache"}),
+    ),
+}
+_WRAPPER_OPTS["gtimeout"] = _WRAPPER_OPTS["timeout"]
+
+
+def _env_split(word: str, segment: list[str], i: int) -> tuple[int, str] | None:
+    """`env -S STR` in any spelling (`-S`, `-iS'..'`, `--split-string`, `--s=..`): (next index, STR)."""
+    name, eq, value = word.partition("=")
+    if len(name) >= 3 and name.startswith("--") and "--split-string".startswith(name):
+        # getopt_long takes any unambiguous prefix, and no other env long option starts with --s
+        if eq:
+            return i + 1, value
+        return (i + 2, segment[i + 1]) if i + 1 < len(segment) else (i + 1, "")
+    if word.startswith("-") and not word.startswith("--"):
+        cluster = word[1:]
+        for n, letter in enumerate(cluster):
+            if letter == "S":
+                rest = cluster[n + 1 :]
+                if rest:
+                    return i + 1, rest
+                return (i + 2, segment[i + 1]) if i + 1 < len(segment) else (i + 1, "")
+            if letter not in _WRAPPER_OPTS["env"].flags:
+                return None  # `-uS` unsets S: a value letter (or an unknown one) owns the rest of the cluster
+    return None
+
+
+def _wrapper_options(name: str, segment: list[str], i: int) -> tuple[int, bool, str | None]:
+    """Skip wrapper `name`'s options from index i: (next index, any option not understood, `env -S` string)."""
+    opts = _WRAPPER_OPTS.get(name, _WrapperOpts())
+    unknown = False
     while i < len(segment):
         word = segment[i]
-        wrapped = wrapped or word in _WRAPPERS
-        if (
-            re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", word)
-            or word in _WRAPPERS
-            or word in _KEYWORDS
-            or (wrapped and word.startswith("-"))
-        ):
+        if word == "--":
             i += 1
+            break
+        if name == "env" and word == "-":
+            i += 1  # `env -` is `env -i`
+            continue
+        if not word.startswith("-") or word == "-":
+            break
+        split = _env_split(word, segment, i) if name == "env" else None
+        if split is not None:
+            # env splits this string into a command line and runs it: judge it as a shell command line
+            return split[0], unknown, split[1]
+        name_part, eq, _ = word.partition("=")
+        if word in opts.long_flags or name_part in opts.long_flags:
+            i += 1
+        elif name_part in opts.long_values:
+            i += 1 if eq else 2
+        elif word.startswith("--") or (name in ("arch", "xcrun")):
+            unknown, i = True, i + 1
+        elif name == "nice" and re.fullmatch(r"-\d+", word):
+            i += 1  # the old `nice -5 cmd` form
+        else:
+            step = 1
+            for k, letter in enumerate(word[1:]):
+                if letter in opts.values:
+                    step = 2 if k == len(word) - 2 else 1
+                    break
+                if letter not in opts.flags:
+                    unknown = True
+                    break
+            i += step
+    if name in ("timeout", "gtimeout") and i < len(segment):
+        i += 1  # the DURATION operand (strtod accepts inf, 1e3, hex); a missing one only errors
+    return i, unknown, None
+
+
+def _resolve(segment: list[str]) -> tuple[int, bool, str | None]:
+    """Index of the command word, whether that choice is uncertain, and an `env -S` command line.
+
+    After a wrapper, a word that is not a guarded verb, interpreter or runner makes the choice uncertain:
+    an option or operand this table misreads must not hide the command behind it (security reviews of #362)."""
+    i = 0
+    ambiguous = False
+    wrapped = False
+    in_env = False
+    while i < len(segment):
+        word = segment[i]
+        redirect = _LEADING_REDIRECT.fullmatch(word)
+        if redirect:
+            # `>/dev/null rm x` runs rm: a redirect before the command word is not the command word. A bare
+            # operator (`> /dev/null rm x`) takes the next word as its target.
+            i += 1 if redirect.group(1) else 2
+            continue
+        wrapper = os.path.basename(word).lower()  # `/usr/bin/env -S 'rm x'` is env too
+        if wrapper in _WRAPPERS:
+            wrapped = True
+            in_env = wrapper == "env"
+            i, unknown, split = _wrapper_options(wrapper, segment, i + 1)
+            ambiguous = ambiguous or unknown
+            if split is not None:
+                return i, ambiguous, split
+            continue
+        if (in_env and "=" in word) or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", word) or word in _KEYWORDS:
+            i += 1  # env takes ANY word with `=` as an assignment (`a-b=1`), the shell only identifiers
             continue
         break
+    if wrapped and i < len(segment):
+        word = os.path.basename(segment[i]).lower()
+        ambiguous = ambiguous or not (word in GUARDED_VERBS or _runs_program(word))
+    return i, ambiguous, None
+
+
+def _verb(segment: list[str]) -> tuple[str | None, list[str]]:
+    i, ambiguous, split = _resolve(segment)
+    if split is not None:
+        # env appends the remaining words to the split command line, so they are part of what runs
+        line = split + (" " + shlex.join(segment[i:]) if i < len(segment) else "")
+        return "sh", ["-c", line]
     if i >= len(segment):
         return None, []
-    if wrapped and os.path.basename(segment[i]) not in GUARDED_VERBS:
-        # A wrapper option's VALUE (nice -n 5, xargs -I {}, sudo -u root) stands where
-        # the verb would; the first guarded word after it is the command that runs.
-        for j in range(i, len(segment)):
-            if os.path.basename(segment[j]) in GUARDED_VERBS:
-                return os.path.basename(segment[j]), segment[j + 1 :]
-    return os.path.basename(segment[i]), segment[i + 1 :]
+    words = [os.path.basename(w).lower() for w in segment]  # APFS is case-insensitive: `RM` runs rm
+    if ambiguous and words[i] not in GUARDED_VERBS:
+        # The choice is uncertain: prefer the first guarded word, then the first interpreter or runner;
+        # _segment_findings also judges every other candidate.
+        for test in (lambda w: w in GUARDED_VERBS, _runs_program):
+            for j in range(i, len(segment)):
+                if test(words[j]):
+                    return words[j], segment[j + 1 :]
+    return words[i], segment[i + 1 :]
 
 
 def _expand(arg: str, env: dict[str, str | None]) -> str | None:
@@ -154,8 +488,18 @@ def _expand(arg: str, env: dict[str, str | None]) -> str | None:
         nonlocal unresolved
         name = match.group(1)
         if name in env and env[name] is not None:
-            return str(env[name])
-        if name in ("HOME", "TMPDIR", "PWD") and os.environ.get(name):
+            # bash expands `~` and `$VAR` when the variable is ASSIGNED; substituting the raw value judged
+            # "~/Documents/x" as a relative path and let the delete through (CTS-3837C229).
+            value = _expand(str(env[name]), {k: v for k, v in env.items() if k != name})
+            if value is None:
+                unresolved = True
+                return ""
+            return value
+        if name == "PWD":
+            cwds = _cwds()  # bash sets PWD to the directory it runs in, not this process's inherited value
+            if len(cwds) == 1:
+                return cwds[0]
+        elif name in ("HOME", "TMPDIR") and os.environ.get(name):
             return os.environ[name]
         unresolved = True
         return ""
@@ -166,8 +510,19 @@ def _expand(arg: str, env: dict[str, str | None]) -> str | None:
     return expanded
 
 
+def _cwds() -> list[str]:
+    """Every directory a relative path may mean: the session cwd the dispatcher read from the payload
+    (CLAUDE_HOOK_CWD) and this process's own. Hook-process cwd and session cwd are different facts
+    (security review 2026-10-05), so a relative target is judged against both."""
+    out: list[str] = []
+    for cand in (os.environ.get("CLAUDE_HOOK_CWD", ""), os.getcwd()):
+        if cand and os.path.isabs(cand) and cand not in out:
+            out.append(cand)
+    return out
+
+
 def _real(path: str) -> Path:
-    return Path(os.path.realpath(os.path.join(os.getcwd(), path)))
+    return Path(os.path.realpath(os.path.join(_cwds()[0], path)))
 
 
 def _token_dir() -> Path:
@@ -223,19 +578,73 @@ class Finding(NamedTuple):
 # Coding-tool data is an ALLOW-LIST of exact locations, never a substring match on a
 # name: ~/Documents/Android Photos and ~/Pictures/yarn-art are the owner's (security
 # review of the Sentinel mirror, 2026-10-04).
-_TOOL_DOTDIRS = frozenset({
-    ".claude", ".codex", ".cursor", ".kimi", ".glm", ".grok", ".gemini", ".ollama", ".vscode",
-    ".gradle", ".cargo", ".rustup", ".npm", ".pnpm", ".yarn", ".pyenv", ".conda", ".docker",
-    ".colima", ".swiftpm", ".cocoapods", ".android", ".jetbrains", ".copilot", ".windsurf",
-    ".zai", ".z.ai", ".venv", ".nvm", ".bun", ".deno", ".rbenv", ".gem", ".m2", ".sdkman",
-    ".git", ".openai", ".anthropic", ".aider", ".continue", ".xcode",
-})
-_TOOL_APP_SUPPORT = frozenset({
-    "claude", "codex", "cursor", "code", "zed", "jetbrains", "ollama", "docker", "windsurf",
-    "kimi", "glm", "grok", "gemini", "copilot", "github copilot", "androidstudio", "xcode",
-})
-_CODING_PREFIXES = (("Library", "Developer"), ("Library", "Caches"), ("Library", "Logs"), (".cache",),
-                    (".local",), (".config",))
+_TOOL_DOTDIRS = frozenset(
+    {
+        ".claude",
+        ".codex",
+        ".cursor",
+        ".kimi",
+        ".glm",
+        ".grok",
+        ".gemini",
+        ".ollama",
+        ".vscode",
+        ".gradle",
+        ".cargo",
+        ".rustup",
+        ".npm",
+        ".pnpm",
+        ".yarn",
+        ".pyenv",
+        ".conda",
+        ".docker",
+        ".colima",
+        ".swiftpm",
+        ".cocoapods",
+        ".android",
+        ".jetbrains",
+        ".copilot",
+        ".windsurf",
+        ".zai",
+        ".z.ai",
+        ".venv",
+        ".nvm",
+        ".bun",
+        ".deno",
+        ".rbenv",
+        ".gem",
+        ".m2",
+        ".sdkman",
+        ".git",
+        ".openai",
+        ".anthropic",
+        ".aider",
+        ".continue",
+        ".xcode",
+    }
+)
+_TOOL_APP_SUPPORT = frozenset(
+    {
+        "claude",
+        "codex",
+        "cursor",
+        "code",
+        "zed",
+        "jetbrains",
+        "ollama",
+        "docker",
+        "windsurf",
+        "kimi",
+        "glm",
+        "grok",
+        "gemini",
+        "copilot",
+        "github copilot",
+        "androidstudio",
+        "xcode",
+    }
+)
+_CODING_PREFIXES = (("Library", "Developer"), ("Library", "Caches"), ("Library", "Logs"), (".cache",), (".local",), (".config",))
 
 
 def _coding_related(target: Path, home: Path) -> bool:
@@ -271,10 +680,11 @@ def _is_real_dir(path: Path) -> bool:
 
 
 def _ordinary_folder(target: Path, home: Path) -> bool:
-    """A directory under $HOME that is none of: ~/Projects, a repository, coding-tool data."""
-    if not _is_real_dir(target) or not _ordinary_location(target, home, True):
-        return False
-    return not _holds_repository(target)
+    """A directory under $HOME that is none of: ~/Projects, a repository, coding-tool data.
+
+    Holding a repository does not change that: the non-repository contents are the owner's ordinary
+    files. _target_finding downgrades only a folder PROVEN to hold nothing but repositories."""
+    return _is_real_dir(target) and _ordinary_location(target, home, True)
 
 
 def _ordinary_file(target: Path, home: Path) -> bool:
@@ -287,13 +697,21 @@ def _change_subject(real: Path, home: Path) -> bool:
 
 
 def _owner_folder(target: Path) -> Finding:
-    return Finding(str(target), "is one of the owner's ordinary folders; only the owner may delete it "
-                   "(no review unlocks it)", False, owner_only=True)
+    return Finding(
+        str(target),
+        "is one of the owner's ordinary folders; only the owner may delete it (no review unlocks it)",
+        False,
+        owner_only=True,
+    )
 
 
 def _owner_file(target: Path) -> Finding:
-    return Finding(str(target), "is a file in one of the owner's ordinary folders; only the owner may delete it "
-                   "(no review unlocks it)", False, owner_only=True)
+    return Finding(
+        str(target),
+        "is a file in one of the owner's ordinary folders; only the owner may delete it (no review unlocks it)",
+        False,
+        owner_only=True,
+    )
 
 
 def _state_dir() -> Path:
@@ -310,20 +728,167 @@ def _protects_store(target: Path) -> bool:
     return any(_within(store, target) or _within(target, store) for store in (backups, reports))
 
 
+# Ticket text that NAMES the store (CIS-0F3BE18D). destructive-action-gate.sh refuses any command that
+# mentions the store unless every verb is a plain reader. That refusal also hit a ticket filed with
+# `python3.15 -m central_issue_store --add --description '...'` whose prose named the folder. Exactly one
+# form is cleared here: a single-line call of one ticket CLI whose store name sits only in the value of a
+# text option. Everything else, including every read-only grep/sqlite/cat the gate refuses, stays refused
+# as before: a read can build the name at run time, and each widening is a new hole.
+_STORE_NAMES = ("owner-backups", "owner-change-reports")
+_TICKET_MODULES = frozenset({"central_issue_store", "central_todo_store", "central_advisory_registry", "instruction_store"})
+_TICKET_TEXT_OPTIONS = frozenset(
+    {"--description", "--note", "--title", "--problem", "--rationale", "--how-to", "--resolution", "--instruction"}
+)
+_TRUSTED_PYTHON = re.compile(r"(?:/opt/homebrew/bin/|/usr/bin/)?python3\.1[45]")
+_EXPANSION_CHARS = re.compile(r"[$~*?\[{]")
+
+
+def _store_words(cmd: str) -> list[list[tuple[str, bool, str]]] | None:
+    """Split a command into segments of (word, is_redirect_target, raw source text of the word).
+
+    None when the command cannot be read safely: a command substitution, backtick, process
+    substitution or heredoc outside single quotes, a comment, or an unbalanced quote."""
+    segments: list[list[tuple[str, bool, str]]] = [[]]
+    word: list[str] = []
+    in_word = False
+    redirect = False
+    quote = ""
+    start = 0
+    i, n = 0, len(cmd)
+
+    def end_word() -> None:
+        nonlocal word, in_word, redirect
+        if in_word:
+            text = "".join(word)
+            if not (redirect and text.startswith("&")):  # 2>&1 duplicates a descriptor, it names no file
+                segments[-1].append((text, redirect, cmd[start:i]))
+            redirect = False
+        word, in_word = [], False
+
+    while i < n:
+        ch = cmd[i]
+        nxt = cmd[i + 1] if i + 1 < n else ""
+        if quote == "'":
+            if ch == "'":
+                quote = ""
+            else:
+                word.append(ch)
+            i += 1
+            continue
+        if ch == "`" or (ch == "$" and nxt == "(") or ch in "<>":
+            return None  # any redirect, here-string, <> or process substitution outside single quotes
+        if quote == '"':
+            if ch == '"':
+                quote = ""
+            elif ch == "\\" and nxt in '$`"\\':
+                word.append(nxt)
+                i += 1
+            else:
+                word.append(ch)
+            i += 1
+            continue
+        if not in_word and ch not in " \t;&|()\n":
+            if ch == "#":
+                return None  # an unquoted # at a word start opens a comment that hides what follows
+            start = i
+        if ch in "'\"":
+            quote, in_word = ch, True
+        elif ch == "\\" and nxt:
+            word.append(nxt)
+            in_word = True
+            i += 1
+        elif ch in ";&|()\n":
+            end_word()
+            redirect = False
+            if segments[-1]:
+                segments.append([])
+        elif ch in " \t":
+            end_word()
+        else:
+            word.append(ch)
+            in_word = True
+        i += 1
+    if quote:
+        return None
+    end_word()
+    return [seg for seg in segments if seg]
+
+
+def _names_store(text: str) -> bool:
+    return any(name in text for name in _STORE_NAMES)
+
+
+_TEXT_UNSAFE = re.compile(r"[$`\\{}*?\[\]~#!<>|;&()\r\n]")
+
+
+def _literal_ticket_text(raw: str) -> bool:
+    """True when the shell passes this ticket-text value through unchanged, so it can be skipped unread.
+
+    One rule: the value is entirely one single-quoted span, or it holds none of the characters the
+    shell expands, splits, redirects or comments on."""
+    return re.fullmatch(r"'[^']*'", raw) is not None or _TEXT_UNSAFE.search(raw) is None
+
+
+def store_mention_is_harmless(cmd: str) -> bool:
+    """True only for one single-line `python3.15 -m <ticket CLI> ...` whose store name sits in a text option."""
+    if "\n" in cmd or "\r" in cmd:
+        return False
+    segments = _store_words(cmd)
+    if segments is None or len(segments) != 1:
+        return False
+    seg = segments[0]
+    if any(is_target for _text, is_target, _raw in seg):
+        return False
+    words = [text for text, _target, _raw in seg]
+    raws = [raw for _text, _target, raw in seg]
+    # The CLIs are run as `PYTHONPATH=<shared-libs> python3.15 -m ...`: that one prefix, with only
+    # that value (~ and $HOME resolved here, never by trusting the text), is the sole assignment allowed.
+    if words and words[0].startswith("PYTHONPATH="):
+        home = os.environ.get("HOME", "")
+        trusted = {"shared-libs", "~/Projects/shared-libs", "$HOME/Projects/shared-libs", "/Users/eiman/Projects/shared-libs"}
+        if home:
+            trusted.add(f"{home}/Projects/shared-libs")
+        if words[0].partition("=")[2] not in trusted:
+            return False
+        words, raws = words[1:], raws[1:]
+    if len(words) < 3 or not _TRUSTED_PYTHON.fullmatch(words[0]) or words[1] != "-m" or words[2] not in _TICKET_MODULES:
+        return False
+    args, arg_raws, i = words[3:], raws[3:], 0
+    while i < len(args):
+        option, eq, _inline = args[i].partition("=")
+        if option in _TICKET_TEXT_OPTIONS:
+            value_raw = arg_raws[i].partition("=")[2] if eq else None
+            if not eq:
+                i += 1  # the next word is the value
+                if i >= len(args):
+                    return False
+                value_raw = arg_raws[i]
+            if value_raw is None or not _literal_ticket_text(value_raw):
+                return False
+            i += 1
+            continue
+        if _names_store(args[i]) or _EXPANSION_CHARS.search(args[i]):
+            return False
+        i += 1
+    return True
+
+
 def change_token_fresh(real: Path) -> bool:
-    """True when the backup helper ran for this path (or an ancestor) within the last 30 minutes."""
-    home = Path(os.path.realpath(os.environ.get("HOME", "/nonexistent")))
-    tokens = _store_paths()[0] / "tokens"
-    node = real
-    while node != home and node != node.parent:
-        key = hashlib.sha256(str(node).encode()).hexdigest()
-        try:
-            if time.time() - (tokens / key).stat().st_mtime <= CHANGE_TOKEN_TTL_S:
-                return True
-        except OSError:
-            pass
-        node = node.parent
-    return False
+    """True when the backup helper ran for EXACTLY this path within the last 30 minutes.
+
+    No ancestor walk: a token for a folder once vouched for every file inside it (security
+    review of PR #285), so one backup unlocked edits to files that were never copied.
+    """
+    key = hashlib.sha256(str(real).encode()).hexdigest()
+    token = _store_paths()[0] / "tokens" / key
+    try:
+        if time.time() - token.stat().st_mtime > CHANGE_TOKEN_TTL_S:
+            return False
+        row = json.loads(token.read_text(encoding="utf-8"))
+        # A token whose backup is gone (approved, swapped or deleted) vouches for nothing.
+        return row.get("path") == str(real) and isinstance(row.get("backup"), str) and os.path.lexists(row["backup"])
+    except (OSError, ValueError, AttributeError):
+        return False
 
 
 def _facts(path: Path) -> str:
@@ -374,11 +939,49 @@ def _holds_repository(root: Path) -> bool:
     return bool(unreadable)
 
 
+def _only_repositories(root: Path) -> bool:
+    """True only when a COMPLETE scan shows every entry under root is a repository or a folder of them.
+
+    Tri-state collapsed to a boolean on purpose: unreadable, oversized and "has a non-repository
+    file" all answer False, and False is the owner-only side.
+    """
+    budget = _REPO_SCAN_LIMIT
+    found = False
+
+    def walk(folder: Path) -> bool:
+        nonlocal budget, found
+        try:
+            entries = list(os.scandir(folder))
+        except OSError:
+            return False
+        budget -= len(entries)
+        if budget < 0:
+            return False
+        for entry in entries:
+            if entry.name == ".DS_Store":
+                continue
+            if entry.is_symlink() or not entry.is_dir(follow_symlinks=False):
+                return False
+            path = Path(entry.path)
+            try:
+                has_git = (path / ".git").exists()
+            except OSError:
+                return False
+            if has_git:
+                found = True
+            elif not walk(path):
+                return False
+        return True
+
+    return walk(root) and found
+
+
 def _target_finding(verb: str, target: Path, home: Path) -> Finding | None:
     projects = home / "Projects"
     if _protects_store(target):
-        return Finding(str(target), "holds the owner's change backups and reports; only the owner may remove them",
-                       False, owner_only=True)
+        return Finding(
+            str(target), "holds the owner's change backups and reports; only the owner may remove them", False, owner_only=True
+        )
     if target == home or _within(projects, target):
         return Finding(str(target), "is ~/Projects, $HOME or an ancestor of them", True)
     # Temp roots live outside $HOME, so they fall out here with everything else
@@ -388,14 +991,19 @@ def _target_finding(verb: str, target: Path, home: Path) -> Finding | None:
     if EXEMPT_PARTS.intersection(target.relative_to(home).parts) or target.suffix == ".pyc":
         return None
     repo = target.parent if target.name == ".git" else target
-    if (repo / ".git").exists() or repo.parent == projects:
+    if (repo / ".git").exists() or (repo.parent == projects and _is_real_dir(repo)):
         return Finding(str(repo), f"is a repository ({_facts(repo)})", True)
-    # A recursive delete of a directory takes every repository inside it, so those
-    # need the same existing backup as deleting the repository itself.
+    # Owner 2026-10-04: a folder CONTAINING repositories needs a backup, but an ordinary folder is the
+    # owner's. So an ordinary folder is reviewable only when PROVEN to hold nothing but repositories
+    # (~/Code of clones); a photo folder with one nested repo, an unreadable or oversized folder
+    # (unsure) stays owner-only. Outside ordinary locations (~/Projects, coding-tool data) any
+    # repository holder is reviewable as before.
+    if _ordinary_folder(target, home):
+        if _only_repositories(target):
+            return Finding(str(target), "is a directory containing repositories", True)
+        return _owner_folder(target)
     if _is_real_dir(target) and _holds_repository(target):
         return Finding(str(target), "is a directory containing repositories", True)
-    if _ordinary_folder(target, home):
-        return _owner_folder(target)
     if _ordinary_file(target, home):
         return _owner_file(target)
     if _is_real_dir(target) and (_within(target, projects) or _coding_related(target, home)):
@@ -514,7 +1122,7 @@ class _Ctx:
         self.raw = raw or text
         self.heredocs_done = False
         self.home = Path(os.path.realpath(os.environ.get("HOME", "/nonexistent")))
-        self.bases = [os.getcwd()]
+        self.bases = _cwds()
         self.text = text
         self.guarded = False
         self._mention: bool | None = None
@@ -525,6 +1133,7 @@ class _Ctx:
 
     def cd(self, args: list[str], env: dict[str, str | None]) -> None:
         word = next((a for a in args if not a.startswith("-")), "~")
+        self._mention = None  # bases only grow, so a stale False here would fail open (CTS-E967B657)
         expanded = _expand(word, env)
         if expanded is None:
             self.bases.append(str(self.home))  # unknowable: assume the worst place too
@@ -535,7 +1144,7 @@ class _Ctx:
         return path == self.home or _ordinary_location(path, self.home, True)
 
     def names_ordinary(self) -> bool:
-        return any(self._token_ordinary(tok) for tok in re.split(r"""[\s;&|()<>'"=,:]+""", self.text))
+        return any(self._token_ordinary(tok) for tok in re.split(r"""[\s;&|()<>'"`=,:]+""", self.text))
 
     def mentions(self) -> bool:
         """True when the command names, or runs in, an ordinary location."""
@@ -556,9 +1165,17 @@ class _Ctx:
         return False
 
 
+_REWRITE_MARK = "(rewrite: save the program to a file and run that file)"
+
+
+def _closed_program(why: str) -> Finding:
+    """A program the gate cannot read: refused, but the session fixes it itself by running it from a file."""
+    # Not _closed(): its "only the owner may run it" suffix would contradict the rewrite banner.
+    return Finding("(command)", f"{why}; the policy cannot read it {_REWRITE_MARK}", False, owner_only=True)
+
+
 def _closed(why: str, target: str = "(command)") -> Finding:
-    return Finding(target, f"{why}; the policy cannot see what it touches, so only the owner may run it", False,
-                   owner_only=True)
+    return Finding(target, f"{why}; the policy cannot see what it touches, so only the owner may run it", False, owner_only=True)
 
 
 def _too_many(prefix: str, ctx: _Ctx) -> Finding | None:
@@ -708,8 +1325,7 @@ def _copy_findings(verb: str, args: list[str], env: dict[str, str | None], ctx: 
 def _find_findings(args: list[str], env: dict[str, str | None], ctx: _Ctx) -> list[Finding]:
     roots: list[str] = []
     rest: list[str] = []
-    args = [a for a in args if a not in ("-H", "-L", "-P", "-X", "-x", "-s", "-E", "-d")] \
-        if not roots else args
+    args = [a for a in args if a not in ("-H", "-L", "-P", "-X", "-x", "-s", "-E", "-d")] if not roots else args
     for i, arg in enumerate(args):
         if arg.startswith(("-", "(", "!")):
             rest = args[i:]
@@ -722,7 +1338,12 @@ def _find_findings(args: list[str], env: dict[str, str | None], ctx: _Ctx) -> li
         action = "delete"
     for i, arg in enumerate(rest):
         if arg in ("-exec", "-execdir", "-ok", "-okdir") and i + 1 < len(rest):
-            cmd = os.path.basename(rest[i + 1])
+            cmd_args: list[str] = []
+            for word in rest[i + 1 :]:
+                if word in (";", "+"):
+                    break
+                cmd_args.append(word)
+            cmd = _verb(cmd_args)[0] or os.path.basename(rest[i + 1])
             if cmd in DELETE_VERBS:
                 action = "delete"
             elif action is None and (cmd in GUARDED_VERBS):
@@ -752,25 +1373,304 @@ def _shell_scripts(verb: str, args: list[str]) -> list[str]:
     return []
 
 
+_INLINE_INTERPRETERS = frozenset({"python", "python3", "python3.15", "perl", "ruby", "node"})
+# Calls that delete from inside an interpreter one-liner, in the spellings of each language.
+_INLINE_DELETE = re.compile(
+    r"\b(?:os\.(?:remove|unlink|rmdir|removedirs)|shutil\.rmtree|\.unlink\(|unlink(?:Sync)?\b|rmdir(?:Sync)?\b"
+    r"|rmSync\b|fs\.rm\b|File\.delete|FileUtils\.rm|rm_rf|remove_tree|rmtree)"
+)
+# A program the gate cannot read (inline text or stdin) fails closed near an ordinary folder, whatever it
+# says: a content denylist is always one spelling short (`getattr(os,"remove")`, `importlib`,
+# `vars(__builtins__)`; Grok and security reviews of #356/#358/#359, CTS-E967B657). Options are an
+# ALLOWLIST per interpreter family, so an option this table does not know fails closed too. A script FILE
+# is screened when it is written, so running one stays the escape route.
+_INTERPRETER = re.compile(
+    r"(python|pypy|perl|ruby|irb|node|nodejs|tsx|ts-node|deno|bun|php|lua|luajit|rscript|r|osascript|tclsh|wish"
+    r"|julia|swift|pwsh|powershell|jshell|groovy)[0-9.]*(?:-[0-9.]+)?"
+)
+_FAMILY_ALIAS = {"pypy": "python", "nodejs": "node", "tsx": "node", "ts-node": "node", "luajit": "lua", "wish": "tclsh"}
+# Tools that take a command or script as an option value; near an ordinary folder only `<tool> [file]` runs.
+_COMMAND_OPTION_TOOLS = frozenset(
+    {"vim", "nvim", "vi", "ex", "view", "emacs", "gdb", "lldb", "expect", "elixir", "iex", "erl", "escript"}
+    | {"racket", "guile", "sbcl", "clisp", "ecl", "ghci", "runghc", "scala", "kotlin", "clojure", "clj", "bb"}
+    | {"nu", "xonsh", "elvish", "ipython", "make", "gmake", "jshell", "groovy", "irb"}
+)
+
+
+class _Spec(NamedTuple):
+    flags: str = ""  # short letters that take no value
+    values: str = ""  # short letters whose value is the rest of the cluster or the next word
+    long_flags: frozenset[str] = frozenset()
+    long_values: frozenset[str] = frozenset()  # long options whose value is the next word (or after `=`)
+    file_opts: frozenset[str] = frozenset()  # options whose value is the script file
+    subcommands: frozenset[str] = frozenset()  # leading words that keep reading options (`deno run`)
+    positional_file: bool = True  # the first plain word is the script
+    case_insensitive: bool = False
+
+
+_INFO = frozenset({"--version", "--help", "-v", "-V", "-h", "-version", "-help"})
+_SPECS: dict[str, _Spec] = {
+    "python": _Spec(flags="uBOIEsSqbdvxPR", values="WX", long_flags=frozenset({"--version", "--help"})),
+    "perl": _Spec(flags="wTtnapsc", values="IMm"),
+    "ruby": _Spec(flags="wvcdnaps", values="Ir"),
+    "node": _Spec(
+        long_flags=frozenset(
+            {"--no-warnings", "--enable-source-maps", "--trace-warnings", "--no-deprecation", "--expose-gc"}
+            | {"--experimental-strip-types", "--experimental-vm-modules", "--test", "--watch", "--inspect"}
+        ),
+        values="r",
+        long_values=frozenset({"--require", "--env-file", "--conditions", "--input-type", "--max-old-space-size"}),
+    ),
+    "deno": _Spec(flags="Aq", subcommands=frozenset({"run", "task", "test"})),
+    "bun": _Spec(subcommands=frozenset({"run", "test"})),
+    "php": _Spec(flags="nqH", file_opts=frozenset({"-f"})),
+    "lua": _Spec(values="l"),
+    "rscript": _Spec(long_flags=frozenset({"--vanilla", "--no-save", "--no-restore", "--quiet", "--slave", "--no-echo"})),
+    "r": _Spec(
+        long_flags=frozenset({"--vanilla", "--no-save", "--no-restore", "--quiet", "--slave", "--no-echo"}),
+        file_opts=frozenset({"-f", "--file"}),
+        positional_file=False,
+    ),
+    "osascript": _Spec(values="ls"),
+    "julia": _Spec(flags="q", values="t", long_values=frozenset({"--project", "--threads", "--startup-file", "--color"})),
+    "pwsh": _Spec(
+        long_flags=frozenset({"-noprofile", "-noninteractive", "-nologo"}),
+        long_values=frozenset({"-executionpolicy"}),
+        file_opts=frozenset({"-file", "-f"}),
+        positional_file=False,
+        case_insensitive=True,
+    ),
+}
+_SPECS["powershell"] = _SPECS["pwsh"]
+# `python -m <these>` runs code given on the command line or stdin, not a module's own file.
+_CODE_MODULES = frozenset({"pdb", "code", "timeit", "trace", "cprofile", "profile", "runpy", "doctest", "idlelib"})
+_PERL_MODULE = re.compile(r"-?[\w:]+(?:=[\w,:]+)?")
+_RUBY_LIB = re.compile(r"[\w/.:-]+")
+# Tools that start the command named among their arguments (`uv run rm ...`, `npx tsx -e ...`).
+_RUNNERS = frozenset(
+    {"uv", "uvx", "poetry", "pipx", "pdm", "hatch", "rye", "conda", "mamba", "pyenv", "rbenv", "mise", "asdf"}
+    | {"bundle", "npx", "pnpm", "yarn", "bunx", "direnv", "op", "dotenv"}
+)
+_AWK_VERBS = frozenset({"awk", "gawk", "mawk", "nawk"})
+# awk reaches files and processes only through these: system(), a single-bar pipe, print redirection, @load.
+_AWK_CAPABLE = re.compile(r"\bsystem\b|(?<!\|)\|(?!\|)|\bprintf?\b[^;}\n]*>|@load")
+# sqlite3 accepts any unambiguous prefix of a dot-command, so only these read-only ones are allowed.
+_SQLITE_READ_ONLY = frozenset(
+    {"tables", "table", "schema", "headers", "header", "mode", "indexes", "indices", "databases", "dbinfo"}
+    | {"help", "show", "width", "timer", "quit", "exit", "print", "nullvalue", "separator", "eqp", "explain"}
+    | {"stats", "changes", "bail", "echo", "fullschema", "lint", "dump"}
+)
+_SQLITE_DOT = re.compile(r"(?:^|[\s'\";])\.([A-Za-z]\w*)", re.MULTILINE)
+_SQLITE_FUNCS = re.compile(r"load_extension|writefile|\bedit\s*\(|fts3_tokenizer", re.IGNORECASE)
+
+
+def _family(verb: str) -> str | None:
+    match = _INTERPRETER.fullmatch(verb.lower())
+    if not match:
+        return None
+    base = match.group(1)
+    return _FAMILY_ALIAS.get(base, base)
+
+
+def _command_words(words: list[str]) -> list[int]:
+    """Indexes of every word that names a guarded verb, interpreter or runner."""
+    names = [os.path.basename(w).lower() for w in words]
+    return [j for j, w in enumerate(names) if w in GUARDED_VERBS or _runs_program(w)]
+
+
+def _runs_program(word: str) -> bool:
+    low = word.lower()
+    return low in _RUNNERS or low == "sqlite3" or low in _COMMAND_OPTION_TOOLS or _family(low) is not None
+
+
+def _stdin_path(path: str) -> bool:
+    """`-`, `/dev/stdin`, `/dev/fd/0`, `php://stdin`, `data:` URLs: a "file" the write-time screen never saw."""
+    return path in ("", "-") or ":" in path or path.startswith(("/dev/", "/proc/"))
+
+
+def _short_option(family: str, spec: _Spec, args: list[str], i: int) -> tuple[str, int]:
+    """Judge one short-option cluster: ("ok", next index), or ("inline"|"file", _) to stop."""
+    cluster = args[i][1:]
+    for n, letter in enumerate(cluster):
+        rest = cluster[n + 1 :]
+        if letter in spec.flags:
+            continue
+        if family == "python" and letter == "m":
+            module = rest or (args[i + 1] if i + 1 < len(args) else "")
+            ok = re.fullmatch(r"[\w.]+", module) and module.split(".")[0].lower() not in _CODE_MODULES
+            return ("file" if ok else "inline"), i
+        if letter in spec.values:
+            value = rest or (args[i + 1] if i + 1 < len(args) else "")
+            if family == "perl" and letter in "Mm" and not _PERL_MODULE.fullmatch(value):
+                return "inline", i  # `-M'POSIX;unlink ...'` injects code
+            if family == "ruby" and letter in "Ir" and not _RUBY_LIB.fullmatch(value):
+                return "inline", i
+            return "ok", i + (1 if rest else 2)
+        return "inline", i  # an option this table does not know: fail closed
+    return "ok", i + 1
+
+
+def _program_source(family: str, args: list[str]) -> str:
+    """Where an interpreter reads its program: "file", "inline", "stdin" or "none" (version/help only)."""
+    spec = _SPECS.get(family, _Spec())
+    info_only = True
+    seen_subcommand = False
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        low = arg.lower() if spec.case_insensitive else arg
+        if arg.startswith("<<"):
+            return "stdin"  # a heredoc or here-string before any script file is the program
+        if arg in ("<", ">", ">>", "2>", "&>"):
+            i += 2
+            continue
+        if arg.startswith(("<", ">")) or _LEADING_REDIRECT.fullmatch(arg):
+            i += 1
+            continue
+        if arg == "-":
+            return "stdin"
+        if low in _INFO:
+            i += 1
+            continue
+        info_only = False
+        name, eq, value = low.partition("=")
+        if name in spec.file_opts:
+            target = value if eq else (args[i + 1] if i + 1 < len(args) else "")
+            # `-f -`, `php://stdin` and `data:` URLs are not files the write-time screen has seen
+            return "stdin" if _stdin_path(target) else "file"
+        if arg.startswith("--") or (spec.case_insensitive and arg.startswith("-")):
+            if "data:" in value:
+                return "inline"
+            if (name in spec.long_flags and not eq) or (name in spec.long_values and eq):
+                i += 1
+            elif family == "deno" and name.startswith(("--allow-", "--unstable")):
+                i += 1  # permission flags; `--allow-read=dir` keeps its value attached
+            elif name in spec.long_values:
+                i += 2
+            else:
+                return "inline"  # unknown long option: its value may be the program
+            continue
+        if arg.startswith("-") and len(arg) > 1:
+            verdict, i = _short_option(family, spec, args, i)
+            if verdict != "ok":
+                return verdict
+            continue
+        if spec.subcommands and not seen_subcommand:
+            if arg not in spec.subcommands:
+                # `deno eval` / `bun x` run text or a package; a path-shaped word is the script itself
+                return "file" if ("/" in arg or "." in arg) else "inline"
+            seen_subcommand = True
+            i += 1
+            continue
+        if _stdin_path(arg):
+            return "stdin"
+        return "file" if spec.positional_file else "inline"
+    return "none" if info_only and args else "stdin"
+
+
+def _awk_programs(args: list[str]) -> tuple[list[str], bool]:
+    """Every inline awk program in `args`, and whether an extension is loaded (`-l`, `--load`)."""
+    programs: list[str] = []
+    files = False
+    loads = False
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        name, eq, value = arg.partition("=")
+        if arg == "--":
+            i += 1
+            break
+        if name in ("--source", "--file", "--load", "--assign", "--field-separator", "--include") and not eq:
+            value, i = (args[i + 1] if i + 1 < len(args) else ""), i + 1
+        if name.startswith("--"):
+            programs += [value] if name == "--source" else []
+            files = files or name in ("--file", "--include")
+            loads = loads or name == "--load"
+            i += 1
+            continue
+        if arg.startswith("-") and len(arg) > 1:
+            letter, rest = arg[1], arg[2:]
+            if letter in "vFfeilE":
+                value = rest or (args[i + 1] if i + 1 < len(args) else "")
+                i += 1 if rest else 2
+                programs += [value] if letter == "e" else []
+                files = files or letter in "fiE"
+                loads = loads or letter == "l"
+            else:
+                i += 1
+            continue
+        break
+    if not files and i < len(args):
+        programs.append(args[i])
+    return programs, loads
+
+
+def _program_findings(verb: str, args: list[str], ctx: _Ctx) -> list[Finding]:
+    """Interpreters, awk, sqlite3 and command-option tools whose program the gate cannot read."""
+    if verb in _AWK_VERBS:
+        programs, loads = _awk_programs(args)
+        if ctx.mentions() and (loads or any(_AWK_CAPABLE.search(p) for p in programs)):
+            return [_closed_program(f"an inline {verb} program can run commands or write files")]
+        return []
+    if verb == "sqlite3":
+        sql = " ".join(args) + "\n" + (ctx.raw or ctx.text)  # stdin (heredoc, pipe) carries the script just as an argument does
+        dots = {d.lower() for d in _SQLITE_DOT.findall(sql)}
+        if ctx.mentions() and (dots - _SQLITE_READ_ONLY or _SQLITE_FUNCS.search(sql)):
+            return [_closed_program("sqlite3 dot-commands or functions can run commands or write files")]
+        return []
+    if verb in _COMMAND_OPTION_TOOLS:
+        if ctx.mentions() and any(a.startswith(("-", "+")) and a not in _INFO for a in args):
+            return [_closed_program(f"{verb} options can run commands near an ordinary folder")]
+        return []
+    family = _family(verb)
+    if family is None or not ctx.mentions():
+        return []
+    source = _program_source(family, args)
+    if source in ("inline", "stdin"):
+        where = "on the command line" if source == "inline" else "from stdin"
+        return [_closed_program(f"{verb} runs a program given {where} near an ordinary folder")]
+    return []
+
+
+def _reads_stdin(args: list[str]) -> bool:
+    """True when a shell has no script FILE to read: bare `sh`, `sh -s`, or only options and redirects."""
+    if any(a == "-s" or (a.startswith("-") and not a.startswith("--") and "s" in a[1:] and "c" not in a[1:]) for a in args):
+        return True  # `bash -s arg...` reads its program from stdin whatever positional words follow
+    skip = False
+    for arg in args:
+        if skip:  # the word after a bare `<<<` or `<` is its data or file, not a script to run
+            skip = False
+            continue
+        if arg in ("<<<", "<"):
+            skip = True
+        elif not (arg.startswith(("<", "-")) or _LEADING_REDIRECT.fullmatch(arg)):
+            return False
+    return True
+
+
 def _heredoc_bodies(text: str) -> str:
     out: list[str] = []
     terminator: str | None = None
-    for line in text.splitlines():
+    lines = text.splitlines()
+    for n, line in enumerate(lines):
         if terminator is not None:
             if line.strip() == terminator:
                 terminator = None
             else:
                 out.append(line)
             continue
-        match = _HEREDOC.search(line)
-        if match:
-            terminator = match.group(1)
+        tag = _heredoc_tag(line)
+        if tag and _terminated(lines, n + 1, tag):
+            terminator = tag
     return "\n".join(out)
 
 
 _REDIRECT = re.compile(r"(?:\d*|&)(>>|>\||>)(.*)", re.S)
 _SPECIAL_VERB = re.compile(r"[{}*?\[$`]")
+# `[ -f x ]` / `[[ ... ]]` are the test builtin: their words are operands, and they never delete.
+_TEST_BUILTINS = frozenset({"[", "[["})
 _MAX_DEPTH = 4
+_MAX_CANDIDATES = 32
 
 
 def _redirect_findings(segment: list[str], env: dict[str, str | None], ctx: _Ctx) -> list[Finding]:
@@ -788,19 +1688,47 @@ def _redirect_findings(segment: list[str], env: dict[str, str | None], ctx: _Ctx
     return problems + _need_token(paths, ctx, "is overwritten by a redirect")
 
 
-def _segment_findings(segment: list[str], env: dict[str, str | None], ctx: _Ctx, depth: int) -> list[Finding]:
+def _candidate_findings(words: list[str], starts: list[int], env: dict[str, str | None], ctx: _Ctx, depth: int) -> list[Finding]:
+    """Judge each word that could be the command once, as its own segment, without expanding again.
+
+    Re-expanding overlapping suffixes is exponential (`uv uv uv ...`), and a hook that times out fails
+    open, so the set is judged flat and capped (third security review of #359)."""
+    if len(starts) > _MAX_CANDIDATES:
+        return [_closed("too many possible command words to judge")] if ctx.mentions() else []
+    found: list[Finding] = []
+    for j in starts:
+        found += _segment_findings(words[j:], env, ctx, depth, expand=False)
+    return found
+
+
+def _segment_findings(
+    segment: list[str], env: dict[str, str | None], ctx: _Ctx, depth: int, expand: bool = True
+) -> list[Finding]:
     found = _redirect_findings(segment, env, ctx)
     verb, args = _verb(segment)
     if verb is None:
         return found
-    if _SPECIAL_VERB.search(verb) and ctx.mentions():
+    chosen = len(segment) - len(args) - 1
+    if expand and _resolve(segment)[1]:
+        # A wrapper option the table does not know may have taken the real command word as its value, so
+        # every other word that could be the command is judged too (`env --foo sed python3 -c ...`).
+        found += _candidate_findings(segment, [j for j in _command_words(segment) if j != chosen], env, ctx, depth)
+    # ctx.mentions() is cached on first use, so it is still asked here (same order as before) for `[`.
+    if _SPECIAL_VERB.search(verb) and ctx.mentions() and verb not in _TEST_BUILTINS:
         return found + [_closed(f"the command word {verb!r} is built at run time")]
+    if verb == "alias" and ctx.mentions():
+        return found + [_closed("an alias can rename a delete verb")]
+    if verb in _RUNNERS:
+        # `uv run rm ...` runs rm. The runner's own option values are not parsed, so EVERY word that could be
+        # the command it starts is judged as a segment of its own (security review of #359).
+        return found + (_candidate_findings(args, _command_words(args), env, ctx, depth) if expand else [])
     if verb in ("cd", "pushd"):
         ctx.cd(args, env)
         return found
     if verb in GUARDED_VERBS:
         ctx.guarded = True
     stdin_fed = "xargs" in segment and verb in GUARDED_VERBS and verb != "find"
+    inline_delete = verb in _INLINE_INTERPRETERS and ctx.mentions() and any(_INLINE_DELETE.search(a) for a in args)
     if verb in DELETE_VERBS:
         found += _delete_findings(verb, args, env, ctx)
         if stdin_fed and ctx.mentions():
@@ -821,7 +1749,11 @@ def _segment_findings(segment: list[str], env: dict[str, str | None], ctx: _Ctx,
         found += problems + _need_token(paths, ctx, "is overwritten by dd")
     elif verb == "find":
         found += _find_findings(args, env, ctx)
+    elif inline_delete:
+        found.append(_closed(f"an inline {verb} script deletes files the policy cannot see"))
     elif verb in SHELL_VERBS:
+        if verb != "eval" and ctx.mentions() and not _shell_scripts(verb, args) and _reads_stdin(args):
+            found.append(_closed(f"{verb} reads its program from stdin or a here-string"))
         if depth >= _MAX_DEPTH:
             if ctx.mentions():
                 found.append(_closed("shell commands nest too deeply"))
@@ -834,7 +1766,198 @@ def _segment_findings(segment: list[str], env: dict[str, str | None], ctx: _Ctx,
                 ctx.text += "\n" + body
                 ctx._mention = None
                 found += analyze(body, depth + 1, ctx)
+    if verb not in SHELL_VERBS and not inline_delete:
+        found += _program_findings(verb, args, ctx)
     return found
+
+
+class _SubstScan:
+    """Quote-aware extraction of bash command substitutions (CIS-05F67AE1, #347/#356).
+
+    A plain paren counter stops at a `)` inside `'...'` or `\"...\"` within `$(...)`, so a
+    delete can hide after a quoted parenthesis; backticks need the same quoting rules.
+    """
+
+    @staticmethod
+    def _dollar_paren_end(text: str, paren_i: int) -> int | None:
+        """Index after the `)` that closes `$(` whose `(` is at paren_i."""
+        n = len(text)
+        depth = 1
+        sq = 0
+        dqs: dict[int, bool] = {1: False}
+        j = paren_i + 1
+        while j < n and depth:
+            ch = text[j]
+            nx = text[j + 1] if j + 1 < n else ""
+            if sq:
+                if sq == 2 and ch == "\\":
+                    j += 2
+                    continue
+                if ch == "'":
+                    sq = 0
+                j += 1
+                continue
+            if ch == "\\":
+                j += 2
+                continue
+            if ch == "$" and nx == "'" and not dqs[depth]:
+                sq = 2
+                j += 2
+                continue
+            if ch == "'" and not dqs[depth]:
+                sq = 1
+                j += 1
+                continue
+            if ch == '"':
+                dqs[depth] = not dqs[depth]
+                j += 1
+                continue
+            if ch == "#" and not dqs[depth] and (j == paren_i + 1 or text[j - 1] in " \t\n;(|&"):
+                while j + 1 < n and text[j + 1] != "\n":
+                    j += 1
+                j += 2 if j + 1 < n else 1
+                continue
+            if ch == "`" and not dqs[depth]:
+                end = _SubstScan._backtick_end(text, j)
+                if end is None:
+                    return None
+                j = end
+                continue
+            if ch == "$" and nx == "(":
+                depth += 1
+                dqs[depth] = False
+                j += 2
+                continue
+            if ch == "(" and not dqs[depth]:
+                depth += 1
+                dqs[depth] = False
+                j += 1
+                continue
+            if ch == ")" and not dqs[depth]:
+                depth -= 1
+                if depth == 0:
+                    return j + 1
+                j += 1
+                continue
+            j += 1
+        return None
+
+    @staticmethod
+    def _backtick_end(text: str, start: int) -> int | None:
+        """Index after the closing backtick for one opening backtick at start."""
+        n = len(text)
+        depth = 1
+        sq = False
+        dq = False
+        j = start + 1
+        while j < n and depth:
+            ch = text[j]
+            if sq:
+                sq = ch != "'"
+                j += 1
+                continue
+            if dq:
+                if ch == "\\":
+                    j += 2
+                    continue
+                dq = ch != '"'
+                j += 1
+                continue
+            if ch == "\\":
+                j += 2
+                continue
+            if ch == "'":
+                sq = True
+                j += 1
+                continue
+            if ch == '"':
+                dq = True
+                j += 1
+                continue
+            if ch == "`":
+                depth -= 1
+                if depth == 0:
+                    return j + 1
+                depth += 1
+                j += 1
+                continue
+            j += 1
+        return None
+
+    @staticmethod
+    def bodies(text: str) -> list[str]:
+        out: list[str] = []
+        i, n, single, double, ansi = 0, len(text), False, False, False
+        while i < n:
+            ch = text[i]
+            if ansi:
+                i += 2 if ch == "\\" else 1
+                ansi = ch != "'"
+                continue
+            if ch == "\\" and not single:
+                i += 2
+                continue
+            if ch == "$" and text[i + 1 : i + 2] == "$" and not single:
+                i += 2
+                continue
+            if ch == "$" and text[i + 1 : i + 2] == "'" and not single and not double:
+                ansi = True
+                i += 2
+                continue
+            if ch == "'" and not double:
+                single = not single
+                i += 1
+                continue
+            if ch == '"' and not single:
+                double = not double
+                i += 1
+                continue
+            if not single and text.startswith("$(", i) and not text.startswith("$((", i):
+                end = _SubstScan._dollar_paren_end(text, i + 1)
+                if end is None:
+                    out.append("'")
+                    return out
+                out.append(text[i + 2 : end - 1])
+                i = end
+                continue
+            if not single and ch == "`":
+                end = _SubstScan._backtick_end(text, i)
+                if end is None:
+                    out.append("'")
+                    return out
+                out.append(text[i + 1 : end - 1])
+                i = end
+                continue
+            i += 1
+        if single or double or ansi:
+            out.append("'")
+        return out
+
+
+def _substituted_commands(text: str) -> list[str]:
+    """Inner text of every `$(...)` and backtick pair that bash would expand (not inside single quotes).
+
+    A `'` inside double quotes is a literal character, not a quote: toggling on it hid
+    `echo "it's $(rm f)"` from the check (security review 2026-10-07)."""
+    return _SubstScan.bodies(text)
+
+
+_UNBOUNDED_IN_SUBST = re.compile(r"\bcase\b|<<|\$\{")
+
+
+def _substitution_scan_unsound(text: str) -> bool:
+    """True when a `$(` is followed by a construct whose `)` the plain paren scan misreads (CIS-05F67AE1).
+
+    `case x in x)` and `${v//)/}` close the scan early, so the delete after them is never judged; fail closed."""
+    start = text.find("$(")
+    while start != -1:
+        if not text.startswith("$((", start) and _UNBOUNDED_IN_SUBST.search(text, start + 2):
+            return True
+        start = text.find("$(", start + 2)
+    return False
+
+
+_FUNCTION_DEF = re.compile(r"\bfunction\s+\w|\w[\w.-]*\s*\(\s*\)\s*[{(]|\bcoproc\b|\btrap\b")
 
 
 def analyze(raw_text: str, depth: int = 0, parent: _Ctx | None = None) -> list[Finding]:
@@ -851,8 +1974,18 @@ def analyze(raw_text: str, depth: int = 0, parent: _Ctx | None = None) -> list[F
     found: list[Finding] = []
     for segment in segments:
         found += _segment_findings(segment, env, ctx, depth)
+    if _FUNCTION_DEF.search(text) and ctx.names_ordinary():
+        # A function body is never executed by this parser: `function g { rm "$1"; }; g f` reaches rm unseen.
+        found.append(_closed("a function, coproc or trap defined in the same command can run a delete verb"))
     if ctx.guarded and ("$(" in text or "`" in text or "<(" in text) and ctx.mentions():
         found.append(_closed("a command substitution may build the paths"))
+    elif ctx.mentions() and _substitution_scan_unsound(text):
+        found.append(_closed_program("a command substitution holds a case, heredoc or ${...} the paren scan cannot bound"))
+    elif depth < _MAX_DEPTH and ctx.mentions():
+        # A substitution inside double quotes is one shell word to the lexer, yet bash runs it:
+        # `echo "$(rm x)"`. Judge the inner command like any other.
+        for inner in _substituted_commands(text):
+            found += analyze(inner, depth + 1, ctx)
     return found
 
 
@@ -875,35 +2008,100 @@ def review_answers(text: str) -> list[str] | None:
     return answers
 
 
+_NAME_SEPARATORS = ("-", "_", ".", " ")
+
+
+def _named_for(name: str, target_name: str) -> bool:
+    low, want = name.lower(), target_name.lower()
+    return bool(want) and (low == want or any(low.startswith(want + sep) for sep in _NAME_SEPARATORS))
+
+
+def _nonempty(path: Path) -> bool:
+    try:
+        return path.stat().st_size > 0 if path.is_file() else any(path.iterdir())
+    except OSError:
+        return False
+
+
+def _plausible_backup(candidate: Path, target: Path) -> bool:
+    """Backup rule (owner rule 2026-10-04: "a backup that exists outside the target").
+
+    The named path must exist, be non-empty, lie outside the target (not inside it, not an ancestor),
+    AND be named for the target: its own basename is the target's basename or begins with it plus a
+    separator (x.tar, x-20261005.tar.gz), or it is a folder holding such an entry (a backup root).
+    So /etc or an unrelated file no longer "exists" its way past the review. A name is still a claim
+    the policy cannot read inside; the helper's token (backup_token_valid) stays the strong proof, and
+    the review, which the owner can audit afterwards, stays the record.
+    """
+    if not candidate.exists() or _within(candidate, target) or _within(target, candidate) or not _nonempty(candidate):
+        return False
+    if _named_for(candidate.name, target.name):
+        return True
+    if candidate.is_dir():
+        try:
+            return any(_named_for(child.name, target.name) and _nonempty(child) for child in candidate.iterdir())
+        except OSError:
+            return False
+    return False
+
+
 def _backup_ok(finding: Finding, backup_answer: str) -> bool:
     if backup_token_valid(Path(finding.target)):
         return True
     target = _real(finding.target)
     named = re.findall(r"(?:~|/)[^\s,;)\n]+", backup_answer)
-    # A backup must exist AND lie outside the target: naming the target, a path
-    # inside it, or an ancestor of it (~, /) "exists" while preserving nothing
-    # once the delete runs (security review of PR #274, 2026-10-04).
-    for raw in named:
-        candidate = _real(os.path.expanduser(raw))
-        if candidate.exists() and not _within(candidate, target) and not _within(target, candidate):
-            return True
-    return False
+    return any(_plausible_backup(_real(os.path.expanduser(raw)), target) for raw in named)
 
 
 # Executors that can run a delete the policy cannot see; any of them in a reviewed
 # command sends it back to the owner.
-_INDIRECT = frozenset({"bash", "sh", "zsh", "dash", "ksh", "fish", "eval", "source", ".", "exec",
-                       "xargs", "find", "parallel", "doas", "osascript", "python", "python3",
-                       "python3.15", "perl", "ruby", "node", "unlink", "rmdir", "shred", "srm",
-                       # shell-state changes alter what a later word expands to
-                       "cd", "pushd", "popd", "export", "declare", "typeset", "alias", "unset",
-                       "set", "readonly", "local", "builtin", "shopt"})
+_INDIRECT = frozenset(
+    {
+        "bash",
+        "sh",
+        "zsh",
+        "dash",
+        "ksh",
+        "fish",
+        "eval",
+        "source",
+        ".",
+        "exec",
+        "xargs",
+        "find",
+        "parallel",
+        "doas",
+        "osascript",
+        "python",
+        "python3",
+        "python3.15",
+        "perl",
+        "ruby",
+        "node",
+        "unlink",
+        "rmdir",
+        "shred",
+        "srm",
+        # shell-state changes alter what a later word expands to
+        "cd",
+        "pushd",
+        "popd",
+        "export",
+        "declare",
+        "typeset",
+        "alias",
+        "unset",
+        "set",
+        "readonly",
+        "local",
+        "builtin",
+        "shopt",
+    }
+)
 _DELETE_WORD = re.compile(r"(?<![\w.-])(?:[\w./-]*/)?(?:rm|trash)(?![\w.-])")
 
 
-_PLAIN_DELETE = re.compile(
-    r"(?:rm|trash)(?:[ \t]+-[A-Za-z]+)*(?:[ \t]+--)?(?:[ \t]+(?:~/|/)[A-Za-z0-9._/+-]+)+"
-)
+_PLAIN_DELETE = re.compile(r"(?:rm|trash)(?:[ \t]+-[A-Za-z]+)*(?:[ \t]+--)?(?:[ \t]+(?:~/|/)[A-Za-z0-9._/+-]+)+")
 
 
 _PATH_MAKERS = frozenset({"ln", "mv", "cp", "rsync", "ditto", "install"})
@@ -1003,28 +2201,45 @@ def _helper_path() -> Path:
     return here if here.is_file() else Path(os.environ.get("HOME", "")) / ".claude" / "scripts" / "owner-change-backup.py"
 
 
+def _rewrite_request(found: list[Finding]) -> str:
+    return "\n".join(
+        [
+            "REWRITE REQUIRED (owner 2026-10-07, CTS-C3B34F1B) -- do NOT ask the owner about this:",
+            *(f"  * {f.why.replace(_REWRITE_MARK, '').strip()}" for f in found),
+            "",
+            "The gate cannot read a program given inline or on stdin near the owner's ordinary folders. Save it",
+            "to a file in the session scratchpad (Write tool) and run that file: a script file is screened when",
+            "it is written. The owner's instruction for this refusal is exactly that, not an approval request.",
+        ]
+    )
+
+
 def _owner_request(found: list[Finding]) -> str:
-    return "\n".join([
-        "OWNER PERMISSION REQUIRED (owner rule 2026-10-04, CTS-24E2B3F5) -- no review unlocks this:",
-        *(f"  * {f.target} {f.why}" for f in found),
-        "",
-        "Deleting anything in the owner's ordinary folders is his decision alone; ask him. Folders in",
-        "~/Projects, repositories and coding-tool folders may be deleted with a DELETION-REVIEW and an",
-        "existing backup. Moving, renaming or changing his files is allowed after a backup and a report",
-        "(python3.15 owner-change-backup.py <path>... --reason \"...\").",
-    ])
+    return "\n".join(
+        [
+            "OWNER PERMISSION REQUIRED (owner rule 2026-10-04, CTS-24E2B3F5) -- no review unlocks this:",
+            *(f"  * {f.target} {f.why}" for f in found),
+            "",
+            "Deleting anything in the owner's ordinary folders is his decision alone; ask him. Folders in",
+            "~/Projects, repositories and coding-tool folders may be deleted with a DELETION-REVIEW and an",
+            "existing backup. Moving, renaming or changing his files is allowed after a backup and a report",
+            '(python3.15 owner-change-backup.py <path>... --reason "...").',
+        ]
+    )
 
 
 def _token_request(found: list[Finding]) -> str:
     paths = " ".join(shlex.quote(f.target) for f in found)
-    return "\n".join([
-        "OWNER BACKUP + REPORT REQUIRED (owner rule 2026-10-04, CTS-24E2B3F5) -- back up and report before changing:",
-        *(f"  * {f.target} {f.why}" for f in found),
-        "",
-        "Run this first, then repeat the command (the token lasts 30 minutes):",
-        f'  python3.15 {shlex.quote(str(_helper_path()))} {paths} --reason "<why this change>"',
-        "The owner approves afterwards by typing \"approve changes\"; the backup is kept until then.",
-    ])
+    return "\n".join(
+        [
+            "OWNER BACKUP + REPORT REQUIRED (owner rule 2026-10-04, CTS-24E2B3F5) -- back up and report before changing:",
+            *(f"  * {f.target} {f.why}" for f in found),
+            "",
+            "Run this first, then repeat the command (the token lasts 30 minutes):",
+            f'  python3.15 {shlex.quote(str(_helper_path()))} {paths} --reason "<why this change>"',
+            'The owner approves afterwards by typing "approve changes"; the backup is kept until then.',
+        ]
+    )
 
 
 def _review_request(found: list[Finding], answers: list[str] | None) -> str:
@@ -1074,8 +2289,10 @@ _RESOLUTION_VARS = frozenset({"HOME", "PWD", "OLDPWD", "CDPATH", "IFS", "PATH"})
 # A heredoc whose body is only written to a file: cat > f <<T, cat <<T > f, tee [-a] f <<T
 # (optionally >/dev/null). No pipe, substitution or process substitution anywhere.
 _SINK_PATH = r"[A-Za-z0-9._/~+-]+"
-_TAG = (r"<<(?P<dash>-)?[ \t]*(?:'(?P<q1>[A-Za-z_][A-Za-z0-9_]*)'"
-        r"|\"(?P<q2>[A-Za-z_][A-Za-z0-9_]*)\"|(?P<w>[A-Za-z_][A-Za-z0-9_]*))")
+_TAG = (
+    r"<<(?P<dash>-)?[ \t]*(?:'(?P<q1>[A-Za-z_][A-Za-z0-9_]*)'"
+    r"|\"(?P<q2>[A-Za-z_][A-Za-z0-9_]*)\"|(?P<w>[A-Za-z_][A-Za-z0-9_]*))"
+)
 _DATA_SINKS = (
     re.compile(rf"cat[ \t]+>{{1,2}}[ \t]*{_SINK_PATH}[ \t]+{_TAG}"),
     re.compile(rf"cat[ \t]+{_TAG}[ \t]+>{{1,2}}[ \t]*{_SINK_PATH}"),
@@ -1141,7 +2358,7 @@ def _literal_path(word: str, base: str, assigns: dict[str, str]) -> str | None:
             value = os.environ.get("TMPDIR")
         if not value:
             return None
-        raw = value + raw[var.end():]
+        raw = value + raw[var.end() :]
     path = os.path.expanduser(raw)
     return os.path.realpath(os.path.join(base, path)) + ("/" if raw.endswith("/") else "")
 
@@ -1167,12 +2384,10 @@ def recursive_targets(raw_text: str) -> list[str] | None:
         heredoc_lines = [line for line in code_lines if "<<" in line]
         # An UNQUOTED delimiter makes bash expand $(..), `..` and ${..} in the body
         # while writing it, so a substitution there RUNS (twelfth review of #278).
-        expands = any(
-            (found := _sink(line)) is not None and found.group("w") for line in heredoc_lines
-        ) and any(token in raw_text for token in ("$(", "`", "${"))
-        if heredoc_lines and not expands and all(
-            _sink(line) or _INERT_LINE.fullmatch(line.strip()) for line in code_lines
-        ):
+        expands = any((found := _sink(line)) is not None and found.group("w") for line in heredoc_lines) and any(
+            token in raw_text for token in ("$(", "`", "${")
+        )
+        if heredoc_lines and not expands and all(_sink(line) or _INERT_LINE.fullmatch(line.strip()) for line in code_lines):
             return ["NONE"]
         return ["?"]
     if len(code_lines) != 1:
@@ -1185,8 +2400,17 @@ def recursive_targets(raw_text: str) -> list[str] | None:
         if name in _RESOLUTION_VARS:
             return ["?"]
         assigns[name] = value
-    base = os.getcwd()
+    cwds = _cwds()
+    base = cwds[0]
     words = [match.group("cd") or "", *match.group("targets").split()]
+    # Two candidate cwds and a relative word that no `cd` anchors: the arm cannot know which one
+    # bash will use, so it judges neither.
+    if (
+        len(cwds) > 1
+        and not match.group("cd")
+        and any(w and not w.strip('"').startswith(("/", "~", "$")) for w in match.group("targets").split())
+    ):
+        return ["?"]
     # An operand that starts with "-" is an option to bash (`cd -L /etc` changes to
     # /etc), never a path; reading it as one judges the wrong directory.
     if any(w.strip('"').startswith("-") for w in words if w):
@@ -1224,12 +2448,17 @@ def main() -> int:
             return 1
         print("\n".join(targets))
         return 0
+    if "--store-mention" in sys.argv[1:]:
+        return 0 if store_mention_is_harmless(raw_text) else 1
     if "--review-accepted" in sys.argv[1:]:
         return 0 if review_accepted(raw_text) else 1
     found = analyze(raw_text)
     if not found:
         return 0
     owner_only = [f for f in found if f.owner_only]
+    if owner_only and all(_REWRITE_MARK in f.why for f in owner_only):
+        print(_rewrite_request(owner_only), file=sys.stderr)
+        return REVIEW_REQUIRED
     if owner_only:
         print(_owner_request(owner_only), file=sys.stderr)
         return REVIEW_REQUIRED

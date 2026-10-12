@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+exec python3.15 - "$@" <<'PY'
+import subprocess
+import sys
+
+try:
+    budget = float(sys.argv[1])
+    rc = subprocess.call(sys.argv[2:], timeout=budget)
+    sys.exit(rc)
+except subprocess.TimeoutExpired:
+    sys.exit(124)
+PY

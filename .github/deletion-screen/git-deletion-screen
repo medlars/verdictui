@@ -27,8 +27,34 @@ import re
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
+
+
+def _load_trusted_exe() -> Callable[[str], str]:
+    """Load the program resolver beside this file, never from sys.path.
+
+    The vendored copy ships it as trusted_exe.vendored (a host repo's own scanners judge a
+    .py name); the claude-config layout has trusted_exe.py. A plain `import trusted_exe`
+    resolved to an unrelated installed module on the owner's Mac and crashed with
+    ModuleNotFoundError on every CI runner (nynorth#65, 2026-10-10).
+    """
+    here = Path(__file__).resolve().parent
+    for name in ("trusted_exe.py", "trusted_exe.vendored"):
+        path = here / name
+        if path.is_file():
+            spec = importlib.util.spec_from_loader("trusted_exe", importlib.machinery.SourceFileLoader("trusted_exe", str(path)))
+            if spec is None or spec.loader is None:
+                break
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            resolver: Callable[[str], str] = module.trusted_exe
+            return resolver
+    raise RuntimeError(f"trusted_exe missing beside {here}")
+
+
+trusted_exe = _load_trusted_exe()
 
 __all__ = ["added_lines", "main", "screen"]
 
@@ -64,7 +90,7 @@ def _git(*args: str) -> str:
     # strictly crashed the screen and aborted the commit; replaced bytes classify
     # as no language, so the file is skipped while every script is still screened.
     out = subprocess.run(
-        ["git", *args], capture_output=True, text=True, errors="replace", timeout=60, check=False
+        [trusted_exe("git"), *args], capture_output=True, text=True, errors="replace", timeout=60, check=False
     )
     if out.returncode != 0:
         raise RuntimeError(f"git {' '.join(args)}: {out.stderr.strip()}")
@@ -83,10 +109,11 @@ def added_lines(diff: str) -> set[int]:
 
 
 def changed_files(diff_args: list[str]) -> list[str]:
-    """Added/changed regular files. `--raw -z` gives the raw name (no octal quoting of
+    """Added/changed regular files, including a typechange (a symlink or gitlink that becomes a
+    regular file carries new content). `--raw -z` gives the raw name (no octal quoting of
     non-ASCII) and the mode, so a submodule pointer (160000) or a symlink (120000),
     which has no blob to show, is skipped instead of failing the whole commit."""
-    out = _git("diff", *diff_args, "--raw", "-z", "--no-abbrev", "--diff-filter=ACMR").split("\0")
+    out = _git("diff", *diff_args, "--raw", "-z", "--no-abbrev", "--diff-filter=ACMRT").split("\0")
     files: list[str] = []
     i = 0
     while i < len(out) - 1:
@@ -122,7 +149,7 @@ def screen(diff_args: list[str], show_prefix: str) -> list[str]:
 
 def in_temp_repo() -> bool:
     """True when the repository being committed to lives under the system temp dir."""
-    top = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=False)
+    top = subprocess.run([trusted_exe("git"), "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=False)
     real = os.path.realpath(top.stdout.strip()) if top.returncode == 0 else ""
     roots = {os.path.realpath(r) for r in (os.environ.get("TMPDIR", ""), "/tmp", "/private/var/folders") if r}
     return bool(real) and any(real.startswith(r.rstrip("/") + "/") for r in roots)

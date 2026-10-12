@@ -1,0 +1,92 @@
+# Vendored from medlars/projects-shared PR #2276 — see .github/fleet-linux-mini/README.md
+# Self-hosted branch matches medlars/verscout #174 (runner.environment == self-hosted).
+name: setup-fleet-python
+description: Python 3.15 and hook-fixtures deps by profile (hosted vs self-hosted mini)
+inputs:
+  profile:
+    description: deletion-screen | hook-fixtures-lite | hook-fixtures
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Set up Python 3.15 (GitHub-hosted)
+      if: runner.environment == 'github-hosted'
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v5.0.0
+      with:
+        python-version: "3.15"
+
+    - name: Expose python3.15 on PATH (GitHub-hosted, sandbox-proof)
+      if: runner.environment == 'github-hosted'
+      shell: bash
+      run: |
+        sudo ln -sf "$(command -v python3)" /usr/local/bin/python3.15
+        HOME="$(mktemp -d)" python3.15 --version
+
+    - name: Use Homebrew Python 3.15 (self-hosted macOS mini)
+      if: runner.environment == 'self-hosted'
+      shell: bash
+      run: |
+        set -euo pipefail
+        brew_bin="/opt/homebrew/bin"
+        user_pip="${HOME}/Library/Python/3.15/bin"
+        local_pip="${HOME}/.local/bin"
+        path="${brew_bin}:${user_pip}:${local_pip}:${PATH}"
+        export PATH="${path}"
+        if ! command -v python3.15 >/dev/null; then
+          echo "::error::python3.15 not found — ghrunner mini expects Homebrew python3.15 on PATH (${brew_bin})"
+          exit 1
+        fi
+        fleet_shim="${RUNNER_TEMP}/fleet-python-shim"
+        mkdir -p "$fleet_shim"
+        ln -sf "$(command -v python3.15)" "$fleet_shim/python"
+        gnubin="/opt/homebrew/opt/coreutils/libexec/gnubin"
+        if [ -d "$gnubin" ] && [ -x "$gnubin/timeout" ]; then
+          path="${gnubin}:${path}"
+        elif ! command -v timeout >/dev/null 2>&1; then
+          cp "${GITHUB_ACTION_PATH}/../../fleet-linux-mini/ci-timeout-shim" "$fleet_shim/timeout"
+          chmod +x "$fleet_shim/timeout"
+        fi
+        path="${fleet_shim}:${path}"
+        echo "PIP_BREAK_SYSTEM_PACKAGES=1" >> "$GITHUB_ENV"
+        echo "PATH=${path}" >> "$GITHUB_ENV"
+        export PIP_BREAK_SYSTEM_PACKAGES=1
+        python3.15 --version
+        command -v python >/dev/null && python --version
+        HOME="$(mktemp -d)" PATH="${path}" python3.15 --version
+
+    - name: Install fleet Python dependencies
+      shell: bash
+      env:
+        PROFILE: ${{ inputs.profile }}
+        RUNNER_ENVIRONMENT: ${{ runner.environment }}
+      run: |
+        set -euo pipefail
+        python3.15 --version
+        if [ "$RUNNER_ENVIRONMENT" = "self-hosted" ]; then
+          export PIP_BREAK_SYSTEM_PACKAGES=1
+          command -v jq >/dev/null || {
+            echo "::error::jq not on PATH for self-hosted runner (install via Homebrew on mini)"
+            exit 1
+          }
+        else
+          command -v jq >/dev/null || sudo apt-get install -y jq
+        fi
+        case "$PROFILE" in
+          deletion-screen)
+            ;;
+          hook-fixtures-lite)
+            ;;
+          hook-fixtures)
+            python3.15 -m pip install --quiet --disable-pip-version-check ruff
+            ruff --version
+            python3.15 -m pip install --quiet --disable-pip-version-check PyYAML
+            python3.15 -m pip install --quiet --disable-pip-version-check pytest
+            python3.15 -c 'import yaml; print("PyYAML", yaml.__version__)'
+            python3.15 -m pip install --quiet --disable-pip-version-check jsonschema==4.26.0
+            python3.15 -c 'import jsonschema, referencing; print("jsonschema", jsonschema.__version__, "referencing", referencing.__name__)'
+            ;;
+          *)
+            echo "::error::unknown setup-fleet-python profile: $PROFILE"
+            exit 1
+            ;;
+        esac
