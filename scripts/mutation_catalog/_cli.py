@@ -584,8 +584,26 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="an external declared runner is replaced by the build-tree product",
         path="Sources/VerdictUICLICore/ProjectRunner.swift",
-        old='return runner.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix(".build/")',
-        new="return !runner.isEmpty",
+        old='guard declared.hasPrefix(".build/") else { return false }',
+        new="guard !declared.isEmpty else { return false }",
         test="ProjectRunnerTests/testResolverLeavesAnExternalDeclaredRunnerAlone",
+    ),
+    Mutation(
+        name="a declared build-tree wrapper is replaced by the build product",
+        path="Sources/VerdictUICLICore/ProjectRunner.swift",
+        old="return (declared as NSString).lastPathComponent == product",
+        new="return true",
+        test="ProjectRunnerTests/testResolverLeavesADeclaredBuildTreeWrapperAlone",
+    ),
+    Mutation(
+        name="a failed bin-path probe still selects the path it printed",
+        path="Sources/VerdictUICLICore/ProjectRunner.swift",
+        old=(
+            "        if try process.stop(grace: 0) != 0 {\n"
+            '            throw Failure(description: "could not resolve built runner location")\n'
+            "        }\n"
+        ),
+        new="        _ = try process.stop(grace: 0)\n",
+        test="ProjectRunnerTests/testResolverRefusesAPlausiblePathFromAFailedShowBinPath",
     ),
 ]

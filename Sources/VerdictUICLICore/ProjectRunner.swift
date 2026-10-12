@@ -165,8 +165,9 @@ public enum ProjectRunner {
         }
     }
 
-    /// True when the manifest runner is declared under the project's `.build` tree.
-    private static func declaresBuildTreeRunner(projectRoot: URL) throws -> Bool {
+    /// True when the manifest runner is the build tree's copy of `product`. A `.build/` runner
+    /// with another name is a declared wrapper, which the bin-path product must not replace.
+    private static func declaresBuildTreeProduct(projectRoot: URL, product: String) throws -> Bool {
         let manifest = projectRoot
             .appendingPathComponent(ProjectScenarios.configDirectory, isDirectory: true)
             .appendingPathComponent(ProjectScenarios.configFile)
@@ -175,7 +176,9 @@ public enum ProjectRunner {
             let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
             let runner = json["runner"] as? String
         else { return false }
-        return runner.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix(".build/")
+        let declared = runner.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard declared.hasPrefix(".build/") else { return false }
+        return (declared as NSString).lastPathComponent == product
     }
 
     private static func swiftBuildCommandPrefix(
@@ -248,8 +251,8 @@ public enum ProjectRunner {
         timeout: TimeInterval? = nil,
         swiftExecutable: URL = URL(fileURLWithPath: "/usr/bin/env")
     ) throws -> URL? {
-        guard try declaresBuildTreeRunner(projectRoot: projectRoot),
-            let build = try ProjectScenarios.buildConfiguration(projectRoot: projectRoot)
+        guard let build = try ProjectScenarios.buildConfiguration(projectRoot: projectRoot),
+            try declaresBuildTreeProduct(projectRoot: projectRoot, product: build.product)
         else { return nil }
         let resolutionTimeout = timeout ?? build.timeoutSeconds
         return try builtProductExecutable(
