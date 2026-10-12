@@ -76,6 +76,8 @@ _NON_SOURCE_FILENAMES = frozenset(
         "git-deletion-screen",
         "script_deletions.vendored",
         "deletion_policy.vendored",
+        "trusted_exe.vendored",
+        "ci-timeout-shim",
     }
 )
 
