@@ -1,0 +1,1 @@
+{"completed_at": "2026-10-12T00:28:32Z", "conclusion": "success", "event": "pull_request", "head_branch": "fix/project-runner-binpath-witness", "head_repository": "medlars/verdictui", "head_sha": "04ff7a50be1348c5be894e010bf82f4a866119fc", "repo": "medlars/verdictui", "run_attempt": "1", "run_id": "38187436659", "schema_version": "1.1.0", "workflow": "CI"}
