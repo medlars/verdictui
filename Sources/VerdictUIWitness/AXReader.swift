@@ -237,29 +237,23 @@ public enum AXReader {
     static func anchor(pid: pid_t, surface: Surface) throws -> Anchor {
         try requireApplicationPID(pid)
         switch surface {
-        case .window(let index):
+        case .window(let index), .windowToolbar(let index):
             try requireWindowIndex(index)
             let all = try windows(of: pid)
             guard index < all.count else {
                 throw Failure.surfaceNotFound(
-                    "window:\(index) — the app publishes \(all.count) window(s)")
+                    "\(surface) — the app publishes \(all.count) window(s)")
             }
             let window = all[index]
+            let title = string(window, kAXTitleAttribute)
+            if case .windowToolbar = surface {
+                guard let toolbar = toolbar(of: window) else {
+                    throw Failure.surfaceNotFound("\(surface) — window \(index) has no toolbar")
+                }
+                return Anchor(element: toolbar, window: window, title: title)
+            }
             return Anchor(
-                element: hostingContent(of: window) ?? window, window: window,
-                title: string(window, kAXTitleAttribute))
-        case .windowToolbar(let index):
-            try requireWindowIndex(index)
-            let all = try windows(of: pid)
-            guard index < all.count else {
-                throw Failure.surfaceNotFound(
-                    "toolbar:\(index) — the app publishes \(all.count) window(s)")
-            }
-            let window = all[index]
-            guard let toolbar = toolbar(of: window) else {
-                throw Failure.surfaceNotFound("toolbar:\(index) — window \(index) has no toolbar")
-            }
-            return Anchor(element: toolbar, window: window, title: string(window, kAXTitleAttribute))
+                element: hostingContent(of: window) ?? window, window: window, title: title)
         case .menuBar, .extrasMenuBar:
             let app = AXUIElementCreateApplication(pid)
             let key = surface == .menuBar ? kAXMenuBarAttribute : kAXExtrasMenuBarAttribute
