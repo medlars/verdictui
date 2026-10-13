@@ -1,0 +1,1 @@
+{"completed_at": "2026-10-13T11:29:37Z", "conclusion": "success", "event": "pull_request", "head_branch": "drain/swift-cis-VerdictUI", "head_repository": "medlars/verdictui", "head_sha": "8847162bf742385f5cc5eb66cf87fda1a47e80cf", "repo": "medlars/verdictui", "run_attempt": "1", "run_id": "38388690533", "schema_version": "1.1.0", "workflow": "CI"}
