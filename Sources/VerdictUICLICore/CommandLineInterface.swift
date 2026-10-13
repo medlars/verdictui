@@ -140,7 +140,7 @@ public struct VerdictUITool: AsyncParsableCommand {
         @Option(name: .long, help: "With --app: seconds to wait for a readable surface.")
         public var launchTimeout: Double = 20
 
-        @Option(name: .long, help: "Surface: window:N (default window:0), menubar, extras, or all.")
+        @Option(name: .long, help: "Surface: window:N (default window:0), toolbar:N (a window's toolbar tabs), menubar, extras, or all.")
         public var surface: String = "window:0"
 
         func liveTarget() throws -> LiveTarget {

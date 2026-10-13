@@ -37,7 +37,9 @@ final class AXSurfaceAndActionTests: XCTestCase {
         XCTAssertEqual(AXReader.Surface(argument: "3"), .window(3))
         XCTAssertEqual(AXReader.Surface(argument: "menubar"), .menuBar)
         XCTAssertEqual(AXReader.Surface(argument: "extras"), .extrasMenuBar)
-        for surface in [AXReader.Surface.window(0), .window(7), .menuBar, .extrasMenuBar] {
+        XCTAssertEqual(AXReader.Surface(argument: "toolbar:0"), .windowToolbar(0))
+        XCTAssertEqual(AXReader.Surface(argument: "TOOLBAR:2"), .windowToolbar(2))
+        for surface in [AXReader.Surface.window(0), .window(7), .menuBar, .extrasMenuBar, .windowToolbar(3)] {
             XCTAssertEqual(AXReader.Surface(argument: surface.description), surface)
         }
     }
@@ -45,7 +47,28 @@ final class AXSurfaceAndActionTests: XCTestCase {
     func testMalformedSurfacesAreRefusedNotDefaulted() {
         XCTAssertNil(AXReader.Surface(argument: "window:-1"))
         XCTAssertNil(AXReader.Surface(argument: "window:x"))
+        XCTAssertNil(AXReader.Surface(argument: "toolbar:-1"))
+        XCTAssertNil(AXReader.Surface(argument: "toolbar:x"))
+        XCTAssertNil(AXReader.Surface(argument: "toolbar"))
         XCTAssertNil(AXReader.Surface(argument: "sidebar"))
+    }
+
+    /// CTS-821CA583: a window's toolbar is its own surface, and an absent toolbar or
+    /// window is refused by name instead of reading the hosting view in its place.
+    func testToolbarSurfaceReadsTheToolbarOrRefusesByName() throws {
+        let pid = try finder()
+        do {
+            let read = try AXReader.readSurface(pid: pid, surface: .windowToolbar(0))
+            XCTAssertTrue(
+                read.tree.role == .navigation, "toolbar:0 must be rooted at the AXToolbar, not the hosting view")
+        } catch AXReader.Failure.surfaceNotFound(let why) {
+            XCTAssertTrue(why.contains("toolbar:0"), why)
+        }
+        XCTAssertThrowsError(try AXReader.readSurface(pid: pid, surface: .windowToolbar(999))) { error in
+            guard case AXReader.Failure.surfaceNotFound = error else {
+                return XCTFail("expected surfaceNotFound, got \(error)")
+            }
+        }
     }
 
     // MARK: - action vocabulary

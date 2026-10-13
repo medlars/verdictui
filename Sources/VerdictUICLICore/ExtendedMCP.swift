@@ -6,7 +6,7 @@ enum ExtendedMCP {
         let live: [String: MCPProperty] = [
             "pid": .init(type: "integer", description: "Positive process ID of a running app; use pid or app."),
             "app": .init(type: "string", description: "App bundle to launch as a fixture, then terminate; use app or pid."),
-            "surface": .init(type: "string", description: "AX surface: window:0, menubar or extras."),
+            "surface": .init(type: "string", description: "AX surface: window:0, toolbar:0 (the window's toolbar), menubar or extras."),
             "path": .init(type: "string", description: "Structural path returned by live_inspect."),
             "action": .init(type: "string", description: "Native verb: press, click, type, set-value, key, drag, hover or AX action."),
             "value": .init(type: "string", description: "Text, key chord, or drag destination x,y as appropriate."),
