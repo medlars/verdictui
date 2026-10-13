@@ -44,7 +44,7 @@ public struct LiveTarget: Sendable, Equatable {
             case .noTarget: "pass --pid <n> for a running app, or --app <path.app> to launch one"
             case .bothTargets: "pass --pid OR --app, not both"
             case .badSurface(let value):
-                "unknown surface '\(value)' — use window:N, menubar, extras or all"
+                "unknown surface '\(value)' — use window:N, toolbar:N, menubar, extras or all"
             case .badEnvironment(let pair): "--launch-env expects KEY=VALUE, got '\(pair)'"
             case .launchOptionsWithoutApp:
                 "--launch-arg/--launch-env only apply to --app: a running pid cannot be relaunched"

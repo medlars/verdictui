@@ -189,10 +189,20 @@ public enum AXReader {
         /// The app's status-item ("extras") menu bar — where a menu-bar-mode
         /// app lives.
         case extrasMenuBar
+        /// The toolbar of the n-th genuine window. A window's `NSToolbar` is a sibling of
+        /// the hosting view, not a descendant, so `window:N` never reaches it: a Settings
+        /// window's tabs were unreadable and unpressable (CTS-821CA583).
+        case windowToolbar(Int)
 
-        /// Parses `window:N` (or a bare `N`), `menubar`, `extras`.
+        /// Parses `window:N` (or a bare `N`), `toolbar:N`, `menubar`, `extras`.
         public init?(argument: String) {
-            switch argument.lowercased() {
+            let lowered = argument.lowercased()
+            if lowered.hasPrefix("toolbar:") {
+                guard let index = Int(lowered.dropFirst(8)), index >= 0 else { return nil }
+                self = .windowToolbar(index)
+                return
+            }
+            switch lowered {
             case "menubar", "menu-bar": self = .menuBar
             case "extras", "extras-menubar", "status": self = .extrasMenuBar
             default:
@@ -207,6 +217,7 @@ public enum AXReader {
             case .window(let index): "window:\(index)"
             case .menuBar: "menubar"
             case .extrasMenuBar: "extras"
+            case .windowToolbar(let index): "toolbar:\(index)"
             }
         }
     }
@@ -226,17 +237,23 @@ public enum AXReader {
     static func anchor(pid: pid_t, surface: Surface) throws -> Anchor {
         try requireApplicationPID(pid)
         switch surface {
-        case .window(let index):
+        case .window(let index), .windowToolbar(let index):
             try requireWindowIndex(index)
             let all = try windows(of: pid)
             guard index < all.count else {
                 throw Failure.surfaceNotFound(
-                    "window:\(index) — the app publishes \(all.count) window(s)")
+                    "\(surface) — the app publishes \(all.count) window(s)")
             }
             let window = all[index]
+            let title = string(window, kAXTitleAttribute)
+            if case .windowToolbar = surface {
+                guard let toolbar = toolbar(of: window) else {
+                    throw Failure.surfaceNotFound("\(surface) — window \(index) has no toolbar")
+                }
+                return Anchor(element: toolbar, window: window, title: title)
+            }
             return Anchor(
-                element: hostingContent(of: window) ?? window, window: window,
-                title: string(window, kAXTitleAttribute))
+                element: hostingContent(of: window) ?? window, window: window, title: title)
         case .menuBar, .extrasMenuBar:
             let app = AXUIElementCreateApplication(pid)
             let key = surface == .menuBar ? kAXMenuBarAttribute : kAXExtrasMenuBarAttribute
@@ -245,6 +262,12 @@ public enum AXReader {
             }
             return Anchor(element: bar, window: nil, title: nil)
         }
+    }
+
+    /// The window's first `AXToolbar` child, or nil when it has none.
+    static func toolbar(of window: AXUIElement) -> AXUIElement? {
+        let children = (copy(window, kAXChildrenAttribute) as? [AXUIElement]) ?? []
+        return children.first { string($0, kAXRoleAttribute) == kAXToolbarRole as String }
     }
 
     /// A CF value as an `AXUIElement`, checked by type id rather than forced.
@@ -416,7 +439,10 @@ public enum AXReader {
         var surfaces: [Surface] = []
         var out: [SurfaceTree] = []
         do {
-            surfaces += (0..<(try windows(of: pid).count)).map { Surface.window($0) }
+            let count = try windows(of: pid).count
+            // Each window's toolbar follows it; a window without one is skipped below
+            // (`surfaceNotFound`), the same way an unpublished menu bar is.
+            surfaces += (0..<count).flatMap { [Surface.window($0), .windowToolbar($0)] }
         } catch {
             // The windows could not be listed at all. Say so as a surface entry:
             // dropping it would make a menu-bar-only result read as "this app
