@@ -11,6 +11,13 @@ emit() {
   echo "route=$2" >> "${GITHUB_OUTPUT}"
 }
 
+# A pull_request from a fork runs the fork author's code; never on the persistent self-hosted mini (CIS-2F633F41).
+# PICK_EVENT_NAME / PICK_PR_HEAD_REPO come from pick-mini-runner.yml; a missing event name is not a PR.
+if [[ "${PICK_EVENT_NAME:-}" == "pull_request" && "${PICK_PR_HEAD_REPO:-}" != "${GITHUB_REPOSITORY:-}" ]]; then
+  emit "$HOSTED" "hosted (pull_request from ${PICK_PR_HEAD_REPO:-unknown head repo}, not ${GITHUB_REPOSITORY:-unknown repo})"
+  exit 0
+fi
+
 now="$(date +%s)"
 mini_at="${MINI_ONLINE_AT:-}"
 

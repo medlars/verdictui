@@ -30,6 +30,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           MINI_ONLINE_AT: ${{ vars.MINI_ONLINE_AT }}
+          PICK_EVENT_NAME: ${{ github.event_name }}
+          PICK_PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
         run: bash .github/fleet-linux-mini/pick-mini-guard.sh
 
       - name: Log route

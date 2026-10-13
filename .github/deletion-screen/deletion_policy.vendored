@@ -1373,7 +1373,10 @@ def _shell_scripts(verb: str, args: list[str]) -> list[str]:
     return []
 
 
-_INLINE_INTERPRETERS = frozenset({"python", "python3", "python3.15", "perl", "ruby", "node"})
+# Every python3.N, not the current one: older interpreters stay installed after an upgrade, and a version
+# rename once narrowed these sets to python3.15 alone while 3.13 and 3.14 were still on PATH.
+_PYTHONS = frozenset({"python", "python3", *(f"python3.{minor}" for minor in range(30))})
+_INLINE_INTERPRETERS = frozenset({*_PYTHONS, "perl", "ruby", "node"})
 # Calls that delete from inside an interpreter one-liner, in the spellings of each language.
 _INLINE_DELETE = re.compile(
     r"\b(?:os\.(?:remove|unlink|rmdir|removedirs)|shutil\.rmtree|\.unlink\(|unlink(?:Sync)?\b|rmdir(?:Sync)?\b"
@@ -2072,9 +2075,7 @@ _INDIRECT = frozenset(
         "parallel",
         "doas",
         "osascript",
-        "python",
-        "python3",
-        "python3.15",
+        *_PYTHONS,
         "perl",
         "ruby",
         "node",
