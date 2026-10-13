@@ -358,7 +358,7 @@ extension ProjectRunnerTests {
 
     func testResolverLeavesAnExternalDeclaredRunnerAlone() throws {
         // `tools/Consumer` shares the product's name, so only the `.build/` check rejects it.
-        for runner in ["/usr/bin/true", "tools/Consumer"] {
+        for runner in ["/usr/bin/true", "tools/Consumer", "tools/debug/Consumer"] {
             try buildProject(settings: ["buildProduct": "Consumer"]) { root, executable in
                 try JSONSerialization.data(withJSONObject: [
                     "runner": runner, "buildProduct": "Consumer",

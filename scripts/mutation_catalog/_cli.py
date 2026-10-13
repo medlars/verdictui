@@ -584,8 +584,8 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="an external declared runner is replaced by the build-tree product",
         path="Sources/VerdictUICLICore/ProjectRunner.swift",
-        old='guard declared.hasPrefix(".build/") else { return false }',
-        new="guard !declared.isEmpty else { return false }",
+        old='declaredComponents.dropFirst(packagePrefix.count).first == ".build"',
+        new="declaredComponents.dropFirst(packagePrefix.count).first != nil",
         test="ProjectRunnerTests/testResolverLeavesAnExternalDeclaredRunnerAlone",
     ),
     Mutation(
