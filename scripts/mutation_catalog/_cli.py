@@ -584,8 +584,8 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         name="an external declared runner is replaced by the build-tree product",
         path="Sources/VerdictUICLICore/ProjectRunner.swift",
-        old='guard declared.hasPrefix(".build/") else { return false }',
-        new="guard !declared.isEmpty else { return false }",
+        old='declaredComponents.dropFirst(packagePrefix.count).first == ".build"',
+        new="declaredComponents.dropFirst(packagePrefix.count).first != nil",
         test="ProjectRunnerTests/testResolverLeavesAnExternalDeclaredRunnerAlone",
     ),
     Mutation(
@@ -626,5 +626,19 @@ MUTATIONS: list[Mutation] = [
         ),
         new="        _ = try process.stop(grace: 0)\n",
         test="ProjectRunnerTests/testResolverRefusesAPlausiblePathFromAFailedShowBinPath",
+    ),
+    Mutation(
+        name="the broker starts the declared runner path instead of the one the build produced",
+        path="Sources/VerdictUICLICore/ProjectRunnerBroker.swift",
+        old="                executable: launchExecutable, arguments: arguments,",
+        new="                executable: destination.executable, arguments: arguments,",
+        test="ProjectRunnerBrokerTests/testHostLaunchesTheRunnerResolvedAfterTheBuildNotTheDeclaredPath",
+    ),
+    Mutation(
+        name="a nested package's product path is treated as a wrapper and never re-resolved",
+        path="Sources/VerdictUICLICore/ProjectRunner.swift",
+        old="        guard declaredComponents.starts(with: packagePrefix),\n",
+        new="        guard declaredComponents.starts(with: []),\n",
+        test="ProjectRunnerTests/testResolverReplacesANestedPackageProductPathThatCarriesBuildPackagePath",
     ),
 ]

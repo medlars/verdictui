@@ -166,8 +166,9 @@ public enum ProjectRunner {
     }
 
     /// True when the manifest runner is SwiftPM's own product path, `.build/<config>/<product>` or
-    /// `.build/<triple>/<config>/<product>`. Any other `.build/` runner, even one named `product`,
-    /// is a declared wrapper, which the bin-path product must not replace.
+    /// `.build/<triple>/<config>/<product>`, under `buildPackagePath` when the manifest names one
+    /// (`app/.build/debug/X`). Any other `.build/` runner, even one named `product`, is a declared
+    /// wrapper, which the bin-path product must not replace.
     private static func declaresBuildTreeProduct(projectRoot: URL, product: String) throws -> Bool {
         let manifest = projectRoot
             .appendingPathComponent(ProjectScenarios.configDirectory, isDirectory: true)
@@ -178,8 +179,13 @@ public enum ProjectRunner {
             let runner = json["runner"] as? String
         else { return false }
         let declared = runner.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard declared.hasPrefix(".build/") else { return false }
-        let components = (declared as NSString).pathComponents
+        let packagePrefix = (json["buildPackagePath"] as? String)
+            .map { ($0 as NSString).pathComponents.filter { $0 != "." } } ?? []
+        let declaredComponents = (declared as NSString).pathComponents
+        guard declaredComponents.starts(with: packagePrefix),
+            declaredComponents.dropFirst(packagePrefix.count).first == ".build"
+        else { return false }
+        let components = Array(declaredComponents.dropFirst(packagePrefix.count))
         guard components.last == product else { return false }
         let configuration = components.dropLast().last ?? ""
         guard ["debug", "release"].contains(configuration) else { return false }
