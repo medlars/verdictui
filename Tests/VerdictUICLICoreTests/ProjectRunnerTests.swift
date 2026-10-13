@@ -422,6 +422,57 @@ extension ProjectRunnerTests {
         }
     }
 
+    func testResolverReplacesANestedPackageProductPathThatCarriesBuildPackagePath() throws {
+        // CIS-2C898BDE: with buildPackagePath the product lives under <package>/.build, so the declared
+        // runner is `<package>/.build/...`; it is SwiftPM's own product path and must be re-resolved too.
+        for runner in ["app/.build/debug/Consumer", "app/.build/arm64-apple-macosx/release/Consumer"] {
+            try buildProject(settings: ["buildProduct": "Consumer"]) { root, executable in
+                try FileManager.default.createDirectory(
+                    at: root.appendingPathComponent("app"), withIntermediateDirectories: true)
+                try JSONSerialization.data(withJSONObject: [
+                    "runner": runner, "buildProduct": "Consumer", "buildPackagePath": "app",
+                ]).write(to: root.appendingPathComponent(".verdictui/config.json"))
+
+                let resolved = resolveBuiltRunner(root: root, swift: executable)
+
+                XCTAssertEqual(
+                    resolved?.resolvingSymlinksInPath().path,
+                    root.appendingPathComponent("stub-bin/Consumer").resolvingSymlinksInPath().path,
+                    "\(runner): a nested package's product path resolves through --show-bin-path")
+            }
+        }
+    }
+
+    func testResolverLeavesARootBuildTreePathAloneWhenTheProductBuildsInANestedPackage() throws {
+        // Control: `.build/debug/Consumer` at the project root is not where a nested package builds.
+        try buildProject(settings: ["buildProduct": "Consumer"]) { root, executable in
+            try FileManager.default.createDirectory(
+                at: root.appendingPathComponent("app"), withIntermediateDirectories: true)
+            try JSONSerialization.data(withJSONObject: [
+                "runner": ".build/debug/Consumer", "buildProduct": "Consumer", "buildPackagePath": "app",
+            ]).write(to: root.appendingPathComponent(".verdictui/config.json"))
+
+            let resolved = resolveBuiltRunner(root: root, swift: executable)
+
+            XCTAssertNil(resolved)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("invoked-show-bin-path").path))
+        }
+    }
+
+    func testResolverLeavesANestedPackageWrapperAlone() throws {
+        for runner in ["app/.build/wrappers/debug/Consumer", "other/.build/debug/Consumer", "app/tools/Consumer"] {
+            try buildProject(settings: ["buildProduct": "Consumer"]) { root, executable in
+                try FileManager.default.createDirectory(
+                    at: root.appendingPathComponent("app"), withIntermediateDirectories: true)
+                try JSONSerialization.data(withJSONObject: [
+                    "runner": runner, "buildProduct": "Consumer", "buildPackagePath": "app",
+                ]).write(to: root.appendingPathComponent(".verdictui/config.json"))
+
+                XCTAssertNil(resolveBuiltRunner(root: root, swift: executable), runner)
+            }
+        }
+    }
+
     func testResolverRefusesAPlausiblePathFromAFailedShowBinPath() throws {
         try buildProject(settings: ["buildProduct": "Consumer"]) { root, _ in
             try JSONSerialization.data(withJSONObject: [

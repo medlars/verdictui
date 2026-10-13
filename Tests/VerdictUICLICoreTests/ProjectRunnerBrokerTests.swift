@@ -3,6 +3,15 @@ import XCTest
 
 @testable import VerdictUICLICore
 
+private final class FreshRunner: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: URL?
+    var url: URL? {
+        get { lock.withLock { stored } }
+        set { lock.withLock { stored = newValue } }
+    }
+}
+
 private final class BrokerStopFlag: @unchecked Sendable {
     private let lock = NSLock()
     private var stopped = false
@@ -13,6 +22,7 @@ private final class BrokerStopFlag: @unchecked Sendable {
 final class ProjectRunnerBrokerTests: XCTestCase {
     private func fixture(
         _ wire: ProjectRunnerBroker.Wire = .mcp, build: ProjectRunnerBroker.Session.Build? = nil,
+        resolveRunner: ProjectRunnerBroker.Session.ResolveRunner? = nil,
         shouldStop: @escaping () -> Bool = { false }
     ) throws -> (
         URL, ProjectRunnerBroker.Session
@@ -59,7 +69,8 @@ final class ProjectRunnerBrokerTests: XCTestCase {
         try Data(script.utf8).write(to: runner)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: runner.path)
         let session = ProjectRunnerBroker.Session(
-            destination: .init(executable: runner, projectRoot: root), wire: wire, shouldStop: shouldStop, build: build)
+            destination: .init(executable: runner, projectRoot: root), wire: wire, shouldStop: shouldStop, build: build,
+            resolveRunner: resolveRunner)
         addTeardownBlock {
             session.stop()
             try? FileManager.default.removeItem(at: root)
@@ -211,6 +222,41 @@ final class ProjectRunnerBrokerTests: XCTestCase {
         XCTAssertNil(session.child)
         try Data(#"{"runner":".verdictui/runner"}"#.utf8).write(to: config)
         XCTAssertEqual(value(try answer(session)), "one")
+    }
+
+    func testHostLaunchesTheRunnerResolvedAfterTheBuildNotTheDeclaredPath() throws {
+        // CIS-2C898BDE: the declared `.build/debug/X` is a symlink SwiftPM repoints; after each build the
+        // broker must start the path --show-bin-path names, as the one-shot launcher already does.
+        let fresh = FreshRunner()
+        let (root, session) = try fixture(
+            build: { _, _ in }, resolveRunner: { _ in fresh.url })
+        let declared = root.appendingPathComponent(".verdictui/runner")
+        let freshRunner = root.appendingPathComponent("fresh-bin/runner")
+        try FileManager.default.createDirectory(
+            at: freshRunner.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let script = try String(contentsOf: declared, encoding: .utf8)
+            .replacingOccurrences(of: "value=open('source.txt').read()", with: "value='fresh-bin'")
+        try script.write(to: freshRunner, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: freshRunner.path)
+        fresh.url = freshRunner
+
+        XCTAssertEqual(value(try answer(session, method: "initialize")), "fresh-bin")
+        XCTAssertEqual(value(try answer(session)), "fresh-bin", "an unchanged request reuses the resolved host")
+    }
+
+    func testHostFallsBackToTheDeclaredRunnerWhenNothingIsResolved() throws {
+        let (_, session) = try fixture(build: { _, _ in }, resolveRunner: { _ in nil })
+        XCTAssertEqual(value(try answer(session, method: "initialize")), "one")
+    }
+
+    func testResolverFailureAfterABuildRefusesToStartAHost() throws {
+        struct Unresolvable: Error {}
+        let (_, session) = try fixture(build: { _, _ in }, resolveRunner: { _ in throw Unresolvable() })
+
+        let response = try answer(session, method: "initialize")
+
+        XCTAssertNotNil(response["error"], "a failed resolution must not fall back to the declared path")
+        XCTAssertNil(session.child)
     }
 
     func testBuildDirectoryNoiseDoesNotRestartHost() throws {

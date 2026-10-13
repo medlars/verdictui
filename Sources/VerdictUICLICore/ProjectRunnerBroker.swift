@@ -159,14 +159,24 @@ public enum ProjectRunnerBroker {
         private var cleanupFailure: String?
         typealias Build = (URL, () -> Bool) throws -> Void
         private let build: Build
+        /// The built product's real path for a project root, or nil when the manifest declares a wrapper.
+        typealias ResolveRunner = (URL) throws -> URL?
+        private let resolveRunner: ResolveRunner
+        private var launchExecutable: URL
 
         init(
             destination: ProjectRunner.Destination, wire: Wire,
-            shouldStop: @escaping () -> Bool = { false }, build: Build? = nil
+            shouldStop: @escaping () -> Bool = { false }, build: Build? = nil,
+            resolveRunner: ResolveRunner? = nil
         ) {
             self.destination = destination
             self.wire = wire
             self.shouldStop = shouldStop
+            launchExecutable = destination.executable
+            self.resolveRunner =
+                resolveRunner ?? { root in
+                    try ProjectRunner.resolveBuiltRunnerExecutableAfterBuild(projectRoot: root)
+                }
             self.build =
                 build ?? { root, cancel in
                     try ProjectRunner.buildIfConfigured(projectRoot: root, shouldCancel: cancel)
@@ -207,6 +217,9 @@ public enum ProjectRunnerBroker {
                     }
                     do {
                         try build(destination.projectRoot, shouldStop)
+                        // The declared `.build/debug/X` is a symlink SwiftPM repoints; start the path
+                        // the build actually produced, never one resolved before it (CIS-2C898BDE).
+                        launchExecutable = try resolveRunner(destination.projectRoot) ?? destination.executable
                     } catch {
                         failedGeneration = before
                         failedAt = ProcessInfo.processInfo.systemUptime
@@ -303,7 +316,7 @@ public enum ProjectRunnerBroker {
             // metadata catches an external rebuild without hashing a huge binary.
             if includeExecutable {
                 let attrs = try FileManager.default.attributesOfItem(
-                    atPath: destination.executable.path)
+                    atPath: launchExecutable.path)
                 hash.update(
                     data: Data("\(attrs[.modificationDate] ?? ""):\(attrs[.size] ?? "")".utf8))
             }
@@ -330,7 +343,7 @@ public enum ProjectRunnerBroker {
                 arguments = ["daemon", "start", "--socket", path]
             }
             let process = try GuardedProcess.spawn(
-                executable: destination.executable, arguments: arguments,
+                executable: launchExecutable, arguments: arguments,
                 directory: destination.projectRoot, environment: environment,
                 standardInput: toChild?.fileHandleForReading.fileDescriptor,
                 standardOutput: fromChild?.fileHandleForWriting.fileDescriptor,
